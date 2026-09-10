@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"github.com/golang-migrate/migrate/v4"
+	migratesqlite "github.com/golang-migrate/migrate/v4/database/sqlite"
 	"github.com/golang-migrate/migrate/v4/source/iofs"
 	"github.com/sqlwarden/assets"
 	"github.com/uptrace/bun"
@@ -20,7 +21,6 @@ import (
 	"github.com/uptrace/bun/driver/sqliteshim"
 
 	_ "github.com/golang-migrate/migrate/v4/database/postgres"
-	_ "github.com/golang-migrate/migrate/v4/database/sqlite"
 )
 
 const defaultTimeout = 3 * time.Second
@@ -111,17 +111,23 @@ func (db *DB) MigrateUp() error {
 		return err
 	}
 
-	var databaseURL string
+	var migrator *migrate.Migrate
 	switch db.driver {
 	case "postgres":
-		databaseURL = "postgres://" + db.dsn
+		migrator, err = migrate.NewWithSourceInstance("iofs", iofsDriver, "postgres://"+db.dsn)
 	case "sqlite":
-		databaseURL = "sqlite://" + db.dsn
+		sqliteDriver, driverErr := migratesqlite.WithInstance(db.DB.DB, &migratesqlite.Config{})
+		if driverErr != nil {
+			err = driverErr
+			break
+		}
+		// Use the already-open database instead of converting the filesystem
+		// path into a URL. A Windows drive path such as C:\\Users\\... is not
+		// a valid sqlite:// host and would otherwise be parsed as a port.
+		migrator, err = migrate.NewWithInstance("iofs", iofsDriver, "sqlite", sqliteDriver)
 	default:
 		return fmt.Errorf("unsupported database driver for migrations: %s", db.driver)
 	}
-
-	migrator, err := migrate.NewWithSourceInstance("iofs", iofsDriver, databaseURL)
 	if err != nil {
 		return err
 	}

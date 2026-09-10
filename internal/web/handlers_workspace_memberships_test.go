@@ -502,11 +502,11 @@ func TestWorkspaceMembersSubjectCanBindConnectionOnlyInsideCurrentWorkspace(t *t
 	owner, ownerTok, org := seedOrgOwner(t, app, uniqueEmail(t, "ws-members-conn-subject-owner"), "Workspace Owner", "Workspace Conn Subject Org")
 	wsA := seedWorkspaceForAccount(t, app, org, owner, "A", "")
 	wsB := seedWorkspaceForAccount(t, app, org, owner, "B", "")
-	connA, err := app.db.InsertConnection(context.Background(), wsA.ID, nil, "Conn A", "postgres", "enc-a", "open")
+	connA, err := app.db.InsertConnection(context.Background(), wsA.ID, nil, "Conn A", "postgres", "enc-a")
 	if err != nil {
 		t.Fatal(err)
 	}
-	connB, err := app.db.InsertConnection(context.Background(), wsB.ID, nil, "Conn B", "postgres", "enc-b", "open")
+	connB, err := app.db.InsertConnection(context.Background(), wsB.ID, nil, "Conn B", "postgres", "enc-b")
 	if err != nil {
 		t.Fatal(err)
 	}

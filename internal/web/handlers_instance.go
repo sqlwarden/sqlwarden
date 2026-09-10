@@ -24,6 +24,10 @@ import (
 // Only callable when no instance admins exist (first-run). Creates an account and
 // makes it the first instance admin. Returns 409 if already configured.
 func (app *application) setup(w http.ResponseWriter, r *http.Request) {
+	if !app.config.productCapabilities().MultiUser {
+		app.notFound(w, r)
+		return
+	}
 	var input struct {
 		Name             string              `json:"name"`
 		Email            string              `json:"email"`
@@ -50,7 +54,7 @@ func (app *application) setup(w http.ResponseWriter, r *http.Request) {
 
 	organizationName := input.OrganizationName
 	organizationSlug := input.OrganizationSlug
-	if app.config.AccessMode != AccessModeSingleUser {
+	if app.config.isServer() {
 		input.V.CheckField(input.OrganizationName != "", "organization_name", "Organization name is required.")
 		if organizationSlug == "" {
 			organizationSlug = slugify(input.OrganizationName)
@@ -76,7 +80,7 @@ func (app *application) setup(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if app.config.AccessMode != AccessModeSingleUser {
+	if app.config.isServer() {
 		_, found, err := app.db.GetOrgBySlug(r.Context(), organizationSlug)
 		if err != nil {
 			app.serverError(w, r, err)
@@ -134,7 +138,7 @@ func (app *application) setup(w http.ResponseWriter, r *http.Request) {
 		"organization": org,
 	}
 
-	app.logInfo(r, "instance setup completed", slog.Int64("account_id", account.ID), slog.Int64("org_id", org.ID), slog.String("org_slug", org.Slug), slog.String("access_mode", app.config.AccessMode))
+	app.logInfo(r, "instance setup completed", slog.Int64("account_id", account.ID), slog.Int64("org_id", org.ID), slog.String("org_slug", org.Slug), slog.String("mode", string(app.config.Mode)))
 	err = response.JSON(w, http.StatusCreated, body)
 	if err != nil {
 		app.serverError(w, r, err)
@@ -195,8 +199,9 @@ func (app *application) setupStatus(w http.ResponseWriter, r *http.Request) {
 	}
 
 	err = response.JSON(w, http.StatusOK, map[string]any{
-		"configured":  configured,
-		"access_mode": app.config.AccessMode,
+		"configured":   configured,
+		"mode":         app.config.Mode,
+		"capabilities": app.config.productCapabilities(),
 	})
 	if err != nil {
 		app.serverError(w, r, err)

@@ -86,7 +86,7 @@ func TestRotateEncryptionKeys(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	staleConn, err := app.db.InsertConnection(ctx, ws.ID, &env.ID, "stale", "postgres", staleCipher, "open")
+	staleConn, err := app.db.InsertConnection(ctx, ws.ID, &env.ID, "stale", "postgres", staleCipher)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -97,7 +97,7 @@ func TestRotateEncryptionKeys(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	freshConn, err := app.db.InsertConnection(ctx, ws.ID, &env.ID, "fresh", "sqlite", freshCipher, "open")
+	freshConn, err := app.db.InsertConnection(ctx, ws.ID, &env.ID, "fresh", "sqlite", freshCipher)
 	if err != nil {
 		t.Fatal(err)
 	}

@@ -54,7 +54,7 @@ func TestWorkspaceCRUD(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if _, err = db.InsertConnection(context.Background(), ws.ID, &env.ID, "Primary", "postgres", "dsn", "open"); err != nil {
+	if _, err = db.InsertConnection(context.Background(), ws.ID, &env.ID, "Primary", "postgres", "dsn"); err != nil {
 		t.Fatal(err)
 	}
 
@@ -162,11 +162,11 @@ func TestDeleteWorkspace_RemovesDependentResourcesRolesPoliciesAndHierarchy(t *t
 				t.Fatal(err)
 			}
 
-			defaultConn, err := db.InsertConnection(ctx, ws.ID, &defaultEnvID, "Default Connection", "postgres", "dsn", "open")
+			defaultConn, err := db.InsertConnection(ctx, ws.ID, &defaultEnvID, "Default Connection", "postgres", "dsn")
 			if err != nil {
 				t.Fatal(err)
 			}
-			extraConn, err := db.InsertConnection(ctx, ws.ID, &extraEnv.ID, "Staging Connection", "postgres", "dsn", "open")
+			extraConn, err := db.InsertConnection(ctx, ws.ID, &extraEnv.ID, "Staging Connection", "postgres", "dsn")
 			if err != nil {
 				t.Fatal(err)
 			}

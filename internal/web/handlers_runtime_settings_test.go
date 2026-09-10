@@ -367,7 +367,7 @@ func TestOrganizationRuntimeSettingsQueryHistoryRowsRemainFlag(t *testing.T) {
 		settings.QueryHistoryMode = "backend"
 	})
 	envID := defaultEnvironmentID(t, app, ws.ID)
-	conn := seedConnection(t, app, ws.ID, &envID, org.ID, "sqlite", "Rows Remain Conn", "open")
+	conn := seedConnection(t, app, ws.ID, &envID, org.ID, "sqlite", "Rows Remain Conn")
 
 	_, err := app.db.InsertQueryHistoryEntry(context.Background(), database.QueryHistoryEntry{
 		ConnectionID: conn.ID,
@@ -395,7 +395,7 @@ func TestPurgeOrganizationQueryHistory(t *testing.T) {
 		settings.QueryHistoryMode = "backend"
 	})
 	envID := defaultEnvironmentID(t, app, ws.ID)
-	conn := seedConnection(t, app, ws.ID, &envID, org.ID, "sqlite", "Purge History Conn", "open")
+	conn := seedConnection(t, app, ws.ID, &envID, org.ID, "sqlite", "Purge History Conn")
 
 	_, err := app.db.InsertQueryHistoryEntry(context.Background(), database.QueryHistoryEntry{
 		ConnectionID: conn.ID,

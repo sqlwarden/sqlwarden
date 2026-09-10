@@ -28,6 +28,7 @@ import { ConnectionTlsFields } from './ConnectionTlsFields'
 import { DriverFields, FormField, ShowSystemSchemasField } from './ConnectionFormFields'
 import { DriverBadge } from './DriverBadge'
 import { useConnectionForm } from './useConnectionForm'
+import { useSetupStatus } from '#/hooks/use-setup-status'
 
 // ─── Types ─────────────────────────────────────────────────────────────────────
 
@@ -41,6 +42,9 @@ type Props = {
   environments: Environment[]
   /** When set, the environment is pre-selected and the dropdown is locked. */
   lockedEnvironmentId?: number
+  initialDriverId?: string
+  initialFields?: Record<string, string>
+  initialName?: string
 }
 
 export function ConnectionDialog({
@@ -50,7 +54,14 @@ export function ConnectionDialog({
   workspaceId,
   environments,
   lockedEnvironmentId,
+  initialDriverId,
+  initialFields,
+  initialName,
 }: Props) {
+  const setup = useSetupStatus()
+  const availableDrivers = drivers.filter(
+    (driver) => driver.id !== 'sqlite' || setup.data?.capabilities.local_sqlite_files === true,
+  )
   const form = useConnectionForm({
     open,
     onOpenChange,
@@ -58,6 +69,9 @@ export function ConnectionDialog({
     workspaceId,
     environments,
     lockedEnvironmentId,
+    initialDriverId,
+    initialFields,
+    initialName,
   })
 
   function handleSubmit(e: React.FormEvent) {
@@ -78,7 +92,7 @@ export function ConnectionDialog({
         <form onSubmit={handleSubmit} className="flex flex-col">
           <div className="flex max-h-[min(680px,calc(100svh-10rem))] flex-col gap-4 overflow-y-auto px-1 pb-1 -mx-1">
             {form.stage === 'driver' ? (
-              <DriverGallery onPick={form.pickDriver} />
+              <DriverGallery drivers={availableDrivers} onPick={form.pickDriver} />
             ) : (
               <>
                 {/* Selected driver summary — one click back to the gallery. */}
@@ -246,10 +260,16 @@ export function ConnectionDialog({
 
 // ─── Driver gallery ─────────────────────────────────────────────────────────────
 
-function DriverGallery({ onPick }: { onPick: (driverId: string) => void }) {
+function DriverGallery({
+  drivers: availableDrivers,
+  onPick,
+}: {
+  drivers: typeof drivers
+  onPick: (driverId: string) => void
+}) {
   const [search, setSearch] = useState('')
   const q = search.trim().toLowerCase()
-  const filtered = drivers.filter(
+  const filtered = availableDrivers.filter(
     (d) =>
       !q ||
       d.label.toLowerCase().includes(q) ||

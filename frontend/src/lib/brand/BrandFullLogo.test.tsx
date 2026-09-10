@@ -1,6 +1,6 @@
 import { render } from '@testing-library/react'
 import { describe, expect, it } from 'vitest'
-import { BrandFullLogo } from './BrandFullLogo'
+import { BrandColorLockup, BrandFullLogo } from './BrandFullLogo'
 
 describe('BrandFullLogo', () => {
   it('renders an inline svg with a height matching the size prop', () => {
@@ -27,5 +27,26 @@ describe('BrandFullLogo', () => {
     const { container } = render(<BrandFullLogo />)
     const svg = container.querySelector('svg')
     expect(svg).toHaveAttribute('fill', 'currentColor')
+  })
+})
+
+describe('BrandColorLockup', () => {
+  it('renders the blue mark without a background and keeps the wordmark theme-aware', () => {
+    const { container } = render(<BrandColorLockup size={28} />)
+
+    expect(container.querySelector('rect')).toBeNull()
+    expect(container.querySelector('[data-brand-mark]')).toHaveAttribute(
+      'fill',
+      'var(--brand-solid)',
+    )
+    expect(container.querySelector('g')).not.toHaveAttribute('fill')
+    expect(container.querySelector('svg')).toHaveAttribute('fill', 'currentColor')
+  })
+
+  it('keeps the monochrome lockup entirely current-color', () => {
+    const { container } = render(<BrandFullLogo />)
+
+    expect(container.querySelector('rect')).toBeNull()
+    expect(container.querySelector('[data-brand-mark]')).toHaveAttribute('fill', 'currentColor')
   })
 })

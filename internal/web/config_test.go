@@ -22,11 +22,8 @@ func TestLoadConfigDefaults(t *testing.T) {
 	if cfg.HTTPPort != defaultHTTPPort {
 		t.Fatalf("httpPort = %d, want %d", cfg.HTTPPort, defaultHTTPPort)
 	}
-	if cfg.DeploymentMode != DeploymentModeServer {
-		t.Fatalf("deploymentMode = %q, want %q", cfg.DeploymentMode, DeploymentModeServer)
-	}
-	if cfg.AccessMode != AccessModeMultiUser {
-		t.Fatalf("accessMode = %q, want %q", cfg.AccessMode, AccessModeMultiUser)
+	if cfg.Mode != ModeServer {
+		t.Fatalf("mode = %q, want %q", cfg.Mode, ModeServer)
 	}
 	if cfg.Log.Format != LogFormatJSON {
 		t.Fatalf("unexpected log config: %+v", cfg.Log)
@@ -44,9 +41,6 @@ func TestLoadConfigDefaults(t *testing.T) {
 	if !cfg.DB.Automigrate {
 		t.Fatal("expected db.automigrate to default to true")
 	}
-	if cfg.Desktop.ActiveBackend != "local" {
-		t.Fatalf("desktop.active_backend = %q, want local", cfg.Desktop.ActiveBackend)
-	}
 	if cfg.Files.StorageMode != FilesStorageModeObject || cfg.Files.ActiveStorageBackend != "local" {
 		t.Fatalf("unexpected default file config: %+v", cfg.Files)
 	}
@@ -57,9 +51,6 @@ func TestLoadConfigDefaults(t *testing.T) {
 	if cfg.Files.StorageBackends["local"].Type != FilesStorageBackendFilesystem || cfg.Files.StorageBackends["local"].RootDir != defaultFilesRoot {
 		t.Fatalf("unexpected default storage backends: %+v", cfg.Files.StorageBackends)
 	}
-	if len(cfg.Desktop.Backends) != 1 || cfg.Desktop.Backends[0].ID != "local" || cfg.Desktop.Backends[0].Kind != DesktopBackendKindLocal {
-		t.Fatalf("unexpected default desktop backends: %+v", cfg.Desktop.Backends)
-	}
 }
 
 func TestLoadConfigDefaultsHaveNoPreviousEncryptionKeys(t *testing.T) {
@@ -69,6 +60,20 @@ func TestLoadConfigDefaultsHaveNoPreviousEncryptionKeys(t *testing.T) {
 	}
 	if len(cfg.Encryption.PreviousKeys) != 0 {
 		t.Fatalf("expected no previous keys by default, got %v", cfg.Encryption.PreviousKeys)
+	}
+}
+
+func TestLoadConfigDoesNotAcceptModeFromEnvironment(t *testing.T) {
+	t.Setenv("MODE", string(ModeDesktop))
+	t.Setenv("DEPLOYMENT_MODE", string(ModeDesktop))
+	t.Setenv("ACCESS_MODE", "single_user")
+
+	cfg, _, err := loadConfig(nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if cfg.Mode != ModeServer {
+		t.Fatalf("mode = %q, want executable-owned default %q", cfg.Mode, ModeServer)
 	}
 }
 
@@ -239,8 +244,9 @@ db:
 
 func TestLoadConfigRejectsInternalRuntimeFlags(t *testing.T) {
 	for _, args := range [][]string{
-		{"--deployment-mode", DeploymentModeDesktop},
-		{"--access-mode", AccessModeSingleUser},
+		{"--mode", string(ModeDesktop)},
+		{"--deployment-mode", string(ModeDesktop)},
+		{"--access-mode", "single_user"},
 		{"--desktop-mode"},
 		{"--desktop-active-backend", "local"},
 		{"--files-storage-mode", FilesStorageModeFile},

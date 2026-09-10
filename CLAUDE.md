@@ -87,9 +87,9 @@ Configuration uses spf13/viper through `internal/web`.
 - Supports config file, environment variables, and CLI flags.
 - Default SQLite app DB path is `~/.sqlwarden/sqlwarden.db`.
 - Default file storage path is `~/.sqlwarden/files`.
-- `deployment_mode` is runtime packaging/context.
-- `access_mode` is account/authorization behavior.
-- Single-user mode seeds a local org and normal RBAC policies; it is not an authz bypass.
+- Runtime behavior has one executable-owned `mode`: `server` for `cmd/api` and `desktop` for
+  `cmd/desktop`. It is not a user-configurable setting.
+- Desktop mode seeds a local org and normal RBAC policies; it is not an authz bypass.
 
 ## Backend Conventions
 

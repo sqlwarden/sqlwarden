@@ -37,6 +37,9 @@ export function useConnectionForm({
   workspaceId,
   environments,
   lockedEnvironmentId,
+  initialDriverId,
+  initialFields,
+  initialName,
 }: {
   open: boolean
   onOpenChange: (open: boolean) => void
@@ -44,6 +47,9 @@ export function useConnectionForm({
   workspaceId: number
   environments: Environment[]
   lockedEnvironmentId?: number
+  initialDriverId?: string
+  initialFields?: Record<string, string>
+  initialName?: string
 }) {
   const queryClient = useQueryClient()
   const [stage, setStage] = useState<ConnectionFormStage>('driver')
@@ -66,12 +72,29 @@ export function useConnectionForm({
 
   useEffect(() => {
     if (!open) return
+    if (initialDriverId) {
+      const definition = driverMap.get(initialDriverId)
+      if (definition) {
+        setDriverId(initialDriverId)
+        setFields({ ...defaultFieldValues(definition), ...initialFields })
+        setName(initialName ?? '')
+        setStage('form')
+      }
+    }
     if (lockedEnvironmentId) {
       setEnvironmentId(String(lockedEnvironmentId))
     } else if (environments.length > 0 && !environmentId) {
       setEnvironmentId(String(environments[0].id))
     }
-  }, [open, environments, environmentId, lockedEnvironmentId])
+  }, [
+    open,
+    environments,
+    environmentId,
+    lockedEnvironmentId,
+    initialDriverId,
+    initialFields,
+    initialName,
+  ])
 
   function pickDriver(nextDriverId: string) {
     const definition = driverMap.get(nextDriverId)
@@ -260,7 +283,6 @@ export function useConnectionForm({
         driver: driverId,
         dsn: buildDSN(),
         environment_id: Number(environmentId),
-        access_mode: 'open',
         default_scope: defaultScope,
         show_system_schemas: showSystemSchemas,
         tls: tlsStateToPayload(tls),

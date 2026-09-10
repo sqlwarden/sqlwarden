@@ -36,16 +36,20 @@ import { Skeleton } from '#/components/ui/skeleton'
 import { cn } from '#/lib/utils'
 import { usePageTitle } from '#/lib/page-title'
 import { NavigateToLogin } from '#/components/auth/NavigateToLogin'
+import { useDesktopRuntime } from '#/lib/desktop/context'
 
 export const Route = createFileRoute('/')({ component: LandingPage })
 
 function LandingPage() {
   usePageTitle('Organizations')
   const setupStatus = useSetupStatus()
+  const desktop = useDesktopRuntime()
   const brand = useBrand()
   const hasToken = Boolean(getAccessToken())
   const session = useSession(hasToken)
+  const nativeShell = setupStatus.data?.capabilities.native_shell === true
   const shouldLoadOrganizations = Boolean(
+    !nativeShell &&
     hasToken &&
     session.data &&
     (session.data.personal_spaces_enabled || session.data.organizations.length !== 1),
@@ -81,6 +85,15 @@ function LandingPage() {
     return <NavigateToLogin />
   }
 
+  if (nativeShell) {
+    const orgSlug = desktop.session?.identity.org_slug ?? session.data.organizations[0]?.slug
+    return orgSlug ? (
+      <Navigate to="/ide/$org_slug" params={{ org_slug: orgSlug }} replace />
+    ) : (
+      <LandingLoading />
+    )
+  }
+
   if (!session.data.personal_spaces_enabled && session.data.organizations.length === 1) {
     return (
       <Navigate
@@ -99,7 +112,7 @@ function LandingPage() {
     <main className="mx-auto flex min-h-svh w-full max-w-5xl flex-col gap-8 px-4 py-8 md:px-6">
       <div className="flex items-center justify-between gap-4">
         <Link to="/" className="flex items-center text-sm font-semibold tracking-tight">
-          <brand.LogoLockup size={28} />
+          <brand.LogoColorLockup size={28} />
         </Link>
         <LandingUserMenu session={session.data} />
       </div>

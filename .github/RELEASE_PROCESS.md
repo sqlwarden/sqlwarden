@@ -15,7 +15,13 @@
    - Uploads artifacts to GitHub releases
    - Generates checksums and SBOMs
 
-3. **`.github/workflows/conventional-commits.yml`**
+3. **`.github/workflows/desktop-release.yml`**
+   - Triggered by the same version tags as the server release
+   - Builds signed Windows and notarized macOS packages plus Linux desktop packages
+   - Uploads desktop artifacts only after every native job passes
+   - Generates desktop checksums, release metadata, and provenance attestations
+
+4. **`.github/workflows/conventional-commits.yml`**
    - Runs on all pull requests
    - Validates commit messages and PR titles
    - Blocks merge if commits don't follow conventional format
@@ -27,9 +33,14 @@
 - **`.release-please-manifest.json`**: Current version tracker (starts at 0.1.0)
 - **`.commitlintrc.json`**: Commit message linting rules
 
+While SQLWarden is below `1.0.0`, fixes and features increment the patch
+version. Breaking changes increment the minor version. Mark a breaking change
+with `type(scope)!: description` or a `BREAKING CHANGE:` commit footer.
+
 ### Documentation
 
 - **`CONTRIBUTING.md`**: Complete guide to conventional commits and release process
+- **`.github/DESKTOP_RELEASE.md`**: Desktop signing credentials, verification, and recovery
 
 ### Code Changes
 
@@ -63,6 +74,7 @@
    - Tag creation (e.g., `v0.2.0`)
    - GitHub release creation
    - GoReleaser builds binaries for all platforms
+   - The desktop workflow builds and verifies signed native packages
    - Artifacts uploaded to release
 
 ### Commit Types & Version Bumps

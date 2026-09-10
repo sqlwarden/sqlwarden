@@ -72,7 +72,7 @@ func TestCompletionIndexReturnsProjectedSchema(t *testing.T) {
 	owner, token, org := seedOrgOwner(t, app, uniqueEmail(t, "completion-index"), "Index", "Index Org")
 	ws := seedWorkspaceForAccount(t, app, org, owner, "Index WS", "")
 	envID := defaultEnvironmentID(t, app, ws.ID)
-	conn := seedConnection(t, app, ws.ID, &envID, org.ID, "postgres", "Index DB", "open")
+	conn := seedConnection(t, app, ws.ID, &envID, org.ID, "postgres", "Index DB")
 
 	scope := metadata.NewScopePath(
 		metadata.ScopeSegment{Kind: "database", Name: "app"},
@@ -145,7 +145,7 @@ func TestCompletionIndexPendingSnapshotReturns202(t *testing.T) {
 	owner, token, org := seedOrgOwner(t, app, uniqueEmail(t, "completion-index-pending"), "Index", "Index Org")
 	ws := seedWorkspaceForAccount(t, app, org, owner, "Index WS", "")
 	envID := defaultEnvironmentID(t, app, ws.ID)
-	conn := seedConnection(t, app, ws.ID, &envID, org.ID, "postgres", "Index DB", "open")
+	conn := seedConnection(t, app, ws.ID, &envID, org.ID, "postgres", "Index DB")
 
 	req := newAuthRequest(t, http.MethodGet, completionIndexURL(org.Slug, ws.ID, envID, conn.ID), nil, token)
 	res := send(t, req, app.routes())
@@ -159,8 +159,8 @@ func TestCompletionIndexRejectsForeignSession(t *testing.T) {
 	owner, token, org := seedOrgOwner(t, app, uniqueEmail(t, "completion-index-scope"), "Index", "Index Org")
 	ws := seedWorkspaceForAccount(t, app, org, owner, "Index WS", "")
 	envID := defaultEnvironmentID(t, app, ws.ID)
-	target := seedConnection(t, app, ws.ID, &envID, org.ID, "postgres", "Target", "open")
-	other := seedConnection(t, app, ws.ID, &envID, org.ID, "postgres", "Other", "open")
+	target := seedConnection(t, app, ws.ID, &envID, org.ID, "postgres", "Target")
+	other := seedConnection(t, app, ws.ID, &envID, org.ID, "postgres", "Other")
 	disableSchemaSnapshots(t, app, target.ID)
 	session := openSchemaSession(t, app, owner.ID, other.ID, schemaFakeDriver{})
 

@@ -2,35 +2,21 @@ import { errorMessage } from '#/lib/api/errors'
 import { useOrganizationPageTitle } from '#/lib/page-title'
 import { trimTrailingSlash } from '#/lib/utils'
 import { useEffect, useState } from 'react'
-import { queryKeys } from '#/lib/api/query-keys'
-import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
+import { useQuery } from '@tanstack/react-query'
 import { Link, Outlet, createFileRoute, useNavigate, useRouterState } from '@tanstack/react-router'
 import { Icon } from '#/lib/icons'
 import { toast } from 'sonner'
 import { useListPageState } from '#/hooks/use-list-page-state'
-import { api } from '#/lib/api/client'
-import { isApiError } from '#/lib/api/errors'
 import { orgEffectivePermissionsQueryOptions, orgWorkspacesQueryOptions } from '#/lib/api/query'
-import type { Workspace } from '#/lib/api/types'
 import { hasPermission, permission } from '#/lib/permissions'
 import { Button } from '#/components/ui/button'
 import { Card, CardContent } from '#/components/ui/card'
-import {
-  Dialog,
-  DialogClose,
-  DialogContent,
-  DialogDescription,
-  DialogFooter,
-  DialogHeader,
-  DialogTitle,
-  DialogTrigger,
-} from '#/components/ui/dialog'
-import { Input } from '#/components/ui/input'
 import { EmptyState } from '#/components/EmptyState'
 import { PaginationFooter } from '#/components/PaginationFooter'
 import { RoutePending } from '#/components/RoutePending'
 import { SearchInput } from '#/components/SearchInput'
 import { Skeleton } from '#/components/ui/skeleton'
+import { CreateWorkspaceDialog } from '#/components/workspaces/CreateWorkspaceDialog'
 
 export const Route = createFileRoute('/orgs/$org_slug/workspaces')({
   component: OrganizationWorkspacesRoute,
@@ -52,14 +38,7 @@ function OrganizationWorkspacesRoute() {
 function OrganizationWorkspacesPage({ orgSlug }: { orgSlug: string }) {
   useOrganizationPageTitle('Workspaces')
   const navigate = useNavigate()
-  const queryClient = useQueryClient()
   const [isCreating, setIsCreating] = useState(false)
-  const [newWorkspaceName, setNewWorkspaceName] = useState('')
-  const [newWorkspaceDescription, setNewWorkspaceDescription] = useState('')
-  const [createFieldErrors, setCreateFieldErrors] = useState<{
-    name?: string
-    description?: string
-  }>({})
   const { query, searchText, setSearchText, clearSearch, setPage, setPageSize } = useListPageState({
     page: 1,
     page_size: 12,
@@ -97,57 +76,6 @@ function OrganizationWorkspacesPage({ orgSlug }: { orgSlug: string }) {
     toast.error(errorMessage(effectivePermissions.error, 'Failed to load workspace permissions'))
   }, [effectivePermissions.error])
 
-  const createWorkspace = useMutation({
-    mutationFn: async () =>
-      api.post<Workspace>(`/api/v1/orgs/${orgSlug}/workspaces`, {
-        name: newWorkspaceName.trim(),
-        description: newWorkspaceDescription.trim(),
-      }),
-    onSuccess: async (workspace) => {
-      setIsCreating(false)
-      setNewWorkspaceName('')
-      setNewWorkspaceDescription('')
-      setCreateFieldErrors({})
-      toast.success('Workspace created')
-      await queryClient.invalidateQueries({ queryKey: queryKeys.orgWorkspacesScope(orgSlug) })
-      await navigate({
-        to: '/orgs/$org_slug/workspaces/$workspace_id',
-        params: { org_slug: orgSlug, workspace_id: String(workspace.id) },
-      })
-    },
-    onError: (error) => {
-      if (isApiError(error)) {
-        setCreateFieldErrors({
-          name: error.fieldErrors?.name,
-          description: error.fieldErrors?.description,
-        })
-        if (!error.fieldErrors?.name && !error.fieldErrors?.description) {
-          toast.error(error.message)
-        }
-        return
-      }
-      toast.error(errorMessage(error, 'Failed to create workspace'))
-    },
-  })
-
-  function resetCreateWorkspace() {
-    setNewWorkspaceName('')
-    setNewWorkspaceDescription('')
-    setCreateFieldErrors({})
-  }
-
-  function submitCreateWorkspace(event: React.FormEvent<HTMLFormElement>) {
-    event.preventDefault()
-
-    if (!newWorkspaceName.trim()) {
-      setCreateFieldErrors({ name: 'Workspace name is required.' })
-      return
-    }
-
-    setCreateFieldErrors({})
-    void createWorkspace.mutateAsync().catch(() => {})
-  }
-
   return (
     <div className="flex flex-col gap-8">
       <div className="flex flex-col gap-3">
@@ -162,76 +90,23 @@ function OrganizationWorkspacesPage({ orgSlug }: { orgSlug: string }) {
           </div>
 
           {canCreateWorkspace ? (
-            <Dialog
-              open={isCreating}
-              onOpenChange={(open) => {
-                setIsCreating(open)
-                if (!open) {
-                  resetCreateWorkspace()
-                }
-              }}
-            >
-              <DialogTrigger render={<Button />}>
+            <>
+              <Button onClick={() => setIsCreating(true)}>
                 <Icon name="plus-sign" size={20} data-icon="inline-start" />
                 Create
-              </DialogTrigger>
-              <DialogContent>
-                <DialogHeader>
-                  <DialogTitle>Create workspace</DialogTitle>
-                  <DialogDescription>Add a workspace to this organization.</DialogDescription>
-                </DialogHeader>
-                <form className="mt-6 flex flex-col gap-4" onSubmit={submitCreateWorkspace}>
-                  <div className="flex flex-col gap-2">
-                    <Input
-                      value={newWorkspaceName}
-                      onChange={(event) => {
-                        setNewWorkspaceName(event.target.value)
-                        setCreateFieldErrors((current) => ({ ...current, name: undefined }))
-                      }}
-                      placeholder="Workspace name"
-                      aria-invalid={createFieldErrors.name ? true : undefined}
-                      disabled={createWorkspace.isPending}
-                    />
-                    {createFieldErrors.name ? (
-                      <p className="text-sm text-destructive">{createFieldErrors.name}</p>
-                    ) : null}
-                  </div>
-
-                  <div className="flex flex-col gap-2">
-                    <Input
-                      value={newWorkspaceDescription}
-                      onChange={(event) => {
-                        setNewWorkspaceDescription(event.target.value)
-                        setCreateFieldErrors((current) => ({ ...current, description: undefined }))
-                      }}
-                      placeholder="Description optional"
-                      aria-invalid={createFieldErrors.description ? true : undefined}
-                      disabled={createWorkspace.isPending}
-                    />
-                    {createFieldErrors.description ? (
-                      <p className="text-sm text-destructive">{createFieldErrors.description}</p>
-                    ) : null}
-                  </div>
-
-                  <DialogFooter>
-                    <DialogClose
-                      render={
-                        <Button
-                          type="button"
-                          variant="ghost"
-                          disabled={createWorkspace.isPending}
-                        />
-                      }
-                    >
-                      Cancel
-                    </DialogClose>
-                    <Button type="submit" disabled={createWorkspace.isPending}>
-                      {createWorkspace.isPending ? 'Creating...' : 'Create'}
-                    </Button>
-                  </DialogFooter>
-                </form>
-              </DialogContent>
-            </Dialog>
+              </Button>
+              <CreateWorkspaceDialog
+                orgSlug={orgSlug}
+                open={isCreating}
+                onOpenChange={setIsCreating}
+                onCreated={(workspace) =>
+                  navigate({
+                    to: '/orgs/$org_slug/workspaces/$workspace_id',
+                    params: { org_slug: orgSlug, workspace_id: String(workspace.id) },
+                  })
+                }
+              />
+            </>
           ) : null}
         </div>
 

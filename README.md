@@ -9,6 +9,7 @@ SQLWarden is pre-1.0. The API and database schema may change while the project i
 ## Features
 
 - Self-hosted server with an embedded web UI.
+- Native single-user desktop application built with Wails.
 - Organization, workspace, environment, connection, user, team, role, and policy management.
 - Custom additive RBAC with effective permissions APIs for frontend capability checks.
 - Workspace and personal-space models for team and individual database work.
@@ -35,6 +36,18 @@ make build
 ```
 
 Open `http://localhost:6020` and complete first-run setup.
+
+For desktop development, install the platform dependencies required by Wails, then run:
+
+```sh
+make desktop/dev
+```
+
+The desktop application creates a protected local installation automatically. It seeds its local
+identity and organization without exposing server setup or login screens; the editor then guides the
+user to create their first workspace. Use `make desktop/build` to produce a native development build.
+Storage, backup, restore, and uninstall behavior is documented in
+[Desktop operations](docs/desktop.md).
 
 For development with API query logging enabled:
 
@@ -125,11 +138,13 @@ make hooks/install
 ```text
 assets/                       Embedded migrations, email templates, and frontend build output
 cmd/api/                      Server entrypoint
+cmd/desktop/                  Wails desktop entrypoint and native bridge
 docs/                         Architecture and operator documentation
 frontend/                     React application
 internal/access/              RBAC permissions, roles, policies, and enforcer
 internal/connection/          Live target database sessions
 internal/database/            Bun models and database setup
+internal/desktop/             Native data paths and protected desktop configuration
 internal/driver/              Target database driver abstraction
 internal/files/               Workspace file service
 internal/filestore/           File content storage backend

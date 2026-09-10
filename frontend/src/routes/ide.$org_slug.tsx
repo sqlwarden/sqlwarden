@@ -2,7 +2,7 @@ import { useEffect, useState } from 'react'
 import { Navigate, createFileRoute } from '@tanstack/react-router'
 import { useQuery } from '@tanstack/react-query'
 import {
-  NoWorkspaceAccess,
+  WorkspaceEmptyState,
   WorkspaceIdeSkeleton,
   WorkspaceLoadError,
 } from '#/components/ide/WorkspaceIde'
@@ -36,10 +36,24 @@ function IdeOrgRedirect() {
   if (!hasToken || !session.data) {
     return <NavigateToLogin />
   }
-  return <ResolveDefaultWorkspace orgSlug={orgSlug} accountId={session.data.account.id} />
+  return (
+    <ResolveDefaultWorkspace
+      orgSlug={orgSlug}
+      accountId={session.data.account.id}
+      nativeShell={setupStatus.data?.capabilities.native_shell === true}
+    />
+  )
 }
 
-function ResolveDefaultWorkspace({ orgSlug, accountId }: { orgSlug: string; accountId: number }) {
+function ResolveDefaultWorkspace({
+  orgSlug,
+  accountId,
+  nativeShell,
+}: {
+  orgSlug: string
+  accountId: number
+  nativeShell: boolean
+}) {
   const workspaces = useQuery(
     orgWorkspacesQueryOptions(orgSlug, { page_size: 100, sort: 'name', order: 'asc' }),
   )
@@ -60,7 +74,7 @@ function ResolveDefaultWorkspace({ orgSlug, accountId }: { orgSlug: string; acco
   }
   const items = workspaces.data?.items ?? []
   if (items.length === 0) {
-    return <NoWorkspaceAccess />
+    return <WorkspaceEmptyState orgSlug={orgSlug} nativeShell={nativeShell} />
   }
 
   const target = items.find((workspace) => workspace.id === lastActiveId) ?? items[0]

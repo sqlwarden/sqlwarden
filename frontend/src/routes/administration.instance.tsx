@@ -1173,7 +1173,7 @@ function DeploymentConfiguration({
                 label="TLS enabled"
                 value={configuration.tls_enabled ? 'Yes' : 'No'}
               />
-              <ConfigurationRow label="Deployment mode" value={configuration.deployment_mode} />
+              <ConfigurationRow label="Mode" value={configuration.mode} />
             </dl>
           </CardContent>
         </Card>
@@ -1185,7 +1185,6 @@ function DeploymentConfiguration({
           </CardHeader>
           <CardContent>
             <dl className="flex flex-col">
-              <ConfigurationRow label="Access mode" value={configuration.access_mode} />
               <ConfigurationRow label="Log format" value={configuration.log_format} />
             </dl>
           </CardContent>

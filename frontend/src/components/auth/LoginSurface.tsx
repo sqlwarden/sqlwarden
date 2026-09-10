@@ -27,7 +27,7 @@ export function LoginSurface({
         <ThemeSelector />
       </div>
 
-      <brand.LogoLockup size={28} className="mb-7 text-foreground" />
+      <brand.LogoColorLockup size={28} className="mb-7 text-foreground" />
 
       <div
         className={cn(
