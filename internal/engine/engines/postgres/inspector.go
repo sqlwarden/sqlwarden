@@ -17,13 +17,13 @@ func (d *Driver) SchemaSpec() metadata.SchemaSpec {
 	return metadata.SchemaSpec{
 		Dialect: "postgres",
 		Kinds: []metadata.SchemaObjectKind{
-			{Kind: "table", Label: "Table", PluralLabel: "Tables", Order: 1, Relational: true, SupportsDiagram: true, Listing: "enumerated"},
-			{Kind: "view", Label: "View", PluralLabel: "Views", Order: 2, Relational: true, SupportsDiagram: true, Listing: "enumerated"},
-			{Kind: "materialized_view", Label: "Materialized View", PluralLabel: "Materialized Views", Order: 3, Relational: true, SupportsDiagram: false, Listing: "enumerated"},
-			{Kind: "function", Label: "Function", PluralLabel: "Functions", Order: 4, Relational: false, SupportsDiagram: false, Listing: "enumerated"},
-			{Kind: "sequence", Label: "Sequence", PluralLabel: "Sequences", Order: 5, Relational: false, SupportsDiagram: false, Listing: "enumerated"},
-			{Kind: "procedure", Label: "Procedure", PluralLabel: "Procedures", Order: 6, Relational: false, SupportsDiagram: false, Listing: "enumerated"},
-			{Kind: "trigger", Label: "Trigger", PluralLabel: "Triggers", Order: 7, Relational: false, SupportsDiagram: false, Listing: "enumerated"},
+			{Kind: "table", Label: "Table", PluralLabel: "Tables", Order: 1, Relational: true, SupportsDiagram: true, Listing: "enumerated", HasDefinition: true},
+			{Kind: "view", Label: "View", PluralLabel: "Views", Order: 2, Relational: true, SupportsDiagram: true, Listing: "enumerated", HasDefinition: true},
+			{Kind: "materialized_view", Label: "Materialized View", PluralLabel: "Materialized Views", Order: 3, Relational: true, SupportsDiagram: false, Listing: "enumerated", HasDefinition: true},
+			{Kind: "function", Label: "Function", PluralLabel: "Functions", Order: 4, Relational: false, SupportsDiagram: false, Listing: "enumerated", HasDefinition: true},
+			{Kind: "sequence", Label: "Sequence", PluralLabel: "Sequences", Order: 5, Relational: false, SupportsDiagram: false, Listing: "enumerated", HasDefinition: true},
+			{Kind: "procedure", Label: "Procedure", PluralLabel: "Procedures", Order: 6, Relational: false, SupportsDiagram: false, Listing: "enumerated", HasDefinition: true},
+			{Kind: "trigger", Label: "Trigger", PluralLabel: "Triggers", Order: 7, Relational: false, SupportsDiagram: false, Listing: "enumerated", HasDefinition: true},
 			{Kind: "type", Label: "Type", PluralLabel: "Types", Order: 8, Relational: false, SupportsDiagram: false, Listing: "enumerated"},
 			{Kind: "domain", Label: "Domain", PluralLabel: "Domains", Order: 9, Relational: false, SupportsDiagram: false, Listing: "enumerated"},
 			{Kind: "foreign_table", Label: "Foreign Table", PluralLabel: "Foreign Tables", Order: 10, Relational: true, SupportsDiagram: false, Listing: "enumerated"},
@@ -285,9 +285,11 @@ func (d *Driver) InspectObjects(ctx context.Context, refs []metadata.ObjectRef) 
 
 // InspectDefinition serves one object's canonical text definition on demand so
 // bulk InspectObjects (and every schema snapshot) skips the per-object cost:
-// table DDL is reconstructed from the catalog, views come from pg_get_viewdef,
-// and functions from pg_get_functiondef. Unsupported kinds, or an object that no
-// longer exists, yield a nil descriptor with a nil error. A compatible engine
+// table and sequence DDL are reconstructed from the catalog; views and
+// materialized views come from pg_get_viewdef, functions and procedures from
+// pg_get_functiondef, and triggers from pg_get_triggerdef. Unsupported kinds
+// (type, domain, foreign_table), or an object that no longer exists, yield a
+// nil descriptor with a nil error. A compatible engine
 // overrides this method to special-case a kind and delegate everything else to
 // this default via d.Driver.InspectDefinition(ctx, ref).
 func (d *Driver) InspectDefinition(ctx context.Context, ref metadata.ObjectRef) (*metadata.Descriptor, error) {
@@ -304,12 +306,36 @@ func (d *Driver) InspectDefinition(ctx context.Context, ref metadata.ObjectRef) 
 			return nil, err
 		}
 		return SourceDescriptor("Definition", "sql", def), nil
+	case "materialized_view":
+		def, err := MaterializedViewDefinition(ctx, d.db, ref)
+		if err != nil {
+			return nil, err
+		}
+		return SourceDescriptor("DDL", "sql", def), nil
 	case "function":
 		language, def, err := FunctionDefinition(ctx, d.db, ref)
 		if err != nil {
 			return nil, err
 		}
 		return SourceDescriptor("Definition", language, def), nil
+	case "procedure":
+		language, def, err := ProcedureDefinition(ctx, d.db, ref)
+		if err != nil {
+			return nil, err
+		}
+		return SourceDescriptor("Definition", language, def), nil
+	case "trigger":
+		def, err := TriggerDefinition(ctx, d.db, ref)
+		if err != nil {
+			return nil, err
+		}
+		return SourceDescriptor("Definition", "sql", def), nil
+	case "sequence":
+		def, err := SequenceDefinition(ctx, d.db, ref)
+		if err != nil {
+			return nil, err
+		}
+		return SourceDescriptor("DDL", "sql", def), nil
 	default:
 		return nil, nil
 	}

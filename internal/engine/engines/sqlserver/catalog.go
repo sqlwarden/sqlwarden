@@ -48,6 +48,109 @@ ORDER BY s.name, o.name`
 	return rows.Err()
 }
 
+// CatalogModules enumerates stored procedures, functions, and DML triggers in
+// the connection's current database, invoking add once per object with its
+// schema, name, and resolved kind ("procedure", "function", or "trigger").
+func CatalogModules(ctx context.Context, db *sql.DB, add func(schema, name, kind string)) error {
+	const stmt = `
+SELECT s.name AS schema_name, o.name AS object_name, o.type
+FROM sys.objects o
+JOIN sys.schemas s ON s.schema_id = o.schema_id
+WHERE o.type IN ('P', 'FN', 'IF', 'TF', 'TR') AND o.is_ms_shipped = 0
+ORDER BY s.name, o.name`
+	rows, err := db.QueryContext(ctx, stmt)
+	if err != nil {
+		return fmt.Errorf("sqlserver: catalog modules: %w", err)
+	}
+	defer rows.Close()
+	for rows.Next() {
+		var schema, name, objType string
+		if err := rows.Scan(&schema, &name, &objType); err != nil {
+			return fmt.Errorf("sqlserver: catalog modules scan: %w", err)
+		}
+		add(schema, name, sqlServerModuleKind(objType))
+	}
+	return rows.Err()
+}
+
+// sqlServerModuleKind maps a sys.objects.type code to a directory kind. FN
+// (scalar), IF (inline table-valued), and TF (multi-statement table-valued)
+// all collapse to "function".
+func sqlServerModuleKind(objType string) string {
+	switch strings.TrimSpace(objType) {
+	case "P":
+		return "procedure"
+	case "TR":
+		return "trigger"
+	default:
+		return "function"
+	}
+}
+
+// ModuleObjects returns a fields descriptor for each procedure/function/trigger
+// ref. The canonical T-SQL body is served on demand by InspectDefinition, so it
+// is deliberately not inlined here.
+func ModuleObjects(ctx context.Context, db *sql.DB, refs []metadata.ObjectRef) ([]metadata.Object, error) {
+	if len(refs) == 0 {
+		return nil, nil
+	}
+	values, args := sqlServerValuesFilter(refs)
+	q := `
+SELECT s.name, o.name, o.type, p.name
+FROM sys.objects o
+JOIN sys.schemas s ON s.schema_id = o.schema_id
+LEFT JOIN sys.objects p ON p.object_id = o.parent_object_id
+JOIN (VALUES ` + values + `) AS f(schema_name, object_name) ON f.schema_name = s.name AND f.object_name = o.name`
+	rows, err := db.QueryContext(ctx, q, args...)
+	if err != nil {
+		return nil, fmt.Errorf("sqlserver: module detail: %w", err)
+	}
+	defer rows.Close()
+	type moduleRow struct {
+		typ    string
+		parent sql.NullString
+	}
+	byName := make(map[string]moduleRow, len(refs))
+	for rows.Next() {
+		var schema, name, typ string
+		var parent sql.NullString
+		if err := rows.Scan(&schema, &name, &typ, &parent); err != nil {
+			return nil, fmt.Errorf("sqlserver: module detail scan: %w", err)
+		}
+		byName[schema+"\x00"+name] = moduleRow{typ: strings.TrimSpace(typ), parent: parent}
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("sqlserver: module detail rows: %w", err)
+	}
+	out := make([]metadata.Object, 0, len(refs))
+	for _, ref := range refs {
+		row, ok := byName[ref.Scope.Name("schema")+"\x00"+ref.Name]
+		if !ok {
+			continue
+		}
+		title := "Routine"
+		var fields []metadata.Field
+		switch row.typ {
+		case "TR":
+			title = "Trigger"
+			if row.parent.Valid {
+				fields = append(fields, metadata.Field{Name: "Table", Value: row.parent.String})
+			}
+		case "P":
+			fields = append(fields, metadata.Field{Name: "Type", Value: "Stored Procedure"})
+		case "FN":
+			fields = append(fields, metadata.Field{Name: "Type", Value: "Scalar Function"})
+		case "IF", "TF":
+			fields = append(fields, metadata.Field{Name: "Type", Value: "Table-Valued Function"})
+		}
+		out = append(out, metadata.Object{
+			Ref:         ref,
+			Descriptors: []metadata.Descriptor{{Kind: "fields", Title: title, Fields: fields}},
+		})
+	}
+	return out, nil
+}
+
 // sqlServerValuesFilter builds a T-SQL VALUES derived-table filter, since
 // SQL Server has no row-value IN clause ("WHERE (a,b) IN ((@p1,@p2),...)" is
 // not valid T-SQL, unlike MySQL/Postgres). Callers JOIN the result against

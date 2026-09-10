@@ -17,12 +17,12 @@ func (d *Driver) SchemaSpec() metadata.SchemaSpec {
 	return metadata.SchemaSpec{
 		Dialect: "mysql",
 		Kinds: []metadata.SchemaObjectKind{
-			{Kind: "table", Label: "Table", PluralLabel: "Tables", Order: 1, Relational: true, SupportsDiagram: true, Listing: "enumerated"},
-			{Kind: "view", Label: "View", PluralLabel: "Views", Order: 2, Relational: true, SupportsDiagram: true, Listing: "enumerated"},
-			{Kind: "function", Label: "Function", PluralLabel: "Functions", Order: 3, Relational: false, SupportsDiagram: false, Listing: "enumerated"},
-			{Kind: "procedure", Label: "Procedure", PluralLabel: "Procedures", Order: 4, Relational: false, SupportsDiagram: false, Listing: "enumerated"},
-			{Kind: "trigger", Label: "Trigger", PluralLabel: "Triggers", Order: 5, Relational: false, SupportsDiagram: false, Listing: "enumerated"},
-			{Kind: "event", Label: "Event", PluralLabel: "Events", Order: 6, Relational: false, SupportsDiagram: false, Listing: "enumerated"},
+			{Kind: "table", Label: "Table", PluralLabel: "Tables", Order: 1, Relational: true, SupportsDiagram: true, Listing: "enumerated", HasDefinition: true},
+			{Kind: "view", Label: "View", PluralLabel: "Views", Order: 2, Relational: true, SupportsDiagram: true, Listing: "enumerated", HasDefinition: true},
+			{Kind: "function", Label: "Function", PluralLabel: "Functions", Order: 3, Relational: false, SupportsDiagram: false, Listing: "enumerated", HasDefinition: true},
+			{Kind: "procedure", Label: "Procedure", PluralLabel: "Procedures", Order: 4, Relational: false, SupportsDiagram: false, Listing: "enumerated", HasDefinition: true},
+			{Kind: "trigger", Label: "Trigger", PluralLabel: "Triggers", Order: 5, Relational: false, SupportsDiagram: false, Listing: "enumerated", HasDefinition: true},
+			{Kind: "event", Label: "Event", PluralLabel: "Events", Order: 6, Relational: false, SupportsDiagram: false, Listing: "enumerated", HasDefinition: true},
 			{Kind: "index", Label: "Index", PluralLabel: "Indexes", Order: 7, Relational: false, SupportsDiagram: false, Listing: "enumerated"},
 			{Kind: "constraint", Label: "Constraint", PluralLabel: "Constraints", Order: 8, Relational: false, SupportsDiagram: false, Listing: "enumerated"},
 		},

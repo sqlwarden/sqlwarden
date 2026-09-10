@@ -21,6 +21,7 @@ func (d *driver) SchemaSpec() metadata.SchemaSpec {
 	spec.Kinds = append(spec.Kinds, metadata.SchemaObjectKind{
 		Kind: "sequence", Label: "Sequence", PluralLabel: "Sequences",
 		Order: len(spec.Kinds) + 1, Relational: false, SupportsDiagram: false, Listing: "enumerated",
+		HasDefinition: true,
 	})
 	return spec
 }

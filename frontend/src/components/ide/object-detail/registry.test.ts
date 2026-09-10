@@ -1,18 +1,36 @@
 import { describe, it, expect } from 'vitest'
 import { getObjectRenderer, type ObjectViewModel } from './registry'
 import { dialectFor } from '../sqlDialect'
-import type { ObjectDetail } from '#/lib/api/types'
+import type { ObjectDetail, SchemaSpec } from '#/lib/api/types'
 
-function vm(detail: ObjectDetail, driver = 'postgres'): ObjectViewModel {
+function vm(detail: ObjectDetail, driver = 'postgres', spec?: SchemaSpec): ObjectViewModel {
   return {
     detail,
     dialect: dialectFor(driver),
     driver,
-    spec: undefined,
+    spec,
     orgSlug: 'o',
     workspaceId: 1,
     connectionId: 1,
     sessionId: 's',
+  }
+}
+
+function kindSpec(kind: string, hasDefinition: boolean): SchemaSpec {
+  return {
+    dialect: 'postgres',
+    kinds: [
+      {
+        kind,
+        label: kind,
+        plural_label: `${kind}s`,
+        order: 1,
+        relational: false,
+        supports_diagram: false,
+        listing: 'enumerated',
+        has_definition: hasDefinition,
+      },
+    ],
   }
 }
 
@@ -97,7 +115,7 @@ describe('getObjectRenderer', () => {
     expect(check.cell(col)).toBe('id > 0')
   })
 
-  it('renders a single Overview section for non-relational objects without source', () => {
+  it('falls back to an on-demand DDL section for non-relational objects without source', () => {
     const fnDetail: ObjectDetail = {
       ref: { scope: [{ kind: 'schema', name: 'public' }], kind: 'function', name: 'f' },
       descriptors: [
@@ -108,7 +126,56 @@ describe('getObjectRenderer', () => {
       getObjectRenderer('postgres')
         .sections(vm(fnDetail))
         .map((s) => s.id),
-    ).toEqual(['overview'])
+    ).toEqual(['overview', 'ddl'])
+  })
+
+  it('gives a procedure with no inline source a lone DDL section', () => {
+    const procDetail: ObjectDetail = {
+      ref: { scope: [{ kind: 'schema', name: 'public' }], kind: 'procedure', name: 'p' },
+      descriptors: [
+        {
+          kind: 'fields',
+          title: 'Procedure',
+          fields: [{ name: 'Arguments', value: 'a integer' }],
+        },
+      ],
+    }
+    const sections = getObjectRenderer('postgres').sections(vm(procDetail))
+    expect(sections.map((s) => s.id)).toEqual(['overview', 'ddl'])
+    expect(sections.find((s) => s.id === 'ddl')?.label).toBe('DDL')
+  })
+
+  it('suppresses the on-demand DDL section when the kind has no definition', () => {
+    const typeDetail: ObjectDetail = {
+      ref: { scope: [{ kind: 'schema', name: 'public' }], kind: 'type', name: 'mood' },
+      descriptors: [
+        { kind: 'fields', title: 'Type', fields: [{ name: 'Category', value: 'enum' }] },
+      ],
+    }
+    const sections = getObjectRenderer('postgres').sections(
+      vm(typeDetail, 'postgres', kindSpec('type', false)),
+    )
+    expect(sections.map((s) => s.id)).toEqual(['overview'])
+  })
+
+  it('keeps the on-demand DDL section when the spec marks the kind has_definition', () => {
+    const procDetail: ObjectDetail = {
+      ref: { scope: [{ kind: 'schema', name: 'public' }], kind: 'procedure', name: 'p' },
+      descriptors: [
+        { kind: 'fields', title: 'Procedure', fields: [{ name: 'Arguments', value: 'a integer' }] },
+      ],
+    }
+    const sections = getObjectRenderer('postgres').sections(
+      vm(procDetail, 'postgres', kindSpec('procedure', true)),
+    )
+    expect(sections.map((s) => s.id)).toEqual(['overview', 'ddl'])
+  })
+
+  it('suppresses the relational DDL section when the kind has no definition', () => {
+    const sections = getObjectRenderer('postgres').sections(
+      vm(tableDetail, 'postgres', kindSpec('table', false)),
+    )
+    expect(sections.map((s) => s.id)).toEqual(['columns', 'keys', 'data'])
   })
 
   it('adds a source section (labeled by title) for non-relational objects carrying SQL', () => {

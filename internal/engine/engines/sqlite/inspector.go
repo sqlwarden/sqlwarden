@@ -21,9 +21,9 @@ func (d *sqliteDriver) SchemaSpec() metadata.SchemaSpec {
 	return metadata.SchemaSpec{
 		Dialect: "sqlite",
 		Kinds: []metadata.SchemaObjectKind{
-			{Kind: "table", Label: "Table", PluralLabel: "Tables", Order: 1, Relational: true, SupportsDiagram: true, Listing: "enumerated"},
-			{Kind: "view", Label: "View", PluralLabel: "Views", Order: 2, Relational: true, SupportsDiagram: true, Listing: "enumerated"},
-			{Kind: "trigger", Label: "Trigger", PluralLabel: "Triggers", Order: 3, Relational: false, SupportsDiagram: false, Listing: "enumerated"},
+			{Kind: "table", Label: "Table", PluralLabel: "Tables", Order: 1, Relational: true, SupportsDiagram: true, Listing: "enumerated", HasDefinition: true},
+			{Kind: "view", Label: "View", PluralLabel: "Views", Order: 2, Relational: true, SupportsDiagram: true, Listing: "enumerated", HasDefinition: true},
+			{Kind: "trigger", Label: "Trigger", PluralLabel: "Triggers", Order: 3, Relational: false, SupportsDiagram: false, Listing: "enumerated", HasDefinition: true},
 		},
 	}
 }

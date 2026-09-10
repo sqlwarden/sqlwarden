@@ -19,8 +19,11 @@ func (d *Driver) SchemaSpec() metadata.SchemaSpec {
 	return metadata.SchemaSpec{
 		Dialect: "sqlserver",
 		Kinds: []metadata.SchemaObjectKind{
-			{Kind: "table", Label: "Table", PluralLabel: "Tables", Order: 1, Relational: true, SupportsDiagram: true, Listing: "enumerated"},
-			{Kind: "view", Label: "View", PluralLabel: "Views", Order: 2, Relational: true, SupportsDiagram: true, Listing: "enumerated"},
+			{Kind: "table", Label: "Table", PluralLabel: "Tables", Order: 1, Relational: true, SupportsDiagram: true, Listing: "enumerated", HasDefinition: true},
+			{Kind: "view", Label: "View", PluralLabel: "Views", Order: 2, Relational: true, SupportsDiagram: true, Listing: "enumerated", HasDefinition: true},
+			{Kind: "procedure", Label: "Procedure", PluralLabel: "Procedures", Order: 3, Relational: false, SupportsDiagram: false, Listing: "enumerated", HasDefinition: true},
+			{Kind: "function", Label: "Function", PluralLabel: "Functions", Order: 4, Relational: false, SupportsDiagram: false, Listing: "enumerated", HasDefinition: true},
+			{Kind: "trigger", Label: "Trigger", PluralLabel: "Triggers", Order: 5, Relational: false, SupportsDiagram: false, Listing: "enumerated", HasDefinition: true},
 		},
 	}
 }
@@ -54,13 +57,19 @@ func (d *Driver) InspectDirectory(ctx context.Context, opts metadata.DirectoryOp
 	b.AddScope(root)
 	b.DeclareKind("table")
 	b.DeclareKind("view")
+	b.DeclareKind("procedure")
+	b.DeclareKind("function")
+	b.DeclareKind("trigger")
 
-	err := CatalogTables(ctx, d.db, func(schemaName, name, kind string) {
+	addRef := func(schemaName, name, kind string) {
 		scope := root.Child(metadata.ScopeSegment{Kind: "schema", Name: schemaName})
 		b.AddRef(scope, kind, name)
-	})
-	if err != nil {
+	}
+	if err := CatalogTables(ctx, d.db, addRef); err != nil {
 		return nil, fmt.Errorf("sqlserver: catalog tables: %w", err)
+	}
+	if err := CatalogModules(ctx, d.db, addRef); err != nil {
+		return nil, fmt.Errorf("sqlserver: catalog modules: %w", err)
 	}
 
 	return b.Build("", "sqlserver", defaultScope), nil
@@ -113,20 +122,36 @@ ORDER BY name`)
 	return result, rows.Err()
 }
 
-// InspectObjects buckets refs by kind and composes RelationalObjects for
-// tables and views.
+// InspectObjects buckets refs by kind: tables and views compose
+// RelationalObjects, while procedures, functions, and triggers compose
+// ModuleObjects (their T-SQL body is served on demand by InspectDefinition).
 func (d *Driver) InspectObjects(ctx context.Context, refs []metadata.ObjectRef) ([]metadata.Object, error) {
-	var relRefs []metadata.ObjectRef
+	var relRefs, moduleRefs []metadata.ObjectRef
 	for _, ref := range refs {
 		switch ref.Kind {
 		case "table", "view":
 			relRefs = append(relRefs, ref)
+		case "procedure", "function", "trigger":
+			moduleRefs = append(moduleRefs, ref)
 		}
 	}
-	if len(relRefs) == 0 {
-		return nil, nil
+
+	var out []metadata.Object
+	if len(relRefs) > 0 {
+		objs, err := RelationalObjects(ctx, d.db, relRefs)
+		if err != nil {
+			return nil, err
+		}
+		out = append(out, objs...)
 	}
-	return RelationalObjects(ctx, d.db, relRefs)
+	if len(moduleRefs) > 0 {
+		objs, err := ModuleObjects(ctx, d.db, moduleRefs)
+		if err != nil {
+			return nil, err
+		}
+		out = append(out, objs...)
+	}
+	return out, nil
 }
 
 // InspectDefinition returns the object's canonical T-SQL text. Views,

@@ -119,4 +119,10 @@ type SchemaObjectKind struct {
 	Relational      bool   `json:"relational"`
 	SupportsDiagram bool   `json:"supports_diagram"`
 	Listing         string `json:"listing"` // "enumerated" | "searched"
+	// HasDefinition marks a kind whose object detail carries a canonical DDL or
+	// definition text — either inlined by InspectObjects as a "source" descriptor
+	// or served on demand by InspectDefinition. The object viewer uses it to
+	// decide whether to offer a DDL tab, so a kind whose definition cannot be
+	// reconstructed (e.g. Postgres type/domain) does not show an empty one.
+	HasDefinition bool `json:"has_definition,omitempty"`
 }

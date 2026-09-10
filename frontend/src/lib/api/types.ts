@@ -571,6 +571,7 @@ export interface SchemaObjectKind {
   relational: boolean
   supports_diagram: boolean
   listing: 'enumerated' | 'searched'
+  has_definition?: boolean
 }
 
 export interface SchemaSpec {

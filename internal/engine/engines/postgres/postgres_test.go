@@ -924,14 +924,22 @@ func TestPostgresInspectDefinition(t *testing.T) {
 	d := newConnectedDriver(t)
 	ctx := context.Background()
 	t.Cleanup(func() {
+		_, _ = d.Execute(ctx, "DROP MATERIALIZED VIEW IF EXISTS idef_mv")
 		_, _ = d.Execute(ctx, "DROP VIEW IF EXISTS idef_v")
+		_, _ = d.Execute(ctx, "DROP TRIGGER IF EXISTS idef_trg ON idef_t")
 		_, _ = d.Execute(ctx, "DROP FUNCTION IF EXISTS idef_fn(int)")
+		_, _ = d.Execute(ctx, "DROP FUNCTION IF EXISTS idef_trg_fn()")
+		_, _ = d.Execute(ctx, "DROP PROCEDURE IF EXISTS idef_proc(int)")
 		_, _ = d.Execute(ctx, "DROP TABLE IF EXISTS idef_t")
 		_, _ = d.Execute(ctx, "DROP SEQUENCE IF EXISTS idef_seq")
 	})
 	mustExec(t, d, `CREATE TABLE idef_t (id bigint PRIMARY KEY, label text NOT NULL)`)
 	mustExec(t, d, `CREATE VIEW idef_v AS SELECT id, label FROM idef_t`)
+	mustExec(t, d, `CREATE MATERIALIZED VIEW idef_mv AS SELECT id, label FROM idef_t`)
 	mustExec(t, d, `CREATE FUNCTION idef_fn(a int) RETURNS int LANGUAGE sql AS 'SELECT a + 1'`)
+	mustExec(t, d, `CREATE PROCEDURE idef_proc(a int) LANGUAGE plpgsql AS $$ BEGIN END $$`)
+	mustExec(t, d, `CREATE FUNCTION idef_trg_fn() RETURNS trigger LANGUAGE plpgsql AS $$ BEGIN RETURN NEW; END $$`)
+	mustExec(t, d, `CREATE TRIGGER idef_trg BEFORE INSERT ON idef_t FOR EACH ROW EXECUTE FUNCTION idef_trg_fn()`)
 	mustExec(t, d, `CREATE SEQUENCE idef_seq`)
 
 	scope := pgTestScope("public")
@@ -960,12 +968,36 @@ func TestPostgresInspectDefinition(t *testing.T) {
 		t.Fatalf("function definition = %+v", fn)
 	}
 
+	mv, err := d.InspectDefinition(ctx, metadata.ObjectRef{Scope: scope, Kind: "materialized_view", Name: "idef_mv"})
+	if err != nil {
+		t.Fatalf("InspectDefinition(materialized_view): %v", err)
+	}
+	if mv == nil || mv.Title != "DDL" || !strings.Contains(strings.ToUpper(mv.Source.Body), "CREATE MATERIALIZED VIEW") {
+		t.Fatalf("materialized view definition = %+v", mv)
+	}
+
+	proc, err := d.InspectDefinition(ctx, metadata.ObjectRef{Scope: scope, Kind: "procedure", Name: "idef_proc"})
+	if err != nil {
+		t.Fatalf("InspectDefinition(procedure): %v", err)
+	}
+	if proc == nil || proc.Title != "Definition" || !strings.Contains(strings.ToUpper(proc.Source.Body), "CREATE OR REPLACE PROCEDURE") {
+		t.Fatalf("procedure definition = %+v", proc)
+	}
+
+	trg, err := d.InspectDefinition(ctx, metadata.ObjectRef{Scope: scope, Kind: "trigger", Name: "idef_trg"})
+	if err != nil {
+		t.Fatalf("InspectDefinition(trigger): %v", err)
+	}
+	if trg == nil || trg.Title != "Definition" || !strings.Contains(strings.ToUpper(trg.Source.Body), "CREATE TRIGGER") {
+		t.Fatalf("trigger definition = %+v", trg)
+	}
+
 	seq, err := d.InspectDefinition(ctx, metadata.ObjectRef{Scope: scope, Kind: "sequence", Name: "idef_seq"})
 	if err != nil {
 		t.Fatalf("InspectDefinition(sequence): %v", err)
 	}
-	if seq != nil {
-		t.Errorf("unsupported kind should yield a nil descriptor, got %+v", seq)
+	if seq == nil || seq.Title != "DDL" || !strings.Contains(strings.ToUpper(seq.Source.Body), "CREATE SEQUENCE") {
+		t.Fatalf("sequence definition = %+v", seq)
 	}
 
 	missing, err := d.InspectDefinition(ctx, metadata.ObjectRef{Scope: scope, Kind: "table", Name: "idef_nope"})
