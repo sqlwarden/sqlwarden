@@ -80,6 +80,84 @@ func TestPostgresInspectObjectsCoversNewKinds(t *testing.T) {
 	}
 }
 
+// TestPostgresTriggerObjectsFoldsSharedName proves a trigger name reused across
+// two tables in one schema yields exactly one object (Postgres trigger names are
+// unique per table, but the directory keys objects by schema/kind/name).
+func TestPostgresTriggerObjectsFoldsSharedName(t *testing.T) {
+	d := newConnectedDriver(t)
+	ctx := context.Background()
+	t.Cleanup(func() {
+		dropQuietlyPostgres(t, d,
+			"DROP TABLE IF EXISTS trg_fold_a CASCADE",
+			"DROP TABLE IF EXISTS trg_fold_b CASCADE",
+			"DROP FUNCTION IF EXISTS trg_fold_fn()",
+		)
+	})
+
+	mustExec(t, d, `CREATE FUNCTION trg_fold_fn() RETURNS trigger LANGUAGE plpgsql AS $$ BEGIN RETURN NEW; END $$`)
+	mustExec(t, d, `CREATE TABLE trg_fold_a (id int)`)
+	mustExec(t, d, `CREATE TABLE trg_fold_b (id int)`)
+	mustExec(t, d, `CREATE TRIGGER set_updated_at BEFORE INSERT ON trg_fold_a FOR EACH ROW EXECUTE FUNCTION trg_fold_fn()`)
+	mustExec(t, d, `CREATE TRIGGER set_updated_at BEFORE INSERT ON trg_fold_b FOR EACH ROW EXECUTE FUNCTION trg_fold_fn()`)
+
+	ref := metadata.ObjectRef{
+		Scope: metadata.NewScopePath(metadata.ScopeSegment{Kind: "schema", Name: "public"}),
+		Kind:  "trigger",
+		Name:  "set_updated_at",
+	}
+	objs, err := TriggerObjects(ctx, d.db, []metadata.ObjectRef{ref})
+	if err != nil {
+		t.Fatalf("TriggerObjects: %v", err)
+	}
+	if len(objs) != 1 {
+		t.Fatalf("want 1 folded trigger object, got %d", len(objs))
+	}
+	var tableField string
+	for _, desc := range objs[0].Descriptors {
+		for _, f := range desc.Fields {
+			if f.Name == "Table" {
+				tableField = f.Value
+			}
+		}
+	}
+	if tableField != "trg_fold_a, trg_fold_b" {
+		t.Fatalf("Table field must list both tables, got %q", tableField)
+	}
+}
+
+// TestPostgresProcedureObjectsFoldsOverloads proves two procedures sharing a
+// name in one schema fold into a single object carrying one descriptor per
+// overload, matching FunctionObjects and keeping the snapshot PK unique.
+func TestPostgresProcedureObjectsFoldsOverloads(t *testing.T) {
+	d := newConnectedDriver(t)
+	ctx := context.Background()
+	t.Cleanup(func() {
+		dropQuietlyPostgres(t, d,
+			"DROP PROCEDURE IF EXISTS proc_fold(int)",
+			"DROP PROCEDURE IF EXISTS proc_fold(text)",
+		)
+	})
+
+	mustExec(t, d, `CREATE PROCEDURE proc_fold(a int) LANGUAGE plpgsql AS $$ BEGIN END $$`)
+	mustExec(t, d, `CREATE PROCEDURE proc_fold(a text) LANGUAGE plpgsql AS $$ BEGIN END $$`)
+
+	ref := metadata.ObjectRef{
+		Scope: metadata.NewScopePath(metadata.ScopeSegment{Kind: "schema", Name: "public"}),
+		Kind:  "procedure",
+		Name:  "proc_fold",
+	}
+	objs, err := ProcedureObjects(ctx, d.db, []metadata.ObjectRef{ref})
+	if err != nil {
+		t.Fatalf("ProcedureObjects: %v", err)
+	}
+	if len(objs) != 1 {
+		t.Fatalf("want 1 folded procedure object, got %d", len(objs))
+	}
+	if len(objs[0].Descriptors) != 2 {
+		t.Fatalf("want 2 overload descriptors, got %d", len(objs[0].Descriptors))
+	}
+}
+
 // dropQuietlyPostgres runs cleanup DROP statements whose targets may already
 // be gone, ignoring errors so cleanup ordering does not matter.
 func dropQuietlyPostgres(t *testing.T, d *Driver, statements ...string) {

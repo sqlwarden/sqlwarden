@@ -31,6 +31,31 @@ func TestDirectoryBuilderOrdersGroupsByDeclaration(t *testing.T) {
 	}
 }
 
+func TestDirectoryBuilderDeduplicatesRepeatedRefs(t *testing.T) {
+	b := NewDirectory()
+	scope := metadata.NewScopePath(metadata.ScopeSegment{Kind: "schema", Name: "public"})
+	b.DeclareKind("trigger")
+	b.AddRef(scope, "trigger", "set_updated_at")
+	b.AddRef(scope, "trigger", "set_updated_at")
+	b.AddRef(scope, "trigger", "audit_row")
+
+	directory := b.Build("conn", "postgres", scope)
+	if len(directory.Roots) != 1 || len(directory.Roots[0].Groups) != 1 {
+		t.Fatalf("want 1 scope / 1 group, got %+v", directory.Roots)
+	}
+	group := directory.Roots[0].Groups[0]
+	if group.Kind != "trigger" {
+		t.Fatalf("group kind = %s, want trigger", group.Kind)
+	}
+	names := make([]string, 0, len(group.Objects))
+	for _, ref := range group.Objects {
+		names = append(names, ref.Name)
+	}
+	if len(names) != 2 || names[0] != "set_updated_at" || names[1] != "audit_row" {
+		t.Fatalf("duplicate ref must collapse while preserving first-seen order, got %v", names)
+	}
+}
+
 func TestDirectoryBuilderAttachesRowCounts(t *testing.T) {
 	b := NewDirectory()
 	scope := metadata.NewScopePath(metadata.ScopeSegment{Kind: "database", Name: "app"}, metadata.ScopeSegment{Kind: "schema", Name: "public"})

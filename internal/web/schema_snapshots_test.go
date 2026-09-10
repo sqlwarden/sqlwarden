@@ -429,6 +429,51 @@ func TestInspectAndStoreObjectsAbortsOnMidLoopInspectError(t *testing.T) {
 	}
 }
 
+func TestSchemaSnapshotToleratesDuplicateDirectoryRefs(t *testing.T) {
+	t.Parallel()
+	app := newTestApp(t)
+	owner, _, org := seedOrgOwner(t, app, uniqueEmail(t, "snapshot-dupes"), "Snapshot Dupes", "Snapshot Dupes Org")
+	ws := seedWorkspaceForAccount(t, app, org, owner, "Snapshot WS", "")
+	envID := defaultEnvironmentID(t, app, ws.ID)
+	conn := seedConnection(t, app, ws.ID, &envID, org.ID, "postgres", "Snapshot Conn", "open")
+
+	dbScope := metadata.NewScopePath(metadata.ScopeSegment{Kind: "database", Name: "app"})
+	schemaScope := dbScope.Child(metadata.ScopeSegment{Kind: "schema", Name: "public"})
+	dupRef := metadata.ObjectRef{Scope: schemaScope, Kind: "trigger", Name: "set_updated_at"}
+	directory := &metadata.Directory{
+		Engine: "postgres", DefaultScope: dbScope, GeneratedAt: time.Now(),
+		Roots: []metadata.ScopeNode{{
+			Path: schemaScope,
+			Groups: []metadata.ObjectGroup{{
+				Kind:    "trigger",
+				Objects: []metadata.ObjectRef{dupRef, dupRef},
+			}},
+		}},
+	}
+
+	refs := directoryObjectRefs(directory)
+	assert.Equal(t, len(refs), 1)
+	assert.Equal(t, refs[0].Name, "set_updated_at")
+
+	snapshot, err := app.schemaSnapshots.Begin(context.Background(), conn.ID, &org.ID, directory)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	objects := []metadata.Object{
+		{Ref: dupRef, Descriptors: []metadata.Descriptor{{Kind: "fields", Title: "Trigger"}}},
+		{Ref: dupRef, Descriptors: []metadata.Descriptor{{Kind: "fields", Title: "Trigger"}}},
+	}
+	if err := app.schemaSnapshots.PutObjects(context.Background(), snapshot.ID, objects); err != nil {
+		t.Fatalf("PutObjects must not fail on duplicate object refs: %v", err)
+	}
+	stored, err := app.schemaSnapshots.AllObjects(context.Background(), snapshot.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	assert.Equal(t, len(stored), 1)
+}
+
 func snapshotDirectory(objectName string, generatedAt time.Time) *metadata.Directory {
 	scope := metadata.NewScopePath(metadata.ScopeSegment{Kind: "database", Name: "main"})
 	return &metadata.Directory{

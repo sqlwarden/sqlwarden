@@ -5,13 +5,16 @@ import (
 	"database/sql"
 	"fmt"
 	"strconv"
+	"strings"
 
 	"github.com/sqlwarden/internal/engine/metadata"
 	build "github.com/sqlwarden/internal/engine/metadata/build"
 )
 
 // ProcedureObjects fetches argument/language detail for procedures named in
-// refs, mirroring FunctionObjects but against prokind = 'p'.
+// refs, mirroring FunctionObjects but against prokind = 'p'. Procedures are
+// overloadable, so several pg_proc rows can map to one (schema, name) ref;
+// each is emitted as its own "overload" descriptor under a single object.
 func ProcedureObjects(ctx context.Context, db *sql.DB, refs []metadata.ObjectRef) ([]metadata.Object, error) {
 	pairs, args := pairFilter(refs, 1)
 	q := `
@@ -20,34 +23,61 @@ FROM pg_proc p
 JOIN pg_namespace n ON n.oid = p.pronamespace
 JOIN pg_language l ON l.oid = p.prolang
 WHERE p.prokind = 'p' AND (n.nspname, p.proname) IN (` + pairs + `)
-ORDER BY n.nspname, p.proname`
+ORDER BY n.nspname, p.proname, p.oid`
 	rows, err := db.QueryContext(ctx, q, args...)
 	if err != nil {
 		return nil, fmt.Errorf("postgres: procedure detail: %w", err)
 	}
 	defer rows.Close()
+
 	var out []metadata.Object
-	for rows.Next() {
-		var ns, name, procArgs, lang string
-		if err := rows.Scan(&ns, &name, &procArgs, &lang); err != nil {
-			return nil, fmt.Errorf("postgres: procedure detail scan: %w", err)
+	var ns, name string
+	var overloads [][]metadata.Field
+	flush := func() {
+		if len(overloads) == 0 {
+			return
+		}
+		descriptors := make([]metadata.Descriptor, 0, len(overloads))
+		for i, fields := range overloads {
+			title := "Procedure"
+			if len(overloads) > 1 {
+				title = fmt.Sprintf("Procedure (overload %d of %d)", i+1, len(overloads))
+			}
+			descriptors = append(descriptors, metadata.Descriptor{Kind: "fields", Title: title, Fields: fields})
 		}
 		out = append(out, metadata.Object{
-			Ref: postgresRequestedRef(refs, ns, name, "procedure"),
-			Descriptors: []metadata.Descriptor{
-				{Kind: "fields", Title: "Procedure", Fields: []metadata.Field{
-					{Name: "Arguments", Value: procArgs},
-					{Name: "Language", Value: lang},
-				}},
-			},
+			Ref:         postgresRequestedRef(refs, ns, name, "procedure"),
+			Descriptors: descriptors,
+		})
+		overloads = nil
+	}
+	for rows.Next() {
+		var rowNS, rowName, procArgs, lang string
+		if err := rows.Scan(&rowNS, &rowName, &procArgs, &lang); err != nil {
+			return nil, fmt.Errorf("postgres: procedure detail scan: %w", err)
+		}
+		if rowNS != ns || rowName != name {
+			flush()
+			ns, name = rowNS, rowName
+		}
+		overloads = append(overloads, []metadata.Field{
+			{Name: "Arguments", Value: procArgs},
+			{Name: "Language", Value: lang},
 		})
 	}
+	flush()
 	return out, rows.Err()
 }
 
 // TriggerObjects fetches timing/event/table detail for triggers named in
 // refs, via pg_trigger's action metadata (tgtype is a bitmask decoded
 // through pg_get_triggerdef for a human-readable statement instead).
+//
+// A Postgres trigger name is unique per table, not per schema, so the same
+// name may sit on several tables in one schema. The directory keys objects by
+// (scope, kind, name), which cannot hold more than one such trigger, so every
+// row for a given name is folded into a single object that lists all bearing
+// tables and their definitions.
 func TriggerObjects(ctx context.Context, db *sql.DB, refs []metadata.ObjectRef) ([]metadata.Object, error) {
 	pairs, args := pairFilter(refs, 1)
 	q := `
@@ -56,27 +86,51 @@ FROM pg_trigger t
 JOIN pg_class tbl ON tbl.oid = t.tgrelid
 JOIN pg_namespace n ON n.oid = tbl.relnamespace
 WHERE NOT t.tgisinternal AND (n.nspname, t.tgname) IN (` + pairs + `)
-ORDER BY n.nspname, t.tgname`
+ORDER BY n.nspname, t.tgname, tbl.relname`
 	rows, err := db.QueryContext(ctx, q, args...)
 	if err != nil {
 		return nil, fmt.Errorf("postgres: trigger detail: %w", err)
 	}
 	defer rows.Close()
-	var out []metadata.Object
+
+	type triggerDetail struct {
+		ref    metadata.ObjectRef
+		tables []string
+		defs   []string
+	}
+	order := make([]string, 0, len(refs))
+	byName := map[string]*triggerDetail{}
 	for rows.Next() {
 		var ns, name, table, def string
 		if err := rows.Scan(&ns, &name, &table, &def); err != nil {
 			return nil, fmt.Errorf("postgres: trigger detail scan: %w", err)
 		}
+		key := ns + "." + name
+		detail, ok := byName[key]
+		if !ok {
+			detail = &triggerDetail{ref: postgresRequestedRef(refs, ns, name, "trigger")}
+			byName[key] = detail
+			order = append(order, key)
+		}
+		detail.tables = append(detail.tables, table)
+		detail.defs = append(detail.defs, def)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+
+	out := make([]metadata.Object, 0, len(order))
+	for _, key := range order {
+		detail := byName[key]
 		out = append(out, metadata.Object{
-			Ref: postgresRequestedRef(refs, ns, name, "trigger"),
+			Ref: detail.ref,
 			Descriptors: []metadata.Descriptor{
-				{Kind: "fields", Title: "Trigger", Fields: []metadata.Field{{Name: "Table", Value: table}}},
-				{Kind: "source", Title: "Definition", Source: &metadata.Source{Language: "sql", Body: def}},
+				{Kind: "fields", Title: "Trigger", Fields: []metadata.Field{{Name: "Table", Value: strings.Join(detail.tables, ", ")}}},
+				{Kind: "source", Title: "Definition", Source: &metadata.Source{Language: "sql", Body: strings.Join(detail.defs, "\n\n")}},
 			},
 		})
 	}
-	return out, rows.Err()
+	return out, nil
 }
 
 // TypeObjects fetches category and member detail for composite/enum/range
