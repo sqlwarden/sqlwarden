@@ -20,13 +20,30 @@ var sqlServerDDLSpec = ddl.Spec{
 		ddl.OperationDropIndex,
 	},
 	ColumnTypes: []string{
-		"bigint", "bit", "date", "datetime2", "decimal(10,2)", "float", "int",
-		"nvarchar(255)", "nvarchar(max)", "smallint", "time", "tinyint",
-		"uniqueidentifier", "varbinary(255)", "varbinary(max)", "varchar(255)", "varchar(max)",
+		"bigint", "binary(255)", "bit", "char(255)", "date", "datetime",
+		"datetime2", "datetimeoffset", "decimal(10,2)", "float", "geography",
+		"geometry", "hierarchyid", "image", "int", "money", "nchar(255)",
+		"ntext", "numeric(18,0)", "nvarchar(255)", "nvarchar(max)", "real",
+		"rowversion", "smalldatetime", "smallint", "smallmoney", "sql_variant",
+		"text", "time", "tinyint", "uniqueidentifier", "varbinary(255)",
+		"varbinary(max)", "varchar(255)", "varchar(max)", "xml",
 	},
 	CreatableTableScopeKinds: []string{"schema"},
 	DroppableObjectKinds:     []string{"table", "view"},
 	DroppableScopeKinds:      []string{"schema"},
+	ParameterizedColumnTypes: []ddl.ParameterizedColumnType{
+		{Name: "decimal", Parameters: []ddl.ColumnTypeParameter{{Name: "precision", Min: 1, Max: 38}, {Name: "scale", Min: 0, Max: 38, Optional: true}}},
+		{Name: "numeric", Parameters: []ddl.ColumnTypeParameter{{Name: "precision", Min: 1, Max: 38}, {Name: "scale", Min: 0, Max: 38, Optional: true}}},
+		{Name: "varchar", Parameters: []ddl.ColumnTypeParameter{{Name: "length", Min: 1, Max: 8000}}},
+		{Name: "char", Parameters: []ddl.ColumnTypeParameter{{Name: "length", Min: 1, Max: 8000}}},
+		{Name: "nvarchar", Parameters: []ddl.ColumnTypeParameter{{Name: "length", Min: 1, Max: 4000}}},
+		{Name: "nchar", Parameters: []ddl.ColumnTypeParameter{{Name: "length", Min: 1, Max: 4000}}},
+		{Name: "varbinary", Parameters: []ddl.ColumnTypeParameter{{Name: "length", Min: 1, Max: 8000}}},
+		{Name: "binary", Parameters: []ddl.ColumnTypeParameter{{Name: "length", Min: 1, Max: 8000}}},
+		{Name: "time", Parameters: []ddl.ColumnTypeParameter{{Name: "precision", Min: 0, Max: 7}}},
+		{Name: "datetime2", Parameters: []ddl.ColumnTypeParameter{{Name: "precision", Min: 0, Max: 7}}},
+		{Name: "datetimeoffset", Parameters: []ddl.ColumnTypeParameter{{Name: "precision", Min: 0, Max: 7}}},
+	},
 }
 
 func (d *Driver) DDLSpec() ddl.Spec {
@@ -81,7 +98,7 @@ func sqlServerDDLColumns(columns []ddl.ColumnDefinition) string {
 	definitions := make([]string, 0, len(columns)+1)
 	primary := make([]string, 0, len(columns))
 	for _, column := range columns {
-		dataType, _ := ddl.CanonicalColumnType(column.DataType, sqlServerDDLSpec.ColumnTypes)
+		dataType, _ := sqlServerDDLSpec.CanonicalColumnType(column.DataType)
 		definition := sqlServerQuoteIdent(column.Name) + " " + dataType
 		if !column.Nullable || column.PrimaryKey {
 			definition += " NOT NULL"

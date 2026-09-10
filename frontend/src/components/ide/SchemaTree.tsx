@@ -424,6 +424,7 @@ export function SchemaTree({
           scope={createTableScope ?? []}
           columnTypes={editor.column_types}
           parameterizedColumnTypes={editor.parameterized_column_types}
+          allowCustomColumnTypes={editor.allow_custom_column_types}
           supportsColumnDefaults={editor.supports_column_defaults}
           pending={schemaEdit.isPending}
           onSubmit={(name, columns) =>

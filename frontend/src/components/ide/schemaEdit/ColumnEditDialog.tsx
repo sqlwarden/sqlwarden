@@ -65,6 +65,7 @@ export function ColumnEditDialog({
       dataType,
       editor.column_types,
       editor.parameterized_column_types,
+      editor.allow_custom_column_types,
     )
     let message: string | null = null
     if (!name.trim()) message = 'Column name is required.'
@@ -148,13 +149,9 @@ export function ColumnEditDialog({
                 onChange={setDataType}
                 columnTypes={editor.column_types}
                 rules={editor.parameterized_column_types}
+                allowCustomTypes={editor.allow_custom_column_types}
                 disabled={pending}
               />
-              {column && (
-                <FieldDescription>
-                  Leave the type unchanged to preserve its current definition.
-                </FieldDescription>
-              )}
             </Field>
             <Field orientation="horizontal">
               <Checkbox

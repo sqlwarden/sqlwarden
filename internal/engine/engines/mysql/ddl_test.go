@@ -33,6 +33,44 @@ func TestMySQLDDLSQL(t *testing.T) {
 	}
 }
 
+func TestMySQLDDLSpecCanonicalizesUnsignedTypes(t *testing.T) {
+	spec := (&Driver{}).DDLSpec()
+	tests := []struct {
+		input string
+		want  string
+	}{
+		{"smallint unsigned", "smallint unsigned"},
+		{"SMALLINT UNSIGNED", "smallint unsigned"},
+		{"int unsigned zerofill", "int unsigned zerofill"},
+		{"tinyint zerofill", "tinyint zerofill"},
+		{"int(11)", "int(11)"},
+		{"int(11) unsigned", "int(11) unsigned"},
+		{"bigint(20) unsigned zerofill", "bigint(20) unsigned zerofill"},
+		{"decimal(10,2) unsigned", "decimal(10,2) unsigned"},
+		{"numeric unsigned zerofill", "numeric unsigned zerofill"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.input, func(t *testing.T) {
+			got, ok := spec.CanonicalColumnType(tt.input)
+			if !ok {
+				t.Fatalf("expected %q to canonicalize", tt.input)
+			}
+			if got != tt.want {
+				t.Fatalf("CanonicalColumnType(%q) = %q, want %q", tt.input, got, tt.want)
+			}
+		})
+	}
+}
+
+func TestMySQLDDLSpecRejectsInvalidUnsignedTypes(t *testing.T) {
+	spec := (&Driver{}).DDLSpec()
+	for _, input := range []string{"int(256) unsigned", "smallint unsigned unsigned", "int(11) unsigned; DROP TABLE x"} {
+		if _, ok := spec.CanonicalColumnType(input); ok {
+			t.Errorf("expected %q to be rejected", input)
+		}
+	}
+}
+
 func TestMySQLDDLSpecAdvertisesEditOperations(t *testing.T) {
 	spec := (&Driver{}).DDLSpec()
 	for _, op := range []ddl.Operation{ddl.OperationAddColumn, ddl.OperationAlterColumn, ddl.OperationCreateIndex} {

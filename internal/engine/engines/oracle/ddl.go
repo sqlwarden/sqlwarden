@@ -24,9 +24,11 @@ var oracleDDLSpec = ddl.Spec{
 	ColumnTypes: []string{
 		"NUMBER", "NUMBER(1)", "FLOAT", "BINARY_FLOAT", "BINARY_DOUBLE",
 		"VARCHAR2(255)", "VARCHAR2(4000)", "CHAR", "NCHAR", "NVARCHAR2(255)",
-		"CLOB", "NCLOB", "BLOB", "RAW(2000)",
+		"CLOB", "NCLOB", "BLOB", "RAW(2000)", "LONG", "LONG RAW",
+		"ROWID", "UROWID", "XMLTYPE",
 		"DATE", "TIMESTAMP", "TIMESTAMP WITH TIME ZONE",
 		"TIMESTAMP WITH LOCAL TIME ZONE",
+		"INTERVAL YEAR(2) TO MONTH", "INTERVAL DAY(2) TO SECOND(6)",
 	},
 	CreatableTableScopeKinds: []string{"schema"},
 	DroppableObjectKinds:     []string{"table", "view", "materialized_view"},
