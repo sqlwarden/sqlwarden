@@ -708,15 +708,25 @@ func ViewDefinition(ctx context.Context, db *sql.DB, ref metadata.ObjectRef) (st
 // overload's definition is included, banner-separated when there is more
 // than one, so no overload is silently dropped.
 func FunctionDefinition(ctx context.Context, db *sql.DB, ref metadata.ObjectRef) (language, body string, err error) {
+	return routineDefinition(ctx, db, ref, 'f', "function")
+}
+
+// ProcedureDefinition is FunctionDefinition for prokind = 'p'. Procedures are
+// overloadable like functions, so overloads are banner-separated the same way.
+func ProcedureDefinition(ctx context.Context, db *sql.DB, ref metadata.ObjectRef) (language, body string, err error) {
+	return routineDefinition(ctx, db, ref, 'p', "procedure")
+}
+
+func routineDefinition(ctx context.Context, db *sql.DB, ref metadata.ObjectRef, prokind rune, label string) (language, body string, err error) {
 	rows, err := db.QueryContext(ctx, `
 SELECT l.lanname, pg_get_functiondef(p.oid)
 FROM pg_proc p
 JOIN pg_namespace n ON n.oid = p.pronamespace
 JOIN pg_language l ON l.oid = p.prolang
-WHERE p.prokind = 'f' AND n.nspname = $1 AND p.proname = $2
-ORDER BY p.oid`, ref.Scope.Name("schema"), ref.Name)
+WHERE p.prokind = $1 AND n.nspname = $2 AND p.proname = $3
+ORDER BY p.oid`, string(prokind), ref.Scope.Name("schema"), ref.Name)
 	if err != nil {
-		return "", "", fmt.Errorf("postgres: function definition: %w", err)
+		return "", "", fmt.Errorf("postgres: %s definition: %w", label, err)
 	}
 	defer rows.Close()
 
@@ -725,7 +735,7 @@ ORDER BY p.oid`, ref.Scope.Name("schema"), ref.Name)
 	for rows.Next() {
 		var rowLang, def sql.NullString
 		if err := rows.Scan(&rowLang, &def); err != nil {
-			return "", "", fmt.Errorf("postgres: function definition scan: %w", err)
+			return "", "", fmt.Errorf("postgres: %s definition scan: %w", label, err)
 		}
 		if lang == "" {
 			lang = rowLang.String
@@ -733,7 +743,7 @@ ORDER BY p.oid`, ref.Scope.Name("schema"), ref.Name)
 		defs = append(defs, def.String)
 	}
 	if err := rows.Err(); err != nil {
-		return "", "", fmt.Errorf("postgres: function definition: %w", err)
+		return "", "", fmt.Errorf("postgres: %s definition: %w", label, err)
 	}
 	if len(defs) == 0 {
 		return "", "", nil
@@ -753,4 +763,112 @@ ORDER BY p.oid`, ref.Scope.Name("schema"), ref.Name)
 		fmt.Fprintf(&sb, "-- Overload %d of %d\n%s", i+1, len(defs), def)
 	}
 	return language, sb.String(), nil
+}
+
+// MaterializedViewDefinition returns a CREATE MATERIALIZED VIEW statement for
+// ref (pg_get_viewdef supplies the query body), or ("", nil) if ref no longer
+// exists.
+func MaterializedViewDefinition(ctx context.Context, db *sql.DB, ref metadata.ObjectRef) (string, error) {
+	var def sql.NullString
+	err := db.QueryRowContext(ctx, `
+SELECT format(
+  E'CREATE MATERIALIZED VIEW %I.%I AS\n%s',
+  n.nspname, c.relname, pg_get_viewdef(c.oid, true)
+)
+FROM pg_class c
+JOIN pg_namespace n ON n.oid = c.relnamespace
+WHERE c.relkind = 'm' AND n.nspname = $1 AND c.relname = $2`,
+		ref.Scope.Name("schema"), ref.Name).Scan(&def)
+	if errors.Is(err, sql.ErrNoRows) {
+		return "", nil
+	}
+	if err != nil {
+		return "", fmt.Errorf("postgres: materialized view definition: %w", err)
+	}
+	return def.String, nil
+}
+
+// TriggerDefinition returns ref's CREATE TRIGGER statement(s) via
+// pg_get_triggerdef, or ("", nil) if ref no longer exists. A trigger name is
+// unique per table in Postgres, so a schema+name ref can resolve to several
+// triggers; each definition is banner-separated so none is dropped.
+func TriggerDefinition(ctx context.Context, db *sql.DB, ref metadata.ObjectRef) (string, error) {
+	rows, err := db.QueryContext(ctx, `
+SELECT tbl.relname, pg_get_triggerdef(t.oid, true)
+FROM pg_trigger t
+JOIN pg_class tbl ON tbl.oid = t.tgrelid
+JOIN pg_namespace n ON n.oid = tbl.relnamespace
+WHERE NOT t.tgisinternal AND n.nspname = $1 AND t.tgname = $2
+ORDER BY tbl.relname`, ref.Scope.Name("schema"), ref.Name)
+	if err != nil {
+		return "", fmt.Errorf("postgres: trigger definition: %w", err)
+	}
+	defer rows.Close()
+
+	type entry struct{ table, def string }
+	var entries []entry
+	for rows.Next() {
+		var e entry
+		if err := rows.Scan(&e.table, &e.def); err != nil {
+			return "", fmt.Errorf("postgres: trigger definition scan: %w", err)
+		}
+		entries = append(entries, e)
+	}
+	if err := rows.Err(); err != nil {
+		return "", fmt.Errorf("postgres: trigger definition: %w", err)
+	}
+	if len(entries) == 0 {
+		return "", nil
+	}
+	if len(entries) == 1 {
+		return entries[0].def + ";", nil
+	}
+	var sb strings.Builder
+	for i, e := range entries {
+		if i > 0 {
+			sb.WriteString("\n\n")
+		}
+		fmt.Fprintf(&sb, "-- On %s\n%s;", e.table, e.def)
+	}
+	return sb.String(), nil
+}
+
+// SequenceDefinition reconstructs a CREATE SEQUENCE statement for ref from
+// pg_sequences, or ("", nil) if ref no longer exists.
+func SequenceDefinition(ctx context.Context, db *sql.DB, ref metadata.ObjectRef) (string, error) {
+	var (
+		dataType             string
+		start, inc, min, max int64
+		cache                int64
+		cycle                bool
+	)
+	err := db.QueryRowContext(ctx, `
+SELECT data_type::text, start_value, increment_by, min_value, max_value, cache_size, cycle
+FROM pg_sequences
+WHERE schemaname = $1 AND sequencename = $2`,
+		ref.Scope.Name("schema"), ref.Name).
+		Scan(&dataType, &start, &inc, &min, &max, &cache, &cycle)
+	if errors.Is(err, sql.ErrNoRows) {
+		return "", nil
+	}
+	if err != nil {
+		return "", fmt.Errorf("postgres: sequence definition: %w", err)
+	}
+	var sb strings.Builder
+	fmt.Fprintf(&sb, "CREATE SEQUENCE %s.%s\n", quoteIdent(ref.Scope.Name("schema")), quoteIdent(ref.Name))
+	fmt.Fprintf(&sb, "    AS %s\n", dataType)
+	fmt.Fprintf(&sb, "    START WITH %d\n", start)
+	fmt.Fprintf(&sb, "    INCREMENT BY %d\n", inc)
+	fmt.Fprintf(&sb, "    MINVALUE %d\n", min)
+	fmt.Fprintf(&sb, "    MAXVALUE %d\n", max)
+	fmt.Fprintf(&sb, "    CACHE %d", cache)
+	if cycle {
+		sb.WriteString("\n    CYCLE")
+	}
+	sb.WriteString(";")
+	return sb.String(), nil
+}
+
+func quoteIdent(name string) string {
+	return `"` + strings.ReplaceAll(name, `"`, `""`) + `"`
 }

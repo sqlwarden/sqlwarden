@@ -640,10 +640,19 @@ func TestOracleInspectDefinition(t *testing.T) {
 	d := newConnectedDriver(t)
 	ctx := context.Background()
 	t.Cleanup(func() {
-		dropQuietly(d, "DROP VIEW def_v", "DROP TABLE def_widgets")
+		dropQuietly(d,
+			"DROP MATERIALIZED VIEW def_mv",
+			"DROP SYNONYM def_syn",
+			"DROP SEQUENCE def_seq",
+			"DROP VIEW def_v",
+			"DROP TABLE def_widgets",
+		)
 	})
 	mustExec(t, d, `CREATE TABLE def_widgets (id NUMBER PRIMARY KEY, label VARCHAR2(80))`)
 	mustExec(t, d, `CREATE VIEW def_v AS SELECT id, label FROM def_widgets`)
+	mustExec(t, d, `CREATE SEQUENCE def_seq START WITH 10 INCREMENT BY 2`)
+	mustExec(t, d, `CREATE MATERIALIZED VIEW def_mv AS SELECT id FROM def_widgets`)
+	mustExec(t, d, `CREATE SYNONYM def_syn FOR def_widgets`)
 
 	tbl, err := d.InspectDefinition(ctx, metadata.ObjectRef{Scope: itScope(), Kind: "table", Name: "DEF_WIDGETS"})
 	if err != nil {
@@ -666,12 +675,36 @@ func TestOracleInspectDefinition(t *testing.T) {
 		t.Fatalf("view definition descriptor = %+v", view)
 	}
 
-	seq, err := d.InspectDefinition(ctx, metadata.ObjectRef{Scope: itScope(), Kind: "sequence", Name: "WHATEVER"})
+	seq, err := d.InspectDefinition(ctx, metadata.ObjectRef{Scope: itScope(), Kind: "sequence", Name: "DEF_SEQ"})
 	if err != nil {
 		t.Fatalf("InspectDefinition(sequence): %v", err)
 	}
-	if seq != nil {
-		t.Errorf("unsupported kind should yield nil descriptor, got %+v", seq)
+	if seq == nil || !strings.Contains(strings.ToUpper(seq.Source.Body), "CREATE SEQUENCE") {
+		t.Fatalf("sequence definition descriptor = %+v", seq)
+	}
+
+	mv, err := d.InspectDefinition(ctx, metadata.ObjectRef{Scope: itScope(), Kind: "materialized_view", Name: "DEF_MV"})
+	if err != nil {
+		t.Fatalf("InspectDefinition(materialized_view): %v", err)
+	}
+	if mv == nil || !strings.Contains(strings.ToUpper(mv.Source.Body), "MATERIALIZED VIEW") {
+		t.Fatalf("materialized view definition descriptor = %+v", mv)
+	}
+
+	syn, err := d.InspectDefinition(ctx, metadata.ObjectRef{Scope: itScope(), Kind: "synonym", Name: "DEF_SYN"})
+	if err != nil {
+		t.Fatalf("InspectDefinition(synonym): %v", err)
+	}
+	if syn == nil || !strings.Contains(strings.ToUpper(syn.Source.Body), "SYNONYM") {
+		t.Fatalf("synonym definition descriptor = %+v", syn)
+	}
+
+	constraint, err := d.InspectDefinition(ctx, metadata.ObjectRef{Scope: itScope(), Kind: "constraint", Name: "WHATEVER"})
+	if err != nil {
+		t.Fatalf("InspectDefinition(constraint): %v", err)
+	}
+	if constraint != nil {
+		t.Errorf("unsupported kind should yield nil descriptor, got %+v", constraint)
 	}
 }
 

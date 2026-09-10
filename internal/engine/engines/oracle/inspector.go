@@ -25,20 +25,20 @@ func (d *oracleDriver) SchemaSpec() metadata.SchemaSpec {
 		BrowseScopes:  true,
 		SystemSchemas: true,
 		Kinds: []metadata.SchemaObjectKind{
-			{Kind: "table", Label: "Table", PluralLabel: "Tables", Order: 1, Relational: true, SupportsDiagram: true, Listing: "enumerated"},
-			{Kind: "view", Label: "View", PluralLabel: "Views", Order: 2, Relational: true, SupportsDiagram: true, Listing: "enumerated"},
-			{Kind: "materialized_view", Label: "Materialized View", PluralLabel: "Materialized Views", Order: 3, Relational: true, SupportsDiagram: true, Listing: "enumerated"},
-			{Kind: "sequence", Label: "Sequence", PluralLabel: "Sequences", Order: 4, Relational: false, SupportsDiagram: false, Listing: "enumerated"},
-			{Kind: "function", Label: "Function", PluralLabel: "Functions", Order: 5, Relational: false, SupportsDiagram: false, Listing: "enumerated"},
-			{Kind: "procedure", Label: "Procedure", PluralLabel: "Procedures", Order: 6, Relational: false, SupportsDiagram: false, Listing: "enumerated"},
-			{Kind: "package", Label: "Package", PluralLabel: "Packages", Order: 7, Relational: false, SupportsDiagram: false, Listing: "enumerated"},
-			{Kind: "package_body", Label: "Package Body", PluralLabel: "Package Bodies", Order: 8, Listing: "enumerated"},
-			{Kind: "trigger", Label: "Trigger", PluralLabel: "Triggers", Order: 9, Listing: "enumerated"},
-			{Kind: "type", Label: "Type", PluralLabel: "Types", Order: 10, Listing: "enumerated"},
-			{Kind: "type_body", Label: "Type Body", PluralLabel: "Type Bodies", Order: 11, Listing: "enumerated"},
-			{Kind: "synonym", Label: "Synonym", PluralLabel: "Synonyms", Order: 12, Listing: "enumerated"},
-			{Kind: "db_link", Label: "Database Link", PluralLabel: "Database Links", Order: 13, Listing: "enumerated"},
-			{Kind: "index", Label: "Index", PluralLabel: "Indexes", Order: 14, Listing: "enumerated"},
+			{Kind: "table", Label: "Table", PluralLabel: "Tables", Order: 1, Relational: true, SupportsDiagram: true, Listing: "enumerated", HasDefinition: true},
+			{Kind: "view", Label: "View", PluralLabel: "Views", Order: 2, Relational: true, SupportsDiagram: true, Listing: "enumerated", HasDefinition: true},
+			{Kind: "materialized_view", Label: "Materialized View", PluralLabel: "Materialized Views", Order: 3, Relational: true, SupportsDiagram: true, Listing: "enumerated", HasDefinition: true},
+			{Kind: "sequence", Label: "Sequence", PluralLabel: "Sequences", Order: 4, Relational: false, SupportsDiagram: false, Listing: "enumerated", HasDefinition: true},
+			{Kind: "function", Label: "Function", PluralLabel: "Functions", Order: 5, Relational: false, SupportsDiagram: false, Listing: "enumerated", HasDefinition: true},
+			{Kind: "procedure", Label: "Procedure", PluralLabel: "Procedures", Order: 6, Relational: false, SupportsDiagram: false, Listing: "enumerated", HasDefinition: true},
+			{Kind: "package", Label: "Package", PluralLabel: "Packages", Order: 7, Relational: false, SupportsDiagram: false, Listing: "enumerated", HasDefinition: true},
+			{Kind: "package_body", Label: "Package Body", PluralLabel: "Package Bodies", Order: 8, Listing: "enumerated", HasDefinition: true},
+			{Kind: "trigger", Label: "Trigger", PluralLabel: "Triggers", Order: 9, Listing: "enumerated", HasDefinition: true},
+			{Kind: "type", Label: "Type", PluralLabel: "Types", Order: 10, Listing: "enumerated", HasDefinition: true},
+			{Kind: "type_body", Label: "Type Body", PluralLabel: "Type Bodies", Order: 11, Listing: "enumerated", HasDefinition: true},
+			{Kind: "synonym", Label: "Synonym", PluralLabel: "Synonyms", Order: 12, Listing: "enumerated", HasDefinition: true},
+			{Kind: "db_link", Label: "Database Link", PluralLabel: "Database Links", Order: 13, Listing: "enumerated", HasDefinition: true},
+			{Kind: "index", Label: "Index", PluralLabel: "Indexes", Order: 14, Listing: "enumerated", HasDefinition: true},
 			{Kind: "constraint", Label: "Constraint", PluralLabel: "Constraints", Order: 15, Listing: "enumerated"},
 		},
 	}
@@ -642,12 +642,14 @@ WHERE `+colFilter, colArgs...)
 	return nil
 }
 
-// InspectDefinition fetches a table or view DDL on demand via
-// DBMS_METADATA.GET_DDL, so the bulk InspectObjects path (and every schema
-// snapshot) avoids one round trip per object for text the UI needs only when a
-// user opens an object's detail view. Retrieval is best-effort: a kind without a
-// retrievable definition, or a failure (insufficient privilege, unsupported
-// storage), yields a nil descriptor rather than an error. Views fall back to
+// InspectDefinition fetches an object's DDL on demand via DBMS_METADATA.GET_DDL,
+// so the bulk InspectObjects path (and every schema snapshot) avoids one round
+// trip per object for text the UI needs only when a user opens an object's
+// detail view. PL/SQL kinds (function, procedure, package, trigger, type)
+// already carry their all_source text inline from InspectObjects and are not
+// re-fetched here. Retrieval is best-effort: a kind without a retrievable
+// definition, or a failure (insufficient privilege, unsupported storage),
+// yields a nil descriptor rather than an error. Views fall back to
 // all_views.text when GET_DDL is unavailable to the caller.
 func (d *oracleDriver) InspectDefinition(ctx context.Context, ref metadata.ObjectRef) (*metadata.Descriptor, error) {
 	owner := ref.Scope.Name("schema")
@@ -659,6 +661,16 @@ func (d *oracleDriver) InspectDefinition(ctx context.Context, ref metadata.Objec
 		metadataType = "TABLE"
 	case "view":
 		metadataType = "VIEW"
+	case "materialized_view":
+		metadataType = "MATERIALIZED_VIEW"
+	case "sequence":
+		metadataType = "SEQUENCE"
+	case "synonym":
+		metadataType = "SYNONYM"
+	case "db_link":
+		metadataType = "DB_LINK"
+	case "index":
+		metadataType = "INDEX"
 	default:
 		return nil, nil
 	}

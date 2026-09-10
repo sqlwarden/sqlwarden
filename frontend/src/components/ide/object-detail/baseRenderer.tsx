@@ -16,11 +16,35 @@ export function isRelational(detail: ObjectDetail): boolean {
   return Boolean(detail.relational)
 }
 
+/** Whether the object's kind carries a reconstructable DDL/definition. Driven by
+ *  the engine's SchemaSpec so kinds an engine cannot define (e.g. Postgres
+ *  type/domain) do not get an empty DDL tab. Defaults to true when the spec or
+ *  the kind entry is unavailable, preserving the pre-flag behavior. */
+function kindHasDefinition(vm: ObjectViewModel): boolean {
+  const kinds = vm.spec?.kinds
+  if (!kinds) return true
+  const entry = kinds.find((k) => k.kind === vm.detail.ref.kind)
+  return entry ? entry.has_definition === true : true
+}
+
+const ddlSection: SectionDef = {
+  id: 'ddl',
+  label: 'DDL',
+  icon: 'terminal',
+  render: (m) => <DdlSection vm={m} />,
+}
+
 /** Common section list shared by every driver. Relational objects (tables,
  *  views) get Columns / Keys & Indexes / DDL / Data; anything else gets a
  *  generic Overview built from its non-source descriptors plus one section per
- *  `source` descriptor (function/procedure/trigger SQL), labeled by its title. */
+ *  inline `source` descriptor (function/procedure/trigger SQL), labeled by its
+ *  title. When no `source` descriptor is inlined, a DDL section fetches the
+ *  definition on demand so procedures, triggers, sequences, and materialized
+ *  views still show their canonical text — but only for kinds the engine can
+ *  actually define (see kindHasDefinition). */
 export function buildBaseSections(vm: ObjectViewModel, hooks: DriverHooks): SectionDef[] {
+  const showDdl = kindHasDefinition(vm)
+
   if (isRelational(vm.detail)) {
     const sections: SectionDef[] = [
       {
@@ -35,17 +59,24 @@ export function buildBaseSections(vm: ObjectViewModel, hooks: DriverHooks): Sect
         icon: 'key-01',
         render: (m) => <KeysSection vm={m} />,
       },
-      { id: 'ddl', label: 'DDL', icon: 'terminal', render: (m) => <DdlSection vm={m} /> },
-      { id: 'data', label: 'Data', icon: 'database', render: (m) => <ObjectDataPreview vm={m} /> },
     ]
     if (vm.detail.descriptors?.some((descriptor) => descriptor.kind !== 'source')) {
-      sections.splice(2, 0, {
+      sections.push({
         id: 'details',
         label: 'Details',
         icon: 'box',
         render: (m) => <DescriptorList vm={m} />,
       })
     }
+    if (showDdl) {
+      sections.push(ddlSection)
+    }
+    sections.push({
+      id: 'data',
+      label: 'Data',
+      icon: 'database',
+      render: (m) => <ObjectDataPreview vm={m} />,
+    })
     return sections
   }
 
@@ -59,21 +90,23 @@ export function buildBaseSections(vm: ObjectViewModel, hooks: DriverHooks): Sect
       render: (m) => <KeysSection vm={m} />,
     })
   }
-  descriptors
-    .filter((d) => d.kind === 'source')
-    .forEach((d, i) => {
-      const body = d.source?.body ?? ''
-      sections.push({
-        id: `source-${i}`,
-        label: d.title || 'Source',
-        icon: 'terminal',
-        render: () => (
-          <div className="h-full min-h-0">
-            <ReadOnlySqlView value={body} />
-          </div>
-        ),
-      })
+  const inlineSources = descriptors.filter((d) => d.kind === 'source')
+  inlineSources.forEach((d, i) => {
+    const body = d.source?.body ?? ''
+    sections.push({
+      id: `source-${i}`,
+      label: d.title || 'Source',
+      icon: 'terminal',
+      render: () => (
+        <div className="h-full min-h-0">
+          <ReadOnlySqlView value={body} />
+        </div>
+      ),
     })
+  })
+  if (inlineSources.length === 0 && showDdl) {
+    sections.push(ddlSection)
+  }
   if (sections.length === 0) {
     sections.push({
       id: 'overview',

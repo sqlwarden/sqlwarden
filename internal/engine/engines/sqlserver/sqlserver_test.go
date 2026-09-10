@@ -484,6 +484,74 @@ CREATE TABLE dbo.warden_def_t2 (
 	}
 }
 
+func TestInspectModulesDirectoryObjectsAndDefinition(t *testing.T) {
+	d := newConnectedDriver(t)
+	ctx := context.Background()
+
+	if _, err := d.Execute(ctx, "CREATE TABLE dbo.warden_mod_t (id INT)"); err != nil {
+		t.Fatalf("create table: %v", err)
+	}
+	t.Cleanup(func() {
+		_, _ = d.Execute(context.Background(), `
+DROP TRIGGER dbo.warden_mod_trg;
+DROP PROCEDURE dbo.warden_mod_proc;
+DROP FUNCTION dbo.warden_mod_fn;
+DROP TABLE dbo.warden_mod_t`)
+	})
+	if _, err := d.Execute(ctx, "CREATE PROCEDURE dbo.warden_mod_proc AS SELECT 1"); err != nil {
+		t.Fatalf("create procedure: %v", err)
+	}
+	if _, err := d.Execute(ctx, "CREATE FUNCTION dbo.warden_mod_fn () RETURNS INT AS BEGIN RETURN 1 END"); err != nil {
+		t.Fatalf("create function: %v", err)
+	}
+	if _, err := d.Execute(ctx, "CREATE TRIGGER dbo.warden_mod_trg ON dbo.warden_mod_t AFTER INSERT AS SELECT 1"); err != nil {
+		t.Fatalf("create trigger: %v", err)
+	}
+
+	dir, err := d.InspectDirectory(ctx, metadata.DirectoryOptions{})
+	if err != nil {
+		t.Fatalf("InspectDirectory: %v", err)
+	}
+	want := map[string]string{
+		"warden_mod_proc": "procedure",
+		"warden_mod_fn":   "function",
+		"warden_mod_trg":  "trigger",
+	}
+	found := map[string]metadata.ObjectRef{}
+	for _, ref := range dir.ObjectRefs() {
+		if kind, ok := want[ref.Name]; ok && ref.Kind == kind {
+			found[ref.Name] = ref
+		}
+	}
+	if len(found) != len(want) {
+		t.Fatalf("want %v in directory, found %+v", want, found)
+	}
+
+	refs := []metadata.ObjectRef{found["warden_mod_proc"], found["warden_mod_fn"], found["warden_mod_trg"]}
+	objs, err := d.InspectObjects(ctx, refs)
+	if err != nil {
+		t.Fatalf("InspectObjects: %v", err)
+	}
+	if len(objs) != 3 {
+		t.Fatalf("want 3 module objects, got %d: %+v", len(objs), objs)
+	}
+	for _, obj := range objs {
+		if len(obj.Descriptors) == 0 || obj.Descriptors[0].Kind != "fields" {
+			t.Fatalf("want a fields descriptor for %s, got %+v", obj.Ref.Name, obj.Descriptors)
+		}
+	}
+
+	for _, ref := range refs {
+		desc, err := d.InspectDefinition(ctx, ref)
+		if err != nil {
+			t.Fatalf("InspectDefinition(%s): %v", ref.Name, err)
+		}
+		if desc == nil || desc.Source == nil || desc.Source.Body == "" {
+			t.Fatalf("want a non-empty definition for %s, got %+v", ref.Name, desc)
+		}
+	}
+}
+
 func TestInspectRelationshipsInScope(t *testing.T) {
 	d := newConnectedDriver(t)
 	ctx := context.Background()
