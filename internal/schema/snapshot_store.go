@@ -108,16 +108,22 @@ func (s *SnapshotStore) PutObjects(ctx context.Context, snapshotID string, objec
 		return nil
 	}
 	rows := make([]snapshotObject, 0, len(objects))
+	seen := make(map[[3]string]struct{}, len(objects))
 	for _, object := range objects {
+		key := [3]string{string(object.Ref.Scope), object.Ref.Kind, object.Ref.Name}
+		if _, dup := seen[key]; dup {
+			continue
+		}
+		seen[key] = struct{}{}
 		data, err := encodeSnapshotValue(object)
 		if err != nil {
 			return err
 		}
 		rows = append(rows, snapshotObject{
 			SnapshotID: snapshotID,
-			Scope:      string(object.Ref.Scope),
-			Kind:       object.Ref.Kind,
-			Name:       object.Ref.Name,
+			Scope:      key[0],
+			Kind:       key[1],
+			Name:       key[2],
 			ObjectData: data,
 		})
 	}

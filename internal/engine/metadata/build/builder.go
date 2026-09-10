@@ -20,6 +20,7 @@ type scopeGroup struct {
 	groupSeen  map[string]bool
 	groupOrder []string
 	groups     map[string][]metadata.ObjectRef
+	refSeen    map[[2]string]bool
 	rowCounts  map[string]map[string]int64 // kind -> name -> count
 }
 
@@ -42,14 +43,20 @@ func (b *DirectoryBuilder) AddScope(scope metadata.ScopePath) {
 	if _, ok := b.scopes[scope]; ok {
 		return
 	}
-	b.scopes[scope] = &scopeGroup{path: scope, groupSeen: map[string]bool{}, groups: map[string][]metadata.ObjectRef{}}
+	b.scopes[scope] = &scopeGroup{path: scope, groupSeen: map[string]bool{}, groups: map[string][]metadata.ObjectRef{}, refSeen: map[[2]string]bool{}}
 	b.scopeOrder = append(b.scopeOrder, scope)
 }
 
-// AddRef records an object of the given kind in the given scope.
+// AddRef records an object of the given kind in the given scope. A (kind, name)
+// already recorded in the scope is ignored, so a caller may re-add the same
+// object without producing a duplicate ref.
 func (b *DirectoryBuilder) AddRef(scope metadata.ScopePath, kind, name string) {
 	b.AddScope(scope)
 	n := b.scopes[scope]
+	if n.refSeen[[2]string{kind, name}] {
+		return
+	}
+	n.refSeen[[2]string{kind, name}] = true
 	if !n.groupSeen[kind] {
 		n.groupSeen[kind] = true
 		n.groupOrder = append(n.groupOrder, kind)

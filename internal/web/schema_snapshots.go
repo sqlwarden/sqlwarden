@@ -276,9 +276,16 @@ func directoryObjectRefs(directory *metadata.Directory) []metadata.ObjectRef {
 		return nil
 	}
 	var refs []metadata.ObjectRef
+	seen := map[metadata.ObjectRef]struct{}{}
 	walkDirectoryNodes(directory.Roots, func(node metadata.ScopeNode) {
 		for _, group := range node.Groups {
-			refs = append(refs, group.Objects...)
+			for _, ref := range group.Objects {
+				if _, dup := seen[ref]; dup {
+					continue
+				}
+				seen[ref] = struct{}{}
+				refs = append(refs, ref)
+			}
 		}
 	})
 	return refs
