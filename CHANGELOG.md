@@ -1,5 +1,70 @@
 # Changelog
 
+## [0.9.0](https://github.com/sqlwarden/sqlwarden/compare/v0.8.0...v0.9.0) (2026-09-10)
+
+
+### Features
+
+* **auth:** match setup page design and copy to login ([2732286](https://github.com/sqlwarden/sqlwarden/commit/2732286560029a351bb80df753e8498fb1a1b214))
+* **connection:** SSH tunnel support for network engines (SQLW-115) ([3306d18](https://github.com/sqlwarden/sqlwarden/commit/3306d1820911c68d029ae1f8d90363967b7f0961))
+* **connection:** TLS config for network engines (SQLW-114) ([581c186](https://github.com/sqlwarden/sqlwarden/commit/581c1869b1972aee3ce388dbd0cae252c73ff598))
+* **editor:** add structured DDL actions, SQL generation, and DML row counts ([#47](https://github.com/sqlwarden/sqlwarden/issues/47)) ([ee87430](https://github.com/sqlwarden/sqlwarden/commit/ee87430f9412b2bbf66ffaebdf47652f39faa66d))
+* **engine:** add additional ui ddl, schema objects, autocomplete features for oracle (SQLW-113) ([5048d3f](https://github.com/sqlwarden/sqlwarden/commit/5048d3f76a5a57dafa346d4bc0bf906321b15492))
+* **engine:** add CockroachDB engine (SQLW-120) ([75e28e4](https://github.com/sqlwarden/sqlwarden/commit/75e28e4b06fbf487616ee2a48c2385aa05037adb))
+* **engine:** add MariaDB engine with native sequences (SQLW-119) ([d41ee97](https://github.com/sqlwarden/sqlwarden/commit/d41ee977faba707c57131a6be2af2851db156797))
+* **engine:** add SQL Server engine (SQLW-126) ([920dcda](https://github.com/sqlwarden/sqlwarden/commit/920dcda8a908b1410ecefacec3b85853769b1ca9))
+* **engine:** add Supabase engine (SQLW-117) ([a6a2ebb](https://github.com/sqlwarden/sqlwarden/commit/a6a2ebbfd42932f5b7a445baca3418686077bfa5))
+* **engine:** add support for Oracle database engine (SQLW-103) ([#61](https://github.com/sqlwarden/sqlwarden/issues/61)) ([2151993](https://github.com/sqlwarden/sqlwarden/commit/215199323d07956ff5b771f89df3699ef252759d))
+* **engine:** add TiDB engine (SQLW-121) ([6042348](https://github.com/sqlwarden/sqlwarden/commit/60423480f0519b94a23921fe48ecf4deb68af960))
+* **engine:** add YugabyteDB engine (SQLW-122) ([b828c71](https://github.com/sqlwarden/sqlwarden/commit/b828c711a1453e950e5a589694b386b7d70504c3))
+* **engine:** expand postgresql and mysql schema browsing and editing in the UI (SQLW-129) ([d8b2541](https://github.com/sqlwarden/sqlwarden/commit/d8b2541ba642e89b941b3d529f4b32491b148b16))
+* **engine:** expand supported column types for each engine and custom column type for certain engines (SQLW-133) ([933e37d](https://github.com/sqlwarden/sqlwarden/commit/933e37dea11dd23a1ef42fad9d5bbf5096d6a885))
+* **engine:** implement Neon engine with TLS and cold-start retry (SQLW-118) ([213f9b8](https://github.com/sqlwarden/sqlwarden/commit/213f9b85ee35bbc48035749f82ebdcd406069e18))
+* **engine:** robust SQLite engine with strict parsing, classification, safety, and semantic completion (SQLW-105) ([dfb82cc](https://github.com/sqlwarden/sqlwarden/commit/dfb82ccd817a238395cfb13859d829e6c71641fd))
+* **ide:** add EXPLAIN/EXPLAIN ANALYZE with backend-validated wrapping (SQLW-93) ([a0e26f0](https://github.com/sqlwarden/sqlwarden/commit/a0e26f0264c62c696f73b6cc97b1081512407b5c))
+* **ide:** add query history and favorites (SQLW-19) ([7b8a4d8](https://github.com/sqlwarden/sqlwarden/commit/7b8a4d8b921c935c41368e2403fa2bfcd9dc3094))
+* **ide:** add results panel scope modes (shared/per-connection/per-editor) (SQLW-90) ([40d221b](https://github.com/sqlwarden/sqlwarden/commit/40d221b81a332ddbc496e37927e52b41daeb603f))
+* **ide:** add results tab context menu with pin and close-scope actions (SQLW-86) ([2042866](https://github.com/sqlwarden/sqlwarden/commit/2042866311d12eca4d6d8ac9d4080a8ac367b42f))
+* **ide:** add SQL editor context menu with clipboard, run, and favorite actions (SQLW-82) ([3b836f4](https://github.com/sqlwarden/sqlwarden/commit/3b836f4c519eaf79dddb62cfd547fdc3534cc0ab))
+* **ide:** add two transaction modes - auto vs manual - for supported drivers when running query from IDE (SQLW-62) ([5226759](https://github.com/sqlwarden/sqlwarden/commit/52267596cf162f9b1443fa096ea3a85710fa939a))
+* **ide:** add workspace file content search ([bddbc62](https://github.com/sqlwarden/sqlwarden/commit/bddbc62ef5efdb43e70969f4f0286016f7bf03a7))
+* **ide:** appearance settings dialog, retire UI Lab (SQLW-98) ([451f621](https://github.com/sqlwarden/sqlwarden/commit/451f62118f6c1a43cdb79c152d7cd08aeea835ed))
+* **ide:** autocomplete enhancements (SQLW-99) ([a26e5b5](https://github.com/sqlwarden/sqlwarden/commit/a26e5b54517f7a018f0d24ac8d38daf46665f86d))
+* **ide:** drop monospace font in results view, fix header seam, add query dialog (SQLW-87) ([f36591f](https://github.com/sqlwarden/sqlwarden/commit/f36591f833c5a5bc08eb22f48a0e1404a54fbe64))
+* **ide:** IDE UI/UX overhaul and polish (SQLW-89) ([#58](https://github.com/sqlwarden/sqlwarden/issues/58)) ([365bf13](https://github.com/sqlwarden/sqlwarden/commit/365bf1399e1ad25f45a04082fcdc71b30e3f0c62))
+* **ide:** show approximate row count beside tables in schema explorer (SQLW-92) ([c25b431](https://github.com/sqlwarden/sqlwarden/commit/c25b431ed761e01d0166c94a2255817e426944d3))
+* **ide:** support running all statements in the SQL console (SQLW-2) ([50b6923](https://github.com/sqlwarden/sqlwarden/commit/50b69235ac387e80c32af3fc4b3a9e8ceb168d4b))
+* **ide:** tab query results by run (SQLW-81) ([0498a7b](https://github.com/sqlwarden/sqlwarden/commit/0498a7bdbcaf86baa821edf2df3b54a029756ec7))
+* **ide:** warn before running unsafe UPDATE/DELETE queries ([e6198d5](https://github.com/sqlwarden/sqlwarden/commit/e6198d5ae0c7633c8f43252f0c3ce0b474ca58b9))
+* **ui:** ui/ux polish for IDE (SQLW-89) ([446a25e](https://github.com/sqlwarden/sqlwarden/commit/446a25ef92073159a833d72bdaadf8fcf795daa4))
+
+
+### Bug Fixes
+
+* **autocomplete:** improve ranking, aliases, and CTE completion ([#49](https://github.com/sqlwarden/sqlwarden/issues/49)) ([0a6ba89](https://github.com/sqlwarden/sqlwarden/commit/0a6ba89040c615234c682d8ea9fddb1da05aa452))
+* **build:** bump Go toolchain to 1.26.6 to resolve govulncheck failures ([7acb61e](https://github.com/sqlwarden/sqlwarden/commit/7acb61eab07b2029e5144467cda591259f239d04))
+* **ci:** unblock build, gofmt, and codeql checks on the ide-features branch ([1dacf8f](https://github.com/sqlwarden/sqlwarden/commit/1dacf8f4202218efe678f32a6e9bcc111c2f6256))
+* **docker:** build and serve the SQLWarden frontend ([#50](https://github.com/sqlwarden/sqlwarden/issues/50)) ([dc8ff07](https://github.com/sqlwarden/sqlwarden/commit/dc8ff0713a08eebbe13a68040612d6952ba83800))
+* **docker:** embed frontend assets in image ([dc8ff07](https://github.com/sqlwarden/sqlwarden/commit/dc8ff0713a08eebbe13a68040612d6952ba83800))
+* **engine:** collapse overloaded postgres functions into one schema entry ([c856d38](https://github.com/sqlwarden/sqlwarden/commit/c856d385c2cede9746cbc8e853ba674cae801235))
+* **ui:** resolve design audit findings across IDE, admin, and workspace screens (SQLW-84) ([fe76090](https://github.com/sqlwarden/sqlwarden/commit/fe760904df2e6cb9dc8697f741ea4100b6047cf1))
+
+
+### Performance Improvements
+
+* **engine:** lazy MySQL DDL via DefinitionInspector (SQLW-110) ([40d06d3](https://github.com/sqlwarden/sqlwarden/commit/40d06d37d0bff38aa239fe7811d6b2d136265dc5))
+* **engine:** lazy PostgreSQL DDL via DefinitionInspector (SQLW-109) ([f33ea80](https://github.com/sqlwarden/sqlwarden/commit/f33ea8060d78a878e136b4fbb33c808bfcbc271f))
+
+
+### Documentation
+
+* add trademark notice for vendor database logos (SQLW-125) ([856346e](https://github.com/sqlwarden/sqlwarden/commit/856346ea90806e0d815bf44c0a4495364384878c))
+
+
+### Code Refactoring
+
+* **engine:** export postgres/mysql drivers and decompose catalog inspection for compatible-engine reuse (SQLW-116) ([d8bd99a](https://github.com/sqlwarden/sqlwarden/commit/d8bd99a906a27a5ee6f8326d2ef32f70ac7584b0))
+
 ## [0.8.0](https://github.com/sqlwarden/sqlwarden/compare/v0.7.0...v0.8.0) (2026-08-13)
 
 
