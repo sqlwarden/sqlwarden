@@ -11,7 +11,7 @@ import (
 )
 
 // jsonCheckPattern matches the auto-generated CHECK MariaDB attaches to a
-// column declared as JSON, e.g. ``json_valid(`payload`)``. MariaDB
+// column declared as JSON, e.g. json_valid(`payload`). MariaDB
 // implements JSON as an alias for LONGTEXT: information_schema.columns
 // reports the storage type, not the declared one, so this check constraint is
 // the only place the original JSON declaration survives.
