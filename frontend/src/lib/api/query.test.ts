@@ -2,6 +2,7 @@ import { describe, it, expect, vi } from 'vitest'
 import { QueryClient, QueryObserver } from '@tanstack/react-query'
 import {
   connectionDirectoryQueryKey,
+  connectionObjectDefinitionQueryKey,
   connectionObjectQueryKey,
   connectionRelationshipsQueryKey,
   invalidateConnectionSchemaQueries,
@@ -23,12 +24,18 @@ describe('invalidateConnectionSchemaQueries', () => {
 
     qc.setQueryData(connectionDirectoryQueryKey(slug, workspaceId, connectionId), { directory: {} })
     qc.setQueryData(connectionObjectQueryKey(slug, workspaceId, connectionId, ref), { ref })
+    qc.setQueryData(connectionObjectDefinitionQueryKey(slug, workspaceId, connectionId, ref), {
+      descriptor: null,
+    })
     qc.setQueryData(connectionRelationshipsQueryKey(slug, workspaceId, connectionId, ref.scope), {
       relationships: [],
     })
     // A second connection's object detail must survive a refresh of the first.
     const otherConnId = 99
     qc.setQueryData(connectionObjectQueryKey(slug, workspaceId, otherConnId, ref), { ref })
+    qc.setQueryData(connectionObjectDefinitionQueryKey(slug, workspaceId, otherConnId, ref), {
+      descriptor: null,
+    })
 
     await invalidateConnectionSchemaQueries(qc, slug, workspaceId, connectionId)
 
@@ -40,7 +47,15 @@ describe('invalidateConnectionSchemaQueries', () => {
         ?.isInvalidated,
     ).toBe(true)
     expect(
+      qc.getQueryState(connectionObjectDefinitionQueryKey(slug, workspaceId, connectionId, ref))
+        ?.isInvalidated,
+    ).toBe(true)
+    expect(
       qc.getQueryState(connectionObjectQueryKey(slug, workspaceId, otherConnId, ref))
+        ?.isInvalidated,
+    ).toBe(false)
+    expect(
+      qc.getQueryState(connectionObjectDefinitionQueryKey(slug, workspaceId, otherConnId, ref))
         ?.isInvalidated,
     ).toBe(false)
     expect(

@@ -37,6 +37,7 @@ import {
   filterDirectory,
   formatRowCount,
   hasDirectoryObjects,
+  isRelationalKind,
   kindLabel,
   kindLabelSingular,
   sortedGroups,
@@ -174,12 +175,12 @@ const KIND_STYLE: Record<string, { icon: AppIcon; className: string }> = {
   procedure: { icon: 'terminal', className: 'text-chart-1' },
   sequence: { icon: 'sort', className: 'text-chart-3' },
   trigger: { icon: 'flow-connection', className: 'text-chart-5' },
+  type: { icon: 'subject', className: 'text-chart-3' },
+  foreign_table: { icon: 'table', className: 'text-chart-2' },
 }
 
 const kindStyle = (kind: string) =>
   KIND_STYLE[kind] ?? { icon: 'box' as AppIcon, className: 'text-muted-foreground' }
-
-const NON_EXPANDABLE_OBJECT_KINDS = new Set(['function', 'procedure', 'sequence'])
 
 export function SchemaTree({
   orgSlug,
@@ -787,7 +788,7 @@ function SchemaObjectNode({
 }) {
   const ctx = useContext(SchemaTreeContext)
   const [open, setOpen] = useState<boolean | null>(null)
-  const expandable = !NON_EXPANDABLE_OBJECT_KINDS.has(objectRef.kind)
+  const expandable = isRelationalKind(ctx?.spec, objectRef.kind)
   const inlineDetail = objectRef.kind === 'sequence'
   const expanded = expandable && (open ?? forceOpen)
   const detailQuery = useQuery({

@@ -22,6 +22,9 @@ func (d *Driver) SchemaSpec() metadata.SchemaSpec {
 			{Kind: "function", Label: "Function", PluralLabel: "Functions", Order: 3, Relational: false, SupportsDiagram: false, Listing: "enumerated"},
 			{Kind: "procedure", Label: "Procedure", PluralLabel: "Procedures", Order: 4, Relational: false, SupportsDiagram: false, Listing: "enumerated"},
 			{Kind: "trigger", Label: "Trigger", PluralLabel: "Triggers", Order: 5, Relational: false, SupportsDiagram: false, Listing: "enumerated"},
+			{Kind: "event", Label: "Event", PluralLabel: "Events", Order: 6, Relational: false, SupportsDiagram: false, Listing: "enumerated"},
+			{Kind: "index", Label: "Index", PluralLabel: "Indexes", Order: 7, Relational: false, SupportsDiagram: false, Listing: "enumerated"},
+			{Kind: "constraint", Label: "Constraint", PluralLabel: "Constraints", Order: 8, Relational: false, SupportsDiagram: false, Listing: "enumerated"},
 		},
 	}
 }
@@ -52,6 +55,9 @@ func (d *Driver) InspectDirectory(ctx context.Context, opts metadata.DirectoryOp
 	b.DeclareKind("function")
 	b.DeclareKind("procedure")
 	b.DeclareKind("trigger")
+	b.DeclareKind("event")
+	b.DeclareKind("index")
+	b.DeclareKind("constraint")
 
 	if err := CatalogTables(ctx, d.db, database, func(ns, name, kind string) { b.AddRef(scope, kind, name) }); err != nil {
 		return nil, fmt.Errorf("mysql: catalog tables: %w", err)
@@ -64,6 +70,15 @@ func (d *Driver) InspectDirectory(ctx context.Context, opts metadata.DirectoryOp
 	}
 	if err := CatalogTriggers(ctx, d.db, database, func(ns, name string) { b.AddRef(scope, "trigger", name) }); err != nil {
 		return nil, fmt.Errorf("mysql: catalog triggers: %w", err)
+	}
+	if err := CatalogEvents(ctx, d.db, database, func(ns, name string) { b.AddRef(scope, "event", name) }); err != nil {
+		return nil, fmt.Errorf("mysql: catalog events: %w", err)
+	}
+	if err := CatalogIndexes(ctx, d.db, database, func(ns, name string) { b.AddRef(scope, "index", name) }); err != nil {
+		return nil, fmt.Errorf("mysql: catalog indexes: %w", err)
+	}
+	if err := CatalogConstraints(ctx, d.db, database, func(ns, name string) { b.AddRef(scope, "constraint", name) }); err != nil {
+		return nil, fmt.Errorf("mysql: catalog constraints: %w", err)
 	}
 
 	return b.Build("", "mysql", scope), nil
@@ -101,12 +116,15 @@ ORDER BY schema_name`)
 }
 
 // InspectObjects buckets refs by kind and composes RelationalObjects,
-// RoutineObjects, and TriggerObjects from catalog.go. A compatible engine
+// RoutineObjects, TriggerObjects, and EventObjects from catalog.go. A compatible engine
 // overrides this method entirely to drop or add kinds.
 func (d *Driver) InspectObjects(ctx context.Context, refs []metadata.ObjectRef) ([]metadata.Object, error) {
 	var relRefs []metadata.ObjectRef
 	var routineRefs []metadata.ObjectRef
 	var triggerRefs []metadata.ObjectRef
+	var eventRefs []metadata.ObjectRef
+	var idxRefs []metadata.ObjectRef
+	var conRefs []metadata.ObjectRef
 	for _, ref := range refs {
 		switch ref.Kind {
 		case "table", "view":
@@ -115,6 +133,12 @@ func (d *Driver) InspectObjects(ctx context.Context, refs []metadata.ObjectRef) 
 			routineRefs = append(routineRefs, ref)
 		case "trigger":
 			triggerRefs = append(triggerRefs, ref)
+		case "event":
+			eventRefs = append(eventRefs, ref)
+		case "index":
+			idxRefs = append(idxRefs, ref)
+		case "constraint":
+			conRefs = append(conRefs, ref)
 		}
 	}
 
@@ -135,6 +159,27 @@ func (d *Driver) InspectObjects(ctx context.Context, refs []metadata.ObjectRef) 
 	}
 	if len(triggerRefs) > 0 {
 		objs, err := TriggerObjects(ctx, d.db, triggerRefs)
+		if err != nil {
+			return nil, err
+		}
+		out = append(out, objs...)
+	}
+	if len(eventRefs) > 0 {
+		objs, err := EventObjects(ctx, d.db, eventRefs)
+		if err != nil {
+			return nil, err
+		}
+		out = append(out, objs...)
+	}
+	if len(idxRefs) > 0 {
+		objs, err := IndexObjects(ctx, d.db, idxRefs)
+		if err != nil {
+			return nil, err
+		}
+		out = append(out, objs...)
+	}
+	if len(conRefs) > 0 {
+		objs, err := ConstraintObjects(ctx, d.db, conRefs)
 		if err != nil {
 			return nil, err
 		}
@@ -162,6 +207,8 @@ func (d *Driver) InspectDefinition(ctx context.Context, ref metadata.ObjectRef) 
 		stmt, title = "SHOW CREATE FUNCTION ", "Definition"
 	case "procedure":
 		stmt, title = "SHOW CREATE PROCEDURE ", "Definition"
+	case "event":
+		stmt, title = "SHOW CREATE EVENT ", "Definition"
 	default:
 		return nil, nil
 	}

@@ -74,6 +74,11 @@ func (d *driver) InspectDirectory(ctx context.Context, opts metadata.DirectoryOp
 	b.DeclareKind("materialized_view")
 	b.DeclareKind("function")
 	b.DeclareKind("sequence")
+	b.DeclareKind("procedure")
+	b.DeclareKind("trigger")
+	b.DeclareKind("type")
+	b.DeclareKind("domain")
+	b.DeclareKind("foreign_table")
 
 	if err := postgres.CatalogTables(ctx, db, func(ns, name, kind string) {
 		if managedSchemas[ns] {
@@ -114,6 +119,46 @@ func (d *driver) InspectDirectory(ctx context.Context, opts metadata.DirectoryOp
 		b.AddRef(scope(ns), "sequence", name)
 	}); err != nil {
 		return nil, fmt.Errorf("supabase: catalog sequences: %w", err)
+	}
+	if err := postgres.CatalogProcedures(ctx, db, func(ns, name string) {
+		if managedSchemas[ns] {
+			return
+		}
+		b.AddRef(scope(ns), "procedure", name)
+	}); err != nil {
+		return nil, fmt.Errorf("supabase: catalog procedures: %w", err)
+	}
+	if err := postgres.CatalogTriggers(ctx, db, func(ns, name string) {
+		if managedSchemas[ns] {
+			return
+		}
+		b.AddRef(scope(ns), "trigger", name)
+	}); err != nil {
+		return nil, fmt.Errorf("supabase: catalog triggers: %w", err)
+	}
+	if err := postgres.CatalogTypes(ctx, db, func(ns, name string) {
+		if managedSchemas[ns] {
+			return
+		}
+		b.AddRef(scope(ns), "type", name)
+	}); err != nil {
+		return nil, fmt.Errorf("supabase: catalog types: %w", err)
+	}
+	if err := postgres.CatalogDomains(ctx, db, func(ns, name string) {
+		if managedSchemas[ns] {
+			return
+		}
+		b.AddRef(scope(ns), "domain", name)
+	}); err != nil {
+		return nil, fmt.Errorf("supabase: catalog domains: %w", err)
+	}
+	if err := postgres.CatalogForeignTables(ctx, db, func(ns, name string) {
+		if managedSchemas[ns] {
+			return
+		}
+		b.AddRef(scope(ns), "foreign_table", name)
+	}); err != nil {
+		return nil, fmt.Errorf("supabase: catalog foreign tables: %w", err)
 	}
 
 	return b.Build("", "supabase", defaultScope), nil

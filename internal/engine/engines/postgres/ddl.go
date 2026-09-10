@@ -18,6 +18,9 @@ var postgresDDLSpec = ddl.Spec{
 		ddl.OperationRenameColumn,
 		ddl.OperationDropColumn,
 		ddl.OperationDropIndex,
+		ddl.OperationAddColumn,
+		ddl.OperationAlterColumn,
+		ddl.OperationCreateIndex,
 	},
 	ColumnTypes: []string{
 		"bigint", "bigserial", "boolean", "bytea", "date", "double precision",
@@ -28,6 +31,15 @@ var postgresDDLSpec = ddl.Spec{
 	DroppableObjectKinds:     []string{"table", "view", "materialized_view"},
 	DroppableScopeKinds:      []string{"schema"},
 	SupportsCascade:          true,
+	SupportsColumnDefaults:   true,
+	ParameterizedColumnTypes: []ddl.ParameterizedColumnType{
+		{Name: "numeric", Parameters: []ddl.ColumnTypeParameter{{Name: "precision", Min: 1, Max: 1000}, {Name: "scale", Min: 0, Max: 1000, Optional: true}}},
+		{Name: "varchar", Parameters: []ddl.ColumnTypeParameter{{Name: "length", Min: 1, Max: 10485760}}},
+		{Name: "char", Parameters: []ddl.ColumnTypeParameter{{Name: "length", Min: 1, Max: 10485760}}},
+		{Name: "time", Parameters: []ddl.ColumnTypeParameter{{Name: "precision", Min: 0, Max: 6}}},
+		{Name: "timestamp", Parameters: []ddl.ColumnTypeParameter{{Name: "precision", Min: 0, Max: 6}}},
+		{Name: "timestamp", Suffix: "with time zone", Parameters: []ddl.ColumnTypeParameter{{Name: "precision", Min: 0, Max: 6}}},
+	},
 }
 
 func (d *Driver) DDLSpec() ddl.Spec {
@@ -36,6 +48,9 @@ func (d *Driver) DDLSpec() ddl.Spec {
 
 func (d *Driver) ApplyDDL(ctx context.Context, request ddl.Request) error {
 	if err := ddl.Validate(request, postgresDDLSpec); err != nil {
+		return err
+	}
+	if err := validatePostgresDefaults(request); err != nil {
 		return err
 	}
 	statement, err := postgresDDLSQL(request)
@@ -70,6 +85,42 @@ func postgresDDLSQL(request ddl.Request) (string, error) {
 		return "ALTER TABLE " + postgresDDLRef(request) + " DROP COLUMN " + pgQuoteIdent(request.Name) + cascade, nil
 	case ddl.OperationDropIndex:
 		return "DROP INDEX " + postgresDDLQualified(request.Ref.Scope.Name("schema"), request.Name) + cascade, nil
+	case ddl.OperationAddColumn:
+		return "ALTER TABLE " + postgresDDLRef(request) + " ADD COLUMN " + postgresDDLColumn(*request.Column), nil
+	case ddl.OperationAlterColumn:
+		var clauses []string
+		if request.Changes.DataType != nil {
+			dataType, _ := postgresDDLSpec.CanonicalColumnType(*request.Changes.DataType)
+			clauses = append(clauses, "ALTER COLUMN "+pgQuoteIdent(request.Name)+" TYPE "+dataType)
+		}
+		if request.Changes.Default != nil {
+			if strings.TrimSpace(*request.Changes.Default) == "" {
+				clauses = append(clauses, "ALTER COLUMN "+pgQuoteIdent(request.Name)+" DROP DEFAULT")
+			} else {
+				clauses = append(clauses, "ALTER COLUMN "+pgQuoteIdent(request.Name)+" SET DEFAULT ("+strings.TrimSpace(*request.Changes.Default)+")")
+			}
+		}
+		if request.Changes.Nullable != nil {
+			verb := "SET NOT NULL"
+			if *request.Changes.Nullable {
+				verb = "DROP NOT NULL"
+			}
+			clauses = append(clauses, "ALTER COLUMN "+pgQuoteIdent(request.Name)+" "+verb)
+		}
+		return "ALTER TABLE " + postgresDDLRef(request) + " " + strings.Join(clauses, ", "), nil
+	case ddl.OperationCreateIndex:
+		prefix := "CREATE "
+		if request.Unique {
+			prefix += "UNIQUE "
+		}
+		columns := make([]string, len(request.IndexColumns))
+		for i, column := range request.IndexColumns {
+			columns[i] = pgQuoteIdent(column.Name)
+			if column.Descending {
+				columns[i] += " DESC"
+			}
+		}
+		return prefix + "INDEX " + pgQuoteIdent(request.Name) + " ON " + postgresDDLRef(request) + " (" + strings.Join(columns, ", ") + ")", nil
 	default:
 		return "", fmt.Errorf("%w: operation %q", ddl.ErrUnsupported, request.Operation)
 	}
@@ -79,12 +130,7 @@ func postgresDDLColumns(columns []ddl.ColumnDefinition) string {
 	definitions := make([]string, 0, len(columns)+1)
 	primary := make([]string, 0, len(columns))
 	for _, column := range columns {
-		dataType, _ := ddl.CanonicalColumnType(column.DataType, postgresDDLSpec.ColumnTypes)
-		definition := pgQuoteIdent(column.Name) + " " + dataType
-		if !column.Nullable || column.PrimaryKey {
-			definition += " NOT NULL"
-		}
-		definitions = append(definitions, definition)
+		definitions = append(definitions, postgresDDLColumn(column))
 		if column.PrimaryKey {
 			primary = append(primary, pgQuoteIdent(column.Name))
 		}
@@ -93,6 +139,21 @@ func postgresDDLColumns(columns []ddl.ColumnDefinition) string {
 		definitions = append(definitions, "PRIMARY KEY ("+strings.Join(primary, ", ")+")")
 	}
 	return strings.Join(definitions, ", ")
+}
+
+func postgresDDLColumn(column ddl.ColumnDefinition) string {
+	dataType, _ := ddl.CanonicalColumnType(column.DataType, postgresDDLSpec.ColumnTypes)
+	if dataType == "" {
+		dataType, _ = postgresDDLSpec.CanonicalColumnType(column.DataType)
+	}
+	definition := pgQuoteIdent(column.Name) + " " + dataType
+	if column.Default != nil {
+		definition += " DEFAULT (" + strings.TrimSpace(*column.Default) + ")"
+	}
+	if !column.Nullable || column.PrimaryKey {
+		definition += " NOT NULL"
+	}
+	return definition
 }
 
 func postgresDDLRef(request ddl.Request) string {

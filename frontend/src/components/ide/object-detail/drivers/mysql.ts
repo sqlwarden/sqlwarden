@@ -15,6 +15,10 @@ export const mysqlHooks: ObjectDetailHooks = {
     // approximate information_schema estimate, so it is intentionally not a badge.
     if (engine) out.push({ id: 'engine', label: 'Engine', value: engine })
     if (collation) out.push({ id: 'collation', label: 'Collation', value: collation })
+    const partitionMethod = attr(a, 'partition_method')
+    if (partitionMethod) {
+      out.push({ id: 'partition_method', label: 'Partition method', value: partitionMethod })
+    }
     return out
   },
   columnExtras(): ColumnExtra[] {

@@ -415,7 +415,7 @@ func TestInspectDirectoryAndObjects(t *testing.T) {
 	}
 
 	spec := d.SchemaSpec()
-	if spec.Dialect != "mysql" || len(spec.Kinds) != 5 {
+	if spec.Dialect != "mysql" || len(spec.Kinds) != 8 {
 		t.Fatalf("unexpected schema spec: %+v", spec)
 	}
 

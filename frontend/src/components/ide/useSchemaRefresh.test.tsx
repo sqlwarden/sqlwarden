@@ -6,6 +6,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest'
 import type { ObjectRef } from '#/lib/api/types'
 import {
   connectionDirectoryQueryKey,
+  connectionObjectDefinitionQueryKey,
   connectionObjectQueryKey,
   connectionRelationshipsQueryKey,
 } from '#/lib/api/query'
@@ -60,9 +61,11 @@ describe('useSchemaRefresh', () => {
     )
     const directoryKey = connectionDirectoryQueryKey('acme', 3, 7)
     const objectKey = connectionObjectQueryKey('acme', 3, 7, ref)
+    const definitionKey = connectionObjectDefinitionQueryKey('acme', 3, 7, ref)
     const relationshipsKey = connectionRelationshipsQueryKey('acme', 3, 7, ref.scope)
     queryClient.setQueryData(directoryKey, { directory: {} })
     queryClient.setQueryData(objectKey, { ref })
+    queryClient.setQueryData(definitionKey, { descriptor: null })
     queryClient.setQueryData(relationshipsKey, { relationships: [] })
 
     const { result } = renderHook(
@@ -82,6 +85,7 @@ describe('useSchemaRefresh', () => {
 
     expect(queryClient.getQueryState(directoryKey)?.isInvalidated).toBe(true)
     expect(queryClient.getQueryState(objectKey)?.isInvalidated).toBe(true)
+    expect(queryClient.getQueryState(definitionKey)?.isInvalidated).toBe(true)
     expect(queryClient.getQueryState(relationshipsKey)?.isInvalidated).toBe(true)
     expect(toastSuccess).toHaveBeenCalledWith('Schema refreshed')
   })
@@ -94,8 +98,10 @@ describe('useSchemaRefresh', () => {
     )
     const directoryKey = connectionDirectoryQueryKey('acme', 3, 7)
     const objectKey = connectionObjectQueryKey('acme', 3, 7, ref)
+    const definitionKey = connectionObjectDefinitionQueryKey('acme', 3, 7, ref)
     queryClient.setQueryData(directoryKey, { directory: {} })
     queryClient.setQueryData(objectKey, { ref })
+    queryClient.setQueryData(definitionKey, { descriptor: null })
 
     const { result } = renderHook(
       () =>
@@ -112,6 +118,7 @@ describe('useSchemaRefresh', () => {
     await waitFor(() => expect(result.current.isSuccess).toBe(true))
 
     expect(queryClient.getQueryState(objectKey)?.isInvalidated).toBe(true)
+    expect(queryClient.getQueryState(definitionKey)?.isInvalidated).toBe(true)
     expect(queryClient.getQueryState(directoryKey)?.isInvalidated).toBe(false)
   })
 

@@ -20,6 +20,7 @@ SELECT table_schema, table_name, table_type
 FROM information_schema.tables
 WHERE table_catalog = current_database()
   AND table_schema NOT IN ('pg_catalog', 'information_schema')
+  AND table_type <> 'FOREIGN'
 ORDER BY table_schema, table_name`
 	return queryRefs(ctx, db, q, func(ns, name, t string) {
 		kind := "table"
@@ -298,6 +299,9 @@ ORDER BY ns.nspname, t.relname, i.relname, g.n`
 
 	out := b.Build()
 	if err := attachPostgresComments(ctx, db, out, pairs, args); err != nil {
+		return nil, err
+	}
+	if err := attachPostgresPartitions(ctx, db, out); err != nil {
 		return nil, err
 	}
 	return out, nil

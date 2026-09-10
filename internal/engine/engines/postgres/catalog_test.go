@@ -53,6 +53,57 @@ func TestCatalogTablesComposesStandalone(t *testing.T) {
 	}
 }
 
+func TestCatalogTablesExcludesForeignTables(t *testing.T) {
+	ctx := context.Background()
+	d := newConnectedDriver(t)
+
+	if _, err := d.DB().ExecContext(ctx, `CREATE EXTENSION IF NOT EXISTS postgres_fdw`); err != nil {
+		t.Fatalf("create extension postgres_fdw: %v", err)
+	}
+	if _, err := d.DB().ExecContext(ctx, `CREATE TABLE catalog_foreign_target_pg_test (id int)`); err != nil {
+		t.Fatalf("create target table: %v", err)
+	}
+	t.Cleanup(func() { _, _ = d.DB().ExecContext(ctx, `DROP TABLE IF EXISTS catalog_foreign_target_pg_test`) })
+
+	if _, err := d.DB().ExecContext(ctx, `CREATE SERVER catalog_loopback_pg_test FOREIGN DATA WRAPPER postgres_fdw OPTIONS (host 'localhost', port '5432', dbname 'testdb')`); err != nil {
+		t.Fatalf("create server: %v", err)
+	}
+	t.Cleanup(func() { _, _ = d.DB().ExecContext(ctx, `DROP SERVER IF EXISTS catalog_loopback_pg_test CASCADE`) })
+
+	if _, err := d.DB().ExecContext(ctx, `CREATE USER MAPPING FOR CURRENT_USER SERVER catalog_loopback_pg_test OPTIONS (user 'testuser', password 'testpass')`); err != nil {
+		t.Fatalf("create user mapping: %v", err)
+	}
+
+	if _, err := d.DB().ExecContext(ctx, `CREATE FOREIGN TABLE catalog_foreign_pg_test (id int) SERVER catalog_loopback_pg_test OPTIONS (schema_name 'public', table_name 'catalog_foreign_target_pg_test')`); err != nil {
+		t.Fatalf("create foreign table: %v", err)
+	}
+	t.Cleanup(func() { _, _ = d.DB().ExecContext(ctx, `DROP FOREIGN TABLE IF EXISTS catalog_foreign_pg_test`) })
+
+	var tableHits int
+	if err := CatalogTables(ctx, d.DB(), func(schema, name, kind string) {
+		if name == "catalog_foreign_pg_test" {
+			tableHits++
+		}
+	}); err != nil {
+		t.Fatalf("CatalogTables: %v", err)
+	}
+	if tableHits != 0 {
+		t.Fatalf("expected CatalogTables to exclude foreign tables, got %d hits", tableHits)
+	}
+
+	var foreignHits int
+	if err := CatalogForeignTables(ctx, d.DB(), func(schema, name string) {
+		if name == "catalog_foreign_pg_test" {
+			foreignHits++
+		}
+	}); err != nil {
+		t.Fatalf("CatalogForeignTables: %v", err)
+	}
+	if foreignHits != 1 {
+		t.Fatalf("expected CatalogForeignTables to report the foreign table exactly once, got %d hits", foreignHits)
+	}
+}
+
 func TestCatalogMaterializedViewsComposesStandalone(t *testing.T) {
 	ctx := context.Background()
 	d := newConnectedDriver(t)
