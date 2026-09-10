@@ -290,6 +290,14 @@ export function orgConnectionObjectQueryOptions(
   })
 }
 
+export function connectionObjectDefinitionQueryKeyPrefix(
+  slug: string,
+  workspaceId: string | number,
+  connectionId: string | number,
+) {
+  return ['connection-object-definition', slug, String(workspaceId), String(connectionId)] as const
+}
+
 export function connectionObjectDefinitionQueryKey(
   slug: string,
   workspaceId: string | number,
@@ -297,10 +305,7 @@ export function connectionObjectDefinitionQueryKey(
   ref: ObjectRef,
 ) {
   return [
-    'connection-object-definition',
-    slug,
-    String(workspaceId),
-    String(connectionId),
+    ...connectionObjectDefinitionQueryKeyPrefix(slug, workspaceId, connectionId),
     JSON.stringify(ref.scope),
     ref.kind,
     ref.name,
@@ -566,7 +571,11 @@ export function applyConnectionSchemaEdit(
 /**
  * Invalidates a connection's cached schema after a whole-connection refresh:
  * the directory and every lazily-fetched object detail. The server drops both on
- * refresh, so expanded object nodes must refetch — not just the directory.
+ * refresh, so expanded object nodes must refetch — not just the directory. This
+ * includes the standalone object-definition query the DDL view falls back to
+ * (engines that omit source text from bulk object inspection, e.g. Oracle, and
+ * any non-relational kind served through it) — without it, the DDL tab keeps
+ * showing pre-refresh text until a full page reload clears the whole cache.
  */
 export function invalidateConnectionSchemaQueries(
   queryClient: QueryClient,
@@ -580,6 +589,9 @@ export function invalidateConnectionSchemaQueries(
     }),
     queryClient.invalidateQueries({
       queryKey: connectionObjectsQueryKeyPrefix(slug, workspaceId, connectionId),
+    }),
+    queryClient.invalidateQueries({
+      queryKey: connectionObjectDefinitionQueryKeyPrefix(slug, workspaceId, connectionId),
     }),
     queryClient.invalidateQueries({
       queryKey: connectionRelationshipsQueryKeyPrefix(slug, workspaceId, connectionId),

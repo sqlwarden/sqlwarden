@@ -7,8 +7,12 @@ function attr(obj: Record<string, unknown> | undefined, key: string): string | u
 
 export const postgresHooks: ObjectDetailHooks = {
   headerBadges(vm: ObjectViewModel): HeaderBadge[] {
+    const badges: HeaderBadge[] = []
     const comment = attr(vm.detail.attributes, 'comment')
-    return comment ? [{ id: 'comment', label: 'Comment', value: comment }] : []
+    if (comment) badges.push({ id: 'comment', label: 'Comment', value: comment })
+    const server = attr(vm.detail.attributes, 'server')
+    if (server) badges.push({ id: 'server', label: 'Foreign server', value: server })
+    return badges
   },
   columnExtras(): ColumnExtra[] {
     return [

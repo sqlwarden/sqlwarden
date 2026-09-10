@@ -22,14 +22,21 @@ func (d *Driver) SchemaSpec() metadata.SchemaSpec {
 			{Kind: "materialized_view", Label: "Materialized View", PluralLabel: "Materialized Views", Order: 3, Relational: true, SupportsDiagram: false, Listing: "enumerated"},
 			{Kind: "function", Label: "Function", PluralLabel: "Functions", Order: 4, Relational: false, SupportsDiagram: false, Listing: "enumerated"},
 			{Kind: "sequence", Label: "Sequence", PluralLabel: "Sequences", Order: 5, Relational: false, SupportsDiagram: false, Listing: "enumerated"},
+			{Kind: "procedure", Label: "Procedure", PluralLabel: "Procedures", Order: 6, Relational: false, SupportsDiagram: false, Listing: "enumerated"},
+			{Kind: "trigger", Label: "Trigger", PluralLabel: "Triggers", Order: 7, Relational: false, SupportsDiagram: false, Listing: "enumerated"},
+			{Kind: "type", Label: "Type", PluralLabel: "Types", Order: 8, Relational: false, SupportsDiagram: false, Listing: "enumerated"},
+			{Kind: "domain", Label: "Domain", PluralLabel: "Domains", Order: 9, Relational: false, SupportsDiagram: false, Listing: "enumerated"},
+			{Kind: "foreign_table", Label: "Foreign Table", PluralLabel: "Foreign Tables", Order: 10, Relational: true, SupportsDiagram: false, Listing: "enumerated"},
 		},
 	}
 }
 
 // InspectDirectory composes CatalogTables, CatalogMaterializedViews,
-// AttachRowCounts, CatalogFunctions, and CatalogSequences from catalog.go. A
-// compatible engine that needs a different combination overrides this method
-// entirely and calls the same exported functions in whatever shape it needs.
+// AttachRowCounts, CatalogFunctions, CatalogSequences, CatalogProcedures,
+// CatalogTriggers, CatalogTypes, CatalogDomains, and CatalogForeignTables
+// from catalog.go and inspector_catalog.go. A compatible engine that needs a
+// different combination overrides this method entirely and calls the same
+// exported functions in whatever shape it needs.
 func (d *Driver) InspectDirectory(ctx context.Context, opts metadata.DirectoryOptions) (*metadata.Directory, error) {
 	var database string
 	var currentSchema sql.NullString
@@ -58,6 +65,11 @@ func (d *Driver) InspectDirectory(ctx context.Context, opts metadata.DirectoryOp
 	b.DeclareKind("materialized_view")
 	b.DeclareKind("function")
 	b.DeclareKind("sequence")
+	b.DeclareKind("procedure")
+	b.DeclareKind("trigger")
+	b.DeclareKind("type")
+	b.DeclareKind("domain")
+	b.DeclareKind("foreign_table")
 
 	if err := CatalogTables(ctx, d.db, func(ns, name, kind string) { b.AddRef(scope(ns), kind, name) }); err != nil {
 		return nil, fmt.Errorf("postgres: catalog tables: %w", err)
@@ -73,6 +85,21 @@ func (d *Driver) InspectDirectory(ctx context.Context, opts metadata.DirectoryOp
 	}
 	if err := CatalogSequences(ctx, d.db, func(ns, name string) { b.AddRef(scope(ns), "sequence", name) }); err != nil {
 		return nil, fmt.Errorf("postgres: catalog sequences: %w", err)
+	}
+	if err := CatalogProcedures(ctx, d.db, func(ns, name string) { b.AddRef(scope(ns), "procedure", name) }); err != nil {
+		return nil, fmt.Errorf("postgres: catalog procedures: %w", err)
+	}
+	if err := CatalogTriggers(ctx, d.db, func(ns, name string) { b.AddRef(scope(ns), "trigger", name) }); err != nil {
+		return nil, fmt.Errorf("postgres: catalog triggers: %w", err)
+	}
+	if err := CatalogTypes(ctx, d.db, func(ns, name string) { b.AddRef(scope(ns), "type", name) }); err != nil {
+		return nil, fmt.Errorf("postgres: catalog types: %w", err)
+	}
+	if err := CatalogDomains(ctx, d.db, func(ns, name string) { b.AddRef(scope(ns), "domain", name) }); err != nil {
+		return nil, fmt.Errorf("postgres: catalog domains: %w", err)
+	}
+	if err := CatalogForeignTables(ctx, d.db, func(ns, name string) { b.AddRef(scope(ns), "foreign_table", name) }); err != nil {
+		return nil, fmt.Errorf("postgres: catalog foreign tables: %w", err)
 	}
 
 	return b.Build("", "postgres", defaultScope), nil
@@ -160,11 +187,12 @@ ORDER BY schema_name`)
 }
 
 // InspectObjects buckets refs by kind and composes RelationalObjects,
-// MaterializedViewObjects, FunctionObjects, and SequenceObjects from
-// catalog.go. A compatible engine overrides this method entirely to drop or
-// add kinds.
+// MaterializedViewObjects, FunctionObjects, SequenceObjects, ProcedureObjects,
+// TriggerObjects, TypeObjects, DomainObjects, and ForeignTableObjects from
+// catalog.go and inspector_objects.go. A compatible engine overrides this
+// method entirely to drop or add kinds.
 func (d *Driver) InspectObjects(ctx context.Context, refs []metadata.ObjectRef) ([]metadata.Object, error) {
-	var relRefs, mvRefs, fnRefs, seqRefs []metadata.ObjectRef
+	var relRefs, mvRefs, fnRefs, seqRefs, procRefs, trigRefs, typeRefs, domainRefs, foreignRefs []metadata.ObjectRef
 	for _, r := range refs {
 		switch r.Kind {
 		case "table", "view":
@@ -175,6 +203,16 @@ func (d *Driver) InspectObjects(ctx context.Context, refs []metadata.ObjectRef) 
 			fnRefs = append(fnRefs, r)
 		case "sequence":
 			seqRefs = append(seqRefs, r)
+		case "procedure":
+			procRefs = append(procRefs, r)
+		case "trigger":
+			trigRefs = append(trigRefs, r)
+		case "type":
+			typeRefs = append(typeRefs, r)
+		case "domain":
+			domainRefs = append(domainRefs, r)
+		case "foreign_table":
+			foreignRefs = append(foreignRefs, r)
 		}
 	}
 
@@ -202,6 +240,41 @@ func (d *Driver) InspectObjects(ctx context.Context, refs []metadata.ObjectRef) 
 	}
 	if len(seqRefs) > 0 {
 		objs, err := SequenceObjects(ctx, d.db, seqRefs)
+		if err != nil {
+			return nil, err
+		}
+		out = append(out, objs...)
+	}
+	if len(procRefs) > 0 {
+		objs, err := ProcedureObjects(ctx, d.db, procRefs)
+		if err != nil {
+			return nil, err
+		}
+		out = append(out, objs...)
+	}
+	if len(trigRefs) > 0 {
+		objs, err := TriggerObjects(ctx, d.db, trigRefs)
+		if err != nil {
+			return nil, err
+		}
+		out = append(out, objs...)
+	}
+	if len(typeRefs) > 0 {
+		objs, err := TypeObjects(ctx, d.db, typeRefs)
+		if err != nil {
+			return nil, err
+		}
+		out = append(out, objs...)
+	}
+	if len(domainRefs) > 0 {
+		objs, err := DomainObjects(ctx, d.db, domainRefs)
+		if err != nil {
+			return nil, err
+		}
+		out = append(out, objs...)
+	}
+	if len(foreignRefs) > 0 {
+		objs, err := ForeignTableObjects(ctx, d.db, foreignRefs)
 		if err != nil {
 			return nil, err
 		}

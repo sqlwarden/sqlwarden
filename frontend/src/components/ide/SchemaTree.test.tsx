@@ -9,6 +9,7 @@ import { SchemaTree } from './SchemaTree'
 import { createIdeStore, IdeStoreContext } from './useIdeStore'
 import { createEditorViewRegistry, EditorViewRegistryContext } from './useEditorViewRegistry'
 import { ContextMenuProvider } from '#/components/ui/context-menu'
+import { IconPackProvider } from '#/lib/icons'
 
 vi.mock('idb-keyval', () => ({
   get: vi.fn(() => Promise.resolve(null)),
@@ -451,7 +452,7 @@ describe('SchemaTree', () => {
     )
   })
 
-  it('keeps routine and sequence rows compact while condensing trigger details', async () => {
+  it('keeps routine, sequence, and trigger rows compact until opened', async () => {
     store.getState().setSession(7, 'session-7')
     const refs: ObjectRef[] = [
       { scope, kind: 'function', name: 'calculate_tax' },
@@ -553,9 +554,11 @@ describe('SchemaTree', () => {
     const functionRow = screen.getByRole('button', { name: 'calculate_tax' })
     const procedureRow = screen.getByRole('button', { name: 'refresh_totals' })
     const sequenceRow = screen.getByRole('button', { name: /orders_id_seq/ })
+    const triggerRow = screen.getByRole('button', { name: 'orders_audit' })
     expect(functionRow).not.toHaveAttribute('aria-expanded')
     expect(procedureRow).not.toHaveAttribute('aria-expanded')
     expect(sequenceRow).not.toHaveAttribute('aria-expanded')
+    expect(triggerRow).not.toHaveAttribute('aria-expanded')
     expect(await screen.findByText('bigint')).toBeInTheDocument()
     expect(requestedKinds).toEqual(['sequence'])
 
@@ -571,14 +574,164 @@ describe('SchemaTree', () => {
       ),
     )
 
-    const triggerRow = screen.getByRole('button', { name: 'orders_audit' })
-    expect(triggerRow).toHaveAttribute('aria-expanded', 'false')
     fireEvent.click(triggerRow)
-    expect(await screen.findByText('BEFORE')).toBeInTheDocument()
-    expect(screen.getByText('INSERT')).toBeInTheDocument()
-    expect(screen.getByText('public.orders')).toBeInTheDocument()
-    expect(screen.queryByText('BEGIN audit(); END')).not.toBeInTheDocument()
-    expect(requestedKinds).toEqual(['sequence', 'trigger'])
+    fireEvent.doubleClick(triggerRow)
+    await waitFor(() =>
+      expect(store.getState().tabs).toEqual(
+        expect.arrayContaining([
+          expect.objectContaining({
+            kind: 'object',
+            objectRef: expect.objectContaining({ kind: 'trigger', name: 'orders_audit' }),
+          }),
+        ]),
+      ),
+    )
+    // A single click does not expand/fetch a non-expandable kind like trigger.
+    expect(requestedKinds).toEqual(['sequence'])
+  })
+
+  it('derives expandability from the spec relational flag, not a hardcoded kind list', async () => {
+    // "widget" is a fixture kind that has never appeared in any hardcoded
+    // expandability list; marking it non-relational here proves the tree
+    // reads the backend flag rather than matching on kind name.
+    store.getState().setSession(7, 'session-7')
+    const widgetRef: ObjectRef = { scope, kind: 'widget', name: 'gadget' }
+    server.use(
+      http.get('/api/v1/orgs/acme/workspaces/3/connections/7/schema/directory', () =>
+        HttpResponse.json({
+          directory: {
+            connection: 'warehouse',
+            engine: 'postgres',
+            default_scope: scope,
+            generated_at: '',
+            roots: [
+              {
+                path: scope,
+                groups: [{ kind: 'widget', objects: [widgetRef] }],
+              },
+            ],
+          },
+        }),
+      ),
+      http.get('/api/v1/orgs/acme/workspaces/3/connections/7/schema/spec', () =>
+        HttpResponse.json({
+          spec: {
+            dialect: 'postgres',
+            kinds: [
+              {
+                kind: 'widget',
+                label: 'Widget',
+                plural_label: 'Widgets',
+                order: 1,
+                relational: false,
+                supports_diagram: false,
+                listing: 'enumerated',
+              },
+            ],
+          },
+        }),
+      ),
+    )
+
+    renderTree()
+    fireEvent.click(await screen.findByRole('button', { name: /Widgets/ }))
+    const widgetRow = await screen.findByRole('button', { name: 'gadget' })
+    expect(widgetRow).not.toHaveAttribute('aria-expanded')
+
+    fireEvent.click(widgetRow)
+    expect(widgetRow).not.toHaveAttribute('aria-expanded')
+  })
+
+  it('renders a distinct icon for type and foreign_table kinds', async () => {
+    store.getState().setSession(7, 'session-7')
+    const refs: ObjectRef[] = [
+      { scope, kind: 'type', name: 'status_enum' },
+      { scope, kind: 'foreign_table', name: 'remote_orders' },
+      { scope, kind: 'synonym', name: 'orders_syn' },
+    ]
+    server.use(
+      http.get('/api/v1/orgs/acme/workspaces/3/connections/7/schema/directory', () =>
+        HttpResponse.json({
+          directory: {
+            connection: 'warehouse',
+            engine: 'postgres',
+            default_scope: scope,
+            generated_at: '',
+            roots: [
+              {
+                path: scope,
+                groups: refs.map((objectRef) => ({
+                  kind: objectRef.kind,
+                  objects: [objectRef],
+                })),
+              },
+            ],
+          },
+        }),
+      ),
+      http.get('/api/v1/orgs/acme/workspaces/3/connections/7/schema/spec', () =>
+        HttpResponse.json({
+          spec: {
+            dialect: 'postgres',
+            kinds: refs.map((objectRef, order) => ({
+              kind: objectRef.kind,
+              label: objectRef.kind,
+              plural_label: `${objectRef.kind}s`,
+              order,
+              relational: false,
+              supports_diagram: false,
+              listing: 'enumerated',
+            })),
+          },
+        }),
+      ),
+    )
+
+    const queryClient = createTestQueryClient()
+    render(
+      <IconPackProvider>
+        <QueryClientProvider client={queryClient}>
+          <IdeStoreContext.Provider value={store}>
+            <EditorViewRegistryContext.Provider value={editorViews}>
+              <ContextMenuProvider>
+                <SchemaTree
+                  orgSlug="acme"
+                  workspaceId={3}
+                  connectionId={7}
+                  driver="postgres"
+                  filter=""
+                  onConnect={vi.fn()}
+                />
+              </ContextMenuProvider>
+            </EditorViewRegistryContext.Provider>
+          </IdeStoreContext.Provider>
+        </QueryClientProvider>
+      </IconPackProvider>,
+    )
+
+    for (const label of ['types', 'foreign_tables', 'synonyms']) {
+      fireEvent.click(await screen.findByRole('button', { name: new RegExp(`^${label}`, 'i') }))
+    }
+
+    const typeRow = screen.getByRole('button', { name: 'status_enum' })
+    const foreignTableRow = screen.getByRole('button', { name: 'remote_orders' })
+    const synonymRow = screen.getByRole('button', { name: 'orders_syn' })
+
+    await waitFor(() => {
+      expect(typeRow.querySelector('svg')).not.toBeNull()
+      expect(foreignTableRow.querySelector('svg')).not.toBeNull()
+      expect(synonymRow.querySelector('svg')).not.toBeNull()
+    })
+
+    // The type icon is always the last <svg> in the row: the optional chevron
+    // (rendered only for expandable kinds) always comes first.
+    const typeIconHtml = (row: HTMLElement) => {
+      const svgs = row.querySelectorAll('svg')
+      return svgs[svgs.length - 1]?.innerHTML
+    }
+
+    expect(typeIconHtml(typeRow)).not.toBe(typeIconHtml(synonymRow))
+    expect(typeIconHtml(foreignTableRow)).not.toBe(typeIconHtml(synonymRow))
   })
 
   it('force-opens matching branches and reports an empty search', async () => {

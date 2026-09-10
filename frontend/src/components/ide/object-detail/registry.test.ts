@@ -169,4 +169,18 @@ describe('getObjectRenderer', () => {
       .map((b) => b.value)
     expect(badges).toContain('people')
   })
+
+  it('postgres renderer surfaces a foreign server badge', () => {
+    const detail: ObjectDetail = { ...tableDetail, attributes: { server: 'remote_srv' } }
+    expect(getObjectRenderer('postgres').headerBadges(vm(detail, 'postgres'))).toContainEqual(
+      expect.objectContaining({ id: 'server', value: 'remote_srv' }),
+    )
+  })
+
+  it('mysql renderer surfaces a partition method badge', () => {
+    const detail: ObjectDetail = { ...tableDetail, attributes: { partition_method: 'HASH' } }
+    expect(getObjectRenderer('mysql').headerBadges(vm(detail, 'mysql'))).toContainEqual(
+      expect.objectContaining({ id: 'partition_method', value: 'HASH' }),
+    )
+  })
 })

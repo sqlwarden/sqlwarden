@@ -274,6 +274,9 @@ ORDER BY s.table_schema, s.table_name, s.index_name, s.seq_in_index`
 	if err := attachMySQLTableAttributes(ctx, db, out, pairs, args); err != nil {
 		return nil, err
 	}
+	if err := attachMySQLPartitions(ctx, db, out); err != nil {
+		return nil, err
+	}
 	return out, nil
 }
 

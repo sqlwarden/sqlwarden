@@ -3,6 +3,7 @@ import { toast } from 'sonner'
 import { errorMessage } from '#/lib/api/errors'
 import type { ObjectRef } from '#/lib/api/types'
 import {
+  connectionObjectDefinitionQueryKey,
   connectionObjectQueryKey,
   invalidateConnectionSchemaQueries,
   refreshConnectionSchema,
@@ -30,9 +31,14 @@ export function useSchemaRefresh({
       refreshConnectionSchema(orgSlug, workspaceId, connectionId, sessionId ?? '', ref),
     onSuccess: async (result) => {
       if (result.mode === 'ephemeral' && ref) {
-        await queryClient.invalidateQueries({
-          queryKey: connectionObjectQueryKey(orgSlug, workspaceId, connectionId, ref),
-        })
+        await Promise.all([
+          queryClient.invalidateQueries({
+            queryKey: connectionObjectQueryKey(orgSlug, workspaceId, connectionId, ref),
+          }),
+          queryClient.invalidateQueries({
+            queryKey: connectionObjectDefinitionQueryKey(orgSlug, workspaceId, connectionId, ref),
+          }),
+        ])
       } else {
         await invalidateConnectionSchemaQueries(queryClient, orgSlug, workspaceId, connectionId)
       }

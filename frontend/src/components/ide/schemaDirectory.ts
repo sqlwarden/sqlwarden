@@ -35,6 +35,14 @@ function kindOrder(spec: SchemaSpec | undefined, kind: string): number {
   return spec?.kinds.find((k) => k.kind === kind)?.order ?? Number.MAX_SAFE_INTEGER
 }
 
+/** Whether an object kind has row/column detail worth expanding, per the
+ *  backend schema spec. Kinds absent from the spec (or before it loads)
+ *  default to relational so the tree doesn't hide detail it hasn't ruled out
+ *  yet. */
+export function isRelationalKind(spec: SchemaSpec | undefined, kind: string): boolean {
+  return spec?.kinds.find((k) => k.kind === kind)?.relational ?? true
+}
+
 export function sortedGroups(node: ScopeNode, spec: SchemaSpec | undefined): ObjectGroup[] {
   return [...node.groups].sort(
     (a, b) => kindOrder(spec, a.kind) - kindOrder(spec, b.kind) || a.kind.localeCompare(b.kind),

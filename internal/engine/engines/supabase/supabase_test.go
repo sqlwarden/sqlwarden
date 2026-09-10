@@ -173,3 +173,57 @@ func TestDiscoverScopesExcludesManagedSchemas(t *testing.T) {
 		t.Fatal("expected app schema to be discoverable")
 	}
 }
+
+// TestInspectDirectoryPopulatesEveryAdvertisedKind proves the hand-rolled
+// InspectDirectory catalogues every object kind the inherited postgres
+// SchemaSpec advertises. The override composes the catalog functions by hand
+// rather than delegating, so a kind added to the base spec is otherwise
+// advertised to Supabase users and then left permanently empty.
+func TestInspectDirectoryPopulatesEveryAdvertisedKind(t *testing.T) {
+	d := connect(t)
+	ctx := context.Background()
+
+	for _, statement := range []string{
+		`CREATE SCHEMA IF NOT EXISTS kinds`,
+		`CREATE TABLE IF NOT EXISTS kinds.gadgets (id int PRIMARY KEY, name text)`,
+		`CREATE VIEW kinds.gadget_names AS SELECT name FROM kinds.gadgets`,
+		`CREATE MATERIALIZED VIEW IF NOT EXISTS kinds.gadget_count AS SELECT count(*) FROM kinds.gadgets`,
+		`CREATE SEQUENCE IF NOT EXISTS kinds.gadget_seq`,
+		`CREATE TYPE kinds.gadget_state AS ENUM ('new', 'used')`,
+		`CREATE DOMAIN kinds.positive_int AS int CHECK (VALUE > 0)`,
+		`CREATE FUNCTION kinds.gadget_touch() RETURNS trigger LANGUAGE plpgsql AS $$ BEGIN RETURN NEW; END $$`,
+		`CREATE TRIGGER gadget_touched BEFORE UPDATE ON kinds.gadgets FOR EACH ROW EXECUTE FUNCTION kinds.gadget_touch()`,
+		`CREATE PROCEDURE kinds.gadget_noop() LANGUAGE plpgsql AS $$ BEGIN END $$`,
+		`CREATE EXTENSION IF NOT EXISTS postgres_fdw`,
+		`CREATE SERVER IF NOT EXISTS kinds_server FOREIGN DATA WRAPPER postgres_fdw OPTIONS (host 'localhost', dbname 'testdb')`,
+		`CREATE FOREIGN TABLE IF NOT EXISTS kinds.remote_gadgets (id int) SERVER kinds_server`,
+	} {
+		if _, err := d.Execute(ctx, statement); err != nil {
+			t.Fatalf("setup %q: %v", statement, err)
+		}
+	}
+	t.Cleanup(func() {
+		_, _ = d.Execute(context.Background(), `DROP SCHEMA IF EXISTS kinds CASCADE`)
+		_, _ = d.Execute(context.Background(), `DROP SERVER IF EXISTS kinds_server CASCADE`)
+	})
+
+	dir, err := d.InspectDirectory(ctx, metadata.DirectoryOptions{})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	seen := map[string]bool{}
+	for _, ref := range dir.ObjectRefs() {
+		if ref.Scope.Name("schema") == "kinds" {
+			seen[ref.Kind] = true
+		}
+	}
+	for _, kind := range []string{
+		"table", "view", "materialized_view", "function", "sequence",
+		"procedure", "trigger", "type", "domain", "foreign_table",
+	} {
+		if !seen[kind] {
+			t.Errorf("kind %q is advertised by SchemaSpec but was not populated", kind)
+		}
+	}
+}
