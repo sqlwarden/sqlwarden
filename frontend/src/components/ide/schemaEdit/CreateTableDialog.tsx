@@ -39,6 +39,7 @@ export type CreateTableDialogProps = {
   scope: ScopePath
   columnTypes: string[]
   parameterizedColumnTypes?: ParameterizedColumnType[]
+  allowCustomColumnTypes?: boolean
   supportsColumnDefaults?: boolean
   pending: boolean
   onSubmit: (name: string, columns: SchemaEditColumn[]) => void
@@ -72,6 +73,7 @@ export function CreateTableDialog({
   scope,
   columnTypes,
   parameterizedColumnTypes = [],
+  allowCustomColumnTypes = false,
   supportsColumnDefaults = false,
   pending,
   onSubmit,
@@ -108,7 +110,13 @@ export function CreateTableDialog({
       ? 'Column names must be unique.'
       : null
   const invalidTypes = rows.some(
-    (row) => canonicalColumnType(row.dataType, columnTypes, parameterizedColumnTypes) === null,
+    (row) =>
+      canonicalColumnType(
+        row.dataType,
+        columnTypes,
+        parameterizedColumnTypes,
+        allowCustomColumnTypes,
+      ) === null,
   )
   const disabled = pending || trimmedName === '' || columns === null || invalidTypes
 
@@ -137,7 +145,12 @@ export function CreateTableDialog({
       trimmedName,
       columns!.map((column) => ({
         ...column,
-        data_type: canonicalColumnType(column.data_type, columnTypes, parameterizedColumnTypes)!,
+        data_type: canonicalColumnType(
+          column.data_type,
+          columnTypes,
+          parameterizedColumnTypes,
+          allowCustomColumnTypes,
+        )!,
       })),
     )
   }
@@ -200,6 +213,7 @@ export function CreateTableDialog({
                         onChange={(dataType) => updateRow(row.id, { dataType })}
                         columnTypes={columnTypes}
                         rules={parameterizedColumnTypes}
+                        allowCustomTypes={allowCustomColumnTypes}
                         disabled={pending}
                       />
                     </div>

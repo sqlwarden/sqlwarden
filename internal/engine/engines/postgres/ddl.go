@@ -22,23 +22,41 @@ var postgresDDLSpec = ddl.Spec{
 		ddl.OperationAlterColumn,
 		ddl.OperationCreateIndex,
 	},
+	// Every built-in type Postgres ships without an extension. Extension
+	// types (pgvector, PostGIS, citext, hstore, ...) fall through to
+	// AllowCustomColumnTypes below rather than being enumerated here.
 	ColumnTypes: []string{
-		"bigint", "bigserial", "boolean", "bytea", "date", "double precision",
-		"integer", "json", "jsonb", "numeric", "real", "smallint", "serial",
-		"text", "time", "timestamp", "timestamp with time zone", "uuid", "varchar",
+		"bigint", "bigserial", "bit", "bit varying", "boolean", "box", "bytea",
+		"char", "cidr", "circle", "date", "datemultirange", "daterange",
+		"decimal", "double precision", "inet", "int4multirange", "int4range",
+		"int8multirange", "int8range", "integer", "interval", "json", "jsonb",
+		"line", "lseg", "macaddr", "macaddr8", "money", "numeric",
+		"nummultirange", "numrange", "oid", "path", "pg_lsn", "point",
+		"polygon", "real", "serial", "smallint", "smallserial", "text",
+		"time", "time with time zone", "timestamp", "timestamp with time zone",
+		"tsmultirange", "tsquery", "tsrange", "tstzmultirange", "tstzrange",
+		"tsvector", "uuid", "varchar", "xml",
 	},
 	CreatableTableScopeKinds: []string{"schema"},
 	DroppableObjectKinds:     []string{"table", "view", "materialized_view"},
 	DroppableScopeKinds:      []string{"schema"},
 	SupportsCascade:          true,
 	SupportsColumnDefaults:   true,
+	// Extensions (pgvector, PostGIS, citext, hstore, ...) add types outside
+	// this base grammar; let the database validate anything syntactically safe.
+	AllowCustomColumnTypes: true,
 	ParameterizedColumnTypes: []ddl.ParameterizedColumnType{
 		{Name: "numeric", Parameters: []ddl.ColumnTypeParameter{{Name: "precision", Min: 1, Max: 1000}, {Name: "scale", Min: 0, Max: 1000, Optional: true}}},
+		{Name: "decimal", Parameters: []ddl.ColumnTypeParameter{{Name: "precision", Min: 1, Max: 1000}, {Name: "scale", Min: 0, Max: 1000, Optional: true}}},
 		{Name: "varchar", Parameters: []ddl.ColumnTypeParameter{{Name: "length", Min: 1, Max: 10485760}}},
 		{Name: "char", Parameters: []ddl.ColumnTypeParameter{{Name: "length", Min: 1, Max: 10485760}}},
+		{Name: "bit", Parameters: []ddl.ColumnTypeParameter{{Name: "length", Min: 1, Max: 10485760}}},
+		{Name: "bit varying", Parameters: []ddl.ColumnTypeParameter{{Name: "length", Min: 1, Max: 10485760}}},
 		{Name: "time", Parameters: []ddl.ColumnTypeParameter{{Name: "precision", Min: 0, Max: 6}}},
+		{Name: "time", Suffix: "with time zone", Parameters: []ddl.ColumnTypeParameter{{Name: "precision", Min: 0, Max: 6}}},
 		{Name: "timestamp", Parameters: []ddl.ColumnTypeParameter{{Name: "precision", Min: 0, Max: 6}}},
 		{Name: "timestamp", Suffix: "with time zone", Parameters: []ddl.ColumnTypeParameter{{Name: "precision", Min: 0, Max: 6}}},
+		{Name: "interval", Parameters: []ddl.ColumnTypeParameter{{Name: "precision", Min: 0, Max: 6}}},
 	},
 }
 

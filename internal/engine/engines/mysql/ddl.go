@@ -12,34 +12,91 @@ import (
 
 var _ ddl.Executor = (*Driver)(nil)
 
-var mysqlDDLSpec = ddl.Spec{
-	Operations: []ddl.Operation{
-		ddl.OperationCreateTable,
-		ddl.OperationDropObject,
-		ddl.OperationDropScope,
-		ddl.OperationRenameColumn,
-		ddl.OperationDropColumn,
-		ddl.OperationDropIndex,
-		ddl.OperationAddColumn,
-		ddl.OperationAlterColumn,
-		ddl.OperationCreateIndex,
-	},
-	ColumnTypes: []string{
-		"bigint", "blob", "boolean", "date", "datetime", "double",
-		"float", "int", "json", "mediumint", "smallint", "text", "time", "timestamp",
-		"tinyint",
-	},
-	CreatableTableScopeKinds: []string{"database"},
-	DroppableObjectKinds:     []string{"table", "view"},
-	DroppableScopeKinds:      []string{"database"},
-	SupportsColumnDefaults:   true,
-	ParameterizedColumnTypes: []ddl.ParameterizedColumnType{
-		{Name: "decimal", Parameters: []ddl.ColumnTypeParameter{{Name: "precision", Min: 1, Max: 65}, {Name: "scale", Min: 0, Max: 30, Optional: true}}},
-		{Name: "varchar", Parameters: []ddl.ColumnTypeParameter{{Name: "length", Min: 1, Max: 65535}}},
-		{Name: "char", Parameters: []ddl.ColumnTypeParameter{{Name: "length", Min: 1, Max: 255}}},
-		{Name: "varbinary", Parameters: []ddl.ColumnTypeParameter{{Name: "length", Min: 1, Max: 65535}}},
-	},
+// mysqlUnsignedSuffixes are the modifier combinations MySQL accepts after an
+// integer or fixed/floating-point numeric type. zerofill implies unsigned but
+// the server still accepts (and information_schema.column_type reports) the
+// combined form, so all four permutations are real, observable type strings.
+var mysqlUnsignedSuffixes = []string{"", "unsigned", "zerofill", "unsigned zerofill"}
+
+// mysqlIntegerTypes support an optional display width and the unsigned/
+// zerofill suffixes. Display width is deprecated since MySQL 8.0.17 but
+// existing columns still report it, so it must remain recognizable.
+var mysqlIntegerTypes = []string{"tinyint", "smallint", "mediumint", "int", "bigint"}
+
+// mysqlUnsignedNumericTypes are the fixed/floating-point types that also
+// accept unsigned/zerofill; their precision/scale grammar is unchanged.
+var mysqlUnsignedNumericTypes = []string{"decimal", "numeric"}
+
+func buildMySQLDDLSpec() ddl.Spec {
+	spec := ddl.Spec{
+		Operations: []ddl.Operation{
+			ddl.OperationCreateTable,
+			ddl.OperationDropObject,
+			ddl.OperationDropScope,
+			ddl.OperationRenameColumn,
+			ddl.OperationDropColumn,
+			ddl.OperationDropIndex,
+			ddl.OperationAddColumn,
+			ddl.OperationAlterColumn,
+			ddl.OperationCreateIndex,
+		},
+		// MySQL's built-in types. enum and set are excluded: both require a
+		// literal value list, which ParameterizedColumnType's numeric-range
+		// grammar cannot express; they remain reachable only through raw SQL.
+		ColumnTypes: []string{
+			"bigint", "binary", "bit", "blob", "boolean", "char", "date", "datetime",
+			"decimal", "double", "float", "geometry", "geometrycollection", "int",
+			"json", "linestring", "longblob", "longtext", "mediumblob", "mediumint",
+			"mediumtext", "multilinestring", "multipoint", "multipolygon", "numeric",
+			"point", "polygon", "smallint", "text", "time", "timestamp", "tinyblob",
+			"tinyint", "tinytext", "varbinary", "varchar", "year",
+		},
+		CreatableTableScopeKinds: []string{"database"},
+		DroppableObjectKinds:     []string{"table", "view"},
+		DroppableScopeKinds:      []string{"database"},
+		SupportsColumnDefaults:   true,
+		ParameterizedColumnTypes: []ddl.ParameterizedColumnType{
+			{Name: "decimal", Parameters: []ddl.ColumnTypeParameter{{Name: "precision", Min: 1, Max: 65}, {Name: "scale", Min: 0, Max: 30, Optional: true}}},
+			{Name: "numeric", Parameters: []ddl.ColumnTypeParameter{{Name: "precision", Min: 1, Max: 65}, {Name: "scale", Min: 0, Max: 30, Optional: true}}},
+			{Name: "varchar", Parameters: []ddl.ColumnTypeParameter{{Name: "length", Min: 1, Max: 65535}}},
+			{Name: "char", Parameters: []ddl.ColumnTypeParameter{{Name: "length", Min: 1, Max: 255}}},
+			{Name: "binary", Parameters: []ddl.ColumnTypeParameter{{Name: "length", Min: 1, Max: 255}}},
+			{Name: "varbinary", Parameters: []ddl.ColumnTypeParameter{{Name: "length", Min: 1, Max: 65535}}},
+			{Name: "bit", Parameters: []ddl.ColumnTypeParameter{{Name: "length", Min: 1, Max: 64}}},
+		},
+	}
+	for _, name := range mysqlIntegerTypes {
+		for _, suffix := range mysqlUnsignedSuffixes {
+			if suffix != "" {
+				spec.ColumnTypes = append(spec.ColumnTypes, name+" "+suffix)
+			}
+			spec.ParameterizedColumnTypes = append(spec.ParameterizedColumnTypes, ddl.ParameterizedColumnType{
+				Name:       name,
+				Suffix:     suffix,
+				Parameters: []ddl.ColumnTypeParameter{{Name: "width", Min: 1, Max: 255}},
+			})
+		}
+	}
+	for _, name := range mysqlUnsignedNumericTypes {
+		for _, suffix := range mysqlUnsignedSuffixes {
+			if suffix == "" {
+				continue // already registered above without a suffix
+			}
+			spec.ColumnTypes = append(spec.ColumnTypes, name+" "+suffix)
+			spec.ParameterizedColumnTypes = append(spec.ParameterizedColumnTypes, ddl.ParameterizedColumnType{
+				Name:   name,
+				Suffix: suffix,
+				Parameters: []ddl.ColumnTypeParameter{
+					{Name: "precision", Min: 1, Max: 65},
+					{Name: "scale", Min: 0, Max: 30, Optional: true},
+				},
+			})
+		}
+	}
+	return spec
 }
+
+var mysqlDDLSpec = buildMySQLDDLSpec()
 
 func (d *Driver) DDLSpec() ddl.Spec {
 	return mysqlDDLSpec

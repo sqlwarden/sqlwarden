@@ -2,6 +2,7 @@ package ddl
 
 import (
 	"errors"
+	"strings"
 	"testing"
 
 	"github.com/sqlwarden/internal/engine/metadata"
@@ -91,6 +92,59 @@ func TestSummary(t *testing.T) {
 				t.Fatalf("Summary() = %q, want %q", got, tt.want)
 			}
 		})
+	}
+}
+
+func TestSpecCanonicalColumnTypeCustomTypes(t *testing.T) {
+	spec := Spec{
+		ColumnTypes:              []string{"text", "integer"},
+		ParameterizedColumnTypes: []ParameterizedColumnType{{Name: "numeric", Parameters: []ColumnTypeParameter{{Name: "precision", Min: 1, Max: 1000}}}},
+		AllowCustomColumnTypes:   true,
+	}
+	tests := []struct {
+		name  string
+		value string
+		want  string
+		ok    bool
+	}{
+		{"fixed type", "text", "text", true},
+		{"valid parameterized", "numeric(10)", "numeric(10)", true},
+		{"out-of-range parameterized rejected, not treated as custom", "numeric(1001)", "", false},
+		{"unknown extension type accepted", "vector(1536)", "vector(1536)", true},
+		{"schema-qualified extension type accepted", "public.hstore", "public.hstore", true},
+		{"multi-word extension type accepted", "geometry(Point, 4326)", "geometry(Point, 4326)", true},
+		{"injection attempt rejected", "text); drop table users; --", "", false},
+		{"quote injection rejected", "text' OR '1'='1", "", false},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got, ok := spec.CanonicalColumnType(tt.value)
+			if ok != tt.ok || got != tt.want {
+				t.Errorf("CanonicalColumnType(%q) = (%q, %v), want (%q, %v)", tt.value, got, ok, tt.want, tt.ok)
+			}
+		})
+	}
+}
+
+func TestSpecCanonicalColumnTypeCustomTypesDisabledByDefault(t *testing.T) {
+	spec := Spec{ColumnTypes: []string{"text"}}
+	if _, ok := spec.CanonicalColumnType("vector(1536)"); ok {
+		t.Error("expected unknown type to be rejected when AllowCustomColumnTypes is false")
+	}
+}
+
+func TestValidCustomColumnTypeSyntax(t *testing.T) {
+	valid := []string{"vector", "vector(1536)", "public.hstore", "geometry(Point, 4326)", "character varying", "int4[]"}
+	for _, value := range valid {
+		if !ValidCustomColumnTypeSyntax(value) {
+			t.Errorf("ValidCustomColumnTypeSyntax(%q) = false, want true", value)
+		}
+	}
+	invalid := []string{"", "text); drop table users; --", "text' OR '1'='1", "a;b", strings.Repeat("a", 129)}
+	for _, value := range invalid {
+		if ValidCustomColumnTypeSyntax(value) {
+			t.Errorf("ValidCustomColumnTypeSyntax(%q) = true, want false", value)
+		}
 	}
 }
 

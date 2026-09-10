@@ -74,6 +74,12 @@ type Spec struct {
 	SupportsCascade          bool                      `json:"supports_cascade"`
 	SupportsColumnDefaults   bool                      `json:"supports_column_defaults,omitempty"`
 	ParameterizedColumnTypes []ParameterizedColumnType `json:"parameterized_column_types,omitempty"`
+	// AllowCustomColumnTypes permits column type text outside ColumnTypes and
+	// ParameterizedColumnTypes, for engines whose installed extensions can add
+	// arbitrary types (e.g. Postgres extensions like pgvector or PostGIS).
+	// CanonicalColumnType only checks that the text is syntactically safe to
+	// interpolate; the database is the authority on whether the type exists.
+	AllowCustomColumnTypes bool `json:"allow_custom_column_types,omitempty"`
 }
 
 // Executor advertises and applies a bounded set of structured DDL operations.

@@ -21,15 +21,33 @@ var cockroachdbDDLSpec = ddl.Spec{
 		ddl.OperationDropColumn,
 		ddl.OperationDropIndex,
 	},
+	// CockroachDB's built-in types, minus Postgres constructs it doesn't
+	// implement: the geometric types, tsvector/tsquery, xml, pg_lsn, and
+	// range/multirange types.
 	ColumnTypes: []string{
-		"bigint", "bigserial", "boolean", "bytea", "date", "double precision",
-		"integer", "json", "jsonb", "numeric", "real", "smallint", "serial",
-		"text", "time", "timestamp", "timestamp with time zone", "uuid", "varchar",
+		"bigint", "bigserial", "bit", "bit varying", "boolean", "bytea",
+		"char", "date", "decimal", "double precision", "inet",
+		"int2", "int4", "int8", "integer", "interval", "json", "jsonb",
+		"numeric", "oid", "real", "serial", "serial2", "serial4", "serial8",
+		"smallint", "smallserial", "text", "time", "time with time zone",
+		"timestamp", "timestamp with time zone", "timestamptz", "uuid", "varchar",
 	},
 	CreatableTableScopeKinds: []string{"schema"},
 	DroppableObjectKinds:     []string{"table", "view"},
 	DroppableScopeKinds:      []string{"schema"},
 	SupportsCascade:          true,
+	ParameterizedColumnTypes: []ddl.ParameterizedColumnType{
+		{Name: "decimal", Parameters: []ddl.ColumnTypeParameter{{Name: "precision", Min: 1, Max: 1000}, {Name: "scale", Min: 0, Max: 1000, Optional: true}}},
+		{Name: "numeric", Parameters: []ddl.ColumnTypeParameter{{Name: "precision", Min: 1, Max: 1000}, {Name: "scale", Min: 0, Max: 1000, Optional: true}}},
+		{Name: "varchar", Parameters: []ddl.ColumnTypeParameter{{Name: "length", Min: 1, Max: 10485760}}},
+		{Name: "char", Parameters: []ddl.ColumnTypeParameter{{Name: "length", Min: 1, Max: 10485760}}},
+		{Name: "bit", Parameters: []ddl.ColumnTypeParameter{{Name: "length", Min: 1, Max: 10485760}}},
+		{Name: "bit varying", Parameters: []ddl.ColumnTypeParameter{{Name: "length", Min: 1, Max: 10485760}}},
+		{Name: "time", Parameters: []ddl.ColumnTypeParameter{{Name: "precision", Min: 0, Max: 6}}},
+		{Name: "time", Suffix: "with time zone", Parameters: []ddl.ColumnTypeParameter{{Name: "precision", Min: 0, Max: 6}}},
+		{Name: "timestamp", Parameters: []ddl.ColumnTypeParameter{{Name: "precision", Min: 0, Max: 6}}},
+		{Name: "timestamp", Suffix: "with time zone", Parameters: []ddl.ColumnTypeParameter{{Name: "precision", Min: 0, Max: 6}}},
+	},
 }
 
 func (d *driver) DDLSpec() ddl.Spec {

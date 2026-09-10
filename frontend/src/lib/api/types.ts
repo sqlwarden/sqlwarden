@@ -728,6 +728,10 @@ export interface SchemaEditSpec {
   supports_cascade: boolean
   supports_column_defaults?: boolean
   parameterized_column_types?: ParameterizedColumnType[]
+  /** Extension-added types (e.g. Postgres's pgvector, PostGIS) fall outside
+   *  column_types/parameterized_column_types; the database is the authority
+   *  on whether free-text input names a real type. */
+  allow_custom_column_types?: boolean
 }
 
 export interface SchemaEditRequest {
