@@ -1,8 +1,7 @@
 import { errorMessage } from '#/lib/api/errors'
-import { useRef, useState, type UIEvent } from 'react'
+import { useState } from 'react'
 import { useInfiniteQuery, useQuery } from '@tanstack/react-query'
 import { Icon } from '#/lib/icons'
-import type { ResultValue } from '#/lib/api/types'
 import {
   connectionPreviewQueryKey,
   connectionPreviewCountQueryKey,
@@ -18,34 +17,12 @@ import {
 } from './previewData'
 import type { ObjectViewModel } from './registry'
 import { useEvictGoneSession } from '../sessionErrors'
+import { DataGrid } from '../dataGrid/DataGrid'
 
 const PREVIEW_PAGE_SIZE = 200
 // Count at most this many rows up front; beyond it the table shows `N+` with a
 // button to run an exact count, so huge tables stay cheap by default.
 const COUNT_THRESHOLD = 10_000
-
-function cellText(v: ResultValue): string {
-  switch (v.type) {
-    case 'null':
-      return 'NULL'
-    case 'text':
-      return v.text ?? ''
-    case 'integer':
-      return String(v.integer ?? 0)
-    case 'float':
-      return String(v.float ?? 0)
-    case 'decimal':
-      return v.decimal ?? ''
-    case 'bool':
-      return v.bool ? 'true' : 'false'
-    case 'time':
-      return v.time ?? ''
-    case 'bytes':
-      return '(binary)'
-    default:
-      return ''
-  }
-}
 
 export function ObjectDataPreview({ vm }: { vm: ObjectViewModel }) {
   const { orgSlug, workspaceId, connectionId, sessionId, dialect } = vm
@@ -117,16 +94,6 @@ export function ObjectDataPreview({ vm }: { vm: ObjectViewModel }) {
     staleTime: 60_000,
   })
 
-  const scrollRef = useRef<HTMLDivElement>(null)
-
-  function onScroll(e: UIEvent<HTMLDivElement>) {
-    if (!data.hasNextPage || data.isFetchingNextPage) return
-    const el = e.currentTarget
-    if (el.scrollHeight - el.scrollTop - el.clientHeight < 400) {
-      void data.fetchNextPage()
-    }
-  }
-
   if (data.isLoading) {
     return (
       <Pane>
@@ -155,33 +122,14 @@ export function ObjectDataPreview({ vm }: { vm: ObjectViewModel }) {
 
   return (
     <div className="flex h-full min-h-0 flex-col">
-      <div ref={scrollRef} onScroll={onScroll} className="min-h-0 flex-1 overflow-auto">
-        <table className="border-separate border-spacing-0 text-xs">
-          <thead className="sticky top-0 bg-muted/80 backdrop-blur-sm">
-            <tr>
-              {cols.map((c) => (
-                <th
-                  key={c.name}
-                  className="border-b border-r border-border px-3 py-1.5 text-left font-medium"
-                >
-                  {c.name}
-                </th>
-              ))}
-            </tr>
-          </thead>
-          <tbody>
-            {rows.map((row, ri) => (
-              <tr key={ri} className="hover:bg-accent/30">
-                {row.map((v, ci) => (
-                  <td key={ci} className="border-b border-r border-border px-3 py-1 font-mono">
-                    {cellText(v)}
-                  </td>
-                ))}
-              </tr>
-            ))}
-          </tbody>
-        </table>
-      </div>
+      <DataGrid
+        columns={cols}
+        rows={rows}
+        onScrollNearEnd={() => {
+          if (data.hasNextPage) void data.fetchNextPage()
+        }}
+        isLoadingMore={data.isFetchingNextPage}
+      />
       <div className="flex shrink-0 items-center gap-2 border-t border-border px-3 py-1 text-[10px] text-muted-foreground">
         <span className="tabular-nums">
           {rows.length} of {count.text} {count.text === '1' ? 'row' : 'rows'}

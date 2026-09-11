@@ -66,7 +66,7 @@ export function useColumnResize(
     resizingRef.current = {
       columnIndex,
       startX: event.clientX,
-      startWidth: measuredWidth ?? columnWidths[columnIndex] ?? minimumWidth,
+      startWidth: measuredWidth || columnWidths[columnIndex] || minimumWidth,
     }
     document.body.style.cursor = 'col-resize'
     document.body.style.userSelect = 'none'
