@@ -85,7 +85,7 @@ Use /v2/users instead.
 
 ### Pull Request Title
 
-Pull request titles must also follow the conventional commits format. The PR title is used when squash merging, so it's important to keep it conventional.
+Pull request titles must also follow the conventional commits format. For squash-merged PRs the title becomes the resulting commit message on `main`, so keep it conventional. For rebase-merged PRs, each individual commit must follow conventional commits as well — see [Merge Strategy](#merge-strategy).
 
 ## Development Workflow
 
@@ -97,6 +97,20 @@ Pull request titles must also follow the conventional commits format. The PR tit
 6. Commit your changes using conventional commits
 7. Push to your fork
 8. Open a Pull Request with a conventional commit title
+
+## Merge Strategy
+
+`main` is kept linear. A PR must be rebased onto the latest `main` before it merges. If another PR merges first, rebase onto the new `main` rather than merging `main` into your branch.
+
+Whether a PR is squash merged or rebase merged depends on what its commit history represents:
+
+- **Squash merge** — the PR is a single feature or fix, even if the branch has many small, incremental commits made for review convenience. Those commits are collapsed into one commit on `main`, using the PR title as the message.
+- **Rebase merge** — the PR is a list of independent changes, where each commit is a complete feature or fix in its own right and should remain visible as its own commit in `main`'s history. Every commit in the branch must independently follow conventional commits.
+
+A PR must not mix both patterns: a list of independently meaningful commits alongside a separate run of small commits that only make sense squashed together as one feature. Split that PR in two instead:
+
+1. One PR with only the independently meaningful commits, rebase merged.
+2. One PR with the feature's full incremental history, squash merged.
 
 ## Release Process
 
