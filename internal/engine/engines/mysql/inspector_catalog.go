@@ -331,3 +331,266 @@ ORDER BY table_schema, table_name, partition_ordinal_position`
 	}
 	return nil
 }
+
+// IndexDefinition reconstructs a CREATE INDEX statement for every table that
+// carries an index named by ref, joined by blank lines, or ("", nil) if ref
+// names no index. A name can span multiple tables (see CatalogIndexes); each
+// gets its own statement. Prefix lengths, descending key parts, and
+// FULLTEXT/SPATIAL/HASH index types are reproduced; index options
+// (KEY_BLOCK_SIZE, WITH PARSER, visibility, comments) are not. functionalKeyParts
+// selects the information_schema.statistics EXPRESSION column, which exists on
+// MySQL 8 but not MariaDB; callers on an engine without it pass false and
+// forgo functional (expression) key parts.
+func IndexDefinition(ctx context.Context, db *sql.DB, ref metadata.ObjectRef, functionalKeyParts bool) (string, error) {
+	schema := ref.Scope.Name("database")
+	exprCol := "NULL"
+	if functionalKeyParts {
+		exprCol = "expression"
+	}
+	rows, err := db.QueryContext(ctx, `
+SELECT table_name, non_unique, index_type, column_name, sub_part, collation, `+exprCol+` AS expression, seq_in_index
+FROM information_schema.statistics
+WHERE table_schema = ? AND index_name = ? AND index_name <> 'PRIMARY'
+ORDER BY table_name, seq_in_index`, schema, ref.Name)
+	if err != nil {
+		return "", fmt.Errorf("mysql: index definition: %w", err)
+	}
+	defer rows.Close()
+	type idx struct {
+		table     string
+		unique    bool
+		indexType string
+		parts     []string
+	}
+	var order []*idx
+	byTable := map[string]*idx{}
+	for rows.Next() {
+		var table, indexType string
+		var nonUnique, seq int
+		var column, collation, expression sql.NullString
+		var subPart sql.NullInt64
+		if err := rows.Scan(&table, &nonUnique, &indexType, &column, &subPart, &collation, &expression, &seq); err != nil {
+			return "", fmt.Errorf("mysql: index definition scan: %w", err)
+		}
+		entry, ok := byTable[table]
+		if !ok {
+			entry = &idx{table: table, unique: nonUnique == 0, indexType: indexType}
+			byTable[table] = entry
+			order = append(order, entry)
+		}
+		var part string
+		if expression.Valid && expression.String != "" {
+			part = "(" + expression.String + ")"
+		} else {
+			part = mysqlQuoteIdent(column.String)
+			if subPart.Valid {
+				part += fmt.Sprintf("(%d)", subPart.Int64)
+			}
+		}
+		if collation.String == "D" {
+			part += " DESC"
+		}
+		entry.parts = append(entry.parts, part)
+	}
+	if err := rows.Err(); err != nil {
+		return "", fmt.Errorf("mysql: index definition rows: %w", err)
+	}
+	if len(order) == 0 {
+		return "", nil
+	}
+	stmts := make([]string, 0, len(order))
+	for _, entry := range order {
+		keyword := "CREATE "
+		switch entry.indexType {
+		case "FULLTEXT":
+			keyword += "FULLTEXT "
+		case "SPATIAL":
+			keyword += "SPATIAL "
+		default:
+			if entry.unique {
+				keyword += "UNIQUE "
+			}
+		}
+		stmt := fmt.Sprintf("%sINDEX %s ON %s.%s (%s)",
+			keyword, mysqlQuoteIdent(ref.Name), mysqlQuoteIdent(schema), mysqlQuoteIdent(entry.table),
+			strings.Join(entry.parts, ", "))
+		if entry.indexType == "HASH" {
+			stmt += " USING HASH"
+		}
+		stmts = append(stmts, stmt+";")
+	}
+	return strings.Join(stmts, "\n\n"), nil
+}
+
+// ConstraintDefinition reconstructs an ALTER TABLE ... ADD statement for every
+// table that carries a constraint named by ref, joined by blank lines, or
+// ("", nil) if ref names no constraint. A name can span multiple tables (see
+// CatalogConstraints); each gets its own statement. PRIMARY KEY, UNIQUE,
+// FOREIGN KEY (with referential actions) and CHECK constraints are reproduced;
+// index prefix lengths on key columns and the MATCH clause are not.
+func ConstraintDefinition(ctx context.Context, db *sql.DB, ref metadata.ObjectRef) (string, error) {
+	schema := ref.Scope.Name("database")
+	rows, err := db.QueryContext(ctx, `
+SELECT tc.table_name, tc.constraint_type,
+       kcu.column_name, kcu.referenced_table_schema, kcu.referenced_table_name, kcu.referenced_column_name,
+       rc.update_rule, rc.delete_rule
+FROM information_schema.table_constraints tc
+LEFT JOIN information_schema.key_column_usage kcu
+  ON kcu.constraint_schema = tc.constraint_schema
+ AND kcu.constraint_name = tc.constraint_name
+ AND kcu.table_schema = tc.table_schema
+ AND kcu.table_name = tc.table_name
+LEFT JOIN information_schema.referential_constraints rc
+  ON rc.constraint_schema = tc.constraint_schema
+ AND rc.constraint_name = tc.constraint_name
+ AND rc.table_name = tc.table_name
+WHERE tc.table_schema = ? AND tc.constraint_name = ?
+ORDER BY tc.table_name, kcu.ordinal_position`, schema, ref.Name)
+	if err != nil {
+		return "", fmt.Errorf("mysql: constraint definition: %w", err)
+	}
+	defer rows.Close()
+	type con struct {
+		table                  string
+		ctype                  string
+		columns                []string
+		refSchema, refTable    string
+		refColumns             []string
+		updateRule, deleteRule string
+	}
+	var order []*con
+	byTable := map[string]*con{}
+	for rows.Next() {
+		var table, ctype string
+		var column, refSchema, refTable, refColumn, updateRule, deleteRule sql.NullString
+		if err := rows.Scan(&table, &ctype, &column, &refSchema, &refTable, &refColumn, &updateRule, &deleteRule); err != nil {
+			return "", fmt.Errorf("mysql: constraint definition scan: %w", err)
+		}
+		entry, ok := byTable[table]
+		if !ok {
+			entry = &con{table: table, ctype: ctype, updateRule: updateRule.String, deleteRule: deleteRule.String}
+			byTable[table] = entry
+			order = append(order, entry)
+		}
+		if column.Valid {
+			entry.columns = append(entry.columns, mysqlQuoteIdent(column.String))
+		}
+		if refTable.Valid {
+			entry.refSchema = refSchema.String
+			entry.refTable = refTable.String
+			entry.refColumns = append(entry.refColumns, mysqlQuoteIdent(refColumn.String))
+		}
+	}
+	if err := rows.Err(); err != nil {
+		return "", fmt.Errorf("mysql: constraint definition rows: %w", err)
+	}
+	if len(order) == 0 {
+		return "", nil
+	}
+
+	checkClauses, err := mysqlCheckClauses(ctx, db, schema, ref.Name)
+	if err != nil {
+		return "", err
+	}
+
+	stmts := make([]string, 0, len(order))
+	checkIdx := 0
+	for _, entry := range order {
+		alter := fmt.Sprintf("ALTER TABLE %s.%s ADD ", mysqlQuoteIdent(schema), mysqlQuoteIdent(entry.table))
+		switch entry.ctype {
+		case "PRIMARY KEY":
+			alter += fmt.Sprintf("PRIMARY KEY (%s)", strings.Join(entry.columns, ", "))
+		case "UNIQUE":
+			alter += fmt.Sprintf("CONSTRAINT %s UNIQUE (%s)", mysqlQuoteIdent(ref.Name), strings.Join(entry.columns, ", "))
+		case "FOREIGN KEY":
+			alter += fmt.Sprintf("CONSTRAINT %s FOREIGN KEY (%s) REFERENCES %s.%s (%s)",
+				mysqlQuoteIdent(ref.Name), strings.Join(entry.columns, ", "),
+				mysqlQuoteIdent(entry.refSchema), mysqlQuoteIdent(entry.refTable),
+				strings.Join(entry.refColumns, ", "))
+			if r := entry.deleteRule; r != "" && r != "NO ACTION" && r != "RESTRICT" {
+				alter += " ON DELETE " + r
+			}
+			if r := entry.updateRule; r != "" && r != "NO ACTION" && r != "RESTRICT" {
+				alter += " ON UPDATE " + r
+			}
+		case "CHECK":
+			clause := ""
+			if checkIdx < len(checkClauses) {
+				clause = checkClauses[checkIdx]
+				checkIdx++
+			}
+			if clause == "" {
+				continue
+			}
+			alter += fmt.Sprintf("CONSTRAINT %s CHECK %s", mysqlQuoteIdent(ref.Name), normalizeCheckClause(clause))
+		default:
+			continue
+		}
+		stmts = append(stmts, alter+";")
+	}
+	if len(stmts) == 0 {
+		return "", nil
+	}
+	return strings.Join(stmts, "\n\n"), nil
+}
+
+// normalizeCheckClause reduces a check_clause to exactly one layer of outer
+// parentheses. MySQL reports the clause already fully wrapped ("(`qty` > 0)");
+// MariaDB reports it bare ("`qty` > 0"). Emitting "CHECK (<clause>)" from a
+// single normalized form keeps the reconstructed DDL valid and round-trip
+// stable on both.
+func normalizeCheckClause(clause string) string {
+	clause = strings.TrimSpace(clause)
+	for isFullyParenthesized(clause) {
+		clause = strings.TrimSpace(clause[1 : len(clause)-1])
+	}
+	return "(" + clause + ")"
+}
+
+// isFullyParenthesized reports whether s begins with "(" and ends with the ")"
+// that closes it, i.e. the whole string is one parenthesized group.
+func isFullyParenthesized(s string) bool {
+	if len(s) < 2 || s[0] != '(' || s[len(s)-1] != ')' {
+		return false
+	}
+	depth := 0
+	for i, r := range s {
+		switch r {
+		case '(':
+			depth++
+		case ')':
+			depth--
+			if depth == 0 {
+				return i == len(s)-1
+			}
+		}
+	}
+	return false
+}
+
+// mysqlCheckClauses returns the CHECK_CLAUSE text of every check constraint
+// named by (schema, name), ordered by table name to line up with the
+// table-ordered instances ConstraintDefinition iterates.
+func mysqlCheckClauses(ctx context.Context, db *sql.DB, schema, name string) ([]string, error) {
+	rows, err := db.QueryContext(ctx, `
+SELECT cc.check_clause
+FROM information_schema.check_constraints cc
+JOIN information_schema.table_constraints tc
+  ON tc.constraint_schema = cc.constraint_schema
+ AND tc.constraint_name = cc.constraint_name
+WHERE cc.constraint_schema = ? AND cc.constraint_name = ?
+ORDER BY tc.table_name`, schema, name)
+	if err != nil {
+		return nil, fmt.Errorf("mysql: check constraint clause: %w", err)
+	}
+	defer rows.Close()
+	var out []string
+	for rows.Next() {
+		var clause string
+		if err := rows.Scan(&clause); err != nil {
+			return nil, fmt.Errorf("mysql: check constraint clause scan: %w", err)
+		}
+		out = append(out, clause)
+	}
+	return out, rows.Err()
+}

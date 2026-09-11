@@ -39,7 +39,7 @@ func (d *oracleDriver) SchemaSpec() metadata.SchemaSpec {
 			{Kind: "synonym", Label: "Synonym", PluralLabel: "Synonyms", Order: 12, Listing: "enumerated", HasDefinition: true},
 			{Kind: "db_link", Label: "Database Link", PluralLabel: "Database Links", Order: 13, Listing: "enumerated", HasDefinition: true},
 			{Kind: "index", Label: "Index", PluralLabel: "Indexes", Order: 14, Listing: "enumerated", HasDefinition: true},
-			{Kind: "constraint", Label: "Constraint", PluralLabel: "Constraints", Order: 15, Listing: "enumerated"},
+			{Kind: "constraint", Label: "Constraint", PluralLabel: "Constraints", Order: 15, Listing: "enumerated", HasDefinition: true},
 		},
 	}
 }
@@ -650,7 +650,8 @@ WHERE `+colFilter, colArgs...)
 // re-fetched here. Retrieval is best-effort: a kind without a retrievable
 // definition, or a failure (insufficient privilege, unsupported storage),
 // yields a nil descriptor rather than an error. Views fall back to
-// all_views.text when GET_DDL is unavailable to the caller.
+// all_views.text when GET_DDL is unavailable to the caller. Constraint DDL is
+// reconstructed from all_constraints/all_cons_columns rather than GET_DDL.
 func (d *oracleDriver) InspectDefinition(ctx context.Context, ref metadata.ObjectRef) (*metadata.Descriptor, error) {
 	owner := ref.Scope.Name("schema")
 	name := ref.Name
@@ -671,6 +672,8 @@ func (d *oracleDriver) InspectDefinition(ctx context.Context, ref metadata.Objec
 		metadataType = "DB_LINK"
 	case "index":
 		metadataType = "INDEX"
+	case "constraint":
+		return d.oracleConstraintDefinition(ctx, owner, name)
 	default:
 		return nil, nil
 	}
@@ -694,6 +697,99 @@ func (d *oracleDriver) InspectDefinition(ctx context.Context, ref metadata.Objec
 		return nil, nil
 	}
 	return oracleSourceDescriptor("DDL", text.String), nil
+}
+
+// oracleConstraintDefinition reconstructs an ALTER TABLE ... ADD CONSTRAINT
+// statement from all_constraints/all_cons_columns for a P/U/R/C constraint,
+// or a nil descriptor if the name is not one of those (NOT NULL checks
+// included) or no longer exists. NOT NULL checks (search_condition of the form
+// "COL IS NOT NULL") are skipped since they belong in the column definition.
+// Deferrable state, MATCH, and constraint status/validation are not reproduced.
+func (d *oracleDriver) oracleConstraintDefinition(ctx context.Context, owner, name string) (*metadata.Descriptor, error) {
+	var (
+		conType   string
+		tableName string
+		search    sql.NullString
+		rOwner    sql.NullString
+		rConName  sql.NullString
+		deleteRul sql.NullString
+	)
+	if err := d.db.QueryRowContext(ctx, `
+SELECT constraint_type, table_name, search_condition_vc, r_owner, r_constraint_name, delete_rule
+FROM all_constraints
+WHERE owner = :1 AND constraint_name = :2`,
+		owner, name).Scan(&conType, &tableName, &search, &rOwner, &rConName, &deleteRul); err != nil {
+		return nil, nil
+	}
+
+	cols, err := d.oracleConsColumns(ctx, owner, name)
+	if err != nil {
+		return nil, nil
+	}
+
+	head := fmt.Sprintf("ALTER TABLE %s ADD CONSTRAINT %s ",
+		oracleQualified(owner, tableName), oracleQuoteIdent(name))
+
+	switch conType {
+	case "P":
+		return oracleSourceDescriptor("DDL", head+"PRIMARY KEY ("+strings.Join(cols, ", ")+");"), nil
+	case "U":
+		return oracleSourceDescriptor("DDL", head+"UNIQUE ("+strings.Join(cols, ", ")+");"), nil
+	case "C":
+		cond := strings.TrimSpace(search.String)
+		if cond == "" || isOracleNotNullCondition(cond) {
+			return nil, nil
+		}
+		return oracleSourceDescriptor("DDL", head+"CHECK ("+cond+");"), nil
+	case "R":
+		refCols, err := d.oracleConsColumns(ctx, rOwner.String, rConName.String)
+		if err != nil {
+			return nil, nil
+		}
+		var refTable string
+		if err := d.db.QueryRowContext(ctx,
+			`SELECT table_name FROM all_constraints WHERE owner = :1 AND constraint_name = :2`,
+			rOwner.String, rConName.String).Scan(&refTable); err != nil {
+			return nil, nil
+		}
+		stmt := head + "FOREIGN KEY (" + strings.Join(cols, ", ") + ") REFERENCES " +
+			oracleQualified(rOwner.String, refTable) + " (" + strings.Join(refCols, ", ") + ")"
+		if r := strings.ToUpper(deleteRul.String); r == "CASCADE" || r == "SET NULL" {
+			stmt += " ON DELETE " + r
+		}
+		return oracleSourceDescriptor("DDL", stmt+";"), nil
+	default:
+		return nil, nil
+	}
+}
+
+// oracleConsColumns returns the quoted column names of a constraint in key
+// position order.
+func (d *oracleDriver) oracleConsColumns(ctx context.Context, owner, name string) ([]string, error) {
+	rows, err := d.db.QueryContext(ctx, `
+SELECT column_name
+FROM all_cons_columns
+WHERE owner = :1 AND constraint_name = :2
+ORDER BY position`, owner, name)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var cols []string
+	for rows.Next() {
+		var col string
+		if err := rows.Scan(&col); err != nil {
+			return nil, err
+		}
+		cols = append(cols, oracleQuoteIdent(col))
+	}
+	return cols, rows.Err()
+}
+
+// isOracleNotNullCondition reports whether an all_constraints search condition
+// is just a system-generated NOT NULL check ("COL" IS NOT NULL).
+func isOracleNotNullCondition(cond string) bool {
+	return strings.HasSuffix(strings.ToUpper(strings.TrimSpace(cond)), "IS NOT NULL")
 }
 
 func (d *oracleDriver) inspectMaterializedViews(ctx context.Context, dict oracleDict, refs []metadata.ObjectRef) ([]metadata.Object, error) {

@@ -56,6 +56,8 @@ func (d *driver) InspectDirectory(ctx context.Context, opts metadata.DirectoryOp
 	b.DeclareKind("procedure")
 	b.DeclareKind("trigger")
 	b.DeclareKind("sequence")
+	b.DeclareKind("index")
+	b.DeclareKind("constraint")
 
 	if err := CatalogTables(ctx, d.DB(), database, func(ns, name, kind string) { b.AddRef(scope, kind, name) }); err != nil {
 		return nil, fmt.Errorf("mariadb: catalog tables: %w", err)
@@ -71,6 +73,12 @@ func (d *driver) InspectDirectory(ctx context.Context, opts metadata.DirectoryOp
 	}
 	if err := CatalogSequences(ctx, d.DB(), database, func(ns, name string) { b.AddRef(scope, "sequence", name) }); err != nil {
 		return nil, fmt.Errorf("mariadb: catalog sequences: %w", err)
+	}
+	if err := mysql.CatalogIndexes(ctx, d.DB(), database, func(ns, name string) { b.AddRef(scope, "index", name) }); err != nil {
+		return nil, fmt.Errorf("mariadb: catalog indexes: %w", err)
+	}
+	if err := mysql.CatalogConstraints(ctx, d.DB(), database, func(ns, name string) { b.AddRef(scope, "constraint", name) }); err != nil {
+		return nil, fmt.Errorf("mariadb: catalog constraints: %w", err)
 	}
 
 	return b.Build("", "mariadb", scope), nil
@@ -111,11 +119,19 @@ func (d *driver) InspectObjects(ctx context.Context, refs []metadata.ObjectRef) 
 }
 
 // InspectDefinition special-cases sequences (SHOW CREATE SEQUENCE has no
-// equivalent in the embedded mysql implementation) and delegates every other
-// kind to it unmodified.
+// equivalent in the embedded mysql implementation) and index reconstruction
+// (MariaDB's information_schema.statistics lacks the EXPRESSION column the
+// base implementation selects), and delegates every other kind to it unmodified.
 func (d *driver) InspectDefinition(ctx context.Context, ref metadata.ObjectRef) (*metadata.Descriptor, error) {
-	if ref.Kind == "sequence" {
+	switch ref.Kind {
+	case "sequence":
 		return mysql.ShowCreateDefinition(ctx, d.DB(), ref, "SHOW CREATE SEQUENCE ", "Definition")
+	case "index":
+		def, err := mysql.IndexDefinition(ctx, d.DB(), ref, false)
+		if err != nil {
+			return nil, err
+		}
+		return mysql.SourceDescriptor("DDL", def), nil
 	}
 	return d.Driver.InspectDefinition(ctx, ref)
 }

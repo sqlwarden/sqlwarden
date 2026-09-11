@@ -924,6 +924,8 @@ func TestPostgresInspectDefinition(t *testing.T) {
 	d := newConnectedDriver(t)
 	ctx := context.Background()
 	t.Cleanup(func() {
+		_, _ = d.Execute(ctx, "DROP FOREIGN TABLE IF EXISTS idef_ft")
+		_, _ = d.Execute(ctx, "DROP SERVER IF EXISTS idef_srv CASCADE")
 		_, _ = d.Execute(ctx, "DROP MATERIALIZED VIEW IF EXISTS idef_mv")
 		_, _ = d.Execute(ctx, "DROP VIEW IF EXISTS idef_v")
 		_, _ = d.Execute(ctx, "DROP TRIGGER IF EXISTS idef_trg ON idef_t")
@@ -932,6 +934,9 @@ func TestPostgresInspectDefinition(t *testing.T) {
 		_, _ = d.Execute(ctx, "DROP PROCEDURE IF EXISTS idef_proc(int)")
 		_, _ = d.Execute(ctx, "DROP TABLE IF EXISTS idef_t")
 		_, _ = d.Execute(ctx, "DROP SEQUENCE IF EXISTS idef_seq")
+		_, _ = d.Execute(ctx, "DROP DOMAIN IF EXISTS idef_dom")
+		_, _ = d.Execute(ctx, "DROP TYPE IF EXISTS idef_enum")
+		_, _ = d.Execute(ctx, "DROP TYPE IF EXISTS idef_comp")
 	})
 	mustExec(t, d, `CREATE TABLE idef_t (id bigint PRIMARY KEY, label text NOT NULL)`)
 	mustExec(t, d, `CREATE VIEW idef_v AS SELECT id, label FROM idef_t`)
@@ -941,6 +946,12 @@ func TestPostgresInspectDefinition(t *testing.T) {
 	mustExec(t, d, `CREATE FUNCTION idef_trg_fn() RETURNS trigger LANGUAGE plpgsql AS $$ BEGIN RETURN NEW; END $$`)
 	mustExec(t, d, `CREATE TRIGGER idef_trg BEFORE INSERT ON idef_t FOR EACH ROW EXECUTE FUNCTION idef_trg_fn()`)
 	mustExec(t, d, `CREATE SEQUENCE idef_seq`)
+	mustExec(t, d, `CREATE DOMAIN idef_dom AS integer DEFAULT 0 NOT NULL CHECK (VALUE > 0)`)
+	mustExec(t, d, `CREATE TYPE idef_enum AS ENUM ('sad', 'ok', 'happy')`)
+	mustExec(t, d, `CREATE TYPE idef_comp AS (x integer, y text)`)
+	mustExec(t, d, `CREATE EXTENSION IF NOT EXISTS postgres_fdw`)
+	mustExec(t, d, `CREATE SERVER idef_srv FOREIGN DATA WRAPPER postgres_fdw OPTIONS (host 'localhost', port '5432', dbname 'testdb')`)
+	mustExec(t, d, `CREATE FOREIGN TABLE idef_ft (id int NOT NULL, label text) SERVER idef_srv OPTIONS (schema_name 'public', table_name 'idef_remote')`)
 
 	scope := pgTestScope("public")
 
@@ -1000,12 +1011,85 @@ func TestPostgresInspectDefinition(t *testing.T) {
 		t.Fatalf("sequence definition = %+v", seq)
 	}
 
+	dom, err := d.InspectDefinition(ctx, metadata.ObjectRef{Scope: scope, Kind: "domain", Name: "idef_dom"})
+	if err != nil {
+		t.Fatalf("InspectDefinition(domain): %v", err)
+	}
+	if dom == nil || dom.Title != "DDL" {
+		t.Fatalf("domain definition = %+v", dom)
+	}
+	for _, want := range []string{"CREATE DOMAIN", "AS integer", "DEFAULT 0", "NOT NULL", "CHECK"} {
+		if !strings.Contains(dom.Source.Body, want) {
+			t.Errorf("domain DDL missing %q:\n%s", want, dom.Source.Body)
+		}
+	}
+
+	enum, err := d.InspectDefinition(ctx, metadata.ObjectRef{Scope: scope, Kind: "type", Name: "idef_enum"})
+	if err != nil {
+		t.Fatalf("InspectDefinition(enum type): %v", err)
+	}
+	if enum == nil || !strings.Contains(enum.Source.Body, "CREATE TYPE") || !strings.Contains(enum.Source.Body, "AS ENUM") || !strings.Contains(enum.Source.Body, "'happy'") {
+		t.Fatalf("enum type definition = %+v", enum)
+	}
+
+	comp, err := d.InspectDefinition(ctx, metadata.ObjectRef{Scope: scope, Kind: "type", Name: "idef_comp"})
+	if err != nil {
+		t.Fatalf("InspectDefinition(composite type): %v", err)
+	}
+	if comp == nil || !strings.Contains(comp.Source.Body, "AS (") || !strings.Contains(comp.Source.Body, "y text") {
+		t.Fatalf("composite type definition = %+v", comp)
+	}
+
+	ft, err := d.InspectDefinition(ctx, metadata.ObjectRef{Scope: scope, Kind: "foreign_table", Name: "idef_ft"})
+	if err != nil {
+		t.Fatalf("InspectDefinition(foreign_table): %v", err)
+	}
+	if ft == nil || ft.Title != "DDL" {
+		t.Fatalf("foreign table definition = %+v", ft)
+	}
+	for _, want := range []string{"CREATE FOREIGN TABLE", "SERVER \"idef_srv\"", "OPTIONS (", "schema_name 'public'", "id integer NOT NULL"} {
+		if !strings.Contains(ft.Source.Body, want) {
+			t.Errorf("foreign table DDL missing %q:\n%s", want, ft.Source.Body)
+		}
+	}
+
 	missing, err := d.InspectDefinition(ctx, metadata.ObjectRef{Scope: scope, Kind: "table", Name: "idef_nope"})
 	if err != nil {
 		t.Fatalf("InspectDefinition(missing): %v", err)
 	}
 	if missing != nil {
 		t.Errorf("missing object should yield a nil descriptor, got %+v", missing)
+	}
+
+	// Round-trip: dropping the object and replaying its reconstructed DDL must
+	// yield an object whose own reconstruction is byte-identical.
+	for _, rt := range []struct{ kind, name, drop string }{
+		{"domain", "idef_dom", "DROP DOMAIN idef_dom"},
+		{"type", "idef_enum", "DROP TYPE idef_enum"},
+		{"type", "idef_comp", "DROP TYPE idef_comp"},
+		{"foreign_table", "idef_ft", "DROP FOREIGN TABLE idef_ft"},
+	} {
+		t.Run("round-trip/"+rt.name, func(t *testing.T) {
+			ref := metadata.ObjectRef{Scope: scope, Kind: rt.kind, Name: rt.name}
+			first, err := d.InspectDefinition(ctx, ref)
+			if err != nil || first == nil {
+				t.Fatalf("reconstruct %s: %v / %+v", rt.name, err, first)
+			}
+			if _, err := d.Execute(ctx, rt.drop); err != nil {
+				t.Fatalf("drop %s: %v", rt.name, err)
+			}
+			if _, err := d.Execute(ctx, first.Source.Body); err != nil {
+				t.Fatalf("replay %s DDL: %v\n%s", rt.name, err, first.Source.Body)
+			}
+			second, err := d.InspectDefinition(ctx, ref)
+			if err != nil || second == nil {
+				t.Fatalf("re-reconstruct %s: %v / %+v", rt.name, err, second)
+			}
+			if first.Source.Body != second.Source.Body {
+				t.Errorf("%s DDL not stable across round-trip:\nfirst:\n%s\nsecond:\n%s",
+					rt.name, first.Source.Body, second.Source.Body)
+			}
+		})
 	}
 }
 
