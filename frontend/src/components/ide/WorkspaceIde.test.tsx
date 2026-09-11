@@ -121,24 +121,56 @@ describe('WorkspaceIdeContent', () => {
     expect(screen.getByRole('button', { name: 'Retrying…' })).toBeDisabled()
   })
 
-  it('explains how to get access when no workspace is available', () => {
+  it('explains how to get access when no workspace is available', async () => {
+    server.use(
+      http.get('/api/v1/orgs/acme/permissions/effective', () =>
+        HttpResponse.json({ permissions: [] }),
+      ),
+    )
     render(
-      <WorkspaceIdeContent
-        orgSlug="acme"
-        requestedWorkspaceId={3}
-        isLoading={false}
-        isError={false}
-        isRetrying={false}
-        workspaces={[]}
-        onRetry={() => {}}
-      />,
+      <QueryClientProvider client={createTestQueryClient()}>
+        <WorkspaceIdeContent
+          orgSlug="acme"
+          requestedWorkspaceId={3}
+          isLoading={false}
+          isError={false}
+          isRetrying={false}
+          workspaces={[]}
+          onRetry={() => {}}
+        />
+      </QueryClientProvider>,
     )
 
     expect(screen.getByRole('heading', { name: 'No workspace access' })).toBeInTheDocument()
     expect(
-      screen.getByText(/Ask an organization administrator to grant you access/),
+      await screen.findByText(/Ask an organization administrator to grant you access/),
     ).toBeInTheDocument()
     expect(screen.queryByRole('button')).not.toBeInTheDocument()
+  })
+
+  it('offers to create a workspace when the user has permission and none exist', async () => {
+    server.use(
+      http.get('/api/v1/orgs/acme/permissions/effective', () =>
+        HttpResponse.json({ permissions: ['ws:create'] }),
+      ),
+    )
+    render(
+      <QueryClientProvider client={createTestQueryClient()}>
+        <WorkspaceIdeContent
+          orgSlug="acme"
+          requestedWorkspaceId={3}
+          isLoading={false}
+          isError={false}
+          isRetrying={false}
+          workspaces={[]}
+          onRetry={() => {}}
+        />
+      </QueryClientProvider>,
+    )
+
+    expect(screen.getByRole('heading', { name: 'No workspace access' })).toBeInTheDocument()
+    expect(await screen.findByText(/Create one to get started/)).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: /Create workspace/ })).toBeInTheDocument()
   })
 })
 

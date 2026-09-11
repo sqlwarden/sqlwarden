@@ -358,6 +358,48 @@ func (app *application) listWorkspacePolicies(w http.ResponseWriter, r *http.Req
 	}
 }
 
+// getWorkspacePolicy fetches a single role binding. It verifies the
+// binding's resource belongs to this workspace before returning it.
+func (app *application) getWorkspacePolicy(w http.ResponseWriter, r *http.Request) {
+	bindingIDStr := chi.URLParam(r, "binding_id")
+	bindingID, err := strconv.ParseInt(bindingIDStr, 10, 64)
+	if err != nil {
+		app.notFound(w, r)
+		return
+	}
+
+	org := contextGetOrg(r)
+	ws := contextGetWorkspace(r)
+
+	rb, found, err := app.db.GetRoleBinding(r.Context(), bindingID, org.ID)
+	if err != nil {
+		app.serverError(w, r, err)
+		return
+	}
+	if !found {
+		app.notFound(w, r)
+		return
+	}
+	if ok, err := app.resourceBelongsToWorkspace(r, rb.ResourceType, rb.ResourceID, ws.ID); err != nil {
+		app.serverError(w, r, err)
+		return
+	} else if !ok {
+		app.notFound(w, r)
+		return
+	}
+
+	item, err := app.db.GetPolicyBindingItem(r.Context(), org.ID, rb)
+	if err != nil {
+		app.serverError(w, r, err)
+		return
+	}
+
+	err = response.JSON(w, http.StatusOK, item)
+	if err != nil {
+		app.serverError(w, r, err)
+	}
+}
+
 // grantWorkspacePolicy creates a role binding for a resource within
 // the workspace. resource_type defaults to "workspace"; for "environment" or
 // "connection" a resource_id must be supplied and is validated for ownership.

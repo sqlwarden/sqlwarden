@@ -9,6 +9,7 @@ import {
   DialogHeader,
   DialogTitle,
 } from '#/components/ui/dialog'
+import { FieldDescription, FieldError } from '#/components/ui/field'
 import { Input } from '#/components/ui/input'
 import { Label } from '#/components/ui/label'
 import { ScrollArea } from '#/components/ui/scroll-area'
@@ -160,11 +161,11 @@ export function SaveAsDialog({
               </Select>
             </div>
             {fieldError ? (
-              <p className="text-xs text-destructive">{fieldError}</p>
+              <FieldError>{fieldError}</FieldError>
             ) : (
-              <p className="text-xs text-muted-foreground">
+              <FieldDescription>
                 Will save as <span className="font-mono text-foreground">{filename}</span>
-              </p>
+              </FieldDescription>
             )}
           </div>
 

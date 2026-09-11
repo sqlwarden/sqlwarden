@@ -43,7 +43,7 @@ export function buildUserMenuItems({
   items.push({
     id: 'personal-settings',
     to: '/settings/account',
-    label: 'Personal Settings',
+    label: 'Account Settings',
     icon: 'user-02',
   })
 

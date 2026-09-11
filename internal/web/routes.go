@@ -347,6 +347,7 @@ func (app *application) routes() http.Handler {
 					r.Route("/policies", func(r chi.Router) {
 						r.With(app.requireWorkspacePermission("policy:read")).Get("/", app.listWorkspacePolicies)
 						r.With(app.requireWorkspacePermission("policy:modify")).Post("/", app.grantWorkspacePolicy)
+						r.With(app.requireWorkspacePermission("policy:read")).Get("/{binding_id}", app.getWorkspacePolicy)
 						r.With(app.requireWorkspacePermission("policy:modify")).Delete("/{binding_id}", app.revokeWorkspacePolicy)
 					})
 

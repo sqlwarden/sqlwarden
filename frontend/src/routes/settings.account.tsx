@@ -10,8 +10,8 @@ import { queryKeys } from '#/lib/api/query'
 import type { Account } from '#/lib/api/types'
 import { Button } from '#/components/ui/button'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '#/components/ui/card'
+import { FormField as Field } from '#/components/ui/field'
 import { Input } from '#/components/ui/input'
-import { Label } from '#/components/ui/label'
 import { RoutePending } from '#/components/RoutePending'
 import { usePageTitle } from '#/lib/page-title'
 
@@ -236,24 +236,6 @@ function SettingsAccountPage() {
           </form>
         </CardContent>
       </Card>
-    </div>
-  )
-}
-
-function Field({
-  children,
-  error,
-  label,
-}: {
-  children: React.ReactNode
-  error?: string
-  label: string
-}) {
-  return (
-    <div className="flex flex-col gap-2">
-      <Label>{label}</Label>
-      {children}
-      {error ? <p className="text-xs text-destructive">{error}</p> : null}
     </div>
   )
 }

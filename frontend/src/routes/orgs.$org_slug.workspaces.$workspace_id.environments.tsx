@@ -35,8 +35,8 @@ import {
   DialogTitle,
   DialogTrigger,
 } from '#/components/ui/dialog'
+import { FormField as Field } from '#/components/ui/field'
 import { Input } from '#/components/ui/input'
-import { Label } from '#/components/ui/label'
 import { Textarea } from '#/components/ui/textarea'
 import { PaginationFooter } from '#/components/PaginationFooter'
 import { RoutePending } from '#/components/RoutePending'
@@ -419,6 +419,7 @@ function EnvironmentForm({
         <Input
           value={values.name}
           disabled={isPending}
+          placeholder="e.g. Production"
           aria-invalid={errors.name ? true : undefined}
           onChange={(event) => {
             onValuesChange((current) => ({ ...current, name: event.target.value }))
@@ -560,22 +561,4 @@ function EnvironmentTableSkeleton({ canManageEnvironment }: { canManageEnvironme
       ) : null}
     </TableRow>
   ))
-}
-
-function Field({
-  children,
-  error,
-  label,
-}: {
-  children: React.ReactNode
-  error?: string
-  label: string
-}) {
-  return (
-    <div className="flex flex-col gap-2">
-      <Label>{label}</Label>
-      {children}
-      {error ? <p className="text-xs text-destructive">{error}</p> : null}
-    </div>
-  )
 }

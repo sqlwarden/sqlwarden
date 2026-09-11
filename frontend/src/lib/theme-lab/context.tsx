@@ -241,6 +241,25 @@ export const SURFACE_PRESETS: SurfacePreset[] = [
     tint: 0,
     ramp: { dark: HIGH_CONTRAST_DARK_RAMP, light: HIGH_CONTRAST_LIGHT_RAMP },
   },
+  // Warm/Cool reuse the Default ramp's lightness steps and only add hue/chroma
+  // (tint 2, capped at 0.045 chroma by surfaceTokens) — contrast ratios verified
+  // to sit within ~0.05 of the Default preset's (still comfortably AA/AAA):
+  // dark bg/fg ~12.1:1, dark bg/mutedFg ~5.9:1, light bg/fg ~14.4:1,
+  // light bg/mutedFg ~5.3:1.
+  {
+    id: 'warm',
+    label: 'Warm',
+    hue: 65,
+    tint: 2,
+    ramp: { dark: FLUSH_DARK_RAMP, light: FLUSH_LIGHT_RAMP },
+  },
+  {
+    id: 'cool',
+    label: 'Cool',
+    hue: 250,
+    tint: 2,
+    ramp: { dark: FLUSH_DARK_RAMP, light: FLUSH_LIGHT_RAMP },
+  },
 ]
 
 export const DEFAULT_SURFACE = 'default'

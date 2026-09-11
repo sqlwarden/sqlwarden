@@ -90,7 +90,9 @@ func DefaultInstanceSettings() InstanceSettings {
 	return InstanceSettings{
 		ID:                             1,
 		InstanceName:                   "SQLWarden",
-		PersonalSpacesEnabled:          true,
+		// Personal spaces has backend support but no finished frontend
+		// surface yet; default new instances to off until that lands.
+		PersonalSpacesEnabled:          false,
 		JWTAccessTokenTTLSeconds:       DefaultJWTAccessTokenTTLSeconds,
 		SessionsRevocationEnabled:      true,
 		QueryMaxResultRows:             DefaultQueryMaxResultRows,

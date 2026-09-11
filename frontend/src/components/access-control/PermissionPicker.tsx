@@ -1,10 +1,10 @@
 import { useState } from 'react'
-import { Icon } from '#/lib/icons'
 import type { PermissionDefinition } from '#/lib/api/types'
 import { permissionDescription, permissionDisplayName, type Permission } from '#/lib/permissions'
 import { Checkbox } from '#/components/ui/checkbox'
 import { Label } from '#/components/ui/label'
 import { ScrollArea } from '#/components/ui/scroll-area'
+import { SearchInput } from '#/components/SearchInput'
 
 export function groupPermissionDetails(permissions: readonly PermissionDefinition[]) {
   const groups = new Map<string, PermissionDefinition[]>()
@@ -64,24 +64,16 @@ export function PermissionPicker({
         ) : null}
       </div>
       <div className="rounded-md border border-border">
-        <div className="flex items-center gap-2 border-b border-border px-3">
-          <Icon name="search-01" size={20} className="size-4 shrink-0 text-muted-foreground" />
-          <input
-            type="text"
-            placeholder="Filter permissions…"
+        <div className="border-b border-border p-2">
+          <SearchInput
             value={search}
-            onChange={(event) => setSearch(event.target.value)}
-            className="h-9 w-full bg-transparent text-sm outline-none placeholder:text-muted-foreground"
+            onValueChange={setSearch}
+            onClear={() => setSearch('')}
+            placeholder="Filter permissions…"
+            size="sm"
+            variant="muted"
+            className="w-full"
           />
-          {search ? (
-            <button
-              type="button"
-              onClick={() => setSearch('')}
-              className="shrink-0 text-muted-foreground hover:text-foreground"
-            >
-              <Icon name="cancel-01" size={20} className="size-3.5" />
-            </button>
-          ) : null}
         </div>
         <ScrollArea className="h-60">
           <div className="flex flex-col gap-5 p-4">

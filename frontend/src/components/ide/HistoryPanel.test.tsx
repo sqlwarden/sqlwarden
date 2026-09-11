@@ -226,7 +226,7 @@ describe('HistoryPanel', () => {
 
     expect(await screen.findByText('select 1')).toBeInTheDocument()
     expect(screen.getByText('select 2')).toBeInTheDocument()
-    expect(screen.getByRole('button', { name: 'Filter by connection' })).toHaveTextContent(
+    expect(screen.getByRole('combobox', { name: 'Filter by connection' })).toHaveTextContent(
       'All connections',
     )
   })
@@ -243,7 +243,7 @@ describe('HistoryPanel', () => {
     expect(await screen.findByText('select 1')).toBeInTheDocument()
     expect(screen.queryByText('select 2')).not.toBeInTheDocument()
     expect(within(screen.getByTestId('history-row')).getByText('primary-pg')).toBeInTheDocument()
-    expect(screen.getByRole('button', { name: 'Filter by connection' })).toHaveTextContent(
+    expect(screen.getByRole('combobox', { name: 'Filter by connection' })).toHaveTextContent(
       'primary-pg',
     )
   })
@@ -258,8 +258,8 @@ describe('HistoryPanel', () => {
     const { user } = renderPanel()
     await screen.findByText('select 1')
 
-    await user.click(screen.getByRole('button', { name: 'Filter by connection' }))
-    await user.click(await screen.findByRole('button', { name: /secondary-pg/ }))
+    await user.click(screen.getByRole('combobox', { name: 'Filter by connection' }))
+    await user.click(await screen.findByRole('option', { name: /secondary-pg/ }))
 
     expect(await screen.findByText('select 2')).toBeInTheDocument()
     expect(screen.queryByText('select 1')).not.toBeInTheDocument()
@@ -276,8 +276,8 @@ describe('HistoryPanel', () => {
     await screen.findByText('select 1')
     expect(screen.queryByText('select 2')).not.toBeInTheDocument()
 
-    await user.click(screen.getByRole('button', { name: 'Filter by connection' }))
-    await user.click(await screen.findByRole('button', { name: 'All connections' }))
+    await user.click(screen.getByRole('combobox', { name: 'Filter by connection' }))
+    await user.click(await screen.findByRole('option', { name: 'All connections' }))
 
     expect(await screen.findByText('select 2')).toBeInTheDocument()
     expect(screen.getByText('select 1')).toBeInTheDocument()
@@ -290,11 +290,11 @@ describe('HistoryPanel', () => {
     const { user } = renderPanel()
     await screen.findByText('select 1')
 
-    await user.click(screen.getByRole('button', { name: 'Filter by connection' }))
-    const primaryOption = await screen.findByRole('button', { name: /primary-pg/ })
+    await user.click(screen.getByRole('combobox', { name: 'Filter by connection' }))
+    const primaryOption = await screen.findByRole('option', { name: /primary-pg/ })
     expect(within(primaryOption).getByText('Active')).toBeInTheDocument()
 
-    const secondaryOption = screen.getByRole('button', { name: /secondary-pg/ })
+    const secondaryOption = screen.getByRole('option', { name: /secondary-pg/ })
     expect(within(secondaryOption).queryByText('Active')).not.toBeInTheDocument()
   })
 

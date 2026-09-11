@@ -25,8 +25,8 @@ import {
 } from '#/components/ui/alert-dialog'
 import { Button } from '#/components/ui/button'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '#/components/ui/card'
+import { FormField as Field } from '#/components/ui/field'
 import { Input } from '#/components/ui/input'
-import { Label } from '#/components/ui/label'
 import { Textarea } from '#/components/ui/textarea'
 import { RoutePending } from '#/components/RoutePending'
 
@@ -242,14 +242,13 @@ function WorkspaceSettingsPage() {
                     to confirm deletion.
                   </AlertDialogDescription>
                 </AlertDialogHeader>
-                <div className="flex flex-col gap-2">
-                  <Label>Workspace name</Label>
+                <Field label="Workspace name">
                   <Input
                     value={deleteConfirmation}
                     disabled={deleteWorkspace.isPending}
                     onChange={(event) => setDeleteConfirmation(event.target.value)}
                   />
-                </div>
+                </Field>
                 <AlertDialogFooter>
                   <AlertDialogCancel
                     variant="ghost"
@@ -273,24 +272,6 @@ function WorkspaceSettingsPage() {
           </div>
         </CardContent>
       </Card>
-    </div>
-  )
-}
-
-function Field({
-  children,
-  error,
-  label,
-}: {
-  children: React.ReactNode
-  error?: string
-  label: string
-}) {
-  return (
-    <div className="flex flex-col gap-2">
-      <Label>{label}</Label>
-      {children}
-      {error ? <p className="text-xs text-destructive">{error}</p> : null}
     </div>
   )
 }

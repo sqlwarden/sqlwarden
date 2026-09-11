@@ -25,6 +25,7 @@ import {
   DialogTitle,
   DialogTrigger,
 } from '#/components/ui/dialog'
+import { FormField } from '#/components/ui/field'
 import { Input } from '#/components/ui/input'
 import { EmptyState } from '#/components/EmptyState'
 import { PaginationFooter } from '#/components/PaginationFooter'
@@ -181,37 +182,37 @@ function OrganizationWorkspacesPage({ orgSlug }: { orgSlug: string }) {
                   <DialogDescription>Add a workspace to this organization.</DialogDescription>
                 </DialogHeader>
                 <form className="mt-6 flex flex-col gap-4" onSubmit={submitCreateWorkspace}>
-                  <div className="flex flex-col gap-2">
+                  <FormField label="Name" htmlFor="workspace-name" error={createFieldErrors.name}>
                     <Input
+                      id="workspace-name"
                       value={newWorkspaceName}
                       onChange={(event) => {
                         setNewWorkspaceName(event.target.value)
                         setCreateFieldErrors((current) => ({ ...current, name: undefined }))
                       }}
-                      placeholder="Workspace name"
+                      placeholder="e.g. Analytics"
                       aria-invalid={createFieldErrors.name ? true : undefined}
                       disabled={createWorkspace.isPending}
                     />
-                    {createFieldErrors.name ? (
-                      <p className="text-sm text-destructive">{createFieldErrors.name}</p>
-                    ) : null}
-                  </div>
+                  </FormField>
 
-                  <div className="flex flex-col gap-2">
+                  <FormField
+                    label="Description"
+                    htmlFor="workspace-description"
+                    error={createFieldErrors.description}
+                  >
                     <Input
+                      id="workspace-description"
                       value={newWorkspaceDescription}
                       onChange={(event) => {
                         setNewWorkspaceDescription(event.target.value)
                         setCreateFieldErrors((current) => ({ ...current, description: undefined }))
                       }}
-                      placeholder="Description optional"
+                      placeholder="Optional description"
                       aria-invalid={createFieldErrors.description ? true : undefined}
                       disabled={createWorkspace.isPending}
                     />
-                    {createFieldErrors.description ? (
-                      <p className="text-sm text-destructive">{createFieldErrors.description}</p>
-                    ) : null}
-                  </div>
+                  </FormField>
 
                   <DialogFooter>
                     <DialogClose
@@ -289,6 +290,14 @@ function OrganizationWorkspacesPage({ orgSlug }: { orgSlug: string }) {
                   : 'This organization does not have any visible workspaces yet.'
               }
             />
+            {!query.q && canCreateWorkspace ? (
+              <div className="mt-4 flex justify-center">
+                <Button onClick={() => setIsCreating(true)}>
+                  <Icon name="plus-sign" size={20} data-icon="inline-start" />
+                  Create workspace
+                </Button>
+              </div>
+            ) : null}
           </CardContent>
         </Card>
       ) : null}

@@ -84,6 +84,8 @@ export const queryKeys = {
     ['org-workspace-policies', slug, workspaceId] as const,
   orgWorkspacePolicies: (slug: string, workspaceId: string | number, query?: ListQuery) =>
     [...queryKeys.orgWorkspacePoliciesScope(slug, workspaceId), query ?? {}] as const,
+  orgWorkspacePolicy: (slug: string, workspaceId: string | number, bindingId: string | number) =>
+    ['org-workspace-policy', slug, workspaceId, bindingId] as const,
   orgWorkspacePrivateFilesScope: (slug: string, workspaceId: string | number) =>
     ['org-workspace-private-files', slug, workspaceId] as const,
   orgWorkspacePrivateFiles: (

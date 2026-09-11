@@ -73,6 +73,10 @@ func newTestApplication(t *testing.T) *application {
 	settings.BaseURL = app.config.BootstrapBaseURL
 	settings.FileRevisionsEnabled = false
 	settings.SQLiteInMemoryTargetsEnabled = true
+	// Personal spaces default off in production; most /me tests exercise
+	// that surface directly, so enable it here and let the handful of
+	// gating tests opt back out via updateInstanceSettingsForTest.
+	settings.PersonalSpacesEnabled = true
 	if _, err := app.db.UpsertInstanceSettings(context.Background(), settings); err != nil {
 		t.Fatal(err)
 	}

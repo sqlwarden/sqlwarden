@@ -12,7 +12,7 @@ import {
 import { ApiError } from '#/lib/api/errors'
 import { queryKeys } from '#/lib/api/query-keys'
 import type { Workspace, WorkspaceFile } from '#/lib/api/types'
-import { saveTextAs } from './saveFile'
+import { saveTextAsWithPicker } from './saveFile'
 import { activeTabId as selectActiveTabId, newFileTab, useIde } from './useIdeStore'
 
 export function useFileActions(
@@ -105,7 +105,7 @@ export function useFileActions(
   async function saveAs(file: WorkspaceFile) {
     try {
       const { text } = await getPrivateWorkspaceFileContent(orgSlug, workspace.id, file.id)
-      saveTextAs(file.name, text)
+      await saveTextAsWithPicker(file.name, text)
     } catch {
       toast.error('Failed to save file.')
     }

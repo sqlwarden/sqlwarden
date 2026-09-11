@@ -106,6 +106,29 @@ function ComboboxList({ className, ...props }: ComboboxPrimitive.List.Props) {
 
 const ComboboxCollection = ComboboxPrimitive.Collection
 
+function ComboboxGroup({ className, ...props }: ComboboxPrimitive.Group.Props) {
+  return (
+    <ComboboxPrimitive.Group
+      data-slot="combobox-group"
+      className={cn('mb-1 last:mb-0', className)}
+      {...props}
+    />
+  )
+}
+
+function ComboboxGroupLabel({ className, ...props }: ComboboxPrimitive.GroupLabel.Props) {
+  return (
+    <ComboboxPrimitive.GroupLabel
+      data-slot="combobox-group-label"
+      className={cn(
+        'px-2 pt-2 pb-1 text-[10px] font-semibold tracking-widest text-muted-foreground/70 uppercase',
+        className,
+      )}
+      {...props}
+    />
+  )
+}
+
 function ComboboxItem({ className, children, ...props }: ComboboxPrimitive.Item.Props) {
   return (
     <ComboboxPrimitive.Item
@@ -147,6 +170,8 @@ export {
   Combobox,
   ComboboxCollection,
   ComboboxEmpty,
+  ComboboxGroup,
+  ComboboxGroupLabel,
   ComboboxIcon,
   ComboboxInput,
   ComboboxInputGroup,

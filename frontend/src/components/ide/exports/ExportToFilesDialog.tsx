@@ -5,6 +5,7 @@ import { Button } from '#/components/ui/button'
 import {
   Dialog,
   DialogContent,
+  DialogDescription,
   DialogFooter,
   DialogHeader,
   DialogTitle,
@@ -100,13 +101,12 @@ export function ExportToFilesDialog({
       <DialogContent className="sm:max-w-sm">
         <DialogHeader>
           <DialogTitle>Export to workspace</DialogTitle>
-        </DialogHeader>
-        <form onSubmit={handleSubmit} className="flex flex-col gap-4">
-          <p className="text-xs text-muted-foreground">
+          <DialogDescription>
             Runs this query and saves the result as a file in this workspace's Files, so you can
             pick it up later.
-          </p>
-
+          </DialogDescription>
+        </DialogHeader>
+        <form onSubmit={handleSubmit} className="flex flex-col gap-4">
           <div className="flex flex-col gap-1.5">
             <Label>Query</Label>
             <div className="h-32 overflow-hidden rounded-md border border-border bg-muted/40">

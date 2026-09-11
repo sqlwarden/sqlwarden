@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { Fragment } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { Link, useNavigate } from '@tanstack/react-router'
 import { orgRuntimeSettingsQueryOptions } from '#/lib/api/query'
@@ -20,7 +20,7 @@ import { api } from '#/lib/api/client'
 import { clearAccessToken } from '#/lib/auth/access-token'
 import { clearAuthScopedQueryCache } from '#/lib/auth/query-cache'
 import type { SessionResponse, Workspace } from '#/lib/api/types'
-import { buildUserMenuItems } from '#/lib/user-menu'
+import { canReachLandingHub } from '#/lib/user-menu'
 import { useIde } from './useIdeStore'
 import {
   visibleActivities,
@@ -120,15 +120,6 @@ export function IdeActivityBar({
 
       <div className="flex-1" />
 
-      {activeWorkspace && (canAccessWorkspaceGeneralSettings || canAccessWorkspaceAccessControl) ? (
-        <WorkspaceSettingsMenu
-          orgSlug={orgSlug}
-          workspace={activeWorkspace}
-          expanded={activityBarExpanded}
-          canAccessGeneralSettings={canAccessWorkspaceGeneralSettings}
-          canAccessAccessControl={canAccessWorkspaceAccessControl}
-        />
-      ) : null}
       <WorkspaceSelector
         workspaces={workspaces}
         activeWorkspace={activeWorkspace}
@@ -139,6 +130,9 @@ export function IdeActivityBar({
         orgSlug={orgSlug}
         session={session}
         canAccessOrgSettings={canAccessOrgSettings}
+        activeWorkspace={activeWorkspace}
+        canAccessWorkspaceGeneralSettings={canAccessWorkspaceGeneralSettings}
+        canAccessWorkspaceAccessControl={canAccessWorkspaceAccessControl}
         expanded={activityBarExpanded}
       />
 
@@ -159,125 +153,12 @@ export function IdeActivityBar({
   )
 }
 
-type WorkspaceSettingsSubItem = {
+type RailMenuItem = {
+  id: string
   label: string
   icon: AppIcon
-  to:
-    | '/orgs/$org_slug/workspaces/$workspace_id/settings'
-    | '/orgs/$org_slug/workspaces/$workspace_id/users'
-    | '/orgs/$org_slug/workspaces/$workspace_id/policies'
-}
-
-/** Collapsed by default so the rail stays compact; expands in place to reveal
- *  the workspace's admin pages rather than jumping straight to one. */
-function WorkspaceSettingsMenu({
-  orgSlug,
-  workspace,
-  expanded,
-  canAccessGeneralSettings,
-  canAccessAccessControl,
-}: {
-  orgSlug: string
-  workspace: Workspace
-  expanded: boolean
-  canAccessGeneralSettings: boolean
-  canAccessAccessControl: boolean
-}) {
-  const [open, setOpen] = useState(false)
-
-  const items: WorkspaceSettingsSubItem[] = [
-    ...(canAccessGeneralSettings
-      ? [
-          {
-            label: 'General',
-            icon: 'settings-02',
-            to: '/orgs/$org_slug/workspaces/$workspace_id/settings',
-          } as const,
-        ]
-      : []),
-    ...(canAccessAccessControl
-      ? [
-          {
-            label: 'Manage members',
-            icon: 'user-multiple',
-            to: '/orgs/$org_slug/workspaces/$workspace_id/users',
-          } as const,
-          {
-            label: 'Manage access',
-            icon: 'shield-user',
-            to: '/orgs/$org_slug/workspaces/$workspace_id/policies',
-          } as const,
-        ]
-      : []),
-  ]
-
-  if (!expanded) {
-    return (
-      <DropdownMenu>
-        <Tip label="Workspace settings" side="right">
-          <DropdownMenuTrigger
-            aria-label="Workspace settings"
-            className="flex size-9 cursor-pointer items-center justify-center rounded-[calc(var(--radius-sm)+2px)] text-xs text-foreground transition-colors hover:bg-sidebar-accent/60"
-          >
-            <Icon name="settings-02" size={17} className="shrink-0" />
-          </DropdownMenuTrigger>
-        </Tip>
-        <DropdownMenuContent align="start" side="right" className="w-64 min-w-64">
-          <DropdownMenuGroup>
-            <DropdownMenuLabel>Workspace settings</DropdownMenuLabel>
-          </DropdownMenuGroup>
-          <DropdownMenuSeparator />
-          <DropdownMenuGroup>
-            {items.map((item) => (
-              <DropdownMenuItem
-                key={item.label}
-                render={
-                  <Link
-                    to={item.to}
-                    params={{ org_slug: orgSlug, workspace_id: String(workspace.id) }}
-                  />
-                }
-              >
-                <Icon name={item.icon} size={15} />
-                {item.label}
-              </DropdownMenuItem>
-            ))}
-          </DropdownMenuGroup>
-        </DropdownMenuContent>
-      </DropdownMenu>
-    )
-  }
-
-  return (
-    <div>
-      <button
-        type="button"
-        onClick={() => setOpen(!open)}
-        aria-label="Workspace settings"
-        aria-expanded={open}
-        className="flex h-8 w-full items-center justify-start gap-2 rounded-[calc(var(--radius-sm)+2px)] p-2 text-xs text-foreground transition-colors hover:bg-sidebar-accent/60"
-      >
-        <Icon name="settings-02" size={17} className="shrink-0" />
-        <span className="min-w-0 flex-1 truncate text-left">Workspace settings</span>
-        <Icon name={open ? 'chevron-down' : 'chevron-right'} size={14} className="shrink-0" />
-      </button>
-      {open
-        ? items.map((item) => (
-            <div key={item.label}>
-              <Link
-                to={item.to}
-                params={{ org_slug: orgSlug, workspace_id: String(workspace.id) }}
-                aria-label={item.label}
-                className="flex h-8 w-full items-center justify-start gap-2 rounded-[calc(var(--radius-sm)+2px)] py-2 ps-6 pe-2 text-xs text-foreground transition-colors hover:bg-sidebar-accent/60"
-              >
-                <Icon name={item.icon} size={15} className="shrink-0" />
-                <span className="truncate">{item.label}</span>
-              </Link>
-            </div>
-          ))
-        : null}
-    </div>
-  )
+  to: string
+  params?: Record<string, string>
 }
 
 function IdeBrand({ expanded }: { expanded: boolean }) {
@@ -314,11 +195,17 @@ function RailPreferencesAndAvatar({
   orgSlug,
   session,
   canAccessOrgSettings,
+  activeWorkspace,
+  canAccessWorkspaceGeneralSettings,
+  canAccessWorkspaceAccessControl,
   expanded,
 }: {
   orgSlug: string
   session: SessionResponse | undefined
   canAccessOrgSettings: boolean
+  activeWorkspace: Workspace | undefined
+  canAccessWorkspaceGeneralSettings: boolean
+  canAccessWorkspaceAccessControl: boolean
   expanded: boolean
 }) {
   const navigate = useNavigate()
@@ -334,7 +221,97 @@ function RailPreferencesAndAvatar({
   })
 
   if (!session) return null
-  const menuItems = buildUserMenuItems({ session, orgSlug, canAccessOrgSettings })
+
+  const workspaceSettingsItems: RailMenuItem[] = activeWorkspace
+    ? [
+        ...(canAccessWorkspaceGeneralSettings
+          ? [
+              {
+                id: 'workspace-settings',
+                label: 'Workspace settings',
+                icon: 'briefcase-01',
+                to: '/orgs/$org_slug/workspaces/$workspace_id/settings',
+                params: { org_slug: orgSlug, workspace_id: String(activeWorkspace.id) },
+              } as const,
+            ]
+          : []),
+        ...(canAccessWorkspaceAccessControl
+          ? [
+              {
+                id: 'manage-members',
+                label: 'Manage members',
+                icon: 'user-multiple',
+                to: '/orgs/$org_slug/workspaces/$workspace_id/users',
+                params: { org_slug: orgSlug, workspace_id: String(activeWorkspace.id) },
+              } as const,
+              {
+                id: 'manage-access',
+                label: 'Manage access',
+                icon: 'shield-user',
+                to: '/orgs/$org_slug/workspaces/$workspace_id/policies',
+                params: { org_slug: orgSlug, workspace_id: String(activeWorkspace.id) },
+              } as const,
+            ]
+          : []),
+      ]
+    : []
+
+  const organizationSettingsItems: RailMenuItem[] = canAccessOrgSettings
+    ? [
+        {
+          id: 'org-settings',
+          label: 'Organization Settings',
+          icon: 'settings-02',
+          to: '/orgs/$org_slug',
+          params: { org_slug: orgSlug },
+        },
+      ]
+    : []
+
+  const administrationItems: RailMenuItem[] = session.is_instance_admin
+    ? [
+        {
+          id: 'administration',
+          label: 'Administration',
+          icon: 'shield-user',
+          to: '/administration',
+        },
+      ]
+    : []
+
+  const settingsGroups = [
+    workspaceSettingsItems,
+    organizationSettingsItems,
+    administrationItems,
+  ].filter((group) => group.length > 0)
+
+  const accountMenuItems: RailMenuItem[] = [
+    { id: 'account-settings', label: 'Account Settings', icon: 'user-02', to: '/settings/account' },
+    ...(canReachLandingHub(session)
+      ? [
+          {
+            id: 'switch-organization',
+            label: 'Switch Organization',
+            icon: 'building-04',
+            to: '/',
+          } as const,
+        ]
+      : []),
+  ]
+
+  const settingsTrigger = (
+    <DropdownMenuTrigger
+      aria-label="Settings"
+      className={cn(
+        'flex cursor-pointer items-center rounded-[calc(var(--radius-sm)+2px)] text-xs transition-colors',
+        'hover:bg-sidebar-accent hover:text-sidebar-accent-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring',
+        expanded ? 'h-8 w-full justify-start gap-2 p-2' : 'size-9 justify-center',
+      )}
+    >
+      <Icon name="settings-02" size={17} className="shrink-0" />
+      {expanded ? <span className="truncate">Settings</span> : null}
+    </DropdownMenuTrigger>
+  )
 
   const avatarTrigger = (
     <DropdownMenuTrigger
@@ -365,6 +342,36 @@ function RailPreferencesAndAvatar({
         iconClassName="size-[17px]"
       />
 
+      {settingsGroups.length > 0 ? (
+        <DropdownMenu>
+          {expanded ? (
+            settingsTrigger
+          ) : (
+            <Tip label="Settings" side="right">
+              {settingsTrigger}
+            </Tip>
+          )}
+          <DropdownMenuContent align="start" side="right" className="w-64 min-w-64">
+            {settingsGroups.map((group, index) => (
+              <Fragment key={group[0]?.id ?? index}>
+                {index > 0 ? <DropdownMenuSeparator /> : null}
+                <DropdownMenuGroup>
+                  {group.map((item) => (
+                    <DropdownMenuItem
+                      key={item.id}
+                      render={<Link to={item.to as never} params={item.params as never} />}
+                    >
+                      <Icon name={item.icon} size={20} />
+                      {item.label}
+                    </DropdownMenuItem>
+                  ))}
+                </DropdownMenuGroup>
+              </Fragment>
+            ))}
+          </DropdownMenuContent>
+        </DropdownMenu>
+      ) : null}
+
       <DropdownMenu>
         {expanded ? (
           avatarTrigger
@@ -391,7 +398,7 @@ function RailPreferencesAndAvatar({
           </DropdownMenuGroup>
           <DropdownMenuSeparator />
           <DropdownMenuGroup>
-            {menuItems.map((item) => (
+            {accountMenuItems.map((item) => (
               <DropdownMenuItem
                 key={item.id}
                 render={<Link to={item.to as never} params={item.params as never} />}

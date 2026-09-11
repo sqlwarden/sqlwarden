@@ -1,18 +1,5 @@
 import { useId, useMemo, useState } from 'react'
-import {
-  Combobox,
-  ComboboxEmpty,
-  ComboboxIcon,
-  ComboboxInput,
-  ComboboxInputGroup,
-  ComboboxItem,
-  ComboboxItemIndicator,
-  ComboboxList,
-  ComboboxPopup,
-  ComboboxTrigger,
-  ComboboxValue,
-} from '#/components/ui/combobox'
-import { Icon } from '#/lib/icons'
+import { SearchableCombobox } from '#/components/SearchableCombobox'
 import { Input } from '#/components/ui/input'
 import { Field, FieldError, FieldLabel } from '#/components/ui/field'
 import type { ParameterizedColumnType } from '#/lib/api/types'
@@ -80,48 +67,21 @@ export function ColumnTypeInput({
 
   return (
     <div className="flex min-w-0 flex-col gap-2">
-      <Combobox
+      <SearchableCombobox
+        id={id}
+        ariaLabel={label}
+        placeholder="Select a type"
+        searchPlaceholder="Filter types..."
         items={options}
         value={selected}
-        onValueChange={(option: TypeOption | null) => {
+        onValueChange={(option) => {
           if (!option) return
           setCustom(option.value === CUSTOM_VALUE)
           if (option.value !== CUSTOM_VALUE) onChange(option.value)
         }}
-        itemToStringLabel={(option: TypeOption) => option.label}
-        isItemEqualToValue={(a: TypeOption, b: TypeOption) => a.value === b.value}
+        emptyMessage="No matching type."
         disabled={disabled}
-      >
-        <ComboboxTrigger
-          id={id}
-          aria-label={label}
-          className="h-7 w-full justify-between gap-1.5 rounded-md border border-input bg-input/20 px-2 py-1.5 hover:bg-input/30 focus-visible:border-ring focus-visible:ring-2 focus-visible:ring-ring/30 disabled:cursor-not-allowed disabled:opacity-50 dark:bg-input/30"
-        >
-          <span className="min-w-0 flex-1 truncate text-left">
-            <ComboboxValue placeholder="Select a type" />
-          </span>
-          <ComboboxIcon />
-        </ComboboxTrigger>
-        <ComboboxPopup>
-          <ComboboxInputGroup>
-            <Icon
-              name="search-01"
-              size={12}
-              className="pointer-events-none absolute start-2 top-1/2 size-3 -translate-y-1/2 text-muted-foreground"
-            />
-            <ComboboxInput placeholder="Filter types..." className="ps-7" />
-          </ComboboxInputGroup>
-          <ComboboxList>
-            {(option: TypeOption) => (
-              <ComboboxItem key={option.value} value={option}>
-                <span className="min-w-0 flex-1 truncate">{option.label}</span>
-                <ComboboxItemIndicator />
-              </ComboboxItem>
-            )}
-          </ComboboxList>
-          <ComboboxEmpty>No matching type.</ComboboxEmpty>
-        </ComboboxPopup>
-      </Combobox>
+      />
       {custom && (
         <Field data-invalid={!valid} data-disabled={disabled}>
           <FieldLabel htmlFor={customId}>Custom column type</FieldLabel>

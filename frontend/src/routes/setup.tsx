@@ -10,10 +10,10 @@ import type { SetupResponse } from '#/lib/api/types'
 import { clearAccessToken } from '#/lib/auth/access-token'
 import { queryKeys } from '#/lib/api/query'
 import { MAX_SLUG_LENGTH, slugify } from '#/lib/strings'
+import { cn } from '#/lib/utils'
 import { AmbientBackground } from '#/components/auth/AmbientBackground'
 import { AuthField } from '#/components/auth/AuthField'
 import { LoginSurface } from '#/components/auth/LoginSurface'
-import { Badge } from '#/components/ui/badge'
 import { Button } from '#/components/ui/button'
 import { Input } from '#/components/ui/input'
 import { PasswordInput } from '#/components/ui/password-input'
@@ -23,6 +23,11 @@ import { usePageTitle } from '#/lib/page-title'
 export const Route = createFileRoute('/setup')({
   component: SetupPage,
 })
+
+const ACCOUNT_FIELD_KEYS = ['name', 'email', 'password', 'confirmPassword'] as const
+
+const fieldInputClass = 'h-10 px-3 text-sm md:text-sm'
+const fieldPasswordInputClass = 'h-10 pl-3 pr-9 text-sm md:text-sm'
 
 function SetupPage() {
   usePageTitle('Setup')
@@ -39,6 +44,7 @@ function SetupPage() {
   })
   const [slugTouched, setSlugTouched] = useState(false)
   const [localErrors, setLocalErrors] = useState<Record<string, string>>({})
+  const [step, setStep] = useState<1 | 2>(1)
 
   const mutation = useMutation({
     mutationFn: async () =>
@@ -53,6 +59,10 @@ function SetupPage() {
     },
     onError: (error) => {
       if (isApiError(error) && error.fieldErrors) {
+        const errorKeys = Object.keys(error.fieldErrors)
+        if (ACCOUNT_FIELD_KEYS.some((key) => errorKeys.includes(key))) {
+          setStep(1)
+        }
         return
       }
 
@@ -78,6 +88,7 @@ function SetupPage() {
   }
 
   const requiresOrganization = setupStatus.data?.access_mode !== 'single_user'
+  const onAccountStep = !requiresOrganization || step === 1
 
   function updateField<K extends keyof typeof values>(field: K, value: (typeof values)[K]) {
     setValues((current) => {
@@ -105,21 +116,11 @@ function SetupPage() {
     })
   }
 
-  function validate() {
+  function validateAccountFields() {
     const nextErrors: Record<string, string> = {}
 
     if (!values.name.trim()) nextErrors.name = 'Name is required.'
     if (!values.email.trim()) nextErrors.email = 'Email is required.'
-    if (requiresOrganization) {
-      if (!values.organizationName.trim())
-        nextErrors.organization_name = 'Organization name is required.'
-      if (!values.organizationSlug.trim())
-        nextErrors.organization_slug = 'Organization slug is required.'
-      else if (!/^[a-z0-9]+(?:-[a-z0-9]+)*$/.test(values.organizationSlug.trim())) {
-        nextErrors.organization_slug =
-          'Organization slug may only contain lowercase letters, numbers, and hyphens.'
-      }
-    }
     if (!values.password) nextErrors.password = 'Password is required.'
     else if (values.password.length < 8)
       nextErrors.password = 'Password must be at least 8 characters.'
@@ -127,15 +128,43 @@ function SetupPage() {
     else if (values.password !== values.confirmPassword)
       nextErrors.confirmPassword = 'Passwords do not match.'
 
-    setLocalErrors(nextErrors)
+    setLocalErrors((current) => ({ ...current, ...nextErrors }))
+    return Object.keys(nextErrors).length === 0
+  }
+
+  function validateOrganizationFields() {
+    const nextErrors: Record<string, string> = {}
+
+    if (!values.organizationName.trim())
+      nextErrors.organization_name = 'Organization name is required.'
+    if (!values.organizationSlug.trim())
+      nextErrors.organization_slug = 'Organization slug is required.'
+    else if (!/^[a-z0-9]+(?:-[a-z0-9]+)*$/.test(values.organizationSlug.trim())) {
+      nextErrors.organization_slug =
+        'Organization slug may only contain lowercase letters, numbers, and hyphens.'
+    }
+
+    setLocalErrors((current) => ({ ...current, ...nextErrors }))
     return Object.keys(nextErrors).length === 0
   }
 
   async function onSubmit(event: React.FormEvent<HTMLFormElement>) {
     event.preventDefault()
-    if (!validate()) {
+
+    if (!validateAccountFields()) {
+      setStep(1)
       return
     }
+
+    if (requiresOrganization && step === 1) {
+      setStep(2)
+      return
+    }
+
+    if (requiresOrganization && !validateOrganizationFields()) {
+      return
+    }
+
     try {
       await mutation.mutateAsync()
     } catch {
@@ -148,43 +177,65 @@ function SetupPage() {
       <AmbientBackground />
       <LoginSurface
         eyebrow={
-          <Badge variant="outline" className="mb-1">
-            First-time setup
-          </Badge>
+          requiresOrganization ? (
+            <div className="mb-1 flex flex-col items-center gap-2.5">
+              <StepProgress step={step} />
+            </div>
+          ) : undefined
         }
-        title="Set up SQLWarden"
-        description={setupDescription(requiresOrganization)}
-        className="max-w-[480px]"
-        footer={
-          <p className="text-center text-xs text-muted-foreground">
-            No users exist yet. This account becomes the instance administrator.
-          </p>
-        }
+        title={stepTitle(requiresOrganization, step)}
+        description={stepDescription(requiresOrganization, step)}
+        className="max-w-[420px]"
       >
         <form className="space-y-5" onSubmit={onSubmit}>
-          <AuthField label="Full name" error={formErrors.name}>
-            <Input
-              autoComplete="name"
-              placeholder="Alex Ward"
-              value={values.name}
-              onChange={(event) => updateField('name', event.target.value)}
-            />
-          </AuthField>
+          {onAccountStep ? (
+            <>
+              <AuthField label="Full name" error={formErrors.name}>
+                <Input
+                  className={fieldInputClass}
+                  autoComplete="name"
+                  placeholder="Alex Ward"
+                  value={values.name}
+                  onChange={(event) => updateField('name', event.target.value)}
+                />
+              </AuthField>
 
-          <AuthField label="Email address" error={formErrors.email}>
-            <Input
-              autoComplete="email"
-              type="email"
-              placeholder="admin@organization.com"
-              value={values.email}
-              onChange={(event) => updateField('email', event.target.value)}
-            />
-          </AuthField>
+              <AuthField label="Email address" error={formErrors.email}>
+                <Input
+                  className={fieldInputClass}
+                  autoComplete="email"
+                  type="email"
+                  placeholder="admin@organization.com"
+                  value={values.email}
+                  onChange={(event) => updateField('email', event.target.value)}
+                />
+              </AuthField>
 
-          {requiresOrganization ? (
-            <div className="grid gap-5 sm:grid-cols-2">
+              <AuthField label="Password" error={formErrors.password}>
+                <PasswordInput
+                  className={fieldPasswordInputClass}
+                  autoComplete="new-password"
+                  placeholder="Minimum 8 characters"
+                  value={values.password}
+                  onChange={(event) => updateField('password', event.target.value)}
+                />
+              </AuthField>
+
+              <AuthField label="Confirm password" error={formErrors.confirmPassword}>
+                <PasswordInput
+                  className={fieldPasswordInputClass}
+                  autoComplete="new-password"
+                  placeholder="Repeat password"
+                  value={values.confirmPassword}
+                  onChange={(event) => updateField('confirmPassword', event.target.value)}
+                />
+              </AuthField>
+            </>
+          ) : (
+            <>
               <AuthField label="Organization name" error={formErrors.organization_name}>
                 <Input
+                  className={fieldInputClass}
                   autoComplete="organization"
                   placeholder="Acme Cloud"
                   value={values.organizationName}
@@ -194,6 +245,7 @@ function SetupPage() {
 
               <AuthField label="Organization slug" error={formErrors.organization_slug}>
                 <Input
+                  className={fieldInputClass}
                   autoComplete="off"
                   maxLength={MAX_SLUG_LENGTH}
                   placeholder="acme-cloud"
@@ -207,55 +259,57 @@ function SetupPage() {
                   }}
                 />
               </AuthField>
-            </div>
-          ) : null}
+            </>
+          )}
 
-          <div className="grid gap-5 sm:grid-cols-2">
-            <AuthField label="Password" error={formErrors.password}>
-              <PasswordInput
-                autoComplete="new-password"
-                placeholder="Minimum 8 characters"
-                value={values.password}
-                onChange={(event) => updateField('password', event.target.value)}
-              />
-            </AuthField>
+          <div className={cn('flex gap-3', !onAccountStep && 'flex-row-reverse')}>
+            <Button
+              className="h-10 flex-1 rounded-lg text-sm"
+              size="lg"
+              disabled={mutation.isPending}
+              type="submit"
+            >
+              {mutation.isPending ? (
+                <span className="flex items-center gap-2">
+                  <Icon name="loading-03" size={14} className="animate-spin" />
+                  Setting up…
+                </span>
+              ) : requiresOrganization ? (
+                'Continue'
+              ) : (
+                'Create admin account'
+              )}
+            </Button>
 
-            <AuthField label="Confirm password" error={formErrors.confirmPassword}>
-              <PasswordInput
-                autoComplete="new-password"
-                placeholder="Repeat password"
-                value={values.confirmPassword}
-                onChange={(event) => updateField('confirmPassword', event.target.value)}
-              />
-            </AuthField>
+            {!onAccountStep ? (
+              <Button
+                className="h-10 rounded-lg text-sm"
+                size="lg"
+                type="button"
+                variant="outline"
+                disabled={mutation.isPending}
+                onClick={() => setStep(1)}
+              >
+                Back
+              </Button>
+            ) : null}
           </div>
-
-          <div className="rounded-lg border bg-muted/40 p-4 text-sm text-muted-foreground">
-            {requiresOrganization
-              ? 'This account gets instance admin access and becomes the owner of the first organization.'
-              : 'This account gets instance admin access. A local organization will be created automatically.'}
-          </div>
-
-          <Button
-            className="h-11 w-full rounded-lg text-sm shadow-md transition-all duration-150 ease-out hover:shadow-lg active:translate-y-px active:scale-[0.98] active:shadow-sm active:duration-75"
-            size="lg"
-            disabled={mutation.isPending}
-            type="submit"
-          >
-            {mutation.isPending ? (
-              <span className="flex items-center gap-2">
-                <Icon name="loading-03" size={14} className="animate-spin" />
-                Setting up…
-              </span>
-            ) : requiresOrganization ? (
-              'Create admin and organization'
-            ) : (
-              'Create admin account'
-            )}
-          </Button>
         </form>
       </LoginSurface>
     </main>
+  )
+}
+
+function StepProgress({ step }: { step: 1 | 2 }) {
+  return (
+    <div className="flex items-center gap-1.5" aria-hidden="true">
+      {([1, 2] as const).map((segment) => (
+        <span
+          key={segment}
+          className={cn('h-1 w-8 rounded-full', segment <= step ? 'bg-primary' : 'bg-muted')}
+        />
+      ))}
+    </div>
   )
 }
 
@@ -283,9 +337,12 @@ function setupPayload(
   return payload
 }
 
-function setupDescription(requiresOrganization: boolean) {
-  if (requiresOrganization) {
-    return 'Create an administrator account and organization to get started.'
-  }
-  return 'Create an administrator account to get started.'
+function stepTitle(requiresOrganization: boolean, step: 1 | 2) {
+  if (!requiresOrganization) return 'Set up SQLWarden'
+  return step === 1 ? 'Create your administrator account' : 'Create your organization'
+}
+
+function stepDescription(requiresOrganization: boolean, step: 1 | 2) {
+  if (!requiresOrganization) return 'Create an administrator account to get started.'
+  return step === 2 ? 'You will own this organization as its first admin.' : undefined
 }

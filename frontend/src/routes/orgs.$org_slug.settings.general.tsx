@@ -25,7 +25,7 @@ import { Button } from '#/components/ui/button'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '#/components/ui/card'
 import { Checkbox } from '#/components/ui/checkbox'
 import { Input } from '#/components/ui/input'
-import { Label } from '#/components/ui/label'
+import { FieldDescription, FormField as Field } from '#/components/ui/field'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '#/components/ui/tabs'
 import { RoutePending } from '#/components/RoutePending'
 import {
@@ -261,9 +261,9 @@ function OrganizationGeneralSettingsPage() {
                   </Field>
                   <Field label="Slug">
                     <Input aria-label="Slug" value={org.data.slug} disabled />
-                    <p className="text-xs text-muted-foreground">
+                    <FieldDescription>
                       Slug changes are disabled because they affect URLs and integrations.
-                    </p>
+                    </FieldDescription>
                   </Field>
                 </div>
 
@@ -390,15 +390,14 @@ function OrganizationGeneralSettingsPage() {
                         confirm deletion.
                       </AlertDialogDescription>
                     </AlertDialogHeader>
-                    <div className="flex flex-col gap-2">
-                      <Label>Organization slug</Label>
+                    <Field label="Organization slug">
                       <Input
                         aria-label="Organization slug"
                         value={deleteConfirmation}
                         disabled={deleteOrg.isPending}
                         onChange={(event) => setDeleteConfirmation(event.target.value)}
                       />
-                    </div>
+                    </Field>
                     <AlertDialogFooter>
                       <AlertDialogCancel
                         variant="ghost"
@@ -424,24 +423,6 @@ function OrganizationGeneralSettingsPage() {
           </Card>
         </TabsContent>
       </Tabs>
-    </div>
-  )
-}
-
-function Field({
-  children,
-  error,
-  label,
-}: {
-  children: React.ReactNode
-  error?: string
-  label: string
-}) {
-  return (
-    <div className="flex flex-col gap-2">
-      <Label>{label}</Label>
-      {children}
-      {error ? <p className="text-xs text-destructive">{error}</p> : null}
     </div>
   )
 }

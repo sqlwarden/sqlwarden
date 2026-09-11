@@ -1,8 +1,8 @@
-import { fireEvent, render, screen, waitFor } from '@testing-library/react'
+import { render, screen, waitFor } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { describe, expect, it, vi } from 'vitest'
 import type { Connection, Environment } from '#/lib/api/types'
-import { ConnectionSelector, groupConnections } from './ConnectionSelector'
+import { ConnectionSelector } from './ConnectionSelector'
 import { createIdeStore, IdeStoreContext } from './useIdeStore'
 
 const environments: Environment[] = [
@@ -34,19 +34,6 @@ const connections: Connection[] = [
   },
 ]
 
-describe('groupConnections', () => {
-  it('groups by environment and searches both environment and connection names', () => {
-    expect(groupConnections(environments, connections, '')).toHaveLength(2)
-    expect(groupConnections(environments, connections, 'prod')).toEqual([
-      { environment: environments[1], connections: [connections[1]] },
-    ])
-    expect(groupConnections(environments, connections, 'app')).toEqual([
-      { environment: environments[0], connections: [connections[0]] },
-    ])
-    expect(groupConnections(environments, connections, 'missing')).toEqual([])
-  })
-})
-
 describe('ConnectionSelector', () => {
   function renderSelector(
     options: { active?: Connection; loading?: boolean; tabAvailable?: boolean } = {},
@@ -73,20 +60,19 @@ describe('ConnectionSelector', () => {
   it('selects a filtered connection and closes the picker', async () => {
     const user = userEvent.setup()
     const { onSelect } = renderSelector()
-    await user.click(screen.getByRole('button', { name: /Select connection/ }))
+    await user.click(screen.getByRole('combobox', { name: 'Select connection' }))
     await user.type(screen.getByPlaceholderText('Search connections…'), 'warehouse')
-    fireEvent.click(screen.getByRole('button', { name: /warehouse/ }))
+    await user.click(await screen.findByRole('option', { name: /warehouse/ }))
 
     expect(onSelect).toHaveBeenCalledWith(connections[1])
-    await waitFor(() =>
-      expect(screen.queryByPlaceholderText('Search connections…')).not.toBeInTheDocument(),
-    )
+    await waitFor(() => expect(screen.queryByRole('listbox')).not.toBeInTheDocument())
   })
 
-  it('shows connected state and disables selection without an editor tab', () => {
-    const view = renderSelector({ active: connections[0] })
-    expect(screen.getByRole('button', { name: /app-db/ })).toBeEnabled()
-    view.onSelect.mockClear()
+  it('shows the connected connection name in the trigger', async () => {
+    renderSelector({ active: connections[0] })
+    expect(await screen.findByRole('combobox', { name: 'Select connection' })).toHaveTextContent(
+      'app-db',
+    )
   })
 
   it('disables the trigger while connections load or no tab is active', () => {
@@ -101,10 +87,10 @@ describe('ConnectionSelector', () => {
         />
       </IdeStoreContext.Provider>,
     )
-    expect(screen.getByRole('button', { name: /Loading connections/ })).toBeDisabled()
+    expect(screen.getByRole('combobox', { name: 'Select connection' })).toBeDisabled()
     unmount()
 
     renderSelector({ tabAvailable: false })
-    expect(screen.getByRole('button', { name: /Select connection/ })).toBeDisabled()
+    expect(screen.getByRole('combobox', { name: 'Select connection' })).toBeDisabled()
   })
 })

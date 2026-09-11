@@ -20,6 +20,7 @@ import {
   DialogTitle,
   DialogTrigger,
 } from '#/components/ui/dialog'
+import { FormField } from '#/components/ui/field'
 import { Input } from '#/components/ui/input'
 import { UserAvatar } from '#/components/UserAvatar'
 import { SearchInput } from '#/components/SearchInput'
@@ -156,8 +157,9 @@ function SettingsAdministratorsPage() {
                 </DialogDescription>
               </DialogHeader>
               <form className="mt-6 flex flex-col gap-4" onSubmit={submitCreate}>
-                <div className="flex flex-col gap-2">
+                <FormField label="Email" htmlFor="admin-email" error={fieldError ?? undefined}>
                   <Input
+                    id="admin-email"
                     type="email"
                     value={email}
                     onChange={(event) => {
@@ -168,8 +170,7 @@ function SettingsAdministratorsPage() {
                     aria-invalid={fieldError ? true : undefined}
                     disabled={addAdministrator.isPending}
                   />
-                  {fieldError ? <p className="text-sm text-destructive">{fieldError}</p> : null}
-                </div>
+                </FormField>
 
                 <DialogFooter>
                   <DialogClose

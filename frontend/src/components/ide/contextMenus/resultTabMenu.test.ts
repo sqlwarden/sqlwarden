@@ -14,10 +14,12 @@ describe('buildResultTabMenu', () => {
     hasOthers: true,
     hasRight: true,
     hasLeft: true,
+    hasAll: true,
     onClose: noop,
     onCloseOthers: noop,
     onCloseRight: noop,
     onCloseLeft: noop,
+    onCloseAll: noop,
     onTogglePin: noop,
   }
 
@@ -38,6 +40,7 @@ describe('buildResultTabMenu', () => {
     expect(action(items, 'close-others')?.onSelect).toBe(base.onCloseOthers)
     expect(action(items, 'close-to-right')?.onSelect).toBe(base.onCloseRight)
     expect(action(items, 'close-to-left')?.onSelect).toBe(base.onCloseLeft)
+    expect(action(items, 'close-all')?.onSelect).toBe(base.onCloseAll)
   })
 
   it('disables bulk-close actions when there is nothing in scope', () => {
@@ -46,9 +49,11 @@ describe('buildResultTabMenu', () => {
       hasOthers: false,
       hasRight: false,
       hasLeft: false,
+      hasAll: false,
     })
     expect(action(items, 'close-others')?.disabled).toBe(true)
     expect(action(items, 'close-to-right')?.disabled).toBe(true)
     expect(action(items, 'close-to-left')?.disabled).toBe(true)
+    expect(action(items, 'close-all')?.disabled).toBe(true)
   })
 })

@@ -1,4 +1,5 @@
 import type { ReactNode } from 'react'
+import { FormField } from '#/components/ui/field'
 
 export function AuthField({
   children,
@@ -10,10 +11,8 @@ export function AuthField({
   label: string
 }) {
   return (
-    <div className="space-y-2">
-      <label className="text-sm font-medium">{label}</label>
+    <FormField label={label} error={error}>
       {children}
-      {error ? <p className="text-xs text-destructive">{error}</p> : null}
-    </div>
+    </FormField>
   )
 }

@@ -14,6 +14,7 @@ import { useSession } from '#/hooks/use-session'
 import { Badge } from '#/components/ui/badge'
 import { Button } from '#/components/ui/button'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '#/components/ui/card'
+import { FormField } from '#/components/ui/field'
 import { Input } from '#/components/ui/input'
 import { usePageTitle } from '#/lib/page-title'
 
@@ -134,10 +135,7 @@ function InvitationPage() {
                   accept.mutate()
                 }}
               >
-                <div className="flex flex-col gap-2">
-                  <label htmlFor="invite-name" className="text-sm font-medium">
-                    Name
-                  </label>
+                <FormField label="Name" htmlFor="invite-name" error={fieldErrors.name}>
                   <Input
                     id="invite-name"
                     autoComplete="name"
@@ -147,14 +145,8 @@ function InvitationPage() {
                       setValues((current) => ({ ...current, name: event.target.value }))
                     }
                   />
-                  {fieldErrors.name ? (
-                    <p className="text-xs text-destructive">{fieldErrors.name}</p>
-                  ) : null}
-                </div>
-                <div className="flex flex-col gap-2">
-                  <label htmlFor="invite-password" className="text-sm font-medium">
-                    Password
-                  </label>
+                </FormField>
+                <FormField label="Password" htmlFor="invite-password" error={fieldErrors.password}>
                   <Input
                     id="invite-password"
                     type="password"
@@ -165,10 +157,7 @@ function InvitationPage() {
                       setValues((current) => ({ ...current, password: event.target.value }))
                     }
                   />
-                  {fieldErrors.password ? (
-                    <p className="text-xs text-destructive">{fieldErrors.password}</p>
-                  ) : null}
-                </div>
+                </FormField>
                 {accept.error && Object.keys(fieldErrors).length === 0 ? (
                   <p className="text-sm text-destructive">
                     {errorMessage(accept.error, 'Failed to accept invitation')}

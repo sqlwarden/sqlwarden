@@ -19,7 +19,7 @@ import { clearAccessToken, getAccessToken } from '#/lib/auth/access-token'
 import { clearAuthScopedQueryCache } from '#/lib/auth/query-cache'
 import { buildUserMenuItems } from '#/lib/user-menu'
 import { Badge } from '#/components/ui/badge'
-import { Card, CardContent, CardDescription, CardTitle } from '#/components/ui/card'
+import { Card, CardContent } from '#/components/ui/card'
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -36,6 +36,7 @@ import { Skeleton } from '#/components/ui/skeleton'
 import { cn } from '#/lib/utils'
 import { usePageTitle } from '#/lib/page-title'
 import { NavigateToLogin } from '#/components/auth/NavigateToLogin'
+import { Tooltip, TooltipContent, TooltipTrigger } from '#/components/ui/tooltip'
 
 export const Route = createFileRoute('/')({ component: LandingPage })
 
@@ -101,7 +102,10 @@ function LandingPage() {
         <Link to="/" className="flex items-center text-sm font-semibold tracking-tight">
           <brand.LogoLockup size={28} />
         </Link>
-        <LandingUserMenu session={session.data} />
+        <div className="flex items-center gap-2">
+          {session.data.is_instance_admin ? <AdministrationIconLink /> : null}
+          <LandingUserMenu session={session.data} />
+        </div>
       </div>
 
       <div className="flex flex-col gap-1">
@@ -117,17 +121,15 @@ function LandingPage() {
 
       {!organizations.isLoading ? (
         <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
-          {session.data.personal_spaces_enabled ? <PersonalSpaceCard /> : null}
           {organizationItems.map((organization) => (
             <OrganizationChoiceCard key={organization.id} organization={organization} />
           ))}
-          {session.data.is_instance_admin ? <AdministrationChoiceCard /> : null}
+          {session.data.is_instance_admin ? <CreateOrganizationCard /> : null}
         </div>
       ) : null}
 
       {!organizations.isLoading &&
       !organizations.isError &&
-      !session.data.personal_spaces_enabled &&
       organizationItems.length === 0 &&
       !session.data.is_instance_admin ? (
         <Card>
@@ -224,63 +226,53 @@ function OrganizationChoiceCard({
   )
 }
 
-function PersonalSpaceCard() {
-  return (
-    <div className="flex h-full flex-col rounded-lg border border-border bg-card text-card-foreground">
-      <div className="flex flex-1 flex-col gap-3 p-5">
-        <div className="flex min-w-0 items-start gap-3">
-          <div className="flex size-10 shrink-0 items-center justify-center rounded-md bg-muted">
-            <Icon name="briefcase-01" size={20} />
-          </div>
-          <div className="min-w-0 flex-1">
-            <CardTitle className="truncate text-base">Personal Workspace</CardTitle>
-            <CardDescription>Your private SQLWarden space.</CardDescription>
-          </div>
-        </div>
-      </div>
-      <div className="border-t border-border/60 px-5 py-3 text-xs text-muted-foreground">
-        Coming soon
-      </div>
-    </div>
-  )
-}
-
-function AdministrationChoiceCard() {
+function CreateOrganizationCard() {
   return (
     <Link
-      to="/administration"
+      to="/administration/organizations"
       className="group block h-full focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
     >
-      <div className="flex h-full flex-col rounded-lg border border-border bg-card text-card-foreground transition-all group-hover:border-foreground/20 group-hover:bg-muted/20 group-hover:shadow-sm">
-        <div className="flex flex-1 flex-col gap-3 p-5">
-          <div className="flex min-w-0 items-start gap-3">
-            <div className="flex size-10 shrink-0 items-center justify-center rounded-md bg-muted text-muted-foreground">
-              <Icon name="shield-user" size={20} />
-            </div>
-            <div className="min-w-0 flex-1 pt-0.5">
-              <p className="truncate font-semibold leading-tight tracking-tight transition-colors group-hover:text-primary">
-                Administration
-              </p>
-              <p className="mt-1.5 truncate text-xs text-muted-foreground">
-                Instance settings and users.
-              </p>
-            </div>
-          </div>
+      <div className="flex h-full flex-col items-center justify-center gap-3 rounded-lg border border-dashed border-border p-5 text-center transition-all group-hover:border-foreground/30 group-hover:bg-muted/20">
+        <div className="flex size-10 shrink-0 items-center justify-center rounded-md bg-muted text-muted-foreground transition-colors group-hover:text-primary">
+          <Icon name="plus-sign" size={20} />
         </div>
-        <div className="border-t border-border/60 px-5 py-3 text-xs text-muted-foreground">
-          Open instance administration
+        <div>
+          <p className="font-semibold leading-tight tracking-tight transition-colors group-hover:text-primary">
+            Add organization
+          </p>
+          <p className="mt-1.5 text-xs text-muted-foreground">Create a new organization.</p>
         </div>
       </div>
     </Link>
   )
 }
 
+function AdministrationIconLink() {
+  return (
+    <Tooltip>
+      <TooltipTrigger
+        render={
+          <Link
+            to="/administration"
+            aria-label="Administration"
+            className="inline-flex size-9 items-center justify-center rounded-full text-muted-foreground transition-colors hover:bg-muted hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+          />
+        }
+      >
+        <Icon name="shield-user" size={20} />
+      </TooltipTrigger>
+      <TooltipContent>Administration</TooltipContent>
+    </Tooltip>
+  )
+}
+
 function LandingUserMenu({ session }: { session: SessionResponse }) {
   const navigate = useNavigate()
   const queryClient = useQueryClient()
-  // Already on the landing hub — a Switch Organization self-link is noise.
+  // Already on the landing hub — a Switch Organization self-link is noise,
+  // and Administration has its own icon button beside the avatar here.
   const menuItems = buildUserMenuItems({ session }).filter(
-    (item) => item.id !== 'switch-organization',
+    (item) => item.id !== 'switch-organization' && item.id !== 'administration',
   )
 
   const logout = useMutation({

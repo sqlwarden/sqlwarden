@@ -41,6 +41,7 @@ import {
   FieldError,
   FieldGroup,
   FieldLabel,
+  FormField as Field,
 } from '#/components/ui/field'
 import {
   Select,
@@ -602,7 +603,7 @@ function SettingsInstancePage() {
                         setUnits((current) => ({ ...current, exportsBackgroundMaxBytes: unit }))
                       }
                     />
-                    <p className="text-xs text-muted-foreground">Set to 0 for no limit.</p>
+                    <FieldDescription>Set to 0 for no limit.</FieldDescription>
                   </Field>
                 </div>
               </CardContent>
@@ -641,9 +642,9 @@ function SettingsInstancePage() {
                       setUnits((current) => ({ ...current, schemaSnapshotFreshness: unit }))
                     }
                   />
-                  <p className="text-xs text-muted-foreground">
+                  <FieldDescription>
                     Snapshots older than this are treated as stale and refreshed on next access.
-                  </p>
+                  </FieldDescription>
                 </Field>
               </CardContent>
             </Card>
@@ -959,9 +960,7 @@ function SettingsInstancePage() {
                         setUnits((current) => ({ ...current, jobsCompletedRetention: unit }))
                       }
                     />
-                    <p className="text-xs text-muted-foreground">
-                      Completed jobs older than this are purged.
-                    </p>
+                    <FieldDescription>Completed jobs older than this are purged.</FieldDescription>
                   </Field>
                 </FieldGroup>
               </CardContent>
@@ -1060,9 +1059,9 @@ function SettingsInstancePage() {
                       }
                     />
                     <div className="flex items-center justify-between gap-2">
-                      <p className="text-xs text-muted-foreground">
+                      <FieldDescription>
                         {smtpPasswordStatusText(smtpPasswordAction, form.smtp_password_configured)}
-                      </p>
+                      </FieldDescription>
                       {form.smtp_password_configured ? (
                         <Button
                           type="button"
@@ -1230,23 +1229,5 @@ function ConfigurationRow({ label, value }: { label: string; value: string }) {
 function hasFormChanges(form: InstanceSettingsForm, settings: InstanceSettings) {
   return (Object.keys(form) as (keyof InstanceSettingsForm)[]).some(
     (key) => form[key] !== settings[key],
-  )
-}
-
-function Field({
-  children,
-  error,
-  label,
-}: {
-  children: React.ReactNode
-  error?: string
-  label: string
-}) {
-  return (
-    <FieldRoot data-invalid={Boolean(error)}>
-      <FieldLabel>{label}</FieldLabel>
-      {children}
-      <FieldError>{error}</FieldError>
-    </FieldRoot>
   )
 }

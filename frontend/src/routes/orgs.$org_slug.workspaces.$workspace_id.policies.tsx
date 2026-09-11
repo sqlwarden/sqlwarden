@@ -4,7 +4,7 @@ import { formatDate } from '#/lib/format'
 import { useEffect, useState, type FormEvent } from 'react'
 import { queryKeys } from '#/lib/api/query-keys'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
-import { createFileRoute } from '@tanstack/react-router'
+import { createFileRoute, useNavigate } from '@tanstack/react-router'
 import { Icon } from '#/lib/icons'
 import { toast } from 'sonner'
 import { useListPageState } from '#/hooks/use-list-page-state'
@@ -78,7 +78,8 @@ import {
 import { cn } from '#/lib/utils'
 import { entityColor } from '#/lib/entity-colors'
 import { SectionTabNav } from '#/components/SectionTabNav'
-import { SearchComboboxField } from '#/components/access-control/SearchComboboxField'
+import { SearchableCombobox } from '#/components/SearchableCombobox'
+import { FormField } from '#/components/ui/field'
 import {
   PoliciesTableSkeleton,
   PolicySubjectCell,
@@ -412,43 +413,41 @@ function WorkspacePoliciesPage() {
                     </div>
 
                     {subjectType === 'account' ? (
-                      <SearchComboboxField
-                        label="User"
-                        placeholder="Select a user..."
-                        searchPlaceholder="Search users..."
-                        selectedValue={subjectId}
-                        selectedLabel={subjectLabel}
-                        items={memberItems}
-                        isLoading={members.isLoading}
-                        error={fieldErrors.subject}
-                        disabled={createPolicy.isPending}
-                        onChange={(value, label) => {
-                          setSubjectId(value)
-                          setSubjectLabel(label)
-                          setFieldErrors((current) => ({ ...current, subject: undefined }))
-                        }}
-                        onSearchChange={setMemberQ}
-                      />
+                      <FormField label="User" error={fieldErrors.subject}>
+                        <SearchableCombobox
+                          placeholder="Select a user..."
+                          searchPlaceholder="Search users..."
+                          value={subjectId ? { value: subjectId, label: subjectLabel } : null}
+                          items={memberItems}
+                          isLoading={members.isLoading}
+                          disabled={createPolicy.isPending}
+                          onValueChange={(item) => {
+                            setSubjectId(item?.value ?? '')
+                            setSubjectLabel(item?.label ?? '')
+                            setFieldErrors((current) => ({ ...current, subject: undefined }))
+                          }}
+                          onSearchChange={setMemberQ}
+                        />
+                      </FormField>
                     ) : null}
 
                     {subjectType === 'team' ? (
-                      <SearchComboboxField
-                        label="Team"
-                        placeholder="Select a team..."
-                        searchPlaceholder="Search teams..."
-                        selectedValue={subjectId}
-                        selectedLabel={subjectLabel}
-                        items={teamItems}
-                        isLoading={teams.isLoading}
-                        error={fieldErrors.subject}
-                        disabled={createPolicy.isPending}
-                        onChange={(value, label) => {
-                          setSubjectId(value)
-                          setSubjectLabel(label)
-                          setFieldErrors((current) => ({ ...current, subject: undefined }))
-                        }}
-                        onSearchChange={setTeamQ}
-                      />
+                      <FormField label="Team" error={fieldErrors.subject}>
+                        <SearchableCombobox
+                          placeholder="Select a team..."
+                          searchPlaceholder="Search teams..."
+                          value={subjectId ? { value: subjectId, label: subjectLabel } : null}
+                          items={teamItems}
+                          isLoading={teams.isLoading}
+                          disabled={createPolicy.isPending}
+                          onValueChange={(item) => {
+                            setSubjectId(item?.value ?? '')
+                            setSubjectLabel(item?.label ?? '')
+                            setFieldErrors((current) => ({ ...current, subject: undefined }))
+                          }}
+                          onSearchChange={setTeamQ}
+                        />
+                      </FormField>
                     ) : null}
 
                     {subjectType === 'org_members' || subjectType === 'workspace_members' ? (
@@ -488,65 +487,62 @@ function WorkspacePoliciesPage() {
                     </div>
 
                     {resourceType === 'environment' ? (
-                      <SearchComboboxField
-                        label="Environment"
-                        placeholder="Select an environment..."
-                        searchPlaceholder="Search environments..."
-                        emptyMessage="No environments available in this workspace."
-                        selectedValue={resourceId}
-                        selectedLabel={resourceLabel}
-                        items={environmentItems}
-                        isLoading={environments.isLoading}
-                        error={fieldErrors.resource}
-                        disabled={createPolicy.isPending}
-                        onChange={(value, label) => {
-                          setResourceId(value)
-                          setResourceLabel(label)
-                          setFieldErrors((current) => ({ ...current, resource: undefined }))
-                        }}
-                        onSearchChange={setEnvironmentQ}
-                      />
+                      <FormField label="Environment" error={fieldErrors.resource}>
+                        <SearchableCombobox
+                          placeholder="Select an environment..."
+                          searchPlaceholder="Search environments..."
+                          emptyMessage="No environments available in this workspace."
+                          value={resourceId ? { value: resourceId, label: resourceLabel } : null}
+                          items={environmentItems}
+                          isLoading={environments.isLoading}
+                          disabled={createPolicy.isPending}
+                          onValueChange={(item) => {
+                            setResourceId(item?.value ?? '')
+                            setResourceLabel(item?.label ?? '')
+                            setFieldErrors((current) => ({ ...current, resource: undefined }))
+                          }}
+                          onSearchChange={setEnvironmentQ}
+                        />
+                      </FormField>
                     ) : null}
 
                     {resourceType === 'connection' ? (
-                      <SearchComboboxField
-                        label="Connection"
-                        placeholder="Select a connection..."
-                        searchPlaceholder="Search connections..."
-                        emptyMessage="No connections available in this workspace."
-                        selectedValue={resourceId}
-                        selectedLabel={resourceLabel}
-                        items={connectionItems}
-                        isLoading={connections.isLoading}
-                        error={fieldErrors.resource}
-                        disabled={createPolicy.isPending}
-                        onChange={(value, label) => {
-                          setResourceId(value)
-                          setResourceLabel(label)
-                          setFieldErrors((current) => ({ ...current, resource: undefined }))
-                        }}
-                        onSearchChange={setConnectionQ}
-                      />
+                      <FormField label="Connection" error={fieldErrors.resource}>
+                        <SearchableCombobox
+                          placeholder="Select a connection..."
+                          searchPlaceholder="Search connections..."
+                          emptyMessage="No connections available in this workspace."
+                          value={resourceId ? { value: resourceId, label: resourceLabel } : null}
+                          items={connectionItems}
+                          isLoading={connections.isLoading}
+                          disabled={createPolicy.isPending}
+                          onValueChange={(item) => {
+                            setResourceId(item?.value ?? '')
+                            setResourceLabel(item?.label ?? '')
+                            setFieldErrors((current) => ({ ...current, resource: undefined }))
+                          }}
+                          onSearchChange={setConnectionQ}
+                        />
+                      </FormField>
                     ) : null}
 
-                    <SearchComboboxField
-                      label="Role"
-                      placeholder="Select a role..."
-                      searchPlaceholder="Search roles..."
-                      emptyMessage={`No roles scoped to ${resourceLabelFor(resourceType).toLowerCase()} available in this workspace.`}
-                      selectedValue={roleId}
-                      selectedLabel={roleLabel}
-                      items={roleItems}
-                      isLoading={roles.isLoading}
-                      error={fieldErrors.role}
-                      disabled={createPolicy.isPending}
-                      onChange={(value, label) => {
-                        setRoleId(value)
-                        setRoleLabel(label)
-                        setFieldErrors((current) => ({ ...current, role: undefined }))
-                      }}
-                      onSearchChange={setRoleQ}
-                    />
+                    <FormField label="Role" error={fieldErrors.role}>
+                      <SearchableCombobox
+                        placeholder="Select a role..."
+                        searchPlaceholder="Search roles..."
+                        emptyMessage={`No roles scoped to ${resourceLabelFor(resourceType).toLowerCase()} available in this workspace.`}
+                        value={roleId ? { value: roleId, label: roleLabel } : null}
+                        items={roleItems}
+                        isLoading={roles.isLoading}
+                        disabled={createPolicy.isPending}
+                        onValueChange={(item) => {
+                          setRoleId(item?.value ?? '')
+                          setRoleLabel(item?.label ?? '')
+                          setFieldErrors((current) => ({ ...current, role: undefined }))
+                        }}
+                        onSearchChange={setRoleQ}
+                      />
+                    </FormField>
 
                     <DialogFooter>
                       <DialogClose
@@ -655,6 +651,8 @@ function WorkspacePoliciesPage() {
                       <PolicyRow
                         key={binding.binding_id}
                         binding={binding}
+                        orgSlug={orgSlug}
+                        workspaceId={workspaceId}
                         canModify={canModifyPolicies}
                         isRevoking={revokePolicy.isPending}
                         onRevoke={(id) => revokePolicy.mutate(id)}
@@ -685,17 +683,45 @@ function WorkspacePoliciesPage() {
 
 function PolicyRow({
   binding,
+  orgSlug,
+  workspaceId,
   canModify,
   isRevoking,
   onRevoke,
 }: {
   binding: PolicyBinding
+  orgSlug: string
+  workspaceId: string
   canModify: boolean
   isRevoking: boolean
   onRevoke: (bindingId: number) => void
 }) {
+  const navigate = useNavigate()
+
+  function openBinding() {
+    void navigate({
+      to: '/orgs/$org_slug/workspaces/$workspace_id/policies/$binding_id',
+      params: {
+        org_slug: orgSlug,
+        workspace_id: workspaceId,
+        binding_id: String(binding.binding_id),
+      },
+    })
+  }
+
   return (
-    <TableRow>
+    <TableRow
+      className="cursor-pointer"
+      tabIndex={0}
+      role="link"
+      onClick={openBinding}
+      onKeyDown={(event) => {
+        if (event.key === 'Enter' || event.key === ' ') {
+          event.preventDefault()
+          openBinding()
+        }
+      }}
+    >
       <TableCell>
         <PolicySubjectCell
           binding={binding}
@@ -727,7 +753,14 @@ function PolicyRow({
         <TableCell className="text-end">
           <AlertDialog>
             <AlertDialogTrigger
-              render={<Button variant="destructive" size="sm" disabled={isRevoking} />}
+              render={
+                <Button
+                  variant="destructive"
+                  size="sm"
+                  disabled={isRevoking}
+                  onClick={(e) => e.stopPropagation()}
+                />
+              }
             >
               Revoke
             </AlertDialogTrigger>
@@ -760,14 +793,14 @@ function PolicyRow({
   )
 }
 
-function subjectDisplayName(binding: PolicyBinding): string {
+export function subjectDisplayName(binding: PolicyBinding): string {
   return policySubjectDisplayName(binding, {
     org_members: 'All organization users',
     workspace_members: 'All workspace users',
   })
 }
 
-function resourceLabelFor(value: ResourceType) {
+export function resourceLabelFor(value: ResourceType) {
   switch (value) {
     case 'org':
       return 'Organization'
