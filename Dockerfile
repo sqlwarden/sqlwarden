@@ -1,4 +1,4 @@
-FROM oven/bun:1.3.10-alpine AS frontend-builder
+FROM --platform=$BUILDPLATFORM oven/bun:1.3.10-alpine AS frontend-builder
 
 WORKDIR /build/frontend
 
@@ -8,7 +8,10 @@ RUN bun install --frozen-lockfile
 COPY frontend/ ./
 RUN bun run build && test -s /build/assets/static/index.html
 
-FROM golang:1.26.6-alpine AS builder
+FROM --platform=$BUILDPLATFORM golang:1.26.6-alpine AS builder
+
+ARG TARGETOS
+ARG TARGETARCH
 
 RUN apk add --no-cache git ca-certificates tzdata
 
@@ -21,7 +24,7 @@ COPY . .
 
 COPY --from=frontend-builder /build/assets/static ./assets/static
 
-RUN CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build \
+RUN CGO_ENABLED=0 GOOS=$TARGETOS GOARCH=$TARGETARCH go build \
     -ldflags="-s -w" \
     -o sqlwarden \
     ./cmd/api

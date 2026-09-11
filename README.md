@@ -47,7 +47,7 @@ make run
 Released images are published to GitHub Container Registry.
 
 ```sh
-docker run --rm \
+docker run -d \
   --name sqlwarden \
   -p 6020:6020 \
   -v sqlwarden-data:/var/lib/sqlwarden \
