@@ -1,5 +1,22 @@
 # Changelog
 
+## [0.9.1](https://github.com/sqlwarden/sqlwarden/compare/v0.9.0...v0.9.1) (2026-09-11)
+
+
+### Features
+
+* **engine:** add HasDefinition capability flag and expand on-demand DDL coverage (SQLW-137) ([88ec93f](https://github.com/sqlwarden/sqlwarden/commit/88ec93f79724126f42d9a9295a6fd5269af3a06b))
+* **engine:** reconstruct DDL for object kinds without a native definition source (SQLW-138) ([55bde33](https://github.com/sqlwarden/sqlwarden/commit/55bde333b9b873296af02db82191d660c6ea9778))
+* **ide:** explorer sidebar split view layout in IDE (SQLW-136) ([3329027](https://github.com/sqlwarden/sqlwarden/commit/3329027f779a72529b713ab7bc66f178545b97ce))
+* **ide:** reuse shared DataGrid component in results, object viewer, and CSV table (SQLW-141) ([d269dd1](https://github.com/sqlwarden/sqlwarden/commit/d269dd1d091f140d5c09a3e7aab81e8b638f4e6e))
+* **ui:** unify dropdowns, polish IDE editor/files UX (SQLW-134) ([9b4072f](https://github.com/sqlwarden/sqlwarden/commit/9b4072fdc5ff8d5545459056ae1715813c77def4))
+
+
+### Bug Fixes
+
+* **engine:** dedupe duplicate schema object refs so postgres schema refresh doesn't 500 (SQLW-135) ([3e460a5](https://github.com/sqlwarden/sqlwarden/commit/3e460a565d37751dc18803c1e54cc982f403804c))
+* **release:** publish multi-arch Docker images (SQLW-144) ([bbff3bc](https://github.com/sqlwarden/sqlwarden/commit/bbff3bc5cf53d818149f840f787524f0a09845e6))
+
 ## [0.9.0](https://github.com/sqlwarden/sqlwarden/compare/v0.8.0...v0.9.0) (2026-09-10)
 
 
