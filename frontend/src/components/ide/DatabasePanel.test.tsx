@@ -93,8 +93,16 @@ describe('DatabasePanel', () => {
     return environmentPermissionRequests
   }
 
-  function renderPanel(layout: 'flat' | 'grouped' = 'flat') {
-    localStorage.setItem('sqlwarden.preference.connection_layout', layout)
+  function renderPanel(options: { groupByEnvironment?: boolean; splitView?: boolean } = {}) {
+    if (options.groupByEnvironment !== undefined) {
+      localStorage.setItem(
+        'sqlwarden.preference.connection_group_by_environment',
+        String(options.groupByEnvironment),
+      )
+    }
+    if (options.splitView !== undefined) {
+      localStorage.setItem('sqlwarden.preference.connection_split_view', String(options.splitView))
+    }
     const rootRoute = createRootRoute({
       component: () => (
         <IdeStoreContext.Provider value={store}>
@@ -166,31 +174,65 @@ describe('DatabasePanel', () => {
     expect(screen.getByRole('button', { name: 'Retry' })).toBeInTheDocument()
   })
 
-  it('opens a connection tab from a populated flat explorer', async () => {
+  it('selects a connection without opening a tab on a single click', async () => {
     handlers('populated')
     const { user } = renderPanel()
 
     const connectionName = await screen.findByText('analytics-pg')
-    await user.click(connectionName.closest('button')!)
+    await user.click(connectionName)
+    expect(store.getState().tabs).toEqual([])
+  })
+
+  it('opens a connection tab from the context menu Open action', async () => {
+    handlers('populated')
+    const { user } = renderPanel()
+
+    const connectionName = await screen.findByText('analytics-pg')
+    fireEvent.contextMenu(connectionName)
+    await user.click(await screen.findByRole('menuitem', { name: 'Open' }))
+
     expect(store.getState().tabs).toEqual([
       expect.objectContaining({ id: 'connection:7', connectionId: 7 }),
     ])
   })
 
-  it('toggles the connection layout from the Explorer options menu', async () => {
+  it('defaults to split view grouped by environment', async () => {
     handlers('populated')
-    const { user } = renderPanel('flat')
+    renderPanel()
+
+    expect(await screen.findByPlaceholderText('Filter connections…')).toBeInTheDocument()
+    expect(await screen.findByText('Production')).toBeInTheDocument()
+  })
+
+  it('turns off split view from the explorer layout settings menu', async () => {
+    handlers('populated')
+    const { user } = renderPanel()
     await screen.findByText('analytics-pg')
 
-    await user.click(screen.getByRole('button', { name: /explorer options/i }))
-    const groupItem = await screen.findByRole('menuitemcheckbox', {
-      name: /group by environment/i,
-    })
-    expect(groupItem).toHaveAttribute('aria-checked', 'false')
+    fireEvent.click(screen.getByRole('button', { name: /explorer layout/i }))
+    const splitItem = await screen.findByRole('menuitemcheckbox', { name: 'Split view' })
+    expect(splitItem).toHaveAttribute('aria-checked', 'true')
+    await user.click(splitItem)
+
+    expect(localStorage.getItem('sqlwarden.preference.connection_split_view')).toBe('false')
+    expect(screen.queryByPlaceholderText('Filter connections…')).not.toBeInTheDocument()
+  })
+
+  it('turns off group by environment from the explorer layout settings menu', async () => {
+    handlers('populated')
+    const { user } = renderPanel({ splitView: false })
+    await screen.findByText('Production')
+
+    await user.click(screen.getByRole('button', { name: /explorer layout/i }))
+    const groupItem = await screen.findByRole('menuitemcheckbox', { name: /group by environment/i })
+    expect(groupItem).toHaveAttribute('aria-checked', 'true')
     await user.click(groupItem)
 
-    expect(localStorage.getItem('sqlwarden.preference.connection_layout')).toBe('grouped')
-    expect(await screen.findByText('Production')).toBeInTheDocument()
+    expect(localStorage.getItem('sqlwarden.preference.connection_group_by_environment')).toBe(
+      'false',
+    )
+    expect(await screen.findByText('analytics-pg')).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Filter by environment' })).toBeInTheDocument()
   })
 
   it('runs a connection schema refresh through the backend endpoint', async () => {
@@ -227,7 +269,7 @@ describe('DatabasePanel', () => {
       ),
     )
     store.getState().setSession(7, 'session-7')
-    const { user } = renderPanel()
+    const { user } = renderPanel({ splitView: false })
 
     await screen.findByText('analytics-pg')
     await user.click(screen.getByRole('button', { name: 'Expand schema' }))
@@ -243,7 +285,7 @@ describe('DatabasePanel', () => {
 
   it('opens connection creation from an environment quick action', async () => {
     handlers('populated', ['conn:create'])
-    const { user } = renderPanel('grouped')
+    const { user } = renderPanel({ splitView: false })
 
     const environment = await screen.findByText('Production')
     await waitFor(() => expect(screen.getByLabelText('New connection in Production')).toBeVisible())
@@ -279,7 +321,7 @@ describe('DatabasePanel', () => {
         }),
       ),
     )
-    const { user } = renderPanel('grouped')
+    const { user } = renderPanel({ splitView: false })
 
     const environment = await screen.findByText('Production')
     await waitFor(() => expect(environmentPermissionRequests).toHaveBeenCalled())
@@ -298,7 +340,7 @@ describe('DatabasePanel', () => {
 
   it('blocks deleting an environment that still has connections', async () => {
     const environmentPermissionRequests = handlers('populated', ['env:delete'])
-    const { user } = renderPanel('grouped')
+    const { user } = renderPanel({ splitView: false })
 
     const environment = await screen.findByText('Production')
     await waitFor(() => expect(environmentPermissionRequests).toHaveBeenCalled())
@@ -343,7 +385,7 @@ describe('DatabasePanel', () => {
         return new HttpResponse(null, { status: 204 })
       }),
     )
-    const { user } = renderPanel('grouped')
+    const { user } = renderPanel({ splitView: false })
 
     const environment = await screen.findByText('Production')
     await waitFor(() => expect(environmentPermissionRequests).toHaveBeenCalled())
@@ -353,5 +395,75 @@ describe('DatabasePanel', () => {
 
     await waitFor(() => expect(deleteCalls).toBe(1))
     expect(await screen.findByText('No environments available.')).toBeInTheDocument()
+  })
+
+  it('shows a connect CTA in the split view schema pane for an unconnected connection', async () => {
+    handlers('populated')
+    const { user } = renderPanel()
+
+    await user.click(await screen.findByText('analytics-pg'))
+    expect(await screen.findByText('Not connected.')).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Connect' })).toBeInTheDocument()
+  })
+
+  it('filters the split view connection list by name', async () => {
+    handlers('populated')
+    renderPanel()
+
+    await screen.findByText('analytics-pg')
+    fireEvent.change(screen.getByPlaceholderText('Filter connections…'), {
+      target: { value: 'nonexistent' },
+    })
+
+    expect(screen.queryByText('analytics-pg')).not.toBeInTheDocument()
+  })
+
+  it('shows a header with a refresh action for the selected connection in the split view schema pane', async () => {
+    handlers('populated')
+    store.getState().setSession(7, 'session-7')
+    const { user } = renderPanel()
+
+    await user.click(await screen.findByText('analytics-pg'))
+    // One button lives on the connection's row, the other on the schema pane header.
+    expect(await screen.findAllByRole('button', { name: 'Refresh schema' })).toHaveLength(2)
+  })
+
+  it('maximizes the schema pane from the split view and restores it', async () => {
+    handlers('populated')
+    const { user } = renderPanel()
+
+    await user.click(await screen.findByText('analytics-pg'))
+    await user.click(screen.getByRole('button', { name: 'Maximize schema panel' }))
+    expect(
+      await screen.findByRole('button', { name: 'Restore connections panel' }),
+    ).toBeInTheDocument()
+
+    await user.click(screen.getByRole('button', { name: 'Restore connections panel' }))
+    expect(await screen.findByRole('button', { name: 'Maximize schema panel' })).toBeInTheDocument()
+  })
+
+  it('maximizes the connections panel from the explorer header and restores it', async () => {
+    handlers('populated')
+    const { user } = renderPanel()
+    await screen.findByText('analytics-pg')
+
+    expect(screen.queryByRole('button', { name: 'Maximize connections panel' })).toBeInTheDocument()
+    await user.click(screen.getByRole('button', { name: 'Maximize connections panel' }))
+    expect(await screen.findByRole('button', { name: 'Restore schema panel' })).toBeInTheDocument()
+
+    await user.click(screen.getByRole('button', { name: 'Restore schema panel' }))
+    expect(
+      await screen.findByRole('button', { name: 'Maximize connections panel' }),
+    ).toBeInTheDocument()
+  })
+
+  it('hides the connections panel maximize control outside split view', async () => {
+    handlers('populated')
+    renderPanel({ splitView: false })
+    await screen.findByText('Production')
+
+    expect(
+      screen.queryByRole('button', { name: 'Maximize connections panel' }),
+    ).not.toBeInTheDocument()
   })
 })

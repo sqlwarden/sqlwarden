@@ -1,5 +1,6 @@
 import { errorMessage } from '#/lib/api/errors'
 import { useEffect, useRef, useState } from 'react'
+import type { PanelImperativeHandle } from 'react-resizable-panels'
 import { SearchInput } from '#/components/SearchInput'
 import { queryKeys } from '#/lib/api/query-keys'
 import { useNavigate } from '@tanstack/react-router'
@@ -29,6 +30,7 @@ import { buildConnectionMenu } from './contextMenus/connectionMenu'
 import { buildEnvironmentMenu } from './contextMenus/environmentMenu'
 import { SidebarPane } from './SidebarPane'
 import { SchemaTree } from './SchemaTree'
+import { ExplorerSplitView } from './ExplorerSplitView'
 import { sidebarActiveRowClass } from './sidebarRowStyles'
 import { ConnectionDialog } from './ConnectionDialog'
 import { EditConnectionDialog } from './EditConnectionDialog'
@@ -58,7 +60,6 @@ import {
   DropdownMenuContent,
   DropdownMenuGroup,
   DropdownMenuItem,
-  DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from '#/components/ui/dropdown-menu'
 import { Tip } from './schema-diagram/Tip'
@@ -88,8 +89,10 @@ export function DatabasePanel({
   const connectionActions = useConnectionActions(orgSlug, workspace)
 
   const [filter, setFilter] = useState('')
-  const { connectionLayout: connLayout, setConnectionLayout } = useConnectionLayout()
+  const { groupByEnvironment, setGroupByEnvironment, splitView, setSplitView } =
+    useConnectionLayout()
   const [envFilter, setEnvFilter] = useState<number | 'all'>('all')
+  const [selectedConnectionId, setSelectedConnectionId] = useState<number | null>(null)
   const [addEnvOpen, setAddEnvOpen] = useState(false)
   const [addConnEnvironmentId, setAddConnEnvironmentId] = useState<number | null>(null)
   const [addConnOpen, setAddConnOpen] = useState(false)
@@ -103,6 +106,28 @@ export function DatabasePanel({
   const [blockedDisconnectConnection, setBlockedDisconnectConnection] = useState<Connection | null>(
     null,
   )
+
+  const topPanelRef = useRef<PanelImperativeHandle>(null)
+  const bottomPanelRef = useRef<PanelImperativeHandle>(null)
+  const [topCollapsed, setTopCollapsed] = useState(false)
+  const [bottomCollapsed, setBottomCollapsed] = useState(false)
+
+  const toggleTopPanel = () => {
+    if (topCollapsed) {
+      topPanelRef.current?.expand()
+    } else {
+      topPanelRef.current?.collapse()
+    }
+    setTopCollapsed(!topCollapsed)
+  }
+  const toggleBottomPanel = () => {
+    if (bottomCollapsed) {
+      bottomPanelRef.current?.expand()
+    } else {
+      bottomPanelRef.current?.collapse()
+    }
+    setBottomCollapsed(!bottomCollapsed)
+  }
 
   const transactions = useIde((s) => s.transactions)
   const blockedDisconnectSessionId = useIde((s) =>
@@ -257,19 +282,19 @@ export function DatabasePanel({
   // grouped/flat layout; per-environment permissions are enforced server-side.
   const canAddConnection = envItems.length > 0 && canCreateConnectionInWorkspace
   const actions = (
-    <DropdownMenu>
-      <Tip label="Explorer options">
-        <DropdownMenuTrigger
-          render={
-            <Button type="button" variant="ghost" size="icon-sm" aria-label="Explorer options">
-              <Icon name="plus-sign" size={14} />
-            </Button>
-          }
-        />
-      </Tip>
-      <DropdownMenuContent align="end" className="min-w-52">
-        {(canAddConnection || canCreateEnvironment) && (
-          <>
+    <>
+      <DropdownMenu>
+        <Tip label="Explorer options">
+          <DropdownMenuTrigger
+            render={
+              <Button type="button" variant="ghost" size="icon-sm" aria-label="Explorer options">
+                <Icon name="plus-sign" size={14} />
+              </Button>
+            }
+          />
+        </Tip>
+        <DropdownMenuContent align="end" className="min-w-52">
+          {(canAddConnection || canCreateEnvironment) && (
             <DropdownMenuGroup>
               {canAddConnection && (
                 <DropdownMenuItem onClick={() => setAddConnOpen(true)}>
@@ -284,17 +309,45 @@ export function DatabasePanel({
                 </DropdownMenuItem>
               )}
             </DropdownMenuGroup>
-            <DropdownMenuSeparator />
-          </>
-        )}
-        <DropdownMenuCheckboxItem
-          checked={connLayout === 'grouped'}
-          onCheckedChange={(checked) => setConnectionLayout(checked ? 'grouped' : 'flat')}
-        >
-          Group by environment
-        </DropdownMenuCheckboxItem>
-      </DropdownMenuContent>
-    </DropdownMenu>
+          )}
+        </DropdownMenuContent>
+      </DropdownMenu>
+      <DropdownMenu>
+        <Tip label="Explorer layout">
+          <DropdownMenuTrigger
+            render={
+              <Button type="button" variant="ghost" size="icon-sm" aria-label="Explorer layout">
+                <Icon name="settings-02" size={14} />
+              </Button>
+            }
+          />
+        </Tip>
+        <DropdownMenuContent align="end" className="min-w-52">
+          <DropdownMenuCheckboxItem
+            checked={groupByEnvironment}
+            onCheckedChange={setGroupByEnvironment}
+          >
+            Group by environment
+          </DropdownMenuCheckboxItem>
+          <DropdownMenuCheckboxItem checked={splitView} onCheckedChange={setSplitView}>
+            Split view
+          </DropdownMenuCheckboxItem>
+        </DropdownMenuContent>
+      </DropdownMenu>
+      {splitView && (
+        <Tip label={bottomCollapsed ? 'Restore schema panel' : 'Maximize connections panel'}>
+          <Button
+            type="button"
+            variant="ghost"
+            size="icon-sm"
+            aria-label={bottomCollapsed ? 'Restore schema panel' : 'Maximize connections panel'}
+            onClick={toggleBottomPanel}
+          >
+            <Icon name={bottomCollapsed ? 'minimize' : 'maximize'} size={14} />
+          </Button>
+        </Tip>
+      )}
+    </>
   )
 
   return (
@@ -307,131 +360,171 @@ export function DatabasePanel({
         actions={actions}
         scroll={false}
       >
-        <div className="flex items-center gap-1.5 border-b border-border p-2">
-          <SearchInput
-            value={filter}
-            onValueChange={setFilter}
-            onClear={() => setFilter('')}
-            placeholder="Filter schema…"
-            className="min-w-0 flex-1"
-            size="sm"
-            variant="muted"
+        {splitView ? (
+          <ExplorerSplitView
+            orgSlug={orgSlug}
+            workspace={workspace}
+            environments={envItems}
+            connections={connItems}
+            connectionsLoading={environments.isLoading || connections.isLoading}
+            connectionsError={environments.isError || connections.isError}
+            onRetry={() => {
+              void environments.refetch()
+              void connections.refetch()
+            }}
+            connectedIds={connectionActions.connectedIds}
+            canEditConnection={canEditConnection}
+            canDeleteConnection={canDeleteConnection}
+            selectedConnectionId={selectedConnectionId}
+            onSelectConnection={setSelectedConnectionId}
+            onOpenTab={connectionActions.openConnection}
+            onOpenConsole={connectionActions.openConnectionConsole}
+            onConnect={connectionActions.connect}
+            onDisconnect={handleDisconnect}
+            groupByEnvironment={groupByEnvironment}
+            onAddConnection={(env) => setAddConnEnvironmentId(env.id)}
+            onRenameEnvironment={openRenameEnvironment}
+            onDeleteEnvironment={setDeletingEnvironment}
+            topPanelRef={topPanelRef}
+            bottomPanelRef={bottomPanelRef}
+            topCollapsed={topCollapsed}
+            onToggleTopPanel={toggleTopPanel}
           />
-          {connLayout === 'flat' && envItems.length > 0 && (
-            <DropdownMenu>
-              <Tip
-                label={
-                  envFilter === 'all'
-                    ? 'Filter by environment'
-                    : `Environment: ${envNameById(envFilter)}`
-                }
-              >
-                <DropdownMenuTrigger
-                  render={
-                    <Button
+        ) : (
+          <>
+            <div className="flex items-center gap-1.5 border-b border-border p-2">
+              <SearchInput
+                value={filter}
+                onValueChange={setFilter}
+                onClear={() => setFilter('')}
+                placeholder="Filter schema…"
+                className="min-w-0 flex-1"
+                size="sm"
+                variant="muted"
+              />
+              {!groupByEnvironment && envItems.length > 0 && (
+                <DropdownMenu>
+                  <Tip
+                    label={
+                      envFilter === 'all'
+                        ? 'Filter by environment'
+                        : `Environment: ${envNameById(envFilter)}`
+                    }
+                  >
+                    <DropdownMenuTrigger
+                      render={
+                        <Button
+                          type="button"
+                          variant="ghost"
+                          size="icon-sm"
+                          aria-label="Filter by environment"
+                          className={cn(
+                            'size-7',
+                            envFilter !== 'all' &&
+                              'bg-primary/10 text-primary hover:bg-primary/15 hover:text-primary',
+                          )}
+                        >
+                          <Icon name="server-stack-01" size={14} />
+                        </Button>
+                      }
+                    />
+                  </Tip>
+                  <DropdownMenuContent align="end" className="min-w-44">
+                    <DropdownMenuGroup>
+                      <DropdownMenuItem onClick={() => setEnvFilter('all')}>
+                        <span className="min-w-0 flex-1 truncate">All environments</span>
+                        {envFilter === 'all' && (
+                          <Icon name="tick-02" size={14} className="text-primary" />
+                        )}
+                      </DropdownMenuItem>
+                      {envItems.map((env) => (
+                        <DropdownMenuItem key={env.id} onClick={() => setEnvFilter(env.id)}>
+                          <span className="min-w-0 flex-1 truncate">{env.name}</span>
+                          {envFilter === env.id && (
+                            <Icon name="tick-02" size={14} className="text-primary" />
+                          )}
+                        </DropdownMenuItem>
+                      ))}
+                    </DropdownMenuGroup>
+                  </DropdownMenuContent>
+                </DropdownMenu>
+              )}
+            </div>
+            <div className="min-h-0 flex-1 overflow-y-auto overflow-x-hidden [scrollbar-width:thin]">
+              <div className="flex flex-col py-1">
+                {environments.isLoading || connections.isLoading ? (
+                  <SidebarMessage>Loading...</SidebarMessage>
+                ) : environments.isError || connections.isError ? (
+                  <SidebarMessage>
+                    <span>Failed to load connections.</span>
+                    <button
                       type="button"
-                      variant="ghost"
-                      size="icon-sm"
-                      aria-label="Filter by environment"
-                      className={cn(
-                        'size-7',
-                        envFilter !== 'all' &&
-                          'bg-primary/10 text-primary hover:bg-primary/15 hover:text-primary',
-                      )}
+                      onClick={() => {
+                        void environments.refetch()
+                        void connections.refetch()
+                      }}
+                      className="font-medium text-primary hover:underline"
                     >
-                      <Icon name="server-stack-01" size={14} />
-                    </Button>
-                  }
-                />
-              </Tip>
-              <DropdownMenuContent align="end" className="min-w-44">
-                <DropdownMenuGroup>
-                  <DropdownMenuItem onClick={() => setEnvFilter('all')}>
-                    <span className="min-w-0 flex-1 truncate">All environments</span>
-                    {envFilter === 'all' && (
-                      <Icon name="tick-02" size={14} className="text-primary" />
-                    )}
-                  </DropdownMenuItem>
-                  {envItems.map((env) => (
-                    <DropdownMenuItem key={env.id} onClick={() => setEnvFilter(env.id)}>
-                      <span className="min-w-0 flex-1 truncate">{env.name}</span>
-                      {envFilter === env.id && (
-                        <Icon name="tick-02" size={14} className="text-primary" />
-                      )}
-                    </DropdownMenuItem>
-                  ))}
-                </DropdownMenuGroup>
-              </DropdownMenuContent>
-            </DropdownMenu>
-          )}
-        </div>
-        <div className="min-h-0 flex-1 overflow-y-auto overflow-x-hidden [scrollbar-width:thin]">
-          <div className="flex flex-col py-1">
-            {environments.isLoading || connections.isLoading ? (
-              <SidebarMessage>Loading...</SidebarMessage>
-            ) : environments.isError || connections.isError ? (
-              <SidebarMessage>
-                <span>Failed to load connections.</span>
-                <button
-                  type="button"
-                  onClick={() => {
-                    void environments.refetch()
-                    void connections.refetch()
-                  }}
-                  className="font-medium text-primary hover:underline"
-                >
-                  Retry
-                </button>
-              </SidebarMessage>
-            ) : envItems.length === 0 ? (
-              <SidebarMessage>No environments available.</SidebarMessage>
-            ) : connLayout === 'grouped' ? (
-              envItems.map((env) => (
-                <EnvironmentRow
-                  key={env.id}
-                  environment={env}
-                  connections={connItems.filter((c) => c.environment_id === env.id)}
-                  connectedIds={connectionActions.connectedIds}
-                  orgSlug={orgSlug}
-                  filter={filter}
-                  canEditConnection={canEditConnection}
-                  canDeleteConnection={canDeleteConnection}
-                  onOpen={connectionActions.openConnection}
-                  onOpenConsole={connectionActions.openConnectionConsole}
-                  onConnect={connectionActions.connect}
-                  onDisconnect={handleDisconnect}
-                  onAddConnection={() => setAddConnEnvironmentId(env.id)}
-                  onRenameEnvironment={() => openRenameEnvironment(env)}
-                  onDeleteEnvironment={() => setDeletingEnvironment(env)}
-                />
-              ))
-            ) : (
-              (() => {
-                const list = connItems.filter(
-                  (c) => envFilter === 'all' || c.environment_id === envFilter,
-                )
-                if (list.length === 0) return <SidebarMessage>No connections.</SidebarMessage>
-                return list.map((conn) => (
-                  <ConnectionRow
-                    key={conn.id}
-                    connection={conn}
-                    isConnected={connectionActions.connectedIds.has(conn.id)}
-                    connIndent={0}
-                    envLabel={envFilter === 'all' ? envNameById(conn.environment_id) : undefined}
-                    orgSlug={orgSlug}
-                    filter={filter}
-                    canEditConnection={canEditConnection}
-                    canDeleteConnection={canDeleteConnection}
-                    onOpen={() => connectionActions.openConnection(conn)}
-                    onOpenConsole={() => connectionActions.openConnectionConsole(conn)}
-                    onConnect={() => connectionActions.connect(conn)}
-                    onDisconnect={() => handleDisconnect(conn)}
-                  />
-                ))
-              })()
-            )}
-          </div>
-        </div>
+                      Retry
+                    </button>
+                  </SidebarMessage>
+                ) : envItems.length === 0 ? (
+                  <SidebarMessage>No environments available.</SidebarMessage>
+                ) : groupByEnvironment ? (
+                  envItems.map((env) => (
+                    <EnvironmentRow
+                      key={env.id}
+                      environment={env}
+                      connections={connItems.filter((c) => c.environment_id === env.id)}
+                      connectedIds={connectionActions.connectedIds}
+                      selectedConnectionId={selectedConnectionId}
+                      orgSlug={orgSlug}
+                      filter={filter}
+                      canEditConnection={canEditConnection}
+                      canDeleteConnection={canDeleteConnection}
+                      onSelect={setSelectedConnectionId}
+                      onOpenTab={connectionActions.openConnection}
+                      onOpenConsole={connectionActions.openConnectionConsole}
+                      onConnect={connectionActions.connect}
+                      onDisconnect={handleDisconnect}
+                      onAddConnection={() => setAddConnEnvironmentId(env.id)}
+                      onRenameEnvironment={() => openRenameEnvironment(env)}
+                      onDeleteEnvironment={() => setDeletingEnvironment(env)}
+                    />
+                  ))
+                ) : (
+                  (() => {
+                    const list = connItems.filter(
+                      (c) => envFilter === 'all' || c.environment_id === envFilter,
+                    )
+                    if (list.length === 0) return <SidebarMessage>No connections.</SidebarMessage>
+                    return list.map((conn) => (
+                      <ConnectionRow
+                        key={conn.id}
+                        connection={conn}
+                        isConnected={connectionActions.connectedIds.has(conn.id)}
+                        selected={selectedConnectionId === conn.id}
+                        connIndent={0}
+                        envLabel={
+                          envFilter === 'all' ? envNameById(conn.environment_id) : undefined
+                        }
+                        orgSlug={orgSlug}
+                        filter={filter}
+                        canEditConnection={canEditConnection}
+                        canDeleteConnection={canDeleteConnection}
+                        onSelect={() => setSelectedConnectionId(conn.id)}
+                        onOpenTab={() => connectionActions.openConnection(conn)}
+                        onOpenConsole={() => connectionActions.openConnectionConsole(conn)}
+                        onConnect={() => connectionActions.connect(conn)}
+                        onDisconnect={() => handleDisconnect(conn)}
+                      />
+                    ))
+                  })()
+                )}
+              </div>
+            </div>
+          </>
+        )}
       </SidebarPane>
 
       <Dialog
@@ -622,36 +715,43 @@ export function DatabasePanel({
   )
 }
 
-function EnvironmentRow({
+export function EnvironmentRow({
   environment,
   connections,
   connectedIds,
+  selectedConnectionId,
   orgSlug,
   filter,
   canEditConnection,
   canDeleteConnection,
-  onOpen,
+  onSelect,
+  onOpenTab,
   onOpenConsole,
   onConnect,
   onDisconnect,
   onAddConnection,
   onRenameEnvironment,
   onDeleteEnvironment,
+  wholeRowClickable = false,
 }: {
   environment: Environment
   connections: Connection[]
   connectedIds: Set<number>
+  selectedConnectionId: number | null
   orgSlug: string
   filter: string
   canEditConnection: boolean
   canDeleteConnection: boolean
-  onOpen: (conn: Connection) => void
+  onSelect: (connectionId: number) => void
+  onOpenTab: (conn: Connection) => void
   onOpenConsole: (conn: Connection) => void
   onConnect: (conn: Connection) => void
   onDisconnect: (conn: Connection) => void
   onAddConnection: () => void
   onRenameEnvironment: () => void
   onDeleteEnvironment: () => void
+  /** Forwarded to each ConnectionRow. */
+  wholeRowClickable?: boolean
 }) {
   const nodeKey = `env:${environment.id}`
   const navigate = useNavigate()
@@ -724,12 +824,16 @@ function EnvironmentRow({
                 key={conn.id}
                 connection={conn}
                 isConnected={connectedIds.has(conn.id)}
+                selected={selectedConnectionId === conn.id}
                 connIndent={18}
                 orgSlug={orgSlug}
                 filter={filter}
                 canEditConnection={canEditConnection}
                 canDeleteConnection={canDeleteConnection}
-                onOpen={() => onOpen(conn)}
+                hideSchemaExpand={wholeRowClickable}
+                wholeRowClickable={wholeRowClickable}
+                onSelect={() => onSelect(conn.id)}
+                onOpenTab={() => onOpenTab(conn)}
                 onOpenConsole={() => onOpenConsole(conn)}
                 onConnect={() => onConnect(conn)}
                 onDisconnect={() => onDisconnect(conn)}
@@ -742,29 +846,39 @@ function EnvironmentRow({
   )
 }
 
-function ConnectionRow({
+export function ConnectionRow({
   connection,
   isConnected,
+  selected = false,
   connIndent,
   envLabel,
   orgSlug,
   filter,
   canEditConnection,
   canDeleteConnection,
-  onOpen,
+  hideSchemaExpand = false,
+  wholeRowClickable = false,
+  onSelect,
+  onOpenTab,
   onOpenConsole,
   onConnect,
   onDisconnect,
 }: {
   connection: Connection
   isConnected: boolean
+  selected?: boolean
   connIndent: number
   envLabel?: string
   orgSlug: string
   filter: string
   canEditConnection: boolean
   canDeleteConnection: boolean
-  onOpen: () => void
+  /** Suppresses the expand chevron and inline SchemaTree. */
+  hideSchemaExpand?: boolean
+  /** Makes the entire row (not just the name) trigger onSelect. */
+  wholeRowClickable?: boolean
+  onSelect: () => void
+  onOpenTab: () => void
   onOpenConsole: () => void
   onConnect: () => void
   onDisconnect: () => void
@@ -773,7 +887,7 @@ function ConnectionRow({
   const navigate = useNavigate()
   const storedExpanded = useIde((s) => s.expandedNodes[nodeKey])
   const setNodeExpanded = useIde((s) => s.setNodeExpanded)
-  const expanded = storedExpanded ?? false
+  const expanded = !hideSchemaExpand && (storedExpanded ?? false)
   const wasConnectedRef = useRef(isConnected)
   useEffect(() => {
     if (wasConnectedRef.current && !isConnected) {
@@ -819,7 +933,7 @@ function ConnectionRow({
     isConnected,
     canEditConnection,
     canDeleteConnection,
-    onOpen,
+    onOpen: onOpenTab,
     onOpenConsole,
     onConnect,
     onDisconnect,
@@ -839,13 +953,33 @@ function ConnectionRow({
       <ContextMenu items={menuItems}>
         <div
           style={{ paddingLeft: connIndent }}
-          className={cn('flex items-center transition-colors', sidebarActiveRowClass(isActive))}
+          role={wholeRowClickable ? 'button' : undefined}
+          tabIndex={wholeRowClickable ? 0 : undefined}
+          onClick={wholeRowClickable ? onSelect : undefined}
+          onKeyDown={
+            wholeRowClickable
+              ? (e) => {
+                  if (e.key === 'Enter' || e.key === ' ') {
+                    e.preventDefault()
+                    onSelect()
+                  }
+                }
+              : undefined
+          }
+          className={cn(
+            'flex items-center transition-colors',
+            wholeRowClickable && 'cursor-pointer',
+            sidebarActiveRowClass(selected),
+          )}
         >
-          {isConnected || expanded ? (
+          {!hideSchemaExpand && (isConnected || expanded) ? (
             <button
               type="button"
               aria-label={expanded ? 'Collapse schema' : 'Expand schema'}
-              onClick={() => setNodeExpanded(nodeKey, !expanded)}
+              onClick={(e) => {
+                e.stopPropagation()
+                setNodeExpanded(nodeKey, !expanded)
+              }}
               className="flex h-6 w-5 shrink-0 items-center justify-center text-muted-foreground hover:text-foreground"
             >
               <Icon name={expanded ? 'chevron-down' : 'chevron-right'} size={11} />
@@ -854,19 +988,31 @@ function ConnectionRow({
             <span className="w-5 shrink-0" />
           )}
 
-          <button
-            type="button"
-            onClick={onOpen}
-            className="flex h-6 min-w-0 items-center gap-2 text-left text-xs"
-          >
-            <span className="relative shrink-0">
-              <DriverBadge driver={connection.driver} size="sm" />
-              <ConnectionStatusDot state={connState} />
+          {wholeRowClickable ? (
+            <span className="flex h-6 min-w-0 items-center gap-2 text-left text-xs">
+              <span className="relative shrink-0">
+                <DriverBadge driver={connection.driver} size="sm" />
+                <ConnectionStatusDot state={connState} />
+              </span>
+              <span className="truncate" title={connection.name}>
+                {connection.name}
+              </span>
             </span>
-            <span className="truncate" title={connection.name}>
-              {connection.name}
-            </span>
-          </button>
+          ) : (
+            <button
+              type="button"
+              onClick={onSelect}
+              className="flex h-6 min-w-0 items-center gap-2 text-left text-xs"
+            >
+              <span className="relative shrink-0">
+                <DriverBadge driver={connection.driver} size="sm" />
+                <ConnectionStatusDot state={connState} />
+              </span>
+              <span className="truncate" title={connection.name}>
+                {connection.name}
+              </span>
+            </button>
+          )}
 
           {isConnected && (
             <Tip label="Refresh schema">
@@ -888,7 +1034,7 @@ function ConnectionRow({
               </button>
             </Tip>
           )}
-          <div className="flex h-6 min-w-0 flex-1 items-center justify-end">
+          <div className="flex h-6 min-w-0 flex-1 items-center justify-end gap-1">
             {envLabel && (
               <span
                 className="min-w-0 truncate pr-1 text-[10px] text-muted-foreground"
@@ -896,6 +1042,13 @@ function ConnectionRow({
               >
                 {envLabel}
               </span>
+            )}
+            {isActive && (
+              <Tip label="Active in the current editor tab">
+                <span className="mr-1 flex shrink-0 items-center text-muted-foreground">
+                  <Icon name="text-cursor" size={12} />
+                </span>
+              </Tip>
             )}
           </div>
         </div>
@@ -954,7 +1107,7 @@ function ConnectionRow({
   )
 }
 
-function ConnectionStatusDot({ state }: { state: ConnectionState }) {
+export function ConnectionStatusDot({ state }: { state: ConnectionState }) {
   if (state.kind === 'idle') return null
   if (state.kind === 'connecting') {
     return (

@@ -1,13 +1,13 @@
 import { describe, it, expect } from 'vitest'
-import { readConnectionLayout } from './useConnectionLayout'
+import { readBooleanPreference } from './useConnectionLayout'
 
-describe('readConnectionLayout', () => {
-  it('returns grouped only for the exact stored value', () => {
-    expect(readConnectionLayout('grouped')).toBe('grouped')
+describe('readBooleanPreference', () => {
+  it('defaults to true when unset or garbage', () => {
+    expect(readBooleanPreference(null)).toBe(true)
+    expect(readBooleanPreference('garbage')).toBe(true)
+    expect(readBooleanPreference('true')).toBe(true)
   })
-  it('defaults to flat for flat / null / anything else', () => {
-    expect(readConnectionLayout('flat')).toBe('flat')
-    expect(readConnectionLayout(null)).toBe('flat')
-    expect(readConnectionLayout('garbage')).toBe('flat')
+  it('is false only for the exact stored value "false"', () => {
+    expect(readBooleanPreference('false')).toBe(false)
   })
 })
