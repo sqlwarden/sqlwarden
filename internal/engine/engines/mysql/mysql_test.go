@@ -692,6 +692,8 @@ func TestMySQLInspectDefinition(t *testing.T) {
 		`DROP VIEW IF EXISTS idef_v`,
 		`DROP FUNCTION IF EXISTS idef_fn`,
 		`DROP PROCEDURE IF EXISTS idef_proc`,
+		`DROP TABLE IF EXISTS idef_c`,
+		`DROP TABLE IF EXISTS idef_parent`,
 		`DROP TABLE IF EXISTS idef_t`,
 	} {
 		exec(stmt)
@@ -701,10 +703,22 @@ func TestMySQLInspectDefinition(t *testing.T) {
 	exec("CREATE FUNCTION idef_fn(n INT) RETURNS INT DETERMINISTIC RETURN n + 1")
 	exec("CREATE PROCEDURE idef_proc() BEGIN SELECT 1; END")
 	exec("CREATE TRIGGER idef_bi BEFORE INSERT ON idef_t FOR EACH ROW SET NEW.label = COALESCE(NEW.label, 'x')")
+	exec("CREATE TABLE idef_parent (id INT PRIMARY KEY) ENGINE=InnoDB")
+	exec(`CREATE TABLE idef_c (
+		id INT PRIMARY KEY,
+		parent_id INT,
+		qty INT,
+		code VARCHAR(20),
+		INDEX idef_ix (code, qty),
+		CONSTRAINT idef_uq UNIQUE (code),
+		CONSTRAINT idef_fk FOREIGN KEY (parent_id) REFERENCES idef_parent (id) ON DELETE CASCADE,
+		CONSTRAINT idef_chk CHECK (qty > 0)
+	) ENGINE=InnoDB`)
 	t.Cleanup(func() {
 		for _, stmt := range []string{
 			`DROP TRIGGER IF EXISTS idef_bi`, `DROP VIEW IF EXISTS idef_v`,
 			`DROP FUNCTION IF EXISTS idef_fn`, `DROP PROCEDURE IF EXISTS idef_proc`,
+			`DROP TABLE IF EXISTS idef_c`, `DROP TABLE IF EXISTS idef_parent`,
 			`DROP TABLE IF EXISTS idef_t`,
 		} {
 			_, _ = d.Execute(ctx, stmt)
@@ -712,15 +726,21 @@ func TestMySQLInspectDefinition(t *testing.T) {
 	})
 
 	cases := []struct {
-		kind, name, title, want string
+		kind, name, title string
+		want              []string
 	}{
-		{"table", "idef_t", "DDL", "CREATE TABLE"},
-		{"view", "idef_v", "Definition", "CREATE"},
-		{"function", "idef_fn", "Definition", "CREATE"},
-		{"procedure", "idef_proc", "Definition", "CREATE"},
+		{"table", "idef_t", "DDL", []string{"CREATE TABLE"}},
+		{"view", "idef_v", "Definition", []string{"CREATE"}},
+		{"function", "idef_fn", "Definition", []string{"CREATE"}},
+		{"procedure", "idef_proc", "Definition", []string{"CREATE"}},
+		{"index", "idef_ix", "DDL", []string{"CREATE INDEX `IDEF_IX`", "ON `TESTDB`.`IDEF_C`", "(`CODE`, `QTY`)"}},
+		{"constraint", "idef_uq", "DDL", []string{"ALTER TABLE `TESTDB`.`IDEF_C` ADD CONSTRAINT `IDEF_UQ` UNIQUE (`CODE`)"}},
+		{"constraint", "idef_fk", "DDL", []string{"FOREIGN KEY (`PARENT_ID`) REFERENCES `TESTDB`.`IDEF_PARENT` (`ID`)", "ON DELETE CASCADE"}},
+		{"constraint", "idef_chk", "DDL", []string{"ADD CONSTRAINT `IDEF_CHK` CHECK", "QTY"}},
+		{"constraint", "PRIMARY", "DDL", []string{"ADD PRIMARY KEY"}},
 	}
 	for _, tc := range cases {
-		t.Run(tc.kind, func(t *testing.T) {
+		t.Run(tc.kind+"/"+tc.name, func(t *testing.T) {
 			desc, err := d.InspectDefinition(ctx, metadata.ObjectRef{Scope: scope, Kind: tc.kind, Name: tc.name})
 			if err != nil {
 				t.Fatalf("InspectDefinition(%s): %v", tc.kind, err)
@@ -728,10 +748,26 @@ func TestMySQLInspectDefinition(t *testing.T) {
 			if desc == nil || desc.Kind != "source" || desc.Title != tc.title {
 				t.Fatalf("%s descriptor = %+v", tc.kind, desc)
 			}
-			if !strings.Contains(strings.ToUpper(desc.Source.Body), tc.want) {
-				t.Fatalf("%s body missing %q:\n%s", tc.kind, tc.want, desc.Source.Body)
+			body := strings.ToUpper(desc.Source.Body)
+			for _, want := range tc.want {
+				if !strings.Contains(body, want) {
+					t.Fatalf("%s/%s body missing %q:\n%s", tc.kind, tc.name, want, desc.Source.Body)
+				}
 			}
 		})
+	}
+
+	for _, missing := range []struct{ kind, name string }{
+		{"index", "idef_ix_gone"},
+		{"constraint", "idef_chk_gone"},
+	} {
+		gone, err := d.InspectDefinition(ctx, metadata.ObjectRef{Scope: scope, Kind: missing.kind, Name: missing.name})
+		if err != nil {
+			t.Fatalf("InspectDefinition(%s %s): %v", missing.kind, missing.name, err)
+		}
+		if gone != nil {
+			t.Errorf("missing %s should yield a nil descriptor, got %+v", missing.kind, gone)
+		}
 	}
 
 	trigger, err := d.InspectDefinition(ctx, metadata.ObjectRef{Scope: scope, Kind: "trigger", Name: "idef_bi"})
@@ -748,6 +784,33 @@ func TestMySQLInspectDefinition(t *testing.T) {
 	}
 	if missing != nil {
 		t.Errorf("missing object should yield a nil descriptor, got %+v", missing)
+	}
+
+	// Round-trip: dropping the object and replaying its reconstructed DDL must
+	// yield an object whose own reconstruction is byte-identical.
+	for _, rt := range []struct{ kind, name, drop string }{
+		{"index", "idef_ix", "ALTER TABLE idef_c DROP INDEX idef_ix"},
+		{"constraint", "idef_uq", "ALTER TABLE idef_c DROP INDEX idef_uq"},
+		{"constraint", "idef_fk", "ALTER TABLE idef_c DROP FOREIGN KEY idef_fk"},
+		{"constraint", "idef_chk", "ALTER TABLE idef_c DROP CHECK idef_chk"},
+	} {
+		t.Run("round-trip/"+rt.name, func(t *testing.T) {
+			ref := metadata.ObjectRef{Scope: scope, Kind: rt.kind, Name: rt.name}
+			first, err := d.InspectDefinition(ctx, ref)
+			if err != nil || first == nil {
+				t.Fatalf("reconstruct %s: %v / %+v", rt.name, err, first)
+			}
+			exec(rt.drop)
+			exec(strings.TrimSuffix(strings.TrimSpace(first.Source.Body), ";"))
+			second, err := d.InspectDefinition(ctx, ref)
+			if err != nil || second == nil {
+				t.Fatalf("re-reconstruct %s: %v / %+v", rt.name, err, second)
+			}
+			if first.Source.Body != second.Source.Body {
+				t.Errorf("%s DDL not stable across round-trip:\nfirst:\n%s\nsecond:\n%s",
+					rt.name, first.Source.Body, second.Source.Body)
+			}
+		})
 	}
 }
 

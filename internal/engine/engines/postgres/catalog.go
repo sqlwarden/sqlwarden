@@ -869,6 +869,194 @@ WHERE schemaname = $1 AND sequencename = $2`,
 	return sb.String(), nil
 }
 
+// DomainDefinition reconstructs a CREATE DOMAIN statement for ref from
+// pg_type (typtype = 'd') and its pg_constraint rows, or ("", nil) if ref no
+// longer exists. Collation and non-default constraint validation state are not
+// reproduced; output stays valid SQL.
+func DomainDefinition(ctx context.Context, db *sql.DB, ref metadata.ObjectRef) (string, error) {
+	var (
+		baseType    string
+		notNull     bool
+		typDefault  sql.NullString
+		constraints string
+	)
+	err := db.QueryRowContext(ctx, `
+SELECT format_type(t.typbasetype, t.typtypmod),
+       t.typnotnull,
+       t.typdefault,
+       COALESCE((
+         SELECT string_agg('CONSTRAINT ' || quote_ident(con.conname) || ' ' || pg_get_constraintdef(con.oid), E'\n    ' ORDER BY con.conname)
+         FROM pg_constraint con WHERE con.contypid = t.oid), '')
+FROM pg_type t JOIN pg_namespace n ON n.oid = t.typnamespace
+WHERE t.typtype = 'd' AND n.nspname = $1 AND t.typname = $2`,
+		ref.Scope.Name("schema"), ref.Name).
+		Scan(&baseType, &notNull, &typDefault, &constraints)
+	if errors.Is(err, sql.ErrNoRows) {
+		return "", nil
+	}
+	if err != nil {
+		return "", fmt.Errorf("postgres: domain definition: %w", err)
+	}
+	var sb strings.Builder
+	fmt.Fprintf(&sb, "CREATE DOMAIN %s.%s AS %s", quoteIdent(ref.Scope.Name("schema")), quoteIdent(ref.Name), baseType)
+	if typDefault.Valid && typDefault.String != "" {
+		fmt.Fprintf(&sb, "\n    DEFAULT %s", typDefault.String)
+	}
+	if notNull {
+		sb.WriteString("\n    NOT NULL")
+	}
+	if constraints != "" {
+		fmt.Fprintf(&sb, "\n    %s", constraints)
+	}
+	sb.WriteString(";")
+	return sb.String(), nil
+}
+
+// TypeDefinition reconstructs a CREATE TYPE statement for a composite, enum, or
+// range type named by ref, or ("", nil) if ref no longer exists. Composite
+// column collations, range subtype opclass/canonical/subtype_diff options, and
+// multirange types are not reproduced; output stays valid SQL.
+func TypeDefinition(ctx context.Context, db *sql.DB, ref metadata.ObjectRef) (string, error) {
+	schema := ref.Scope.Name("schema")
+	var (
+		typtype string
+		oid     uint32
+	)
+	err := db.QueryRowContext(ctx, `
+SELECT t.typtype, t.oid
+FROM pg_type t JOIN pg_namespace n ON n.oid = t.typnamespace
+WHERE t.typtype IN ('c', 'e', 'r') AND n.nspname = $1 AND t.typname = $2`,
+		schema, ref.Name).Scan(&typtype, &oid)
+	if errors.Is(err, sql.ErrNoRows) {
+		return "", nil
+	}
+	if err != nil {
+		return "", fmt.Errorf("postgres: type definition: %w", err)
+	}
+	header := fmt.Sprintf("CREATE TYPE %s.%s", quoteIdent(schema), quoteIdent(ref.Name))
+
+	switch typtype {
+	case "e":
+		labels, err := typeDefinitionRows(ctx, db,
+			`SELECT quote_literal(enumlabel) FROM pg_enum WHERE enumtypid = $1 ORDER BY enumsortorder`, oid)
+		if err != nil {
+			return "", err
+		}
+		return header + " AS ENUM (\n    " + strings.Join(labels, ",\n    ") + "\n);", nil
+	case "c":
+		cols, err := typeDefinitionRows(ctx, db, `
+SELECT quote_ident(a.attname) || ' ' || format_type(a.atttypid, a.atttypmod)
+FROM pg_attribute a
+WHERE a.attrelid = (SELECT typrelid FROM pg_type WHERE oid = $1)
+  AND a.attnum > 0 AND NOT a.attisdropped
+ORDER BY a.attnum`, oid)
+		if err != nil {
+			return "", err
+		}
+		return header + " AS (\n    " + strings.Join(cols, ",\n    ") + "\n);", nil
+	default: // "r"
+		var subtype string
+		if err := db.QueryRowContext(ctx,
+			`SELECT format_type(rngsubtype, NULL) FROM pg_range WHERE rngtypid = $1`, oid).
+			Scan(&subtype); err != nil {
+			return "", fmt.Errorf("postgres: range type definition: %w", err)
+		}
+		return header + " AS RANGE (\n    SUBTYPE = " + subtype + "\n);", nil
+	}
+}
+
+func typeDefinitionRows(ctx context.Context, db *sql.DB, q string, oid uint32) ([]string, error) {
+	rows, err := db.QueryContext(ctx, q, oid)
+	if err != nil {
+		return nil, fmt.Errorf("postgres: type definition: %w", err)
+	}
+	defer rows.Close()
+	var out []string
+	for rows.Next() {
+		var s string
+		if err := rows.Scan(&s); err != nil {
+			return nil, fmt.Errorf("postgres: type definition scan: %w", err)
+		}
+		out = append(out, s)
+	}
+	return out, rows.Err()
+}
+
+// ForeignTableDefinition reconstructs a CREATE FOREIGN TABLE statement for ref
+// from pg_foreign_table, pg_attribute, and pg_foreign_server, or ("", nil) if
+// ref no longer exists. Column/table FDW OPTIONS are reproduced;
+// generated columns and column collations are not.
+func ForeignTableDefinition(ctx context.Context, db *sql.DB, ref metadata.ObjectRef) (string, error) {
+	schema := ref.Scope.Name("schema")
+	var (
+		server    string
+		tableOpts string
+		relOID    uint32
+	)
+	err := db.QueryRowContext(ctx, `
+SELECT s.srvname,
+       c.oid,
+       COALESCE((SELECT string_agg(split_part(opt, '=', 1) || ' ' || quote_literal(substr(opt, strpos(opt, '=') + 1)), ', ')
+                 FROM unnest(ft.ftoptions) AS opt), '')
+FROM pg_foreign_table ft
+JOIN pg_class c ON c.oid = ft.ftrelid
+JOIN pg_namespace n ON n.oid = c.relnamespace
+JOIN pg_foreign_server s ON s.oid = ft.ftserver
+WHERE n.nspname = $1 AND c.relname = $2`,
+		schema, ref.Name).Scan(&server, &relOID, &tableOpts)
+	if errors.Is(err, sql.ErrNoRows) {
+		return "", nil
+	}
+	if err != nil {
+		return "", fmt.Errorf("postgres: foreign table definition: %w", err)
+	}
+
+	rows, err := db.QueryContext(ctx, `
+SELECT quote_ident(a.attname),
+       format_type(a.atttypid, a.atttypmod),
+       a.attnotnull,
+       COALESCE((SELECT string_agg(split_part(opt, '=', 1) || ' ' || quote_literal(substr(opt, strpos(opt, '=') + 1)), ', ')
+                 FROM unnest(a.attfdwoptions) AS opt), '')
+FROM pg_attribute a
+WHERE a.attrelid = $1 AND a.attnum > 0 AND NOT a.attisdropped
+ORDER BY a.attnum`, relOID)
+	if err != nil {
+		return "", fmt.Errorf("postgres: foreign table columns: %w", err)
+	}
+	defer rows.Close()
+	var cols []string
+	for rows.Next() {
+		var name, dataType, colOpts string
+		var notNull bool
+		if err := rows.Scan(&name, &dataType, &notNull, &colOpts); err != nil {
+			return "", fmt.Errorf("postgres: foreign table columns scan: %w", err)
+		}
+		line := name + " " + dataType
+		if notNull {
+			line += " NOT NULL"
+		}
+		if colOpts != "" {
+			line += " OPTIONS (" + colOpts + ")"
+		}
+		cols = append(cols, line)
+	}
+	if err := rows.Err(); err != nil {
+		return "", fmt.Errorf("postgres: foreign table columns rows: %w", err)
+	}
+	if len(cols) == 0 {
+		return "", nil
+	}
+
+	var sb strings.Builder
+	fmt.Fprintf(&sb, "CREATE FOREIGN TABLE %s.%s (\n    %s\n)\nSERVER %s",
+		quoteIdent(schema), quoteIdent(ref.Name), strings.Join(cols, ",\n    "), quoteIdent(server))
+	if tableOpts != "" {
+		fmt.Fprintf(&sb, "\nOPTIONS (%s)", tableOpts)
+	}
+	sb.WriteString(";")
+	return sb.String(), nil
+}
+
 func quoteIdent(name string) string {
 	return `"` + strings.ReplaceAll(name, `"`, `""`) + `"`
 }

@@ -645,6 +645,8 @@ func TestOracleInspectDefinition(t *testing.T) {
 			"DROP SYNONYM def_syn",
 			"DROP SEQUENCE def_seq",
 			"DROP VIEW def_v",
+			"DROP TABLE def_child CASCADE CONSTRAINTS",
+			"DROP TABLE def_parent CASCADE CONSTRAINTS",
 			"DROP TABLE def_widgets",
 		)
 	})
@@ -653,6 +655,13 @@ func TestOracleInspectDefinition(t *testing.T) {
 	mustExec(t, d, `CREATE SEQUENCE def_seq START WITH 10 INCREMENT BY 2`)
 	mustExec(t, d, `CREATE MATERIALIZED VIEW def_mv AS SELECT id FROM def_widgets`)
 	mustExec(t, d, `CREATE SYNONYM def_syn FOR def_widgets`)
+	mustExec(t, d, `CREATE TABLE def_parent (id NUMBER CONSTRAINT def_parent_pk PRIMARY KEY)`)
+	mustExec(t, d, `CREATE TABLE def_child (
+		id NUMBER CONSTRAINT def_child_pk PRIMARY KEY,
+		parent_id NUMBER CONSTRAINT def_child_fk REFERENCES def_parent(id) ON DELETE CASCADE,
+		qty NUMBER CONSTRAINT def_child_chk CHECK (qty > 0),
+		code VARCHAR2(20) CONSTRAINT def_child_uq UNIQUE
+	)`)
 
 	tbl, err := d.InspectDefinition(ctx, metadata.ObjectRef{Scope: itScope(), Kind: "table", Name: "DEF_WIDGETS"})
 	if err != nil {
@@ -699,12 +708,60 @@ func TestOracleInspectDefinition(t *testing.T) {
 		t.Fatalf("synonym definition descriptor = %+v", syn)
 	}
 
-	constraint, err := d.InspectDefinition(ctx, metadata.ObjectRef{Scope: itScope(), Kind: "constraint", Name: "WHATEVER"})
+	missing, err := d.InspectDefinition(ctx, metadata.ObjectRef{Scope: itScope(), Kind: "constraint", Name: "WHATEVER"})
 	if err != nil {
-		t.Fatalf("InspectDefinition(constraint): %v", err)
+		t.Fatalf("InspectDefinition(constraint missing): %v", err)
 	}
-	if constraint != nil {
-		t.Errorf("unsupported kind should yield nil descriptor, got %+v", constraint)
+	if missing != nil {
+		t.Errorf("missing constraint should yield nil descriptor, got %+v", missing)
+	}
+
+	for _, tc := range []struct {
+		name string
+		want []string
+	}{
+		{"DEF_CHILD_PK", []string{`ADD CONSTRAINT "DEF_CHILD_PK" PRIMARY KEY`, `"ID"`}},
+		{"DEF_CHILD_UQ", []string{`ADD CONSTRAINT "DEF_CHILD_UQ" UNIQUE`, `"CODE"`}},
+		{"DEF_CHILD_FK", []string{`FOREIGN KEY ("PARENT_ID") REFERENCES`, "DEF_PARENT", `("ID")`, "ON DELETE CASCADE"}},
+		{"DEF_CHILD_CHK", []string{`ADD CONSTRAINT "DEF_CHILD_CHK" CHECK`, "QTY"}},
+	} {
+		t.Run("constraint/"+tc.name, func(t *testing.T) {
+			desc, err := d.InspectDefinition(ctx, metadata.ObjectRef{Scope: itScope(), Kind: "constraint", Name: tc.name})
+			if err != nil {
+				t.Fatalf("InspectDefinition(constraint %s): %v", tc.name, err)
+			}
+			if desc == nil || desc.Kind != "source" || desc.Title != "DDL" {
+				t.Fatalf("constraint %s descriptor = %+v", tc.name, desc)
+			}
+			body := strings.ToUpper(desc.Source.Body)
+			for _, want := range tc.want {
+				if !strings.Contains(body, want) {
+					t.Errorf("constraint %s DDL missing %q:\n%s", tc.name, want, desc.Source.Body)
+				}
+			}
+		})
+	}
+
+	// Round-trip: dropping each constraint and replaying its reconstructed DDL
+	// must yield a constraint whose own reconstruction is byte-identical.
+	for _, name := range []string{"DEF_CHILD_FK", "DEF_CHILD_UQ", "DEF_CHILD_CHK", "DEF_CHILD_PK"} {
+		t.Run("round-trip/"+name, func(t *testing.T) {
+			ref := metadata.ObjectRef{Scope: itScope(), Kind: "constraint", Name: name}
+			first, err := d.InspectDefinition(ctx, ref)
+			if err != nil || first == nil {
+				t.Fatalf("reconstruct %s: %v / %+v", name, err, first)
+			}
+			mustExec(t, d, "ALTER TABLE def_child DROP CONSTRAINT "+name)
+			mustExec(t, d, strings.TrimSuffix(strings.TrimSpace(first.Source.Body), ";"))
+			second, err := d.InspectDefinition(ctx, ref)
+			if err != nil || second == nil {
+				t.Fatalf("re-reconstruct %s: %v / %+v", name, err, second)
+			}
+			if first.Source.Body != second.Source.Body {
+				t.Errorf("%s DDL not stable across round-trip:\nfirst:\n%s\nsecond:\n%s",
+					name, first.Source.Body, second.Source.Body)
+			}
+		})
 	}
 }
 

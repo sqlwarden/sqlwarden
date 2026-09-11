@@ -24,9 +24,9 @@ func (d *Driver) SchemaSpec() metadata.SchemaSpec {
 			{Kind: "sequence", Label: "Sequence", PluralLabel: "Sequences", Order: 5, Relational: false, SupportsDiagram: false, Listing: "enumerated", HasDefinition: true},
 			{Kind: "procedure", Label: "Procedure", PluralLabel: "Procedures", Order: 6, Relational: false, SupportsDiagram: false, Listing: "enumerated", HasDefinition: true},
 			{Kind: "trigger", Label: "Trigger", PluralLabel: "Triggers", Order: 7, Relational: false, SupportsDiagram: false, Listing: "enumerated", HasDefinition: true},
-			{Kind: "type", Label: "Type", PluralLabel: "Types", Order: 8, Relational: false, SupportsDiagram: false, Listing: "enumerated"},
-			{Kind: "domain", Label: "Domain", PluralLabel: "Domains", Order: 9, Relational: false, SupportsDiagram: false, Listing: "enumerated"},
-			{Kind: "foreign_table", Label: "Foreign Table", PluralLabel: "Foreign Tables", Order: 10, Relational: true, SupportsDiagram: false, Listing: "enumerated"},
+			{Kind: "type", Label: "Type", PluralLabel: "Types", Order: 8, Relational: false, SupportsDiagram: false, Listing: "enumerated", HasDefinition: true},
+			{Kind: "domain", Label: "Domain", PluralLabel: "Domains", Order: 9, Relational: false, SupportsDiagram: false, Listing: "enumerated", HasDefinition: true},
+			{Kind: "foreign_table", Label: "Foreign Table", PluralLabel: "Foreign Tables", Order: 10, Relational: true, SupportsDiagram: false, Listing: "enumerated", HasDefinition: true},
 		},
 	}
 }
@@ -285,11 +285,11 @@ func (d *Driver) InspectObjects(ctx context.Context, refs []metadata.ObjectRef) 
 
 // InspectDefinition serves one object's canonical text definition on demand so
 // bulk InspectObjects (and every schema snapshot) skips the per-object cost:
-// table and sequence DDL are reconstructed from the catalog; views and
-// materialized views come from pg_get_viewdef, functions and procedures from
-// pg_get_functiondef, and triggers from pg_get_triggerdef. Unsupported kinds
-// (type, domain, foreign_table), or an object that no longer exists, yield a
-// nil descriptor with a nil error. A compatible engine
+// table, sequence, domain, type, and foreign table DDL are reconstructed from
+// the catalog; views and materialized views come from pg_get_viewdef, functions
+// and procedures from pg_get_functiondef, and triggers from pg_get_triggerdef.
+// An unrecognized kind, or an object that no longer exists, yields a nil
+// descriptor with a nil error. A compatible engine
 // overrides this method to special-case a kind and delegate everything else to
 // this default via d.Driver.InspectDefinition(ctx, ref).
 func (d *Driver) InspectDefinition(ctx context.Context, ref metadata.ObjectRef) (*metadata.Descriptor, error) {
@@ -332,6 +332,24 @@ func (d *Driver) InspectDefinition(ctx context.Context, ref metadata.ObjectRef) 
 		return SourceDescriptor("Definition", "sql", def), nil
 	case "sequence":
 		def, err := SequenceDefinition(ctx, d.db, ref)
+		if err != nil {
+			return nil, err
+		}
+		return SourceDescriptor("DDL", "sql", def), nil
+	case "domain":
+		def, err := DomainDefinition(ctx, d.db, ref)
+		if err != nil {
+			return nil, err
+		}
+		return SourceDescriptor("DDL", "sql", def), nil
+	case "type":
+		def, err := TypeDefinition(ctx, d.db, ref)
+		if err != nil {
+			return nil, err
+		}
+		return SourceDescriptor("DDL", "sql", def), nil
+	case "foreign_table":
+		def, err := ForeignTableDefinition(ctx, d.db, ref)
 		if err != nil {
 			return nil, err
 		}

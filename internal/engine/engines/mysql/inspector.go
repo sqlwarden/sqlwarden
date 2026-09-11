@@ -23,8 +23,8 @@ func (d *Driver) SchemaSpec() metadata.SchemaSpec {
 			{Kind: "procedure", Label: "Procedure", PluralLabel: "Procedures", Order: 4, Relational: false, SupportsDiagram: false, Listing: "enumerated", HasDefinition: true},
 			{Kind: "trigger", Label: "Trigger", PluralLabel: "Triggers", Order: 5, Relational: false, SupportsDiagram: false, Listing: "enumerated", HasDefinition: true},
 			{Kind: "event", Label: "Event", PluralLabel: "Events", Order: 6, Relational: false, SupportsDiagram: false, Listing: "enumerated", HasDefinition: true},
-			{Kind: "index", Label: "Index", PluralLabel: "Indexes", Order: 7, Relational: false, SupportsDiagram: false, Listing: "enumerated"},
-			{Kind: "constraint", Label: "Constraint", PluralLabel: "Constraints", Order: 8, Relational: false, SupportsDiagram: false, Listing: "enumerated"},
+			{Kind: "index", Label: "Index", PluralLabel: "Indexes", Order: 7, Relational: false, SupportsDiagram: false, Listing: "enumerated", HasDefinition: true},
+			{Kind: "constraint", Label: "Constraint", PluralLabel: "Constraints", Order: 8, Relational: false, SupportsDiagram: false, Listing: "enumerated", HasDefinition: true},
 		},
 	}
 }
@@ -192,11 +192,27 @@ func (d *Driver) InspectObjects(ctx context.Context, refs []metadata.ObjectRef) 
 // SHOW CREATE, so bulk InspectObjects (and every schema snapshot) skips the
 // per-object SHOW CREATE TABLE round trip and the routine-body column it used to
 // carry. Tables yield a "DDL" descriptor; views and routines yield "Definition".
-// Unsupported kinds (e.g. triggers), or an object that no longer exists, yield a
-// nil descriptor with a nil error. A compatible engine (e.g. MariaDB adding a
-// "sequence" case) overrides this method, handles its own kinds, and delegates
-// everything else to this default via d.Driver.InspectDefinition(ctx, ref).
+// Index and constraint DDL are reconstructed from information_schema, since
+// MySQL has no SHOW CREATE for them. Unsupported kinds (e.g. triggers), or an
+// object that no longer exists, yield a nil descriptor with a nil error. A
+// compatible engine (e.g. MariaDB adding a "sequence" case) overrides this
+// method, handles its own kinds, and delegates everything else to this default
+// via d.Driver.InspectDefinition(ctx, ref).
 func (d *Driver) InspectDefinition(ctx context.Context, ref metadata.ObjectRef) (*metadata.Descriptor, error) {
+	switch ref.Kind {
+	case "index":
+		def, err := IndexDefinition(ctx, d.db, ref, true)
+		if err != nil {
+			return nil, err
+		}
+		return SourceDescriptor("DDL", def), nil
+	case "constraint":
+		def, err := ConstraintDefinition(ctx, d.db, ref)
+		if err != nil {
+			return nil, err
+		}
+		return SourceDescriptor("DDL", def), nil
+	}
 	var stmt, title string
 	switch ref.Kind {
 	case "table":

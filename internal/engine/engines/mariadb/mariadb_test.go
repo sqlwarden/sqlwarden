@@ -185,6 +185,82 @@ func TestInspectObjectsAndDefinitionForSequence(t *testing.T) {
 	}
 }
 
+func TestInspectDirectoryAndDefinitionForIndexAndConstraint(t *testing.T) {
+	d := connect(t)
+	ctx := context.Background()
+	scope := metadata.NewScopePath(metadata.ScopeSegment{Kind: "database", Name: "testdb"})
+	exec := func(stmt string) {
+		t.Helper()
+		if _, err := d.Execute(ctx, stmt); err != nil {
+			t.Fatalf("exec %q: %v", stmt, err)
+		}
+	}
+	for _, stmt := range []string{
+		"DROP TABLE IF EXISTS ic_child",
+		"DROP TABLE IF EXISTS ic_parent",
+	} {
+		exec(stmt)
+	}
+	t.Cleanup(func() {
+		_, _ = d.Execute(ctx, "DROP TABLE IF EXISTS ic_child")
+		_, _ = d.Execute(ctx, "DROP TABLE IF EXISTS ic_parent")
+	})
+	exec("CREATE TABLE ic_parent (id INT PRIMARY KEY)")
+	exec(`CREATE TABLE ic_child (
+		id INT PRIMARY KEY,
+		parent_id INT,
+		qty INT,
+		code VARCHAR(20),
+		INDEX ic_ix (code, qty),
+		CONSTRAINT ic_uq UNIQUE (code),
+		CONSTRAINT ic_fk FOREIGN KEY (parent_id) REFERENCES ic_parent (id) ON DELETE CASCADE,
+		CONSTRAINT ic_chk CHECK (qty > 0)
+	)`)
+
+	directory, err := d.InspectDirectory(ctx, metadata.DirectoryOptions{})
+	if err != nil {
+		t.Fatalf("InspectDirectory: %v", err)
+	}
+	for _, ref := range []metadata.ObjectRef{
+		{Scope: scope, Kind: "index", Name: "ic_ix"},
+		{Scope: scope, Kind: "constraint", Name: "ic_uq"},
+		{Scope: scope, Kind: "constraint", Name: "ic_fk"},
+		{Scope: scope, Kind: "constraint", Name: "ic_chk"},
+	} {
+		if !directoryHasRef(directory, ref) {
+			t.Fatalf("directory missing %s %q: %+v", ref.Kind, ref.Name, directory.Roots)
+		}
+	}
+
+	for _, rt := range []struct{ kind, name, want, drop string }{
+		{"index", "ic_ix", "CREATE INDEX `IC_IX`", "ALTER TABLE ic_child DROP INDEX ic_ix"},
+		{"constraint", "ic_uq", "ADD CONSTRAINT `IC_UQ` UNIQUE", "ALTER TABLE ic_child DROP INDEX ic_uq"},
+		{"constraint", "ic_fk", "FOREIGN KEY (`PARENT_ID`) REFERENCES", "ALTER TABLE ic_child DROP FOREIGN KEY ic_fk"},
+		{"constraint", "ic_chk", "ADD CONSTRAINT `IC_CHK` CHECK", "ALTER TABLE ic_child DROP CONSTRAINT ic_chk"},
+	} {
+		t.Run(rt.kind+"/"+rt.name, func(t *testing.T) {
+			ref := metadata.ObjectRef{Scope: scope, Kind: rt.kind, Name: rt.name}
+			first, err := d.InspectDefinition(ctx, ref)
+			if err != nil || first == nil || first.Kind != "source" || first.Title != "DDL" {
+				t.Fatalf("InspectDefinition(%s): %v / %+v", rt.name, err, first)
+			}
+			if !strings.Contains(strings.ToUpper(first.Source.Body), rt.want) {
+				t.Fatalf("%s DDL missing %q:\n%s", rt.name, rt.want, first.Source.Body)
+			}
+			exec(rt.drop)
+			exec(strings.TrimSuffix(strings.TrimSpace(first.Source.Body), ";"))
+			second, err := d.InspectDefinition(ctx, ref)
+			if err != nil || second == nil {
+				t.Fatalf("re-reconstruct %s: %v / %+v", rt.name, err, second)
+			}
+			if first.Source.Body != second.Source.Body {
+				t.Errorf("%s DDL not stable across round-trip:\nfirst:\n%s\nsecond:\n%s",
+					rt.name, first.Source.Body, second.Source.Body)
+			}
+		})
+	}
+}
+
 func TestInspectObjectsReportsJSONColumnType(t *testing.T) {
 	d := connect(t)
 	ctx := context.Background()
