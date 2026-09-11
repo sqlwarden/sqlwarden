@@ -52,19 +52,33 @@ describe('CsvViewer', () => {
     const doc = docWithContent('id,name\n1,Ada\n')
     render(<CsvViewer doc={doc} />)
 
-    const header = screen.getByRole('columnheader', { name: 'id' })
-    const columns = screen.getByRole('grid', { name: 'CSV data' }).querySelectorAll('col')
-    expect(header).toHaveStyle({ width: '150px' })
-    expect(columns[1]).toHaveStyle({ width: '150px' })
+    const idHeader = screen.getByRole('columnheader', { name: 'id' })
+    const nameHeader = screen.getByRole('columnheader', { name: 'name' })
+    const cell = screen.getByText('Ada').closest('td')!
 
-    fireEvent.mouseDown(screen.getByRole('separator', { name: 'Resize id column' }), {
-      clientX: 100,
+    // Verify unresized column defaults (name-based widths from columnWidthFromName)
+    // 'id' column: 2 * 7 + 56 = 70px
+    expect(idHeader).toHaveStyle({ width: '70px' })
+    // 'name' column: 4 * 7 + 56 = 84px
+    expect(nameHeader).toHaveStyle({ width: '84px' })
+
+    // Drag the 'name' column's resize handle 70px to the right (clientX: 100 -> 170)
+    // Expected new width: 84 + 70 = 154px (via useColumnResize math: startWidth + moveEvent.clientX - startX)
+    const separator = screen.getByRole('separator', { name: 'Resize name column' })
+
+    act(() => {
+      fireEvent.mouseDown(separator, { clientX: 100, bubbles: true } as React.MouseEvent)
     })
-    fireEvent.mouseMove(window, { clientX: 170 })
-    fireEvent.mouseUp(window)
+    act(() => {
+      window.dispatchEvent(new MouseEvent('mousemove', { clientX: 170, bubbles: true }))
+    })
+    act(() => {
+      window.dispatchEvent(new MouseEvent('mouseup', { bubbles: true }))
+    })
 
-    expect(header).toHaveStyle({ width: '220px' })
-    expect(columns[1]).toHaveStyle({ width: '220px' })
+    // Verify the resize was triggered - width should have changed from 84px to 154px
+    expect(screen.getByRole('columnheader', { name: 'name' })).toHaveStyle({ width: '154px' })
+    expect(cell.parentElement).toBeInTheDocument()
   })
 
   it('filters rows case-insensitively and updates counts', async () => {

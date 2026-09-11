@@ -1,5 +1,4 @@
 import { useDeferredValue, useEffect, useMemo, useState } from 'react'
-import { useVirtualizer } from '@tanstack/react-virtual'
 import type * as Y from 'yjs'
 import { Icon } from '#/lib/icons'
 import { Button } from '#/components/ui/button'
@@ -7,13 +6,9 @@ import { Input } from '#/components/ui/input'
 import { Textarea } from '#/components/ui/textarea'
 import { ToggleGroup, ToggleGroupItem } from '#/components/ui/toggle-group'
 import { cn } from '#/lib/utils'
+import type { ResultColumn, ResultValue } from '#/lib/api/types'
 import { CsvParseError, parseCsv, type CsvDocument } from './parseCsv'
-import { useColumnResize } from '../useColumnResize'
-
-const ROW_NUM_COL_WIDTH = 48
-const DEFAULT_COL_WIDTH = 150
-const MIN_COL_WIDTH = 60
-const ROW_HEIGHT = 28
+import { DataGrid } from '../dataGrid/DataGrid'
 
 type CsvViewMode = 'table' | 'raw'
 
@@ -225,108 +220,23 @@ function CsvMessageState({
 }
 
 function CsvTable({ columnNames, rows }: { columnNames: string[]; rows: string[][] }) {
-  const [scrollEl, setScrollEl] = useState<HTMLDivElement | null>(null)
-  const { columnWidths, startResize } = useColumnResize(
-    columnNames.length,
-    DEFAULT_COL_WIDTH,
-    MIN_COL_WIDTH,
+  const columns: ResultColumn[] = useMemo(
+    () =>
+      columnNames.map((name) => ({
+        name,
+        type: 'text',
+        raw_type: 'text',
+        nullable: true,
+      })),
+    [columnNames],
+  )
+  const gridRows: ResultValue[][] = useMemo(
+    () =>
+      rows.map((row) =>
+        columnNames.map((_, i): ResultValue => ({ type: 'text', text: row[i] ?? '' })),
+      ),
+    [columnNames, rows],
   )
 
-  const rowVirtualizer = useVirtualizer({
-    count: rows.length,
-    getScrollElement: () => scrollEl,
-    estimateSize: () => ROW_HEIGHT,
-    overscan: 12,
-  })
-  const virtualRows = rowVirtualizer.getVirtualItems()
-  const totalWidth = ROW_NUM_COL_WIDTH + columnWidths.reduce((total, width) => total + width, 0)
-
-  return (
-    <div ref={setScrollEl} className="h-full overflow-auto">
-      <table
-        role="grid"
-        aria-label="CSV data"
-        className="table-fixed border-separate border-spacing-0 text-xs"
-        style={{ width: totalWidth }}
-      >
-        <colgroup>
-          <col style={{ width: ROW_NUM_COL_WIDTH }} />
-          {columnWidths.map((width, index) => (
-            <col key={index} style={{ width }} />
-          ))}
-        </colgroup>
-        <thead className="sticky top-0 z-10 bg-muted/80 backdrop-blur-sm">
-          <tr role="row">
-            <th
-              scope="col"
-              style={{ width: ROW_NUM_COL_WIDTH }}
-              className="sticky left-0 z-20 border-b border-r border-border bg-muted/80 px-2 py-1.5 text-right font-medium text-muted-foreground tabular-nums backdrop-blur-sm"
-            />
-            {columnNames.map((name, i) => (
-              <th
-                key={i}
-                scope="col"
-                aria-label={name}
-                style={{ width: columnWidths[i] }}
-                title={name}
-                className="relative border-b border-r border-border px-2.5 py-1.5 text-left font-medium text-foreground select-none"
-              >
-                <span className="block truncate">{name}</span>
-                <div
-                  role="separator"
-                  aria-label={`Resize ${name} column`}
-                  aria-orientation="vertical"
-                  title={`Drag to resize ${name}`}
-                  className="group/resize absolute inset-y-0 -right-1 z-20 w-2 cursor-col-resize"
-                  onMouseDown={(event) => startResize(event, i)}
-                >
-                  <span className="absolute inset-y-0 left-1/2 w-px -translate-x-1/2 group-hover/resize:bg-primary/60" />
-                </div>
-              </th>
-            ))}
-          </tr>
-        </thead>
-        <tbody>
-          {virtualRows.length > 0 && (
-            <tr aria-hidden style={{ height: virtualRows[0].start }}>
-              <td colSpan={columnNames.length + 1} className="p-0" />
-            </tr>
-          )}
-          {virtualRows.map((vr) => {
-            const row = rows[vr.index]
-            return (
-              <tr key={vr.index} role="row" style={{ height: ROW_HEIGHT }}>
-                <td
-                  role="rowheader"
-                  className="sticky left-0 z-[5] border-b border-r border-border bg-card px-2 py-1 text-right font-mono text-muted-foreground tabular-nums"
-                >
-                  {vr.index + 1}
-                </td>
-                {columnNames.map((_, ci) => (
-                  <td
-                    key={ci}
-                    role="gridcell"
-                    title={row[ci] ?? ''}
-                    className="max-w-0 overflow-hidden border-b border-r border-border px-3 py-1 font-mono text-foreground text-ellipsis whitespace-nowrap"
-                  >
-                    {row[ci] ?? ''}
-                  </td>
-                ))}
-              </tr>
-            )
-          })}
-          {virtualRows.length > 0 && (
-            <tr
-              aria-hidden
-              style={{
-                height: rowVirtualizer.getTotalSize() - virtualRows[virtualRows.length - 1].end,
-              }}
-            >
-              <td colSpan={columnNames.length + 1} className="p-0" />
-            </tr>
-          )}
-        </tbody>
-      </table>
-    </div>
-  )
+  return <DataGrid ariaLabel="CSV data" columns={columns} rows={gridRows} showColumnType={false} />
 }

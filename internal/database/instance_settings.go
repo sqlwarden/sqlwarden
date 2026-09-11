@@ -88,8 +88,8 @@ type OrganizationRuntimeSettings struct {
 
 func DefaultInstanceSettings() InstanceSettings {
 	return InstanceSettings{
-		ID:                             1,
-		InstanceName:                   "SQLWarden",
+		ID:           1,
+		InstanceName: "SQLWarden",
 		// Personal spaces has backend support but no finished frontend
 		// surface yet; default new instances to off until that lands.
 		PersonalSpacesEnabled:          false,
