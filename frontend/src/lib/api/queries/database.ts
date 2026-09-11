@@ -172,8 +172,10 @@ export function orgConnectionDirectoryQueryOptions(
 ) {
   const key = connectionDirectoryQueryKey(slug, workspaceId, connectionId)
   const suffix = scope ? `?${new URLSearchParams({ scope: JSON.stringify(scope) })}` : ''
+  // Keys on session presence so a session change never reuses another session's cached response.
+  const sessionKeyPart = sessionId ?? 'no-session'
   return queryOptions({
-    queryKey: scope ? [...key, JSON.stringify(scope)] : key,
+    queryKey: scope ? [...key, JSON.stringify(scope), sessionKeyPart] : [...key, sessionKeyPart],
     queryFn: () =>
       api.get<DirectoryResponse>(
         `${schemaBase(slug, workspaceId, connectionId)}/directory${suffix}`,
@@ -194,7 +196,10 @@ export function orgConnectionSchemaSpecQueryOptions(
   sessionId?: string,
 ) {
   return queryOptions({
-    queryKey: connectionSchemaSpecQueryKey(slug, workspaceId, connectionId),
+    queryKey: [
+      ...connectionSchemaSpecQueryKey(slug, workspaceId, connectionId),
+      sessionId ?? 'no-session',
+    ],
     queryFn: () =>
       api.get<SchemaSpecResponse>(
         `${schemaBase(slug, workspaceId, connectionId)}/spec`,

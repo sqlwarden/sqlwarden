@@ -452,6 +452,20 @@ describe('SchemaTree', () => {
     )
   })
 
+  it('keeps a table group expanded across the tree unmounting and remounting', async () => {
+    store.getState().setSession(7, 'session-7')
+    respondReady()
+    const { unmount } = renderTree()
+
+    fireEvent.click(await screen.findByRole('button', { name: /Tables/ }))
+    expect(await screen.findByRole('button', { name: 'orders' })).toBeInTheDocument()
+
+    unmount()
+    render(treeElement(createTestQueryClient(), '', vi.fn()))
+
+    expect(await screen.findByRole('button', { name: 'orders' })).toBeInTheDocument()
+  })
+
   it('keeps routine, sequence, and trigger rows compact until opened', async () => {
     store.getState().setSession(7, 'session-7')
     const refs: ObjectRef[] = [

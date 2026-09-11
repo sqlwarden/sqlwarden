@@ -107,6 +107,16 @@ type TreeCtx = {
 
 const SchemaTreeContext = createContext<TreeCtx | null>(null)
 
+// Backed by useIdeStore's expandedNodes so a node's expand state survives it
+// unmounting and remounting (e.g. switching the split view's selected
+// connection away and back re-renders the tree with fresh node instances).
+function useTreeExpansion(key: string): [boolean | null, (value: boolean) => void] {
+  const value = useIde((s) => s.expandedNodes[key]) ?? null
+  const setNodeExpanded = useIde((s) => s.setNodeExpanded)
+  const setValue = (next: boolean) => setNodeExpanded(key, next)
+  return [value, setValue]
+}
+
 type InsertableProps = {
   draggable: boolean
   onDragStart: (e: React.DragEvent) => void
@@ -153,6 +163,7 @@ function useTreeCtx() {
     openDiagram: ctx?.openDiagram,
     editor: ctx?.editor,
     sessionId: ctx?.sessionId,
+    connectionId: ctx?.connectionId,
     canMutate: ctx?.canMutate ?? false,
     openEditColumn: ctx?.openEditColumn,
     openCreateIndex: ctx?.openCreateIndex,
@@ -321,6 +332,24 @@ export function SchemaTree({
     return <SchemaMessage>No schema.</SchemaMessage>
   }
 
+  // The backend can serve a persisted schema snapshot without a live session
+  // (disconnected schema browsing). Surface that with a banner rather than
+  // hiding the cached tree, since it's still useful to browse read-only.
+  const disconnectedBanner = !sessionId && connStatus !== 'connecting' && (
+    <div className="flex items-center gap-2 border-b border-border bg-muted/40 px-2 py-1.5 text-xs text-muted-foreground">
+      <span>Not connected — showing cached objects.</span>
+      {onConnect && (
+        <button
+          type="button"
+          className="font-medium text-primary hover:underline"
+          onClick={onConnect}
+        >
+          Connect
+        </button>
+      )}
+    </div>
+  )
+
   const browseScopes = specQuery.data?.spec.browse_scopes === true
   const filtering = filter.trim() !== ''
   const roots = filterDirectory(raw, filter).roots
@@ -384,6 +413,7 @@ export function SchemaTree({
 
   return (
     <SchemaTreeContext.Provider value={ctx}>
+      {disconnectedBanner}
       {isEmpty ? (
         <SchemaEmptyState
           filtering={filtering}
@@ -615,8 +645,8 @@ function GuideChildren({ children }: { children: React.ReactNode }) {
 }
 
 function SchemaScopeNode({ node, forceOpen }: { node: ScopeNode; forceOpen: boolean }) {
-  const [open, setOpen] = useState<boolean | null>(null)
   const ctx = useContext(SchemaTreeContext)!
+  const [open, setOpen] = useTreeExpansion(`scope:${ctx.connectionId}:${JSON.stringify(node.path)}`)
   const current =
     ctx.spec?.browse_scopes && JSON.stringify(node.path) === JSON.stringify(ctx.defaultScope)
   const expanded = open ?? (forceOpen || Boolean(current))
@@ -729,11 +759,22 @@ function SchemaGroupNode({
   scope: ScopePath
   forceOpen: boolean
 }) {
-  const [open, setOpen] = useState<boolean | null>(null)
+  const {
+    refresh,
+    spec,
+    openDiagram,
+    editor,
+    sessionId,
+    canMutate,
+    openCreateTable,
+    connectionId,
+  } = useTreeCtx()
+  const [open, setOpen] = useTreeExpansion(
+    `group:${connectionId}:${JSON.stringify(scope)}:${group.kind}`,
+  )
   const expanded = open ?? forceOpen
   const objects = group.objects ?? []
   const style = kindStyle(group.kind)
-  const { refresh, spec, openDiagram, editor, sessionId, canMutate, openCreateTable } = useTreeCtx()
   const label = kindLabel(spec, group.kind)
   const newLabel = `New ${label.replace(/s$/, '')}...`
   const scopeKind = scope[scope.length - 1]?.kind ?? ''
@@ -788,7 +829,9 @@ function SchemaObjectNode({
   rowCount?: number
 }) {
   const ctx = useContext(SchemaTreeContext)
-  const [open, setOpen] = useState<boolean | null>(null)
+  const [open, setOpen] = useTreeExpansion(
+    `object:${ctx?.connectionId}:${JSON.stringify(objectRef.scope)}:${objectRef.kind}:${objectRef.name}`,
+  )
   const expandable = isRelationalKind(ctx?.spec, objectRef.kind)
   const inlineDetail = objectRef.kind === 'sequence'
   const expanded = expandable && (open ?? forceOpen)
