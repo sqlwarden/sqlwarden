@@ -115,4 +115,42 @@ function FieldError({
   )
 }
 
-export { Field, FieldContent, FieldDescription, FieldError, FieldGroup, FieldLabel, FieldTitle }
+/** Convenience wrapper composing Field + FieldLabel + FieldError for the common label/input/error shape. */
+function FormField({
+  children,
+  error,
+  label,
+  htmlFor,
+  disabled,
+  className,
+}: {
+  children: React.ReactNode
+  error?: string
+  label: string
+  htmlFor?: string
+  disabled?: boolean
+  className?: string
+}) {
+  return (
+    <Field
+      data-invalid={Boolean(error)}
+      data-disabled={disabled || undefined}
+      className={className}
+    >
+      <FieldLabel htmlFor={htmlFor}>{label}</FieldLabel>
+      {children}
+      <FieldError>{error}</FieldError>
+    </Field>
+  )
+}
+
+export {
+  Field,
+  FieldContent,
+  FieldDescription,
+  FieldError,
+  FieldGroup,
+  FieldLabel,
+  FieldTitle,
+  FormField,
+}

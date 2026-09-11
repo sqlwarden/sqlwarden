@@ -10,10 +10,9 @@ import {
 } from '@codemirror/language'
 import { lintKeymap } from '@codemirror/lint'
 import { highlightSelectionMatches, search, searchKeymap } from '@codemirror/search'
-import { RangeSetBuilder, EditorState, type Extension } from '@codemirror/state'
+import { EditorState, type Extension } from '@codemirror/state'
 import {
   crosshairCursor,
-  Decoration,
   drawSelection,
   dropCursor,
   EditorView,
@@ -23,9 +22,6 @@ import {
   keymap,
   lineNumbers,
   rectangularSelection,
-  ViewPlugin,
-  type DecorationSet,
-  type ViewUpdate,
 } from '@codemirror/view'
 import { indentationMarkers } from '@replit/codemirror-indentation-markers'
 import { showMinimap } from '@replit/codemirror-minimap'
@@ -73,49 +69,7 @@ const sqlwardenSearchTheme = EditorView.theme({
     backgroundSize: '1px 100%',
     backgroundPosition: `${RULER_COLUMN}ch 0`,
   },
-  // Neutral, low-alpha tint rather than a warning color — trailing whitespace
-  // is a style nit, not an error, and VS Code's own rendering is similarly muted.
-  '.cm-trailingWhitespace': {
-    backgroundColor: 'color-mix(in oklab, var(--color-muted-foreground) 25%, transparent)',
-    borderRadius: '2px',
-  },
 })
-
-const trailingWhitespaceMark = Decoration.mark({ class: 'cm-trailingWhitespace' })
-
-function findTrailingWhitespace(view: EditorView): DecorationSet {
-  const builder = new RangeSetBuilder<Decoration>()
-  for (const { from, to } of view.visibleRanges) {
-    let pos = from
-    while (pos <= to) {
-      const line = view.state.doc.lineAt(pos)
-      const match = /[ \t]+$/.exec(line.text)
-      if (match) {
-        const start = line.from + match.index
-        if (start < line.to) builder.add(start, line.to, trailingWhitespaceMark)
-      }
-      pos = line.to + 1
-    }
-  }
-  return builder.finish()
-}
-
-// Flags trailing whitespace so it's visible instead of silently riding along
-// in pasted or hand-edited SQL, where it can confuse formatters and diffs.
-const highlightTrailingWhitespace = ViewPlugin.fromClass(
-  class {
-    decorations: DecorationSet
-    constructor(view: EditorView) {
-      this.decorations = findTrailingWhitespace(view)
-    }
-    update(update: ViewUpdate) {
-      if (update.docChanged || update.viewportChanged) {
-        this.decorations = findTrailingWhitespace(update.view)
-      }
-    }
-  },
-  { decorations: (plugin) => plugin.decorations },
-)
 
 // Renders text as scaled-down colored blocks (VS Code's default) rather than
 // tiny glyphs, which stays legible at minimap scale; canvas fill colors are
@@ -164,7 +118,6 @@ export const sqlwardenBasicSetup: Extension = [
   highlightSelectionMatches(),
   search({ top: true, createPanel: createFindPanel }),
   sqlwardenSearchTheme,
-  highlightTrailingWhitespace,
   // Active-block guide is a stronger shade of the same neutral, not a brand
   // accent — VS Code's indent guides stay grayscale even when highlighted.
   indentationMarkers({

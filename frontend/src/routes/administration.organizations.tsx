@@ -20,6 +20,7 @@ import {
   DialogTitle,
   DialogTrigger,
 } from '#/components/ui/dialog'
+import { FormField } from '#/components/ui/field'
 import { Input } from '#/components/ui/input'
 import { SearchInput } from '#/components/SearchInput'
 import { TableColumnHeader } from '#/components/TableColumnHeader'
@@ -172,24 +173,23 @@ function SettingsOrganizationsPage() {
                 <DialogDescription>Add a new organization to this instance.</DialogDescription>
               </DialogHeader>
               <form className="mt-6 flex flex-col gap-4" onSubmit={submitCreateOrganization}>
-                <div className="flex flex-col gap-2">
+                <FormField label="Name" htmlFor="org-name" error={createFieldErrors.name}>
                   <Input
+                    id="org-name"
                     value={newOrganizationName}
                     onChange={(event) => {
                       setNewOrganizationName(event.target.value)
                       setCreateFieldErrors((current) => ({ ...current, name: undefined }))
                     }}
-                    placeholder="Organization name"
+                    placeholder="e.g. Acme Inc"
                     aria-invalid={createFieldErrors.name ? true : undefined}
                     disabled={createOrganization.isPending}
                   />
-                  {createFieldErrors.name ? (
-                    <p className="text-sm text-destructive">{createFieldErrors.name}</p>
-                  ) : null}
-                </div>
+                </FormField>
 
-                <div className="flex flex-col gap-2">
+                <FormField label="Slug" htmlFor="org-slug" error={createFieldErrors.slug}>
                   <Input
+                    id="org-slug"
                     maxLength={MAX_SLUG_LENGTH}
                     value={newOrganizationSlug}
                     onChange={(event) => {
@@ -203,10 +203,7 @@ function SettingsOrganizationsPage() {
                     aria-invalid={createFieldErrors.slug ? true : undefined}
                     disabled={createOrganization.isPending}
                   />
-                  {createFieldErrors.slug ? (
-                    <p className="text-sm text-destructive">{createFieldErrors.slug}</p>
-                  ) : null}
-                </div>
+                </FormField>
 
                 <DialogFooter>
                   <DialogClose

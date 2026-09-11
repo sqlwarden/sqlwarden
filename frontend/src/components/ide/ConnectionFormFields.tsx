@@ -1,8 +1,8 @@
 import { useState } from 'react'
 import { Icon } from '#/lib/icons'
 import { Checkbox } from '#/components/ui/checkbox'
+import { FormField } from '#/components/ui/field'
 import { Input } from '#/components/ui/input'
-import { Label } from '#/components/ui/label'
 import {
   Select,
   SelectContent,
@@ -398,22 +398,4 @@ export function SectionDivider({ label }: { label: string }) {
   )
 }
 
-export function FormField({
-  label,
-  error,
-  disabled,
-  children,
-}: {
-  label: string
-  error?: string
-  disabled?: boolean
-  children: React.ReactNode
-}) {
-  return (
-    <div className="group/field flex flex-col gap-1.5" data-disabled={disabled || undefined}>
-      <Label className="group-data-[disabled]/field:opacity-50">{label}</Label>
-      {children}
-      {error ? <p className="text-xs text-destructive">{error}</p> : null}
-    </div>
-  )
-}
+export { FormField }

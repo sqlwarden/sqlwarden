@@ -13,7 +13,7 @@ export function LoginSurface({
   className,
 }: {
   title: string
-  description: string
+  description?: string
   children: ReactNode
   footer?: ReactNode
   eyebrow?: ReactNode
@@ -39,7 +39,7 @@ export function LoginSurface({
         <div className="space-y-1.5 text-center">
           {eyebrow}
           <h1 className="font-heading text-xl font-semibold tracking-tight">{title}</h1>
-          <p className="text-sm text-muted-foreground">{description}</p>
+          {description ? <p className="text-sm text-muted-foreground">{description}</p> : null}
         </div>
 
         <div className="mt-7">{children}</div>

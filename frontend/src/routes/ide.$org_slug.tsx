@@ -60,7 +60,7 @@ function ResolveDefaultWorkspace({ orgSlug, accountId }: { orgSlug: string; acco
   }
   const items = workspaces.data?.items ?? []
   if (items.length === 0) {
-    return <NoWorkspaceAccess />
+    return <NoWorkspaceAccess orgSlug={orgSlug} />
   }
 
   const target = items.find((workspace) => workspace.id === lastActiveId) ?? items[0]

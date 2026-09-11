@@ -24,6 +24,7 @@ import {
   DialogTitle,
   DialogTrigger,
 } from '#/components/ui/dialog'
+import { FormField } from '#/components/ui/field'
 import { Input } from '#/components/ui/input'
 import { UserAvatar } from '#/components/UserAvatar'
 import { SearchInput } from '#/components/SearchInput'
@@ -187,41 +188,61 @@ function SettingsUsersPage() {
                 </DialogDescription>
               </DialogHeader>
               <form className="mt-6 flex flex-col gap-4" onSubmit={submitCreateUser}>
-                <FormInput
-                  value={values.name}
-                  error={fieldErrors.name}
-                  placeholder="Full name"
-                  autoComplete="name"
-                  disabled={createUser.isPending}
-                  onChange={(value) => updateField('name', value)}
-                />
-                <FormInput
-                  type="email"
-                  value={values.email}
-                  error={fieldErrors.email}
-                  placeholder="user@example.com"
-                  autoComplete="email"
-                  disabled={createUser.isPending}
-                  onChange={(value) => updateField('email', value)}
-                />
-                <FormInput
-                  type="password"
-                  value={values.password}
+                <FormField label="Name" htmlFor="create-user-name" error={fieldErrors.name}>
+                  <Input
+                    id="create-user-name"
+                    value={values.name}
+                    onChange={(event) => updateField('name', event.target.value)}
+                    placeholder="Full name"
+                    autoComplete="name"
+                    aria-invalid={fieldErrors.name ? true : undefined}
+                    disabled={createUser.isPending}
+                  />
+                </FormField>
+                <FormField label="Email" htmlFor="create-user-email" error={fieldErrors.email}>
+                  <Input
+                    id="create-user-email"
+                    type="email"
+                    value={values.email}
+                    onChange={(event) => updateField('email', event.target.value)}
+                    placeholder="user@example.com"
+                    autoComplete="email"
+                    aria-invalid={fieldErrors.email ? true : undefined}
+                    disabled={createUser.isPending}
+                  />
+                </FormField>
+                <FormField
+                  label="Password"
+                  htmlFor="create-user-password"
                   error={fieldErrors.password}
-                  placeholder="Temporary password"
-                  autoComplete="new-password"
-                  disabled={createUser.isPending}
-                  onChange={(value) => updateField('password', value)}
-                />
-                <FormInput
-                  type="password"
-                  value={values.confirmPassword}
+                >
+                  <Input
+                    id="create-user-password"
+                    type="password"
+                    value={values.password}
+                    onChange={(event) => updateField('password', event.target.value)}
+                    placeholder="Temporary password"
+                    autoComplete="new-password"
+                    aria-invalid={fieldErrors.password ? true : undefined}
+                    disabled={createUser.isPending}
+                  />
+                </FormField>
+                <FormField
+                  label="Confirm password"
+                  htmlFor="create-user-confirm-password"
                   error={fieldErrors.confirmPassword}
-                  placeholder="Confirm password"
-                  autoComplete="new-password"
-                  disabled={createUser.isPending}
-                  onChange={(value) => updateField('confirmPassword', value)}
-                />
+                >
+                  <Input
+                    id="create-user-confirm-password"
+                    type="password"
+                    value={values.confirmPassword}
+                    onChange={(event) => updateField('confirmPassword', event.target.value)}
+                    placeholder="Confirm password"
+                    autoComplete="new-password"
+                    aria-invalid={fieldErrors.confirmPassword ? true : undefined}
+                    disabled={createUser.isPending}
+                  />
+                </FormField>
 
                 <DialogFooter>
                   <DialogClose
@@ -366,38 +387,5 @@ function UsersTableSkeleton() {
         </TableRow>
       ))}
     </>
-  )
-}
-
-function FormInput({
-  type = 'text',
-  value,
-  error,
-  placeholder,
-  autoComplete,
-  disabled,
-  onChange,
-}: {
-  type?: string
-  value: string
-  error?: string
-  placeholder: string
-  autoComplete: string
-  disabled: boolean
-  onChange: (value: string) => void
-}) {
-  return (
-    <div className="flex flex-col gap-2">
-      <Input
-        type={type}
-        value={value}
-        onChange={(event) => onChange(event.target.value)}
-        placeholder={placeholder}
-        autoComplete={autoComplete}
-        aria-invalid={error ? true : undefined}
-        disabled={disabled}
-      />
-      {error ? <p className="text-sm text-destructive">{error}</p> : null}
-    </div>
   )
 }

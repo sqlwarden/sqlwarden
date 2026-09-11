@@ -2,6 +2,7 @@ import { Button } from '#/components/ui/button'
 import {
   Dialog,
   DialogContent,
+  DialogDescription,
   DialogFooter,
   DialogHeader,
   DialogTitle,
@@ -31,11 +32,11 @@ export function ExportConfirmDialog({
       <DialogContent className="sm:max-w-md">
         <DialogHeader>
           <DialogTitle>Export query results</DialogTitle>
+          <DialogDescription>
+            This query will run and the results will export as a file.
+          </DialogDescription>
         </DialogHeader>
         <div className="flex flex-col gap-2">
-          <p className="text-xs text-muted-foreground">
-            This query will run and the results will export as a file.
-          </p>
           <div className="h-40 overflow-hidden rounded-md border border-border bg-muted/40">
             <ReadOnlySqlView value={sql} />
           </div>

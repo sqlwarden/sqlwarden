@@ -420,16 +420,19 @@ function RunTabStrip({
     const others = unpinnedScope('others', run.id)
     const right = unpinnedScope('right', run.id)
     const left = unpinnedScope('left', run.id)
+    const all = unpinnedScope('all', run.id)
     openContextMenu(
       buildResultTabMenu({
         pinned: Boolean(run.pinned),
         hasOthers: others.length > 0,
         hasRight: right.length > 0,
         hasLeft: left.length > 0,
+        hasAll: all.length > 0,
         onClose: () => onClose(run.id),
         onCloseOthers: () => onCloseMany(others),
         onCloseRight: () => onCloseMany(right),
         onCloseLeft: () => onCloseMany(left),
+        onCloseAll: () => onCloseMany(all),
         onTogglePin: () => onTogglePin(run.id),
       }),
       e,

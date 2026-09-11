@@ -24,7 +24,9 @@ describe('authentication route behavior', () => {
 
     renderRoute('/login')
 
-    expect(await screen.findByRole('heading', { name: 'Set up SQLWarden' })).toBeInTheDocument()
+    expect(
+      await screen.findByRole('heading', { name: 'Create your administrator account' }),
+    ).toBeInTheDocument()
     expect(document.title).toBe('Setup | SQLWarden')
   })
 
@@ -32,12 +34,52 @@ describe('authentication route behavior', () => {
     server.use(setupStatusHandler(setupStatusFixture({ configured: false })))
     const { user } = renderRoute('/setup')
 
-    await user.click(await screen.findByRole('button', { name: 'Create admin and organization' }))
+    await user.click(await screen.findByRole('button', { name: 'Continue' }))
     expect(screen.getByText('Name is required.')).toBeInTheDocument()
+
+    await user.type(screen.getByPlaceholderText('Alex Ward'), 'Alex Ward')
+    await user.type(screen.getByPlaceholderText('admin@organization.com'), 'alex@example.com')
+    await user.type(screen.getByPlaceholderText('Minimum 8 characters'), 'password123')
+    await user.type(screen.getByPlaceholderText('Repeat password'), 'password123')
+    await user.click(screen.getByRole('button', { name: 'Continue' }))
+
+    await user.click(await screen.findByRole('button', { name: 'Continue' }))
     expect(screen.getByText('Organization name is required.')).toBeInTheDocument()
 
     await user.type(screen.getByPlaceholderText('Acme Cloud'), 'Example Platform')
     expect(screen.getByPlaceholderText('acme-cloud')).toHaveValue('example-platform')
+  })
+
+  it('returns to the administrator account step via Back without losing entered values', async () => {
+    server.use(setupStatusHandler(setupStatusFixture({ configured: false })))
+    const { user } = renderRoute('/setup')
+
+    await user.type(await screen.findByPlaceholderText('Alex Ward'), 'Alex Ward')
+    await user.type(screen.getByPlaceholderText('admin@organization.com'), 'alex@example.com')
+    await user.type(screen.getByPlaceholderText('Minimum 8 characters'), 'password123')
+    await user.type(screen.getByPlaceholderText('Repeat password'), 'password123')
+    await user.click(screen.getByRole('button', { name: 'Continue' }))
+
+    expect(
+      await screen.findByRole('heading', { name: 'Create your organization' }),
+    ).toBeInTheDocument()
+    await user.click(screen.getByRole('button', { name: 'Back' }))
+
+    expect(
+      await screen.findByRole('heading', { name: 'Create your administrator account' }),
+    ).toBeInTheDocument()
+    expect(screen.getByPlaceholderText('Alex Ward')).toHaveValue('Alex Ward')
+  })
+
+  it('skips the organization step in single-user access mode', async () => {
+    server.use(
+      setupStatusHandler(setupStatusFixture({ configured: false, access_mode: 'single_user' })),
+    )
+    renderRoute('/setup')
+
+    expect(await screen.findByRole('heading', { name: 'Set up SQLWarden' })).toBeInTheDocument()
+    expect(screen.queryByPlaceholderText('Acme Cloud')).not.toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Create admin account' })).toBeInTheDocument()
   })
 
   it('submits credentials and redirects after login', async () => {

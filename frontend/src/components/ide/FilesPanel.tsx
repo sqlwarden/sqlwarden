@@ -5,7 +5,6 @@ import type { UseQueryOptions } from '@tanstack/react-query'
 import { Icon, FileTypeIcon } from '#/lib/icons'
 import { Button } from '#/components/ui/button'
 import { Input } from '#/components/ui/input'
-import { ResizablePanel, ResizablePanelGroup, ResizableHandle } from '#/components/ui/resizable'
 import {
   orgWorkspacePrivateFileBrowserQueryOptions,
   orgWorkspaceSharedFileBrowserQueryOptions,
@@ -51,7 +50,6 @@ export function FilesPanel({ orgSlug, workspace, maximized, onMaximizedChange }:
   const [duplicateState, setDuplicateState] = useState<DuplicateState>(null)
 
   const privateActions = useFileActions(orgSlug, workspace, 'private')
-  const sharedActions = useFileActions(orgSlug, workspace, 'shared')
 
   function openCreateDialog(kind: 'file' | 'folder', parentId: number | null) {
     setDialogState({ kind, parentId })
@@ -141,37 +139,20 @@ export function FilesPanel({ orgSlug, workspace, maximized, onMaximizedChange }:
         actions={headerActions}
         scroll={false}
       >
-        <ResizablePanelGroup orientation="vertical" className="min-h-0 flex-1">
-          <ResizablePanel defaultSize="60%" minSize="15%" className="overflow-hidden">
-            <FilesSection
-              orgSlug={orgSlug}
-              workspace={workspace}
-              visibility="private"
-              title="My Files"
-              actions={privateActions}
-              onCreateFile={(parentId) => openCreateDialog('file', parentId)}
-              onCreateFolder={(parentId) => openCreateDialog('folder', parentId)}
-              onRename={startRename}
-              onDuplicate={openDuplicateDialog}
-              renameControls={renameControls}
-            />
-          </ResizablePanel>
-          <ResizableHandle withHandle />
-          <ResizablePanel defaultSize="40%" minSize="15%" className="overflow-hidden">
-            <FilesSection
-              orgSlug={orgSlug}
-              workspace={workspace}
-              visibility="shared"
-              title="Shared Files"
-              actions={sharedActions}
-              onCreateFile={undefined}
-              onCreateFolder={undefined}
-              onRename={undefined}
-              onDuplicate={undefined}
-              renameControls={undefined}
-            />
-          </ResizablePanel>
-        </ResizablePanelGroup>
+        <div className="min-h-0 flex-1 overflow-hidden">
+          <FilesSection
+            orgSlug={orgSlug}
+            workspace={workspace}
+            visibility="private"
+            title="My Files"
+            actions={privateActions}
+            onCreateFile={(parentId) => openCreateDialog('file', parentId)}
+            onCreateFolder={(parentId) => openCreateDialog('folder', parentId)}
+            onRename={startRename}
+            onDuplicate={openDuplicateDialog}
+            renameControls={renameControls}
+          />
+        </div>
       </SidebarPane>
 
       {dialogState && (

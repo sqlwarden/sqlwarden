@@ -708,6 +708,7 @@ func TestGetSession_ReturnsStableBootstrapPayload(t *testing.T) {
 	t.Parallel()
 
 	app := newTestApp(t)
+	updateInstanceSettingsForTest(t, app, func(settings *database.InstanceSettings) { settings.PersonalSpacesEnabled = false })
 	account, token := seedAccountWithToken(t, app, uniqueEmail(t, "session"), "Session User")
 	org := seedOrganizationForAccount(t, app, account, "Acme")
 
@@ -736,7 +737,7 @@ func TestGetSession_ReturnsStableBootstrapPayload(t *testing.T) {
 		t.Fatalf("expected first organization name %q, got %v", org.Name, payload.Organizations[0]["name"])
 	}
 	assert.Equal(t, payload.IsInstanceAdmin, false)
-	assert.Equal(t, payload.PersonalSpacesEnabled, true)
+	assert.Equal(t, payload.PersonalSpacesEnabled, false)
 	assert.Equal(t, len(payload.FeatureFlags), 0)
 }
 

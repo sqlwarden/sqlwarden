@@ -5,10 +5,12 @@ export type ResultTabMenuCtx = {
   hasOthers: boolean
   hasRight: boolean
   hasLeft: boolean
+  hasAll: boolean
   onClose: () => void
   onCloseOthers: () => void
   onCloseRight: () => void
   onCloseLeft: () => void
+  onCloseAll: () => void
   onTogglePin: () => void
 }
 
@@ -46,6 +48,14 @@ export function buildResultTabMenu(ctx: ResultTabMenuCtx): ContextMenuItem[] {
       icon: 'arrow-left-01',
       disabled: !ctx.hasLeft,
       onSelect: ctx.onCloseLeft,
+    },
+    {
+      kind: 'action',
+      id: 'close-all',
+      label: 'Close all',
+      icon: 'cancel-01',
+      disabled: !ctx.hasAll,
+      onSelect: ctx.onCloseAll,
     },
   ]
 }

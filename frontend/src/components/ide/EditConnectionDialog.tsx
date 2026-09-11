@@ -225,7 +225,7 @@ function RemoveConfigRow({
 }) {
   return (
     <div className="flex items-center justify-between gap-3 border-t border-border/60 pt-3">
-      <p className="text-[11px] text-muted-foreground">
+      <p className="text-xs text-muted-foreground">
         Deletes the saved configuration from this connection.
       </p>
       <Button

@@ -83,15 +83,15 @@ describe('FilesPanel', () => {
     )
   }
 
-  it('renders independent empty states for private and shared files', async () => {
+  it('renders an empty state for private files, with no shared files section', async () => {
     respondWith([])
     renderPanel()
 
-    await waitFor(() => expect(screen.getAllByText('No files yet.')).toHaveLength(2))
-    expect(screen.getByText('Shared Files')).toBeInTheDocument()
+    await waitFor(() => expect(screen.getByText('No files yet.')).toBeInTheDocument())
+    expect(screen.queryByText('Shared Files')).not.toBeInTheDocument()
   })
 
-  it('opens a private file and preserves shared files as a separate section', async () => {
+  it('opens a private file', async () => {
     respondWith([file(7, 'private.sql')], [file(8, 'team.sql')])
     renderPanel()
 
@@ -102,7 +102,7 @@ describe('FilesPanel', () => {
         expect.arrayContaining([expect.objectContaining({ fileId: 7, title: 'private.sql' })]),
       ),
     )
-    expect(screen.getByRole('button', { name: 'team.sql' })).toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: 'team.sql' })).not.toBeInTheDocument()
   })
 
   it('loads folder children only after expansion', async () => {
@@ -129,8 +129,8 @@ describe('FilesPanel', () => {
     expect(nestedRow.querySelector('[data-file-type-icon-name="sql"]')).toBeInTheDocument()
   })
 
-  it('offers rename and duplicate only for private explorer items', async () => {
-    respondWith([file(7, 'private.sql')], [file(8, 'shared.sql')])
+  it('offers rename and duplicate for private explorer items', async () => {
+    respondWith([file(7, 'private.sql')])
     renderPanel()
 
     fireEvent.contextMenu(await screen.findByRole('button', { name: 'private.sql' }))
@@ -145,10 +145,6 @@ describe('FilesPanel', () => {
     expect(await screen.findByRole('heading', { name: 'Duplicate file' })).toBeInTheDocument()
     await waitFor(() => expect(screen.getByLabelText('Name')).toHaveValue('private copy.sql'))
     fireEvent.click(screen.getByRole('button', { name: 'Cancel' }))
-
-    fireEvent.contextMenu(screen.getByRole('button', { name: 'shared.sql' }))
-    expect(screen.queryByRole('menuitem', { name: 'Rename' })).not.toBeInTheDocument()
-    expect(screen.queryByRole('menuitem', { name: 'Duplicate' })).not.toBeInTheDocument()
   })
 
   it('renames a private root file inline: stem selected, Enter submits', async () => {

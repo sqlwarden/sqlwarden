@@ -47,7 +47,7 @@ import { TableColumnHeader } from '#/components/TableColumnHeader'
 import { TableEmptyState } from '#/components/EmptyState'
 
 const stickyActionsCellClass =
-  'sticky right-0 bg-card text-end [tr:hover>&]:bg-muted/50 [tr:has([aria-expanded])>&]:bg-muted/50 [tr[data-state=selected]>&]:bg-muted'
+  'sticky right-0 bg-card text-end [tr:hover>&]:bg-muted/50 [tr[data-state=selected]>&]:bg-muted'
 
 export const Route = createFileRoute('/orgs/$org_slug/workspaces/$workspace_id/connections')({
   component: WorkspaceConnectionsPage,
@@ -288,7 +288,7 @@ export function ConnectionRow({
     <TableRow>
       <TableCell>
         <div className="flex min-w-0 items-center gap-3">
-          <div className="flex size-8 shrink-0 items-center justify-center rounded-md border border-border">
+          <div className="flex size-8 shrink-0 items-center justify-center rounded-md bg-muted">
             <DriverBadge driver={connection.driver} size="sm" />
           </div>
           <div className="min-w-0">

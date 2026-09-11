@@ -34,6 +34,7 @@ import {
   DialogTitle,
   DialogTrigger,
 } from '#/components/ui/dialog'
+import { FormField } from '#/components/ui/field'
 import { Input } from '#/components/ui/input'
 import { PaginationFooter } from '#/components/PaginationFooter'
 import { RoutePending } from '#/components/RoutePending'
@@ -207,24 +208,23 @@ function OrganizationTeamsPage({ orgSlug }: { orgSlug: string }) {
                     <DialogTitle>Create team</DialogTitle>
                   </DialogHeader>
                   <form className="mt-6 flex flex-col gap-4" onSubmit={submitCreateTeam}>
-                    <div className="flex flex-col gap-2">
+                    <FormField label="Name" htmlFor="team-name" error={fieldErrors.name}>
                       <Input
+                        id="team-name"
                         value={teamName}
                         onChange={(event) => {
                           setTeamName(event.target.value)
                           setFieldErrors((current) => ({ ...current, name: undefined }))
                         }}
-                        placeholder="Team name"
+                        placeholder="e.g. Data Platform"
                         aria-invalid={fieldErrors.name ? true : undefined}
                         disabled={createTeam.isPending}
                       />
-                      {fieldErrors.name ? (
-                        <p className="text-sm text-destructive">{fieldErrors.name}</p>
-                      ) : null}
-                    </div>
+                    </FormField>
 
-                    <div className="flex flex-col gap-2">
+                    <FormField label="Slug" htmlFor="team-slug" error={fieldErrors.slug}>
                       <Input
+                        id="team-slug"
                         value={teamSlug}
                         onChange={(event) => {
                           setSlugTouched(true)
@@ -235,10 +235,7 @@ function OrganizationTeamsPage({ orgSlug }: { orgSlug: string }) {
                         aria-invalid={fieldErrors.slug ? true : undefined}
                         disabled={createTeam.isPending}
                       />
-                      {fieldErrors.slug ? (
-                        <p className="text-sm text-destructive">{fieldErrors.slug}</p>
-                      ) : null}
-                    </div>
+                    </FormField>
 
                     <DialogFooter>
                       <DialogClose

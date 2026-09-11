@@ -104,6 +104,21 @@ export function orgWorkspacePoliciesQueryOptions(
   })
 }
 
+export function orgWorkspacePolicyQueryOptions(
+  slug: string,
+  workspaceId: string | number,
+  bindingId: string | number,
+) {
+  return queryOptions({
+    queryKey: queryKeys.orgWorkspacePolicy(slug, workspaceId, bindingId),
+    queryFn: () =>
+      api.get<PolicyBinding>(
+        `/api/v1/orgs/${slug}/workspaces/${workspaceId}/policies/${bindingId}`,
+      ),
+    staleTime: 60_000,
+  })
+}
+
 export function myWorkspacesQueryOptions(query?: ListQuery) {
   return queryOptions({
     queryKey: queryKeys.myWorkspaces(query),

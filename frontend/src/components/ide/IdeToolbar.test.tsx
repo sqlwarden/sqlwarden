@@ -176,7 +176,7 @@ describe('IdeToolbar', () => {
     expect(screen.getByRole('button', { name: /^Run/ })).toBeDisabled()
     expect(screen.queryByRole('button', { name: 'Save file' })).not.toBeInTheDocument()
     expect(screen.queryByRole('button', { name: 'More run options' })).not.toBeInTheDocument()
-    expect(await screen.findByRole('button', { name: /Select connection/ })).toBeDisabled()
+    expect(await screen.findByRole('combobox', { name: 'Select connection' })).toBeDisabled()
   })
 
   it('runs, saves, and exposes export actions for a SQL tab', async () => {
@@ -281,8 +281,8 @@ describe('IdeToolbar', () => {
     store.getState().openTab(scratchTab)
     const { user } = renderToolbar()
 
-    await user.click(await screen.findByRole('button', { name: /primary-pg/ }))
-    await user.click(screen.getByRole('button', { name: /warehouse/ }))
+    await user.click(await screen.findByRole('combobox', { name: 'Select connection' }))
+    await user.click(await screen.findByRole('option', { name: /warehouse/ }))
 
     expect(store.getState().tabs[0]).toEqual(
       expect.objectContaining({ connectionId: 8, driver: 'mysql' }),

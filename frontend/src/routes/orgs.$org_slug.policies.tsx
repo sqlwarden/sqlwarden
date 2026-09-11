@@ -52,7 +52,8 @@ import {
   SelectTrigger,
   SelectValue,
 } from '#/components/ui/select'
-import { SearchComboboxField } from '#/components/access-control/SearchComboboxField'
+import { SearchableCombobox } from '#/components/SearchableCombobox'
+import { FormField } from '#/components/ui/field'
 import { PaginationFooter } from '#/components/PaginationFooter'
 import { RoutePending } from '#/components/RoutePending'
 import { SearchInput } from '#/components/SearchInput'
@@ -374,43 +375,41 @@ function OrganizationPoliciesPage({ orgSlug }: { orgSlug: string }) {
 
                     {/* Subject picker */}
                     {subjectType === 'account' ? (
-                      <SearchComboboxField
-                        label="User"
-                        placeholder="Select a user…"
-                        searchPlaceholder="Search users…"
-                        selectedValue={subjectId}
-                        selectedLabel={subjectLabel}
-                        items={memberItems}
-                        isLoading={members.isLoading}
-                        error={fieldErrors.subject}
-                        disabled={createPolicy.isPending}
-                        onChange={(value, label) => {
-                          setSubjectId(value)
-                          setSubjectLabel(label)
-                          setFieldErrors((c) => ({ ...c, subject: undefined }))
-                        }}
-                        onSearchChange={setMemberQ}
-                      />
+                      <FormField label="User" error={fieldErrors.subject}>
+                        <SearchableCombobox
+                          placeholder="Select a user…"
+                          searchPlaceholder="Search users…"
+                          value={subjectId ? { value: subjectId, label: subjectLabel } : null}
+                          items={memberItems}
+                          isLoading={members.isLoading}
+                          disabled={createPolicy.isPending}
+                          onValueChange={(item) => {
+                            setSubjectId(item?.value ?? '')
+                            setSubjectLabel(item?.label ?? '')
+                            setFieldErrors((c) => ({ ...c, subject: undefined }))
+                          }}
+                          onSearchChange={setMemberQ}
+                        />
+                      </FormField>
                     ) : null}
 
                     {subjectType === 'team' ? (
-                      <SearchComboboxField
-                        label="Team"
-                        placeholder="Select a team…"
-                        searchPlaceholder="Search teams…"
-                        selectedValue={subjectId}
-                        selectedLabel={subjectLabel}
-                        items={teamItems}
-                        isLoading={teams.isLoading}
-                        error={fieldErrors.subject}
-                        disabled={createPolicy.isPending}
-                        onChange={(value, label) => {
-                          setSubjectId(value)
-                          setSubjectLabel(label)
-                          setFieldErrors((c) => ({ ...c, subject: undefined }))
-                        }}
-                        onSearchChange={setTeamQ}
-                      />
+                      <FormField label="Team" error={fieldErrors.subject}>
+                        <SearchableCombobox
+                          placeholder="Select a team…"
+                          searchPlaceholder="Search teams…"
+                          value={subjectId ? { value: subjectId, label: subjectLabel } : null}
+                          items={teamItems}
+                          isLoading={teams.isLoading}
+                          disabled={createPolicy.isPending}
+                          onValueChange={(item) => {
+                            setSubjectId(item?.value ?? '')
+                            setSubjectLabel(item?.label ?? '')
+                            setFieldErrors((c) => ({ ...c, subject: undefined }))
+                          }}
+                          onSearchChange={setTeamQ}
+                        />
+                      </FormField>
                     ) : null}
 
                     {subjectType === 'org_members' ? (
@@ -426,24 +425,23 @@ function OrganizationPoliciesPage({ orgSlug }: { orgSlug: string }) {
                     ) : null}
 
                     {/* Role picker */}
-                    <SearchComboboxField
-                      label="Role"
-                      placeholder="Select a role…"
-                      searchPlaceholder="Search roles…"
-                      selectedValue={roleId}
-                      selectedLabel={roleLabel}
-                      items={roleItems}
-                      isLoading={roles.isLoading}
-                      error={fieldErrors.role}
-                      disabled={createPolicy.isPending}
-                      onChange={(value, label, item) => {
-                        setRoleId(value)
-                        setRoleLabel(label)
-                        setRolePermissions(item.permissions ?? [])
-                        setFieldErrors((c) => ({ ...c, role: undefined }))
-                      }}
-                      onSearchChange={setRoleQ}
-                    />
+                    <FormField label="Role" error={fieldErrors.role}>
+                      <SearchableCombobox
+                        placeholder="Select a role…"
+                        searchPlaceholder="Search roles…"
+                        value={roleId ? { value: roleId, label: roleLabel } : null}
+                        items={roleItems}
+                        isLoading={roles.isLoading}
+                        disabled={createPolicy.isPending}
+                        onValueChange={(item) => {
+                          setRoleId(item?.value ?? '')
+                          setRoleLabel(item?.label ?? '')
+                          setRolePermissions(item?.permissions ?? [])
+                          setFieldErrors((c) => ({ ...c, role: undefined }))
+                        }}
+                        onSearchChange={setRoleQ}
+                      />
+                    </FormField>
 
                     <DialogFooter>
                       <DialogClose

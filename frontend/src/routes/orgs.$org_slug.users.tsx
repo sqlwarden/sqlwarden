@@ -47,6 +47,7 @@ import { RoutePending } from '#/components/RoutePending'
 import { SearchInput } from '#/components/SearchInput'
 import { TableColumnHeader } from '#/components/TableColumnHeader'
 import { TableEmptyState } from '#/components/EmptyState'
+import { FieldDescription, FormField } from '#/components/ui/field'
 import { Skeleton } from '#/components/ui/skeleton'
 import { Input } from '#/components/ui/input'
 import {
@@ -190,10 +191,7 @@ function OrganizationUsersPage({ orgSlug }: { orgSlug: string }) {
                     <DialogTitle>Invite User</DialogTitle>
                   </DialogHeader>
                   <div className="mt-6 flex flex-col gap-4">
-                    <div className="flex flex-col gap-2">
-                      <label htmlFor="invite-email" className="text-sm font-medium">
-                        Email address
-                      </label>
+                    <FormField label="Email address" htmlFor="invite-email">
                       <Input
                         id="invite-email"
                         type="email"
@@ -203,15 +201,12 @@ function OrganizationUsersPage({ orgSlug }: { orgSlug: string }) {
                         onChange={(event) => setInviteEmail(event.target.value)}
                         placeholder="person@example.com"
                       />
-                      <p className="text-sm text-muted-foreground">
+                      <FieldDescription>
                         They will receive baseline organization access after accepting.
-                      </p>
-                    </div>
+                      </FieldDescription>
+                    </FormField>
                     {inviteURL ? (
-                      <div className="flex flex-col gap-2">
-                        <label htmlFor="invite-link" className="text-sm font-medium">
-                          Invitation link
-                        </label>
+                      <FormField label="Invitation link" htmlFor="invite-link">
                         <div className="flex gap-2">
                           <Input id="invite-link" readOnly value={inviteURL} />
                           <Button
@@ -225,7 +220,7 @@ function OrganizationUsersPage({ orgSlug }: { orgSlug: string }) {
                             Copy
                           </Button>
                         </div>
-                      </div>
+                      </FormField>
                     ) : null}
 
                     <DialogFooter>

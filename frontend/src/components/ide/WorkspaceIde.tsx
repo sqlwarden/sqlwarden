@@ -22,7 +22,7 @@ import {
   EmptyTitle,
 } from '#/components/ui/empty'
 import { Skeleton } from '#/components/ui/skeleton'
-import { useNavigate, useSearch } from '@tanstack/react-router'
+import { Link, useNavigate, useSearch } from '@tanstack/react-router'
 import {
   orgWorkspacesQueryOptions,
   orgEffectivePermissionsQueryOptions,
@@ -30,7 +30,8 @@ import {
   allOrgWorkspaceConnectionsQueryOptions,
 } from '#/lib/api/query'
 import { resolveDeepLink } from './ideDeepLink'
-import { hasAnyPermission, permission } from '#/lib/permissions'
+import { isCsvFileTab, isCsvFileTooLarge } from './csv/csvFile'
+import { hasAnyPermission, hasPermission, permission } from '#/lib/permissions'
 import {
   workspacePolicyPagePermissions,
   workspaceSettingsPagePermissions,
@@ -151,7 +152,7 @@ export function WorkspaceIdeContent({
 }: WorkspaceIdeContentProps) {
   if (isLoading) return <WorkspaceIdeSkeleton />
   if (isError) return <WorkspaceLoadError isRetrying={isRetrying} onRetry={onRetry} />
-  if (workspaces.length === 0) return <NoWorkspaceAccess />
+  if (workspaces.length === 0) return <NoWorkspaceAccess orgSlug={orgSlug} />
   return (
     <WorkspaceIdeInner
       orgSlug={orgSlug}
@@ -241,8 +242,14 @@ export function WorkspaceIdeSkeleton() {
   )
 }
 
-export function NoWorkspaceAccess() {
+export function NoWorkspaceAccess({ orgSlug }: { orgSlug: string }) {
   usePageTitle('Editor')
+
+  const effectivePermissions = useQuery(orgEffectivePermissionsQueryOptions(orgSlug, 'org'))
+  const canCreateWorkspace = hasPermission(
+    effectivePermissions.data?.permissions,
+    permission.wsCreate,
+  )
 
   return (
     <WorkspaceStateFrame>
@@ -255,10 +262,22 @@ export function NoWorkspaceAccess() {
             No workspace access
           </EmptyTitle>
           <EmptyDescription>
-            You don&apos;t currently have access to a workspace in this organization. Ask an
-            organization administrator to grant you access.
+            {canCreateWorkspace
+              ? "You don't currently have access to a workspace in this organization. Create one to get started."
+              : "You don't currently have access to a workspace in this organization. Ask an organization administrator to grant you access."}
           </EmptyDescription>
         </EmptyHeader>
+        {canCreateWorkspace ? (
+          <EmptyContent>
+            <Button
+              nativeButton={false}
+              render={<Link to="/orgs/$org_slug/workspaces" params={{ org_slug: orgSlug }} />}
+            >
+              <Icon name="plus-sign" size={16} data-icon="inline-start" />
+              Create workspace
+            </Button>
+          </EmptyContent>
+        ) : null}
       </Empty>
     </WorkspaceStateFrame>
   )
@@ -772,6 +791,13 @@ function EditorSection({ orgSlug, workspace }: { orgSlug: string; workspace: Wor
   // Each EditorGroup populates its own Y.Doc synchronously and loads its own file
   // content; EditorSection keeps the workspace-wide Y.Doc lifecycle effects above.
   const hasAnyTab = tabs.some((t) => t.workspaceId === workspace.id)
+  const isCodeEditorTab = Boolean(
+    activeTab &&
+    activeTab.kind !== 'object' &&
+    activeTab.kind !== 'diagram' &&
+    !isCsvFileTab(activeTab) &&
+    !isCsvFileTooLarge(activeTab),
+  )
 
   return (
     <>
@@ -809,7 +835,7 @@ function EditorSection({ orgSlug, workspace }: { orgSlug: string; workspace: Wor
             </>
           )}
         </div>
-        <EditorStatusBar cursorInfo={cursorInfo} hasActiveTab={!!activeTab} />
+        {isCodeEditorTab && <EditorStatusBar cursorInfo={cursorInfo} />}
       </section>
 
       <SaveAsDialog
@@ -846,20 +872,14 @@ function EditorSection({ orgSlug, workspace }: { orgSlug: string; workspace: Wor
 
 // ─── Editor status bar ─────────────────────────────────────────────────────────
 
-function EditorStatusBar({
-  cursorInfo,
-  hasActiveTab,
-}: {
-  cursorInfo: CursorInfo | null
-  hasActiveTab: boolean
-}) {
+function EditorStatusBar({ cursorInfo }: { cursorInfo: CursorInfo | null }) {
   const maximizedPane = useIde((s) => s.maximizedPane)
   const setMaximizedPane = useIde((s) => s.setMaximizedPane)
   const resultsVisible = maximizedPane !== 'editor'
 
   return (
-    <div className="flex h-6 shrink-0 items-center gap-3 bg-background pl-3 pr-1 text-[11px] text-muted-foreground">
-      {hasActiveTab && cursorInfo && (
+    <div className="flex h-6 shrink-0 items-center gap-3 border-t border-border bg-card pl-3 pr-1 text-[11px] text-muted-foreground">
+      {cursorInfo && (
         <>
           <span className="tabular-nums">
             Ln {cursorInfo.line}, Col {cursorInfo.col}
@@ -868,7 +888,7 @@ function EditorStatusBar({
         </>
       )}
       <div className="flex-1" />
-      {hasActiveTab && <span className="font-medium">SQL</span>}
+      <span className="font-medium">SQL</span>
       <Tip label={resultsVisible ? 'Hide results panel' : 'Show results panel'}>
         <button
           type="button"

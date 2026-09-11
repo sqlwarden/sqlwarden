@@ -7,7 +7,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest'
 import type { Workspace, WorkspaceFile } from '#/lib/api/types'
 import { createTestQueryClient } from '#/test/render'
 import { server } from '#/test/server'
-import { saveTextAs } from './saveFile'
+import { saveTextAsWithPicker } from './saveFile'
 import { useFileActions } from './useFileActions'
 import { createIdeStore, IdeStoreContext, newFileTab } from './useIdeStore'
 
@@ -18,7 +18,7 @@ vi.mock('idb-keyval', () => ({
 }))
 
 vi.mock('sonner', () => ({ toast: { error: vi.fn(), success: vi.fn() } }))
-vi.mock('./saveFile', () => ({ saveTextAs: vi.fn() }))
+vi.mock('./saveFile', () => ({ saveTextAsWithPicker: vi.fn() }))
 
 const workspace: Workspace = {
   id: 3,
@@ -126,7 +126,7 @@ describe('useFileActions', () => {
 
     await act(() => result.current.saveAs(file(14, 'one.sql')))
 
-    expect(saveTextAs).toHaveBeenCalledWith('one.sql', 'select 1')
+    expect(saveTextAsWithPicker).toHaveBeenCalledWith('one.sql', 'select 1')
   })
 
   it('renames a file, refreshes browser and recent scopes, and updates its open tab', async () => {
