@@ -158,7 +158,7 @@ func TestCatalogTables(t *testing.T) {
 	t.Cleanup(func() { _, _ = d.Execute(context.Background(), "DROP VIEW dbo.warden_catalog_v") })
 
 	found := map[string]string{}
-	err := CatalogTables(ctx, d.DB(), func(schema, name, kind string) {
+	err := CatalogTables(ctx, d.DB(), "", func(schema, name, kind string) {
 		found[schema+"."+name] = kind
 	})
 	if err != nil {
@@ -348,6 +348,58 @@ func TestInspectDirectoryUsesOptsRootAsDefaultScope(t *testing.T) {
 	}
 	if dir.DefaultScope != root {
 		t.Fatalf("want DefaultScope %q from opts.Root, got %q", root, dir.DefaultScope)
+	}
+}
+
+func TestInspectDirectoryWithRootScopesToOneSchema(t *testing.T) {
+	d := newConnectedDriver(t)
+	ctx := context.Background()
+
+	if _, err := d.Execute(ctx, "CREATE SCHEMA root_scope_other"); err != nil {
+		t.Fatalf("create schema: %v", err)
+	}
+	t.Cleanup(func() { _, _ = d.Execute(context.Background(), "DROP SCHEMA root_scope_other") })
+	if _, err := d.Execute(ctx, "CREATE TABLE dbo.root_scope_users (id INT PRIMARY KEY)"); err != nil {
+		t.Fatalf("create table: %v", err)
+	}
+	t.Cleanup(func() { _, _ = d.Execute(context.Background(), "DROP TABLE dbo.root_scope_users") })
+	if _, err := d.Execute(ctx, "CREATE TABLE root_scope_other.widgets (id INT PRIMARY KEY)"); err != nil {
+		t.Fatalf("create table: %v", err)
+	}
+	t.Cleanup(func() { _, _ = d.Execute(context.Background(), "DROP TABLE root_scope_other.widgets") })
+
+	full, err := d.InspectDirectory(ctx, metadata.DirectoryOptions{})
+	if err != nil {
+		t.Fatalf("InspectDirectory: %v", err)
+	}
+	database := full.Roots[0].Path
+	dboScope := database.Child(metadata.ScopeSegment{Kind: "schema", Name: "dbo"})
+
+	scoped, err := d.InspectDirectory(ctx, metadata.DirectoryOptions{Root: dboScope})
+	if err != nil {
+		t.Fatalf("InspectDirectory with Root: %v", err)
+	}
+	if len(scoped.Roots) != 1 || scoped.Roots[0].Path != dboScope {
+		t.Fatalf("expected a single root at %v, got %+v", dboScope, scoped.Roots)
+	}
+	for _, node := range scoped.ScopeNodes() {
+		if node.Path.Name("schema") == "root_scope_other" {
+			t.Fatalf("root_scope_other must not appear when scoped to dbo: %+v", scoped.Roots)
+		}
+	}
+	var found bool
+	for _, g := range scoped.Roots[0].Groups {
+		if g.Kind != "table" {
+			continue
+		}
+		for _, ref := range g.Objects {
+			if ref.Name == "root_scope_users" {
+				found = true
+			}
+		}
+	}
+	if !found {
+		t.Fatalf("missing root_scope_users in scoped directory: %+v", scoped.Roots[0])
 	}
 }
 

@@ -3,9 +3,12 @@ package web
 import (
 	"context"
 	"net/http"
+	"path/filepath"
 	"strconv"
 	"testing"
 
+	"github.com/sqlwarden/internal/database"
+	"github.com/sqlwarden/internal/engine"
 	"github.com/sqlwarden/internal/engine/metadata"
 )
 
@@ -107,5 +110,95 @@ func TestPersistentExpandedScopeServesCachedMetadataWithoutSession(t *testing.T)
 	_, unchanged, found, err := app.schemaSnapshots.Active(ctx, conn.ID)
 	if err != nil || !found || !unchanged.Roots[0].Lazy {
 		t.Fatalf("snapshot changed: %v", err)
+	}
+}
+
+// TestLiveSchemaObjectsWriteThroughPersistsIntoActiveSnapshot proves that a
+// genuine cache-miss object fetch in persistent mode (as opposed to the
+// pre-warmed-cache scenario above) writes the fetched detail into the
+// connection's active snapshot, so a later request reads the same detail
+// without re-inspecting the driver.
+func TestLiveSchemaObjectsWriteThroughPersistsIntoActiveSnapshot(t *testing.T) {
+	t.Parallel()
+	app := newTestApp(t)
+	owner, tok, org := seedOrgOwner(t, app, uniqueEmail(t, "snapshot-writethrough"), "Snapshot WriteThrough", "Snapshot WriteThrough Org")
+	ws := seedWorkspaceForAccount(t, app, org, owner, "Snapshot WS", "")
+	envID := defaultEnvironmentID(t, app, ws.ID)
+	updateInstanceSettingsForTest(t, app, func(s *database.InstanceSettings) {
+		s.SchemaLazyThreshold = 1
+	})
+
+	dsn := filepath.Join(t.TempDir(), "target.db")
+	driver, err := engine.New("sqlite")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := driver.Connect(context.Background(), engine.ConnectionConfig{DSN: dsn}); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := driver.Execute(context.Background(), "CREATE TABLE widgets (id INTEGER PRIMARY KEY)"); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := driver.Execute(context.Background(), "CREATE TABLE gadgets (id INTEGER PRIMARY KEY)"); err != nil {
+		t.Fatal(err)
+	}
+	if err := driver.Close(); err != nil {
+		t.Fatal(err)
+	}
+
+	created := send(t, newAuthRequest(t, http.MethodPost, orgEnvConnectionsURL(org.Slug, ws.ID, envID),
+		map[string]any{"name": "Target", "driver": "sqlite", "dsn": dsn}, tok), app.routes())
+	if created.StatusCode != http.StatusCreated {
+		t.Fatalf("create target connection: status=%d body=%s", created.StatusCode, created.BodyBytes)
+	}
+	connectionID := int64(created.BodyFields["id"].(float64))
+
+	refreshRes := send(t, newAuthRequest(t, http.MethodPost,
+		orgConnectionURL(org.Slug, ws.ID, envID, strconv.FormatInt(connectionID, 10))+"/schema/refresh", nil, tok), app.routes())
+	if refreshRes.StatusCode != http.StatusOK {
+		t.Fatalf("schema refresh: status=%d body=%s", refreshRes.StatusCode, refreshRes.BodyBytes)
+	}
+
+	ctx := context.Background()
+	_, directory, found, err := app.schemaSnapshots.Active(ctx, connectionID)
+	if err != nil || !found {
+		t.Fatalf("expected active snapshot: found=%v err=%v", found, err)
+	}
+	if !directory.Roots[0].Lazy {
+		t.Fatalf("expected the scope with 2 objects over threshold 1 to be marked lazy: %+v", directory.Roots[0])
+	}
+	var ref metadata.ObjectRef
+	for _, group := range directory.Roots[0].Groups {
+		for _, candidate := range group.Objects {
+			if candidate.Name == "widgets" {
+				ref = candidate
+			}
+		}
+	}
+	if ref.Name != "widgets" {
+		t.Fatalf("expected widgets ref in directory: %+v", directory.Roots[0])
+	}
+
+	endpoint := orgConnectionURL(org.Slug, ws.ID, envID, strconv.FormatInt(connectionID, 10))
+	req := newAuthRequest(t, http.MethodPost, endpoint+"/schema/objects", map[string]any{"refs": []metadata.ObjectRef{ref}}, tok)
+	res := send(t, req, app.routes())
+	if res.StatusCode != http.StatusOK {
+		t.Fatalf("live objects: status=%d body=%s", res.StatusCode, res.BodyBytes)
+	}
+	objects, ok := res.BodyFields["objects"].([]any)
+	if !ok || len(objects) != 1 {
+		t.Fatalf("expected one live-fetched object, got %+v", res.BodyFields)
+	}
+
+	snapshot, _, found, err := app.schemaSnapshots.Active(ctx, connectionID)
+	if err != nil || !found {
+		t.Fatalf("expected active snapshot to remain: found=%v err=%v", found, err)
+	}
+	stored, err := app.schemaSnapshots.Objects(ctx, snapshot.ID, []metadata.ObjectRef{ref})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(stored) != 1 {
+		t.Fatalf("expected the live-fetched object to be written into the snapshot, got %d", len(stored))
 	}
 }

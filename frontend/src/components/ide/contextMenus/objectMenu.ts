@@ -20,6 +20,7 @@ const STATEMENT_OPERATION_ICON: Record<StatementOperation, AppIcon> = {
 export type ObjectMenuCtx = {
   isView: boolean
   onOpen: () => void
+  onRefresh: () => void
   onViewDiagram?: () => void
   onCopyName: () => void
   onCopyQualifiedName: () => void
@@ -40,6 +41,7 @@ export function buildObjectMenu(ctx: ObjectMenuCtx): ContextMenuItem[] {
   )
   const items: ContextMenuItem[] = [
     { kind: 'action', id: 'open', label: 'Open', icon: 'arrow-up-right-01', onSelect: ctx.onOpen },
+    { kind: 'action', id: 'refresh', label: 'Refresh', icon: 'refresh', onSelect: ctx.onRefresh },
     ...(ctx.onViewDiagram
       ? [
           {

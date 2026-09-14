@@ -17,6 +17,7 @@ const (
 	DefaultExportsSyncMaxBytes            int64 = 104857600
 	DefaultExportsBackgroundMaxBytes      int64 = 0
 	DefaultSchemaSnapshotFreshnessSeconds int64 = 86400
+	DefaultSchemaLazyThreshold                 = 500
 	DefaultFileRevisionsKeepLatest              = 50
 	DefaultJobsWorkerCount                      = 16
 	DefaultJobsPollIntervalSeconds        int64 = 1
@@ -42,6 +43,7 @@ type InstanceSettings struct {
 	ExportsSyncMaxBytes            int64     `bun:",notnull" json:"exports_sync_max_bytes"`
 	ExportsBackgroundMaxBytes      int64     `bun:",notnull" json:"exports_background_max_bytes"`
 	SchemaSnapshotFreshnessSeconds int64     `bun:",notnull" json:"schema_snapshot_freshness_seconds"`
+	SchemaLazyThreshold            int       `bun:",notnull" json:"schema_lazy_threshold"`
 	FileRevisionsEnabled           bool      `bun:",notnull" json:"file_revisions_enabled"`
 	FileRevisionsKeepLatest        int       `bun:",notnull" json:"file_revisions_keep_latest"`
 	ErrorNotificationEmail         string    `bun:",notnull" json:"error_notification_email"`
@@ -101,6 +103,7 @@ func DefaultInstanceSettings() InstanceSettings {
 		ExportsSyncMaxBytes:            DefaultExportsSyncMaxBytes,
 		ExportsBackgroundMaxBytes:      DefaultExportsBackgroundMaxBytes,
 		SchemaSnapshotFreshnessSeconds: DefaultSchemaSnapshotFreshnessSeconds,
+		SchemaLazyThreshold:            DefaultSchemaLazyThreshold,
 		FileRevisionsEnabled:           true,
 		FileRevisionsKeepLatest:        DefaultFileRevisionsKeepLatest,
 		LogLevel:                       "info",
@@ -157,6 +160,7 @@ func (db *DB) UpsertInstanceSettings(ctx context.Context, settings InstanceSetti
 		Set("exports_sync_max_bytes = EXCLUDED.exports_sync_max_bytes").
 		Set("exports_background_max_bytes = EXCLUDED.exports_background_max_bytes").
 		Set("schema_snapshot_freshness_seconds = EXCLUDED.schema_snapshot_freshness_seconds").
+		Set("schema_lazy_threshold = EXCLUDED.schema_lazy_threshold").
 		Set("file_revisions_enabled = EXCLUDED.file_revisions_enabled").
 		Set("file_revisions_keep_latest = EXCLUDED.file_revisions_keep_latest").
 		Set("error_notification_email = EXCLUDED.error_notification_email").

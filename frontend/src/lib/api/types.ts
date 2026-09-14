@@ -398,6 +398,7 @@ export interface InstanceSettings {
   exports_sync_max_bytes: number
   exports_background_max_bytes: number
   schema_snapshot_freshness_seconds: number
+  schema_lazy_threshold: number
   file_revisions_enabled: boolean
   file_revisions_keep_latest: number
   query_history_mode: QueryHistoryMode

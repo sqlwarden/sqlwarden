@@ -138,6 +138,7 @@ func TestMigrateUpAddsQueryCursorPageSizeAfterVersion29(t *testing.T) {
 		ALTER TABLE instance_settings DROP COLUMN query_favorites_mode;
 		ALTER TABLE instance_settings DROP COLUMN sqlite_local_targets_enabled;
 		ALTER TABLE instance_settings DROP COLUMN sqlite_memory_targets_enabled;
+		ALTER TABLE instance_settings DROP COLUMN schema_lazy_threshold;
 		ALTER TABLE organization_runtime_settings DROP COLUMN query_history_mode;
 		ALTER TABLE organization_runtime_settings DROP COLUMN query_history_retention_count;
 		ALTER TABLE organization_runtime_settings DROP COLUMN query_favorites_mode;

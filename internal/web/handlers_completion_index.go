@@ -80,11 +80,7 @@ func (app *application) getConnectionCompletionIndex(w http.ResponseWriter, r *h
 			app.serverError(w, r, dirErr)
 			return
 		}
-		objs, objErr := app.schemaService.Objects(r.Context(), session.ConnectionID, directoryObjectRefs(dir), inspector)
-		if objErr != nil {
-			app.serverError(w, r, objErr)
-			return
-		}
+		objs := app.schemaService.CachedObjects(session.ConnectionID, dir.ObjectRefs())
 		directory, objects, version, mode = dir, objs, dir.GeneratedAt.UTC().Format(time.RFC3339Nano), "ephemeral"
 	}
 

@@ -32,7 +32,7 @@ func TestCatalogTablesComposesStandalone(t *testing.T) {
 	t.Cleanup(func() { _, _ = d.DB().ExecContext(ctx, `DROP TABLE IF EXISTS catalog_tables_pg_test`) })
 
 	var got []struct{ schema, name, kind string }
-	err := CatalogTables(ctx, d.DB(), func(schema, name, kind string) {
+	err := CatalogTables(ctx, d.DB(), "", func(schema, name, kind string) {
 		got = append(got, struct{ schema, name, kind string }{schema, name, kind})
 	})
 	if err != nil {
@@ -80,7 +80,7 @@ func TestCatalogTablesExcludesForeignTables(t *testing.T) {
 	t.Cleanup(func() { _, _ = d.DB().ExecContext(ctx, `DROP FOREIGN TABLE IF EXISTS catalog_foreign_pg_test`) })
 
 	var tableHits int
-	if err := CatalogTables(ctx, d.DB(), func(schema, name, kind string) {
+	if err := CatalogTables(ctx, d.DB(), "", func(schema, name, kind string) {
 		if name == "catalog_foreign_pg_test" {
 			tableHits++
 		}
@@ -92,7 +92,7 @@ func TestCatalogTablesExcludesForeignTables(t *testing.T) {
 	}
 
 	var foreignHits int
-	if err := CatalogForeignTables(ctx, d.DB(), func(schema, name string) {
+	if err := CatalogForeignTables(ctx, d.DB(), "", func(schema, name string) {
 		if name == "catalog_foreign_pg_test" {
 			foreignHits++
 		}
@@ -113,7 +113,7 @@ func TestCatalogMaterializedViewsComposesStandalone(t *testing.T) {
 	t.Cleanup(func() { _, _ = d.DB().ExecContext(ctx, `DROP MATERIALIZED VIEW IF EXISTS catalog_mv_pg_test`) })
 
 	var got []struct{ schema, name string }
-	err := CatalogMaterializedViews(ctx, d.DB(), func(schema, name string) {
+	err := CatalogMaterializedViews(ctx, d.DB(), "", func(schema, name string) {
 		got = append(got, struct{ schema, name string }{schema, name})
 	})
 	if err != nil {
@@ -142,7 +142,7 @@ func TestCatalogFunctionsComposesStandalone(t *testing.T) {
 	t.Cleanup(func() { _, _ = d.DB().ExecContext(ctx, `DROP FUNCTION IF EXISTS catalog_fn_pg_test()`) })
 
 	var got []struct{ schema, name string }
-	err := CatalogFunctions(ctx, d.DB(), func(schema, name string) {
+	err := CatalogFunctions(ctx, d.DB(), "", func(schema, name string) {
 		got = append(got, struct{ schema, name string }{schema, name})
 	})
 	if err != nil {
@@ -177,7 +177,7 @@ func TestCatalogFunctionsDedupesOverloads(t *testing.T) {
 	})
 
 	var count int
-	err := CatalogFunctions(ctx, d.DB(), func(schema, name string) {
+	err := CatalogFunctions(ctx, d.DB(), "", func(schema, name string) {
 		if name == "catalog_fn_overload_pg_test" {
 			count++
 		}
@@ -199,7 +199,7 @@ func TestCatalogSequencesComposesStandalone(t *testing.T) {
 	t.Cleanup(func() { _, _ = d.DB().ExecContext(ctx, `DROP SEQUENCE IF EXISTS catalog_seq_pg_test`) })
 
 	var got []struct{ schema, name string }
-	err := CatalogSequences(ctx, d.DB(), func(schema, name string) {
+	err := CatalogSequences(ctx, d.DB(), "", func(schema, name string) {
 		got = append(got, struct{ schema, name string }{schema, name})
 	})
 	if err != nil {
@@ -237,7 +237,7 @@ func TestAttachRowCountsComposesStandalone(t *testing.T) {
 		schema, kind, name string
 	}
 	counts := map[countKey]int64{}
-	err := AttachRowCounts(ctx, d.DB(), func(schema, kind, name string, count int64) {
+	err := AttachRowCounts(ctx, d.DB(), "", func(schema, kind, name string, count int64) {
 		counts[countKey{schema, kind, name}] = count
 	})
 	if err != nil {

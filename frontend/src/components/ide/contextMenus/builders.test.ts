@@ -168,6 +168,23 @@ describe('buildNamespaceMenu / buildObjectGroupMenu', () => {
       'Connect to the database to make this change.',
     )
   })
+  it('omits Load full detail unless onLoadAll is provided', () => {
+    const items = buildNamespaceMenu({
+      onCopyName: noop,
+      onRefresh: noop,
+      dropLabel: 'Drop schema',
+    })
+    expect(action(items, 'load-all')).toBeUndefined()
+  })
+  it('exposes Load full detail when onLoadAll is provided', () => {
+    const items = buildNamespaceMenu({
+      onCopyName: noop,
+      onRefresh: noop,
+      dropLabel: 'Drop schema',
+      onLoadAll: noop,
+    })
+    expect(action(items, 'load-all')?.label).toBe('Load full detail')
+  })
   it('object-group omits new-object entirely without create-table support (non-table kinds)', () => {
     for (const newLabel of ['New View…', 'New Function…', 'New Sequence…', 'New Trigger…']) {
       const items = buildObjectGroupMenu({ newLabel, onRefresh: noop })
@@ -210,11 +227,21 @@ describe('buildNamespaceMenu / buildObjectGroupMenu', () => {
 })
 
 describe('buildObjectMenu', () => {
-  const base = { onOpen: noop, onCopyName: noop, onCopyQualifiedName: noop, onCopyColumnList: noop }
+  const base = {
+    onOpen: noop,
+    onCopyName: noop,
+    onCopyQualifiedName: noop,
+    onCopyColumnList: noop,
+    onRefresh: noop,
+  }
   it('exposes a live Open action', () => {
     const items = buildObjectMenu({ ...base, isView: false })
     expect(action(items, 'open')?.label).toBe('Open')
     expect(action(items, 'open')?.soon).toBeFalsy()
+  })
+  it('exposes a Refresh action', () => {
+    const items = buildObjectMenu({ ...base, isView: false })
+    expect(action(items, 'refresh')?.label).toBe('Refresh')
   })
   it('omits View diagram unless the callback is provided', () => {
     expect(action(buildObjectMenu({ ...base, isView: false }), 'view-diagram')).toBeUndefined()

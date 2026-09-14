@@ -384,6 +384,7 @@ func (app *application) updateInstanceSettings(w http.ResponseWriter, r *http.Re
 		ExportsSyncMaxBytes            *int64                `json:"exports_sync_max_bytes"`
 		ExportsBackgroundMaxBytes      *int64                `json:"exports_background_max_bytes"`
 		SchemaSnapshotFreshnessSeconds *int64                `json:"schema_snapshot_freshness_seconds"`
+		SchemaLazyThreshold            *int                  `json:"schema_lazy_threshold"`
 		FileRevisionsEnabled           *bool                 `json:"file_revisions_enabled"`
 		FileRevisionsKeepLatest        *int                  `json:"file_revisions_keep_latest"`
 		ErrorNotificationEmail         *string               `json:"error_notification_email"`
@@ -428,6 +429,7 @@ func (app *application) updateInstanceSettings(w http.ResponseWriter, r *http.Re
 		input.ExportsSyncMaxBytes != nil ||
 		input.ExportsBackgroundMaxBytes != nil ||
 		input.SchemaSnapshotFreshnessSeconds != nil ||
+		input.SchemaLazyThreshold != nil ||
 		input.FileRevisionsEnabled != nil ||
 		input.FileRevisionsKeepLatest != nil ||
 		input.ErrorNotificationEmail != nil || input.LogLevel != nil ||
@@ -478,6 +480,9 @@ func (app *application) updateInstanceSettings(w http.ResponseWriter, r *http.Re
 	}
 	if input.SchemaSnapshotFreshnessSeconds != nil {
 		input.V.CheckField(*input.SchemaSnapshotFreshnessSeconds > 0 && *input.SchemaSnapshotFreshnessSeconds <= maxRuntimeDurationSeconds, "schema_snapshot_freshness_seconds", "Schema snapshot freshness is outside the supported range.")
+	}
+	if input.SchemaLazyThreshold != nil {
+		input.V.CheckField(*input.SchemaLazyThreshold > 0, "schema_lazy_threshold", "Schema lazy threshold must be greater than 0.")
 	}
 	if input.FileRevisionsKeepLatest != nil {
 		input.V.CheckField(*input.FileRevisionsKeepLatest >= 0, "file_revisions_keep_latest", "Revision retention must be 0 or greater.")
@@ -582,6 +587,9 @@ func (app *application) updateInstanceSettings(w http.ResponseWriter, r *http.Re
 	}
 	if input.SchemaSnapshotFreshnessSeconds != nil {
 		nextSettings.SchemaSnapshotFreshnessSeconds = *input.SchemaSnapshotFreshnessSeconds
+	}
+	if input.SchemaLazyThreshold != nil {
+		nextSettings.SchemaLazyThreshold = *input.SchemaLazyThreshold
 	}
 	if input.FileRevisionsEnabled != nil {
 		nextSettings.FileRevisionsEnabled = *input.FileRevisionsEnabled

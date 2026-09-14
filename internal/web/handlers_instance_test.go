@@ -895,3 +895,34 @@ func TestAddedInstanceAdminCanCreateOrg(t *testing.T) {
 	orgRes := send(t, newAuthRequest(t, http.MethodPost, "/api/v1/orgs", map[string]any{"name": "PromotedOrg"}, tok), app.routes())
 	assert.Equal(t, orgRes.StatusCode, http.StatusCreated)
 }
+
+func TestUpdateInstanceSettingsSchemaLazyThreshold(t *testing.T) {
+	t.Parallel()
+	app := newTestApp(t)
+	adminTok := setupInstance(t, app, "admin@example.com", "Admin", "securepass99")
+
+	getRes := send(t, newAuthRequest(t, http.MethodGet, "/api/v1/instance/settings", nil, adminTok), app.routes())
+	assert.Equal(t, getRes.StatusCode, http.StatusOK)
+	assert.Equal(t, getRes.BodyFields["schema_lazy_threshold"], any(float64(500)))
+
+	res := send(t, newAuthRequest(t, http.MethodPatch, "/api/v1/instance/settings", map[string]any{
+		"schema_lazy_threshold": 250,
+	}, adminTok), app.routes())
+	assert.Equal(t, res.StatusCode, http.StatusOK)
+	assert.Equal(t, res.BodyFields["schema_lazy_threshold"], any(float64(250)))
+
+	reGetRes := send(t, newAuthRequest(t, http.MethodGet, "/api/v1/instance/settings", nil, adminTok), app.routes())
+	assert.Equal(t, reGetRes.StatusCode, http.StatusOK)
+	assert.Equal(t, reGetRes.BodyFields["schema_lazy_threshold"], any(float64(250)))
+}
+
+func TestUpdateInstanceSettingsSchemaLazyThresholdRejectsZero(t *testing.T) {
+	t.Parallel()
+	app := newTestApp(t)
+	adminTok := setupInstance(t, app, "admin@example.com", "Admin", "securepass99")
+
+	res := send(t, newAuthRequest(t, http.MethodPatch, "/api/v1/instance/settings", map[string]any{
+		"schema_lazy_threshold": 0,
+	}, adminTok), app.routes())
+	assert.Equal(t, res.StatusCode, http.StatusUnprocessableEntity)
+}

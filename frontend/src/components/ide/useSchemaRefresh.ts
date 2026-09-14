@@ -5,6 +5,7 @@ import type { ObjectRef } from '#/lib/api/types'
 import {
   connectionObjectDefinitionQueryKey,
   connectionObjectQueryKey,
+  connectionObjectsBatchContainingPredicate,
   invalidateConnectionSchemaQueries,
   refreshConnectionSchema,
 } from '#/lib/api/query'
@@ -29,14 +30,22 @@ export function useSchemaRefresh({
     mutationKey: ['refresh-connection-schema', orgSlug, String(workspaceId), String(connectionId)],
     mutationFn: () =>
       refreshConnectionSchema(orgSlug, workspaceId, connectionId, sessionId ?? '', ref),
-    onSuccess: async (result) => {
-      if (result.mode === 'ephemeral' && ref) {
+    onSuccess: async () => {
+      if (ref) {
         await Promise.all([
           queryClient.invalidateQueries({
             queryKey: connectionObjectQueryKey(orgSlug, workspaceId, connectionId, ref),
           }),
           queryClient.invalidateQueries({
             queryKey: connectionObjectDefinitionQueryKey(orgSlug, workspaceId, connectionId, ref),
+          }),
+          queryClient.invalidateQueries({
+            predicate: connectionObjectsBatchContainingPredicate(
+              orgSlug,
+              workspaceId,
+              connectionId,
+              ref,
+            ),
           }),
         ])
       } else {

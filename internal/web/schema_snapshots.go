@@ -129,6 +129,12 @@ func (app *application) syncSchemaSnapshot(ctx context.Context, connectionID int
 	// from replacing a newer generation that finishes first.
 	directory.GeneratedAt = startedAt
 
+	settings, err := app.effectiveRuntimeSettingsForWorkspace(ctx, ws)
+	if err != nil {
+		return schemaSyncOutput{}, err
+	}
+	markLazyScopes(directory, settings.SchemaLazyThreshold)
+
 	snapshot, err := app.schemaSnapshots.Begin(ctx, conn.ID, ws.OrgID, directory)
 	if err != nil {
 		return schemaSyncOutput{}, err
@@ -196,12 +202,13 @@ func (app *application) syncSchemaSnapshot(ctx context.Context, connectionID int
 	return schemaSyncOutput{SnapshotID: snapshot.ID, GeneratedAt: directory.GeneratedAt, Objects: objectCount}, nil
 }
 
-// inspectAndStoreObjects walks refs in schemaObjectBatchSize batches, overlapping
-// each batch's target-database inspection with the previous batch's write to the
-// snapshot store. Inspection stays strictly sequential against the single target
-// connection; only the local PutObjects write runs concurrently with the next
-// InspectObjects call, so a slow metadata store no longer stalls target reads.
-func (app *application) inspectAndStoreObjects(ctx context.Context, inspector metadata.SchemaInspector, snapshotID string, refs []metadata.ObjectRef) (int, error) {
+// inspectAndStoreObjectsWith walks refs in schemaObjectBatchSize batches, overlapping
+// each batch's target-database inspection with the previous batch's write. Inspection
+// stays strictly sequential against the single target connection; only the local write
+// runs concurrently with the next InspectObjects call, so a slow metadata store no
+// longer stalls target reads. write is PutObjects for the full sync job (snapshot still
+// Building) or UpsertObjects for on-demand paths (snapshot already Published).
+func (app *application) inspectAndStoreObjectsWith(ctx context.Context, inspector metadata.SchemaInspector, snapshotID string, refs []metadata.ObjectRef, write func(context.Context, string, []metadata.Object) error) (int, error) {
 	type batch struct {
 		objects []metadata.Object
 		err     error
@@ -232,12 +239,24 @@ func (app *application) inspectAndStoreObjects(ctx context.Context, inspector me
 		if b.err != nil {
 			return 0, jobs.Retryable("schema_objects_failed", "Could not inspect schema object details.")
 		}
-		if err := app.schemaSnapshots.PutObjects(ctx, snapshotID, b.objects); err != nil {
+		if err := write(ctx, snapshotID, b.objects); err != nil {
 			return 0, err
 		}
 		objectCount += len(b.objects)
 	}
 	return objectCount, nil
+}
+
+// inspectAndStoreObjects fills object detail into a snapshot still being built
+// by the full sync job.
+func (app *application) inspectAndStoreObjects(ctx context.Context, inspector metadata.SchemaInspector, snapshotID string, refs []metadata.ObjectRef) (int, error) {
+	return app.inspectAndStoreObjectsWith(ctx, inspector, snapshotID, refs, app.schemaSnapshots.PutObjects)
+}
+
+// inspectAndUpsertObjects fills object detail into a snapshot that is already
+// published: the manual "load everything" action and single-ref refresh.
+func (app *application) inspectAndUpsertObjects(ctx context.Context, inspector metadata.SchemaInspector, snapshotID string, refs []metadata.ObjectRef) (int, error) {
+	return app.inspectAndStoreObjectsWith(ctx, inspector, snapshotID, refs, app.schemaSnapshots.UpsertObjects)
 }
 
 // openTargetDriver connects a fresh engine driver to conn's target database for a
@@ -271,6 +290,29 @@ func (app *application) openTargetDriver(ctx context.Context, conn database.Conn
 	return driver, nil
 }
 
+// markLazyScopes flags scope nodes whose object count exceeds threshold as
+// Lazy, so directoryObjectRefs skips their detail and the tree fetches it on
+// demand instead. A threshold of 0 or less disables lazy marking entirely.
+func markLazyScopes(directory *metadata.Directory, threshold int) {
+	if directory == nil || threshold <= 0 {
+		return
+	}
+	var mark func(nodes []metadata.ScopeNode)
+	mark = func(nodes []metadata.ScopeNode) {
+		for i := range nodes {
+			count := 0
+			for _, group := range nodes[i].Groups {
+				count += len(group.Objects)
+			}
+			if count > threshold {
+				nodes[i].Lazy = true
+			}
+			mark(nodes[i].Children)
+		}
+	}
+	mark(directory.Roots)
+}
+
 func directoryObjectRefs(directory *metadata.Directory) []metadata.ObjectRef {
 	if directory == nil {
 		return nil
@@ -278,6 +320,9 @@ func directoryObjectRefs(directory *metadata.Directory) []metadata.ObjectRef {
 	var refs []metadata.ObjectRef
 	seen := map[metadata.ObjectRef]struct{}{}
 	walkDirectoryNodes(directory.Roots, func(node metadata.ScopeNode) {
+		if node.Lazy {
+			return
+		}
 		for _, group := range node.Groups {
 			for _, ref := range group.Objects {
 				if _, dup := seen[ref]; dup {

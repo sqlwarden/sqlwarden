@@ -53,8 +53,19 @@ func (d *Driver) InspectDirectory(ctx context.Context, opts metadata.DirectoryOp
 		defaultScope = opts.Root
 	}
 
+	// A schema-level opts.Root narrows the result to that one schema and makes
+	// it the sole root node, matching the contract that a requested scope's
+	// detail comes back as Roots[0] rather than nested under the database.
+	// An empty or database-level opts.Root returns the full database tree.
+	onlySchema := ""
+	if opts.Root != "" && opts.Root != root {
+		onlySchema = opts.Root.Name("schema")
+	}
+
 	b := build.NewDirectory()
-	b.AddScope(root)
+	if onlySchema == "" {
+		b.AddScope(root)
+	}
 	b.DeclareKind("table")
 	b.DeclareKind("view")
 	b.DeclareKind("procedure")
@@ -65,10 +76,10 @@ func (d *Driver) InspectDirectory(ctx context.Context, opts metadata.DirectoryOp
 		scope := root.Child(metadata.ScopeSegment{Kind: "schema", Name: schemaName})
 		b.AddRef(scope, kind, name)
 	}
-	if err := CatalogTables(ctx, d.db, addRef); err != nil {
+	if err := CatalogTables(ctx, d.db, onlySchema, addRef); err != nil {
 		return nil, fmt.Errorf("sqlserver: catalog tables: %w", err)
 	}
-	if err := CatalogModules(ctx, d.db, addRef); err != nil {
+	if err := CatalogModules(ctx, d.db, onlySchema, addRef); err != nil {
 		return nil, fmt.Errorf("sqlserver: catalog modules: %w", err)
 	}
 

@@ -295,6 +295,76 @@ export function orgConnectionObjectQueryOptions(
   })
 }
 
+/** Identifies an object independent of the request that fetched it, so a
+ *  single-ref refresh can find and invalidate its containing batch below. */
+export function objectRefKey(ref: ObjectRef): string {
+  return `${JSON.stringify(ref.scope)}:${ref.kind}:${ref.name}`
+}
+
+/** Query key for a batched object-detail fetch. `members` carries every ref's
+ *  objectRefKey so a single-ref refresh can find and invalidate the batch it
+ *  landed in without knowing how callers chunked their refs. */
+export function connectionObjectsBatchQueryKey(
+  slug: string,
+  workspaceId: string | number,
+  connectionId: string | number,
+  refs: ObjectRef[],
+) {
+  const members = refs.map(objectRefKey).sort()
+  return [
+    ...connectionObjectsQueryKeyPrefix(slug, workspaceId, connectionId),
+    'batch',
+    members,
+  ] as const
+}
+
+/** Fetches detail for many refs in one request. The backend already batches
+ *  driver inspection internally, so this trades N single-ref round-trips for
+ *  one call per chunk the caller passes in. */
+export function orgConnectionObjectsQueryOptions(
+  slug: string,
+  workspaceId: string | number,
+  connectionId: string | number,
+  sessionId: string | undefined,
+  refs: ObjectRef[],
+) {
+  return queryOptions({
+    queryKey: connectionObjectsBatchQueryKey(slug, workspaceId, connectionId, refs),
+    queryFn: async () => {
+      const res = await api.post<ObjectsResponse>(
+        `${schemaBase(slug, workspaceId, connectionId)}/objects`,
+        { refs },
+        schemaRequestOptions(sessionId),
+      )
+      return res.objects
+    },
+    staleTime: 3 * 60_000,
+  })
+}
+
+/** Matches any cached batch query (from orgConnectionObjectsQueryOptions) that
+ *  contains `ref`, regardless of how it was chunked. Pass to
+ *  queryClient.invalidateQueries alongside connectionObjectQueryKey so a
+ *  single-object refresh reaches both the single-ref cache entry and any
+ *  diagram/tree batch it was fetched as part of. */
+export function connectionObjectsBatchContainingPredicate(
+  slug: string,
+  workspaceId: string | number,
+  connectionId: string | number,
+  ref: ObjectRef,
+) {
+  const prefix = connectionObjectsQueryKeyPrefix(slug, workspaceId, connectionId)
+  const target = objectRefKey(ref)
+  return (query: { queryKey: readonly unknown[] }) => {
+    const key = query.queryKey
+    if (key.length !== prefix.length + 2) return false
+    for (let i = 0; i < prefix.length; i++) if (key[i] !== prefix[i]) return false
+    if (key[prefix.length] !== 'batch') return false
+    const members = key[prefix.length + 1]
+    return Array.isArray(members) && members.includes(target)
+  }
+}
+
 export function connectionObjectDefinitionQueryKeyPrefix(
   slug: string,
   workspaceId: string | number,
@@ -552,6 +622,20 @@ export function refreshConnectionSchema(
   return api.post<SchemaRefreshResponse>(
     `${schemaBase(slug, workspaceId, connectionId)}/refresh`,
     ref ? { ref } : undefined,
+    schemaRequestOptions(sessionId),
+  )
+}
+
+export function loadSchemaScope(
+  slug: string,
+  workspaceId: string | number,
+  connectionId: string | number,
+  scope: ScopePath,
+  sessionId?: string,
+) {
+  return api.post<SchemaRefreshResponse>(
+    `${schemaBase(slug, workspaceId, connectionId)}/scope/load`,
+    { scope },
     schemaRequestOptions(sessionId),
   )
 }

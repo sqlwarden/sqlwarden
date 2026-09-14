@@ -139,6 +139,50 @@ func TestInspectDirectoryExcludesManagedSchemas(t *testing.T) {
 	}
 }
 
+func TestInspectDirectoryWithRootScopesToOneSchema(t *testing.T) {
+	d := connect(t)
+	ctx := context.Background()
+
+	if _, err := d.Execute(ctx, `CREATE SCHEMA IF NOT EXISTS root_scope_other`); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := d.Execute(ctx, `CREATE TABLE IF NOT EXISTS root_scope_other.widgets (id int)`); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := d.Execute(ctx, `CREATE TABLE IF NOT EXISTS public.root_scope_users (id int)`); err != nil {
+		t.Fatal(err)
+	}
+
+	full, err := d.InspectDirectory(ctx, metadata.DirectoryOptions{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	database := full.Roots[0].Path
+	publicScope := database.Child(metadata.ScopeSegment{Kind: "schema", Name: "public"})
+
+	scoped, err := d.InspectDirectory(ctx, metadata.DirectoryOptions{Root: publicScope})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(scoped.Roots) != 1 || scoped.Roots[0].Path != publicScope {
+		t.Fatalf("expected a single root at %v, got %+v", publicScope, scoped.Roots)
+	}
+	for _, node := range scoped.ScopeNodes() {
+		if node.Path.Name("schema") == "root_scope_other" {
+			t.Fatalf("root_scope_other must not appear when scoped to public: %+v", scoped.Roots)
+		}
+	}
+	found := false
+	for _, ref := range scoped.ObjectRefs() {
+		if ref.Kind == "table" && ref.Name == "root_scope_users" {
+			found = true
+		}
+	}
+	if !found {
+		t.Fatal("expected public.root_scope_users to be present in the scoped directory")
+	}
+}
+
 func TestDiscoverScopesExcludesManagedSchemas(t *testing.T) {
 	d := connect(t)
 	ctx := context.Background()

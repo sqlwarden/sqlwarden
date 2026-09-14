@@ -474,6 +474,173 @@ func TestSchemaSnapshotToleratesDuplicateDirectoryRefs(t *testing.T) {
 	assert.Equal(t, len(stored), 1)
 }
 
+func TestSyncSchemaSnapshotMarksLargeScopesLazyAndSkipsTheirObjects(t *testing.T) {
+	t.Parallel()
+	app := newTestApp(t)
+	owner, tok, org := seedOrgOwner(t, app, uniqueEmail(t, "snapshot-lazy"), "Snapshot Lazy", "Snapshot Lazy Org")
+	ws := seedWorkspaceForAccount(t, app, org, owner, "Snapshot WS", "")
+	envID := defaultEnvironmentID(t, app, ws.ID)
+	updateInstanceSettingsForTest(t, app, func(s *database.InstanceSettings) {
+		s.SchemaLazyThreshold = 1
+	})
+
+	dsn := filepath.Join(t.TempDir(), "target.db")
+	driver, err := engine.New("sqlite")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := driver.Connect(context.Background(), engine.ConnectionConfig{DSN: dsn}); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := driver.Execute(context.Background(), "CREATE TABLE widgets (id INTEGER PRIMARY KEY)"); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := driver.Execute(context.Background(), "CREATE TABLE gadgets (id INTEGER PRIMARY KEY)"); err != nil {
+		t.Fatal(err)
+	}
+	if err := driver.Close(); err != nil {
+		t.Fatal(err)
+	}
+
+	created := send(t, newAuthRequest(t, http.MethodPost, orgEnvConnectionsURL(org.Slug, ws.ID, envID),
+		map[string]any{"name": "Target", "driver": "sqlite", "dsn": dsn}, tok), app.routes())
+	if created.StatusCode != http.StatusCreated {
+		t.Fatalf("create target connection: status=%d body=%s", created.StatusCode, created.BodyBytes)
+	}
+	connectionID := int64(created.BodyFields["id"].(float64))
+
+	res := send(t, newAuthRequest(t, http.MethodPost,
+		orgConnectionURL(org.Slug, ws.ID, envID, strconv.FormatInt(connectionID, 10))+"/schema/refresh", nil, tok), app.routes())
+	assert.Equal(t, res.StatusCode, http.StatusOK)
+
+	_, directory, found, err := app.schemaSnapshots.Active(context.Background(), connectionID)
+	if err != nil || !found {
+		t.Fatalf("expected active snapshot: found=%v err=%v", found, err)
+	}
+	if !directory.Roots[0].Lazy {
+		t.Fatalf("expected the scope with 2 objects over threshold 1 to be marked lazy: %+v", directory.Roots[0])
+	}
+	objects, err := app.schemaSnapshots.AllObjects(context.Background(), directory.GeneratedAt.String())
+	_ = objects
+	_ = err
+
+	snapshot, _, _, err := app.schemaSnapshots.Active(context.Background(), connectionID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	stored, err := app.schemaSnapshots.AllObjects(context.Background(), snapshot.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(stored) != 0 {
+		t.Fatalf("expected no object detail stored for a lazy scope, got %d", len(stored))
+	}
+}
+
+func TestSnapshotStoreUpsertObjectsInsertsThenUpdates(t *testing.T) {
+	t.Parallel()
+	app := newTestApp(t)
+	owner, _, org := seedOrgOwner(t, app, uniqueEmail(t, "snapshot-upsert"), "Snapshot Upsert", "Snapshot Upsert Org")
+	ws := seedWorkspaceForAccount(t, app, org, owner, "Snapshot WS", "")
+	envID := defaultEnvironmentID(t, app, ws.ID)
+	conn := seedConnection(t, app, ws.ID, &envID, org.ID, "sqlite", "Snapshot Conn", "open")
+
+	directory := snapshotDirectory("widgets", time.Now())
+	snapshot, err := app.schemaSnapshots.Begin(context.Background(), conn.ID, &org.ID, directory)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := app.schemaSnapshots.Publish(context.Background(), snapshot.ID); err != nil {
+		t.Fatal(err)
+	}
+	ref := metadata.ObjectRef{Scope: directory.DefaultScope, Kind: "table", Name: "widgets"}
+
+	if err := app.schemaSnapshots.UpsertObjects(context.Background(), snapshot.ID, []metadata.Object{{
+		Ref: ref,
+		Relational: &metadata.RelationalDetail{
+			Columns: []metadata.Column{{Name: "id", DataType: "INTEGER", Ordinal: 1}},
+		},
+	}}); err != nil {
+		t.Fatal(err)
+	}
+	if err := app.schemaSnapshots.UpsertObjects(context.Background(), snapshot.ID, []metadata.Object{{
+		Ref: ref,
+		Relational: &metadata.RelationalDetail{
+			Columns: []metadata.Column{
+				{Name: "id", DataType: "INTEGER", Ordinal: 1},
+				{Name: "name", DataType: "TEXT", Ordinal: 2},
+			},
+		},
+	}}); err != nil {
+		t.Fatal(err)
+	}
+
+	objects, err := app.schemaSnapshots.Objects(context.Background(), snapshot.ID, []metadata.ObjectRef{ref})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(objects) != 1 || len(objects[0].Relational.Columns) != 2 {
+		t.Fatalf("expected the second upsert to replace the first, got %+v", objects)
+	}
+}
+
+func TestSingleRefPersistentRefreshSkipsFullResync(t *testing.T) {
+	t.Parallel()
+	app := newTestApp(t)
+	owner, tok, org := seedOrgOwner(t, app, uniqueEmail(t, "snapshot-single-ref"), "Snapshot Single Ref", "Snapshot Single Ref Org")
+	ws := seedWorkspaceForAccount(t, app, org, owner, "Snapshot WS", "")
+	envID := defaultEnvironmentID(t, app, ws.ID)
+
+	dsn := filepath.Join(t.TempDir(), "target.db")
+	driver, err := engine.New("sqlite")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := driver.Connect(context.Background(), engine.ConnectionConfig{DSN: dsn}); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := driver.Execute(context.Background(), "CREATE TABLE widgets (id INTEGER PRIMARY KEY)"); err != nil {
+		t.Fatal(err)
+	}
+	if err := driver.Close(); err != nil {
+		t.Fatal(err)
+	}
+
+	created := send(t, newAuthRequest(t, http.MethodPost, orgEnvConnectionsURL(org.Slug, ws.ID, envID),
+		map[string]any{"name": "Target", "driver": "sqlite", "dsn": dsn}, tok), app.routes())
+	if created.StatusCode != http.StatusCreated {
+		t.Fatalf("create target connection: status=%d body=%s", created.StatusCode, created.BodyBytes)
+	}
+	connectionID := int64(created.BodyFields["id"].(float64))
+	connIDStr := strconv.FormatInt(connectionID, 10)
+
+	full := send(t, newAuthRequest(t, http.MethodPost,
+		orgConnectionURL(org.Slug, ws.ID, envID, connIDStr)+"/schema/refresh", nil, tok), app.routes())
+	assert.Equal(t, full.StatusCode, http.StatusOK)
+	firstSnapshotID := full.BodyFields["snapshot_id"]
+
+	scope := metadata.NewScopePath(metadata.ScopeSegment{Kind: "database", Name: "main"})
+	ref := metadata.ObjectRef{Scope: scope, Kind: "table", Name: "widgets"}
+	single := send(t, newAuthRequest(t, http.MethodPost,
+		orgConnectionURL(org.Slug, ws.ID, envID, connIDStr)+"/schema/refresh",
+		map[string]any{"ref": ref}, tok), app.routes())
+	assert.Equal(t, single.StatusCode, http.StatusOK)
+	assert.Equal(t, single.BodyFields["mode"], "persistent")
+
+	_, _, found, err := app.schemaSnapshots.Active(context.Background(), connectionID)
+	if err != nil || !found {
+		t.Fatalf("expected active snapshot: found=%v err=%v", found, err)
+	}
+	if single.BodyFields["snapshot_id"] != firstSnapshotID {
+		t.Fatalf("expected the single-ref refresh to reuse the existing snapshot, got %v vs %v", single.BodyFields["snapshot_id"], firstSnapshotID)
+	}
+	_, activeJob, err := app.workspaceJobStore().ActiveBySingletonKey(context.Background(), schemaSyncSingletonKey(connectionID))
+	if err != nil {
+		t.Fatal(err)
+	}
+	assert.Equal(t, activeJob, false)
+}
+
 func snapshotDirectory(objectName string, generatedAt time.Time) *metadata.Directory {
 	scope := metadata.NewScopePath(metadata.ScopeSegment{Kind: "database", Name: "main"})
 	return &metadata.Directory{
