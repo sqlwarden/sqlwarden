@@ -246,6 +246,8 @@ export function EditorGroup({
                 onExplainAnalyze: queryAction.handleExplainAnalyzeClick,
                 onFormat: handleFormat,
                 onSaveFavorite: handleSaveFavoriteClick,
+                onRunSegment: (sql) => void queryAction.run(sql),
+                onExplainSegment: (sql) => void queryAction.explain(false, sql),
               }}
             />
           )

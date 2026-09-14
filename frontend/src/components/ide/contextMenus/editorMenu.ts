@@ -66,7 +66,7 @@ export function buildSqlEditorMenu(ctx: SqlEditorMenuCtx): ContextMenuItem[] {
       kind: 'action',
       id: 'explain',
       label: 'Explain',
-      icon: 'search-01',
+      icon: 'subject',
       disabled: !ctx.canRun || !ctx.canExplain,
       disabledReason: !ctx.canRun
         ? 'No connection'
@@ -79,7 +79,7 @@ export function buildSqlEditorMenu(ctx: SqlEditorMenuCtx): ContextMenuItem[] {
       kind: 'action',
       id: 'explain-analyze',
       label: 'Explain Analyze',
-      icon: 'search-01',
+      icon: 'subject',
       disabled: !ctx.canRun || !ctx.canExplainAnalyze,
       disabledReason: !ctx.canRun
         ? 'No connection'
@@ -92,7 +92,7 @@ export function buildSqlEditorMenu(ctx: SqlEditorMenuCtx): ContextMenuItem[] {
       kind: 'action',
       id: 'format',
       label: 'Format SQL',
-      icon: 'subject',
+      icon: 'code-braces',
       shortcut: FORMAT_SHORTCUT,
       onSelect: ctx.onFormat,
     },

@@ -18,6 +18,7 @@ export type AppIcon =
   | 'checkmark-circle-02'
   | 'chevron-down'
   | 'chevron-right'
+  | 'code-braces'
   | 'command'
   | 'computer-terminal'
   | 'copy-01'

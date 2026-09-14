@@ -20,10 +20,15 @@ import { FindPanel } from './FindPanel'
 import { useEditorViewRegistry } from './useEditorViewRegistry'
 import { useIde } from './useIdeStore'
 import { sqlCompletionExtension, type SQLCompletionConfig } from './completion'
-import { useIconPack } from '#/lib/icons'
+import { Icon, useIconPack } from '#/lib/icons'
 import { sqlFormatterForDriver, sqlFormattingKeymap } from './sqlFormatting'
 import { buildSqlEditorMenu } from './contextMenus/editorMenu'
 import { readClipboardFallback, writeClipboard } from './contextMenus/clipboard'
+import { statementHoverExtension, type HoveredStatement } from './statementHover'
+import {
+  statementPreviewHighlightExtension,
+  setStatementPreview,
+} from './statementPreviewHighlight'
 
 function makeBaseTheme(fontFamily: string, fontSize: EditorFontSize): Extension {
   return EditorView.theme({
@@ -34,10 +39,15 @@ function makeBaseTheme(fontFamily: string, fontSize: EditorFontSize): Extension 
       lineHeight: '1.65',
       overflow: 'auto',
     },
-    '.cm-content': { padding: '8px 0' },
+    // Extra top padding gives the hover hint room to sit above the first
+    // statement in the document, which has no preceding line to overlap into.
+    '.cm-content': { padding: '20px 0 8px' },
     '.cm-lineNumbers .cm-gutterElement': { minWidth: '3.5ch', textAlign: 'right' },
     '.cm-foldGutter': { display: 'none' },
     '.cm-tooltip:not(.cm-tooltip-autocomplete)': { borderRadius: '0' },
+    '.cm-statement-preview': {
+      backgroundColor: 'color-mix(in srgb, var(--foreground) 6%, transparent)',
+    },
   })
 }
 
@@ -54,6 +64,10 @@ export type SqlEditorContextMenuConfig = {
   onExplainAnalyze: () => void
   onFormat: () => void
   onSaveFavorite: () => void
+  /** Runs the hovered statement directly, bypassing cursor/selection resolution. */
+  onRunSegment: (sql: string) => void
+  /** Explains the hovered statement directly, bypassing cursor/selection resolution. */
+  onExplainSegment: (sql: string) => void
 }
 
 type SqlEditorProps = {
@@ -136,6 +150,7 @@ export function SqlEditor({
   }, [])
   const viewRef = useRef<EditorView | null>(null)
   const [findHost, setFindHost] = useState<FindPanelHost | null>(null)
+  const [hoveredStatement, setHoveredStatement] = useState<HoveredStatement | null>(null)
 
   // Re-mount the editor whenever the active doc changes.
   // key={activeTab.id} at the call site also ensures clean remount on tab switch.
@@ -157,9 +172,14 @@ export function SqlEditor({
           ),
           themeCompartment.current.of(getCachedTheme(initialAppearance.current.themeName) ?? []),
           findPanelHost.of(setFindHost),
+          statementHoverExtension(setHoveredStatement),
+          statementPreviewHighlightExtension(),
           EditorView.lineWrapping,
           yCollab(yText, null), // handles all CodeMirror ↔ Y.js sync
           EditorView.updateListener.of((update) => {
+            // Statement offsets shift on edit — drop the pill rather than show it
+            // over stale text until the pointer moves again.
+            if (update.docChanged) setHoveredStatement(null)
             if (!update.selectionSet && !update.docChanged) return
             const cb = onCursorChangeRef.current
             if (!cb) return
@@ -359,10 +379,65 @@ export function SqlEditor({
     [handleCut, handleCopy, handlePaste, handleSelectAll, contextMenu],
   )
 
+  // Only shown when a connection is selected — an unconnected editor has
+  // nothing to run the hovered statement against.
+  const showHoverActions = contextMenu?.isSqlTab && contextMenu.canRun && hoveredStatement
+
   return (
     <>
-      <ContextMenu items={menuItems} className="h-full overflow-hidden">
+      <ContextMenu
+        items={menuItems}
+        className="relative h-full overflow-hidden"
+        onMouseLeave={() => {
+          setHoveredStatement(null)
+          viewRef.current?.dispatch({ effects: setStatementPreview.of(null) })
+        }}
+      >
         <div ref={containerRef} className={cn('h-full overflow-hidden', className)} />
+        {showHoverActions && (
+          <div
+            className="absolute z-10 flex -translate-y-full items-center gap-2 rounded-sm bg-card px-1 text-[11px] leading-none whitespace-nowrap"
+            style={{ top: hoveredStatement.top, left: hoveredStatement.left }}
+            onMouseEnter={() => {
+              viewRef.current?.dispatch({
+                effects: setStatementPreview.of({
+                  from: hoveredStatement.start,
+                  to: hoveredStatement.end,
+                }),
+              })
+            }}
+            onMouseLeave={() => {
+              viewRef.current?.dispatch({ effects: setStatementPreview.of(null) })
+            }}
+          >
+            <button
+              type="button"
+              className="flex items-center gap-1 text-muted-foreground hover:text-foreground hover:underline"
+              onClick={() => {
+                contextMenu.onRunSegment(hoveredStatement.sql)
+                setHoveredStatement(null)
+                viewRef.current?.dispatch({ effects: setStatementPreview.of(null) })
+              }}
+            >
+              <Icon name="play" size={10} />
+              Run
+            </button>
+            {contextMenu.canExplain && (
+              <button
+                type="button"
+                className="flex items-center gap-1 text-muted-foreground hover:text-foreground hover:underline"
+                onClick={() => {
+                  contextMenu.onExplainSegment(hoveredStatement.sql)
+                  setHoveredStatement(null)
+                  viewRef.current?.dispatch({ effects: setStatementPreview.of(null) })
+                }}
+              >
+                <Icon name="subject" size={10} />
+                Explain
+              </button>
+            )}
+          </div>
+        )}
       </ContextMenu>
       {findHost && createPortal(<FindPanel view={findHost.view} />, findHost.dom)}
     </>

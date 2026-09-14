@@ -20,6 +20,7 @@ const icons: Record<AppIcon, string> = {
   'checkmark-circle-02': 'lucide:circle-check',
   'chevron-down': 'lucide:chevron-down',
   'chevron-right': 'lucide:chevron-right',
+  'code-braces': 'lucide:braces',
   command: 'lucide:command',
   'computer-terminal': 'lucide:monitor',
   'copy-01': 'lucide:copy',

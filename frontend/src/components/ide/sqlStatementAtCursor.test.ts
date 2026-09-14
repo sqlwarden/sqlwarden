@@ -1,5 +1,10 @@
 import { describe, it, expect } from 'vitest'
-import { sqlStatementAtCursor, countSqlStatements, splitSqlStatements } from './sqlStatements'
+import {
+  sqlStatementAtCursor,
+  countSqlStatements,
+  splitSqlStatements,
+  sqlStatementsWithOffsets,
+} from './sqlStatements'
 
 // Helper: find the index of the Nth occurrence of a substring.
 function nthIndex(text: string, sub: string, n: number): number {
@@ -333,5 +338,39 @@ describe('splitSqlStatements', () => {
 
   it('drops empty statements produced by consecutive semicolons', () => {
     expect(splitSqlStatements('select 1;;\n;\nselect 2;')).toEqual(['select 1', 'select 2'])
+  })
+})
+
+describe('sqlStatementsWithOffsets', () => {
+  it('returns an empty array for empty text', () => {
+    expect(sqlStatementsWithOffsets('')).toEqual([])
+  })
+
+  it('returns an empty array for whitespace-only text', () => {
+    expect(sqlStatementsWithOffsets('   \n\t  ')).toEqual([])
+  })
+
+  it('returns one entry with offsets covering the whole trimmed statement', () => {
+    const text = 'select 1'
+    expect(sqlStatementsWithOffsets(text)).toEqual([{ sql: 'select 1', start: 0, end: 8 }])
+  })
+
+  it('returns each statement with its offsets into the original text, terminator included', () => {
+    const text = 'select 1;\nselect 2;'
+    const semi1 = text.indexOf(';')
+    const secondStart = text.indexOf('select 2')
+    expect(sqlStatementsWithOffsets(text)).toEqual([
+      { sql: 'select 1;', start: 0, end: semi1 + 1 },
+      { sql: 'select 2;', start: secondStart, end: text.length },
+    ])
+  })
+
+  it('drops empty statements produced by consecutive semicolons', () => {
+    const text = 'select 1;;\n;\nselect 2;'
+    const secondStart = text.indexOf('select 2')
+    expect(sqlStatementsWithOffsets(text)).toEqual([
+      { sql: 'select 1;', start: 0, end: 9 },
+      { sql: 'select 2;', start: secondStart, end: text.length },
+    ])
   })
 })

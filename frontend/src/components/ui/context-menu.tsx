@@ -165,14 +165,16 @@ export function ContextMenu({
   items,
   children,
   className,
+  onMouseLeave,
 }: {
   items: ContextMenuItem[]
   children: React.ReactNode
   className?: string
+  onMouseLeave?: React.MouseEventHandler<HTMLDivElement>
 }) {
   const open = useContextMenuOpener()
   return (
-    <div onContextMenu={(e) => open(items, e)} className={className}>
+    <div onContextMenu={(e) => open(items, e)} className={className} onMouseLeave={onMouseLeave}>
       {children}
     </div>
   )

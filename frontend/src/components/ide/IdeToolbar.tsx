@@ -254,14 +254,14 @@ export function IdeToolbar({ orgSlug, workspace, selection }: IdeToolbarProps) {
                     onClick={queryAction.handleExplainClick}
                     disabled={runDisabled || !queryAction.canExplain}
                   >
-                    <Icon name="search-01" size={13} data-icon="inline-start" />
+                    <Icon name="subject" size={13} data-icon="inline-start" />
                     Explain
                   </DropdownMenuItem>
                   <DropdownMenuItem
                     onClick={queryAction.handleExplainAnalyzeClick}
                     disabled={runDisabled || !queryAction.canExplainAnalyze}
                   >
-                    <Icon name="search-01" size={13} data-icon="inline-start" />
+                    <Icon name="subject" size={13} data-icon="inline-start" />
                     Explain Analyze
                   </DropdownMenuItem>
                   <DropdownMenuItem onClick={handleExportClick}>
@@ -330,7 +330,7 @@ export function IdeToolbar({ orgSlug, workspace, selection }: IdeToolbarProps) {
               onClick={handleFormat}
               disabled={!activeGroupId}
             >
-              <Icon name="subject" size={13} />
+              <Icon name="code-braces" size={13} />
             </Button>
           </Tip>
         )}
