@@ -783,6 +783,52 @@ func TestPostgresInspectDirectoryReportsTableRowCounts(t *testing.T) {
 	}
 }
 
+func TestPostgresInspectDirectoryWithRootScopesToOneSchema(t *testing.T) {
+	d := newConnectedDriver(t)
+	ctx := context.Background()
+	t.Cleanup(func() {
+		_, _ = d.Execute(ctx, "DROP TABLE IF EXISTS root_scope_users")
+		_, _ = d.Execute(ctx, "DROP SCHEMA IF EXISTS root_scope_other CASCADE")
+	})
+	mustExec(t, d, `CREATE TABLE root_scope_users (id bigint PRIMARY KEY)`)
+	mustExec(t, d, `CREATE SCHEMA root_scope_other`)
+	mustExec(t, d, `CREATE TABLE root_scope_other.widgets (id bigint PRIMARY KEY)`)
+
+	full, err := d.InspectDirectory(ctx, metadata.DirectoryOptions{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	database := full.Roots[0].Path
+	publicScope := database.Child(metadata.ScopeSegment{Kind: "schema", Name: "public"})
+
+	scoped, err := d.InspectDirectory(ctx, metadata.DirectoryOptions{Root: publicScope})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(scoped.Roots) != 1 || scoped.Roots[0].Path != publicScope {
+		t.Fatalf("expected a single root at %v, got %+v", publicScope, scoped.Roots)
+	}
+	var tableNames []string
+	for _, g := range scoped.Roots[0].Groups {
+		if g.Kind == "table" {
+			for _, ref := range g.Objects {
+				tableNames = append(tableNames, ref.Name)
+			}
+		}
+	}
+	if !contains(tableNames, "root_scope_users") {
+		t.Errorf("missing root_scope_users in scoped directory: %+v", tableNames)
+	}
+	if contains(tableNames, "widgets") {
+		t.Errorf("root_scope_other.widgets leaked into public scope: %+v", tableNames)
+	}
+	for _, node := range scoped.ScopeNodes() {
+		if node.Path.Name("schema") == "root_scope_other" {
+			t.Fatalf("root_scope_other must not appear when scoped to public: %+v", scoped.Roots)
+		}
+	}
+}
+
 func TestPostgresInspectObjectsRelational(t *testing.T) {
 	d := newConnectedDriver(t)
 	ctx := context.Background()

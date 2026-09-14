@@ -97,6 +97,21 @@ describe('sortedGroups', () => {
     const groups = sortedGroups(scope, spec)
     expect(groups.map((g) => g.kind)).toEqual(['table', 'view'])
   })
+
+  it('synthesizes an empty group for a spec kind the scope has no objects of', () => {
+    const scope = {
+      path: [{ kind: 'schema', name: 'public' }],
+      groups: [
+        {
+          kind: 'table',
+          objects: [{ scope: [{ kind: 'schema', name: 'public' }], kind: 'table', name: 'users' }],
+        },
+      ],
+    }
+    const groups = sortedGroups(scope, spec)
+    expect(groups.map((g) => g.kind)).toEqual(['table', 'view'])
+    expect(groups.find((g) => g.kind === 'view')?.objects).toEqual([])
+  })
 })
 
 describe('filterDirectory', () => {

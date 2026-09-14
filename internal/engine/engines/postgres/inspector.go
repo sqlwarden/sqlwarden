@@ -58,8 +58,19 @@ func (d *Driver) InspectDirectory(ctx context.Context, opts metadata.DirectoryOp
 		return root.Child(metadata.ScopeSegment{Kind: "schema", Name: namespace})
 	}
 
+	// A schema-level opts.Root narrows the result to that one schema and makes
+	// it the sole root node, matching the contract that a requested scope's
+	// detail comes back as Roots[0] rather than nested under the database.
+	// An empty or database-level opts.Root returns the full database tree.
+	onlySchema := ""
+	if opts.Root != "" && opts.Root != root {
+		onlySchema = opts.Root.Name("schema")
+	}
+
 	b := build.NewDirectory()
-	b.AddScope(root)
+	if onlySchema == "" {
+		b.AddScope(root)
+	}
 	b.DeclareKind("table")
 	b.DeclareKind("view")
 	b.DeclareKind("materialized_view")
@@ -71,34 +82,54 @@ func (d *Driver) InspectDirectory(ctx context.Context, opts metadata.DirectoryOp
 	b.DeclareKind("domain")
 	b.DeclareKind("foreign_table")
 
-	if err := CatalogTables(ctx, d.db, func(ns, name, kind string) { b.AddRef(scope(ns), kind, name) }); err != nil {
+	if err := CatalogTables(ctx, d.db, onlySchema, func(ns, name, kind string) {
+		b.AddRef(scope(ns), kind, name)
+	}); err != nil {
 		return nil, fmt.Errorf("postgres: catalog tables: %w", err)
 	}
-	if err := CatalogMaterializedViews(ctx, d.db, func(ns, name string) { b.AddRef(scope(ns), "materialized_view", name) }); err != nil {
+	if err := CatalogMaterializedViews(ctx, d.db, onlySchema, func(ns, name string) {
+		b.AddRef(scope(ns), "materialized_view", name)
+	}); err != nil {
 		return nil, fmt.Errorf("postgres: catalog matviews: %w", err)
 	}
-	if err := AttachRowCounts(ctx, d.db, func(ns, kind, name string, count int64) { b.SetRowCount(scope(ns), kind, name, count) }); err != nil {
+	if err := AttachRowCounts(ctx, d.db, onlySchema, func(ns, kind, name string, count int64) {
+		b.SetRowCount(scope(ns), kind, name, count)
+	}); err != nil {
 		return nil, fmt.Errorf("postgres: catalog row counts: %w", err)
 	}
-	if err := CatalogFunctions(ctx, d.db, func(ns, name string) { b.AddRef(scope(ns), "function", name) }); err != nil {
+	if err := CatalogFunctions(ctx, d.db, onlySchema, func(ns, name string) {
+		b.AddRef(scope(ns), "function", name)
+	}); err != nil {
 		return nil, fmt.Errorf("postgres: catalog functions: %w", err)
 	}
-	if err := CatalogSequences(ctx, d.db, func(ns, name string) { b.AddRef(scope(ns), "sequence", name) }); err != nil {
+	if err := CatalogSequences(ctx, d.db, onlySchema, func(ns, name string) {
+		b.AddRef(scope(ns), "sequence", name)
+	}); err != nil {
 		return nil, fmt.Errorf("postgres: catalog sequences: %w", err)
 	}
-	if err := CatalogProcedures(ctx, d.db, func(ns, name string) { b.AddRef(scope(ns), "procedure", name) }); err != nil {
+	if err := CatalogProcedures(ctx, d.db, onlySchema, func(ns, name string) {
+		b.AddRef(scope(ns), "procedure", name)
+	}); err != nil {
 		return nil, fmt.Errorf("postgres: catalog procedures: %w", err)
 	}
-	if err := CatalogTriggers(ctx, d.db, func(ns, name string) { b.AddRef(scope(ns), "trigger", name) }); err != nil {
+	if err := CatalogTriggers(ctx, d.db, onlySchema, func(ns, name string) {
+		b.AddRef(scope(ns), "trigger", name)
+	}); err != nil {
 		return nil, fmt.Errorf("postgres: catalog triggers: %w", err)
 	}
-	if err := CatalogTypes(ctx, d.db, func(ns, name string) { b.AddRef(scope(ns), "type", name) }); err != nil {
+	if err := CatalogTypes(ctx, d.db, onlySchema, func(ns, name string) {
+		b.AddRef(scope(ns), "type", name)
+	}); err != nil {
 		return nil, fmt.Errorf("postgres: catalog types: %w", err)
 	}
-	if err := CatalogDomains(ctx, d.db, func(ns, name string) { b.AddRef(scope(ns), "domain", name) }); err != nil {
+	if err := CatalogDomains(ctx, d.db, onlySchema, func(ns, name string) {
+		b.AddRef(scope(ns), "domain", name)
+	}); err != nil {
 		return nil, fmt.Errorf("postgres: catalog domains: %w", err)
 	}
-	if err := CatalogForeignTables(ctx, d.db, func(ns, name string) { b.AddRef(scope(ns), "foreign_table", name) }); err != nil {
+	if err := CatalogForeignTables(ctx, d.db, onlySchema, func(ns, name string) {
+		b.AddRef(scope(ns), "foreign_table", name)
+	}); err != nil {
 		return nil, fmt.Errorf("postgres: catalog foreign tables: %w", err)
 	}
 

@@ -67,8 +67,22 @@ func (d *driver) InspectDirectory(ctx context.Context, opts metadata.DirectoryOp
 		return root.Child(metadata.ScopeSegment{Kind: "schema", Name: namespace})
 	}
 
+	// A schema-level opts.Root narrows the result to that one schema and makes
+	// it the sole root node, matching the contract that a requested scope's
+	// detail comes back as Roots[0] rather than nested under the database.
+	// An empty or database-level opts.Root returns the full database tree.
+	onlySchema := ""
+	if opts.Root != "" && opts.Root != root {
+		onlySchema = opts.Root.Name("schema")
+	}
+	included := func(namespace string) bool {
+		return !managedSchemas[namespace] && (onlySchema == "" || namespace == onlySchema)
+	}
+
 	b := build.NewDirectory()
-	b.AddScope(root)
+	if onlySchema == "" {
+		b.AddScope(root)
+	}
 	b.DeclareKind("table")
 	b.DeclareKind("view")
 	b.DeclareKind("materialized_view")
@@ -80,83 +94,73 @@ func (d *driver) InspectDirectory(ctx context.Context, opts metadata.DirectoryOp
 	b.DeclareKind("domain")
 	b.DeclareKind("foreign_table")
 
-	if err := postgres.CatalogTables(ctx, db, func(ns, name, kind string) {
-		if managedSchemas[ns] {
-			return
+	if err := postgres.CatalogTables(ctx, db, onlySchema, func(ns, name, kind string) {
+		if included(ns) {
+			b.AddRef(scope(ns), kind, name)
 		}
-		b.AddRef(scope(ns), kind, name)
 	}); err != nil {
 		return nil, fmt.Errorf("supabase: catalog tables: %w", err)
 	}
-	if err := postgres.CatalogMaterializedViews(ctx, db, func(ns, name string) {
-		if managedSchemas[ns] {
-			return
+	if err := postgres.CatalogMaterializedViews(ctx, db, onlySchema, func(ns, name string) {
+		if included(ns) {
+			b.AddRef(scope(ns), "materialized_view", name)
 		}
-		b.AddRef(scope(ns), "materialized_view", name)
 	}); err != nil {
 		return nil, fmt.Errorf("supabase: catalog matviews: %w", err)
 	}
-	if err := postgres.AttachRowCounts(ctx, db, func(ns, kind, name string, count int64) {
-		if managedSchemas[ns] {
-			return
+	if err := postgres.AttachRowCounts(ctx, db, onlySchema, func(ns, kind, name string, count int64) {
+		if included(ns) {
+			b.SetRowCount(scope(ns), kind, name, count)
 		}
-		b.SetRowCount(scope(ns), kind, name, count)
 	}); err != nil {
 		return nil, fmt.Errorf("supabase: catalog row counts: %w", err)
 	}
-	if err := postgres.CatalogFunctions(ctx, db, func(ns, name string) {
-		if managedSchemas[ns] {
-			return
+	if err := postgres.CatalogFunctions(ctx, db, onlySchema, func(ns, name string) {
+		if included(ns) {
+			b.AddRef(scope(ns), "function", name)
 		}
-		b.AddRef(scope(ns), "function", name)
 	}); err != nil {
 		return nil, fmt.Errorf("supabase: catalog functions: %w", err)
 	}
-	if err := postgres.CatalogSequences(ctx, db, func(ns, name string) {
-		if managedSchemas[ns] {
-			return
+	if err := postgres.CatalogSequences(ctx, db, onlySchema, func(ns, name string) {
+		if included(ns) {
+			b.AddRef(scope(ns), "sequence", name)
 		}
-		b.AddRef(scope(ns), "sequence", name)
 	}); err != nil {
 		return nil, fmt.Errorf("supabase: catalog sequences: %w", err)
 	}
-	if err := postgres.CatalogProcedures(ctx, db, func(ns, name string) {
-		if managedSchemas[ns] {
-			return
+	if err := postgres.CatalogProcedures(ctx, db, onlySchema, func(ns, name string) {
+		if included(ns) {
+			b.AddRef(scope(ns), "procedure", name)
 		}
-		b.AddRef(scope(ns), "procedure", name)
 	}); err != nil {
 		return nil, fmt.Errorf("supabase: catalog procedures: %w", err)
 	}
-	if err := postgres.CatalogTriggers(ctx, db, func(ns, name string) {
-		if managedSchemas[ns] {
-			return
+	if err := postgres.CatalogTriggers(ctx, db, onlySchema, func(ns, name string) {
+		if included(ns) {
+			b.AddRef(scope(ns), "trigger", name)
 		}
-		b.AddRef(scope(ns), "trigger", name)
 	}); err != nil {
 		return nil, fmt.Errorf("supabase: catalog triggers: %w", err)
 	}
-	if err := postgres.CatalogTypes(ctx, db, func(ns, name string) {
-		if managedSchemas[ns] {
-			return
+	if err := postgres.CatalogTypes(ctx, db, onlySchema, func(ns, name string) {
+		if included(ns) {
+			b.AddRef(scope(ns), "type", name)
 		}
-		b.AddRef(scope(ns), "type", name)
 	}); err != nil {
 		return nil, fmt.Errorf("supabase: catalog types: %w", err)
 	}
-	if err := postgres.CatalogDomains(ctx, db, func(ns, name string) {
-		if managedSchemas[ns] {
-			return
+	if err := postgres.CatalogDomains(ctx, db, onlySchema, func(ns, name string) {
+		if included(ns) {
+			b.AddRef(scope(ns), "domain", name)
 		}
-		b.AddRef(scope(ns), "domain", name)
 	}); err != nil {
 		return nil, fmt.Errorf("supabase: catalog domains: %w", err)
 	}
-	if err := postgres.CatalogForeignTables(ctx, db, func(ns, name string) {
-		if managedSchemas[ns] {
-			return
+	if err := postgres.CatalogForeignTables(ctx, db, onlySchema, func(ns, name string) {
+		if included(ns) {
+			b.AddRef(scope(ns), "foreign_table", name)
 		}
-		b.AddRef(scope(ns), "foreign_table", name)
 	}); err != nil {
 		return nil, fmt.Errorf("supabase: catalog foreign tables: %w", err)
 	}

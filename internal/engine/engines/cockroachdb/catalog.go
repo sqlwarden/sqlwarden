@@ -34,6 +34,16 @@ func languageFromDefinition(def string) string {
 	return strings.ToLower(m[1])
 }
 
+// schemaFilterArg returns nil (renders as SQL NULL, matched via an "IS NULL
+// OR" clause) for an unrestricted catalog query, or schema to narrow it to
+// one namespace — a local copy of postgres's unexported schemaFilterArg.
+func schemaFilterArg(schema string) any {
+	if schema == "" {
+		return nil
+	}
+	return schema
+}
+
 // functionPairFilter builds a "($n,$n+1),($n+2,$n+3),…" tuple list plus the
 // flattened (namespace, name) args, for a "(schema, name) IN (...)"
 // predicate — a local copy of postgres's unexported pairFilter.
@@ -184,12 +194,14 @@ ORDER BY p.oid`, ref.Scope.Name("schema"), ref.Name)
 // simply omits the row count for a table that hasn't been analyzed yet.
 // System-schema exclusion is left to the caller (inspector.go), matching how
 // postgres.AttachRowCounts itself only excludes pg_catalog/information_schema.
-func attachRowCounts(ctx context.Context, db *sql.DB, set func(schema, name string, count int64)) error {
+// schema narrows the scan to one namespace; "" scans every namespace.
+func attachRowCounts(ctx context.Context, db *sql.DB, schema string, set func(schema, name string, count int64)) error {
 	const q = `
 SELECT n.nspname, c.relname, c.reltuples
 FROM pg_class c JOIN pg_namespace n ON n.oid = c.relnamespace
-WHERE c.relkind = 'r' AND n.nspname NOT IN ('pg_catalog', 'information_schema')`
-	rows, err := db.QueryContext(ctx, q)
+WHERE c.relkind = 'r' AND n.nspname NOT IN ('pg_catalog', 'information_schema')
+  AND ($1::text IS NULL OR n.nspname = $1)`
+	rows, err := db.QueryContext(ctx, q, schemaFilterArg(schema))
 	if err != nil {
 		return err
 	}

@@ -73,6 +73,7 @@ export function instanceSettingsFixture(
     exports_sync_max_bytes: 52_428_800,
     exports_background_max_bytes: 0,
     schema_snapshot_freshness_seconds: 3_600,
+    schema_lazy_threshold: 500,
     file_revisions_enabled: true,
     file_revisions_keep_latest: 10,
     query_history_mode: 'backend',

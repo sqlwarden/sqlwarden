@@ -52,6 +52,10 @@ type refreshRequest struct {
 	Ref *metadata.ObjectRef `json:"ref"`
 }
 
+type loadSchemaScopeRequest struct {
+	Scope metadata.ScopePath `json:"scope"`
+}
+
 type relationshipsResponse struct {
 	Graph *metadata.RelationshipGraph `json:"graph"`
 }
@@ -512,6 +516,12 @@ func (app *application) getConnectionSchemaDirectory(w http.ResponseWriter, r *h
 		app.serverError(w, r, err)
 		return
 	}
+	settings, err := app.effectiveRuntimeSettingsForWorkspace(r.Context(), contextGetWorkspace(r))
+	if err != nil {
+		app.serverError(w, r, err)
+		return
+	}
+	markLazyScopes(directory, settings.SchemaLazyThreshold)
 	app.logDebug(r, "schema directory returned",
 		slog.String("session_id", session.ID),
 		slog.String("engine", directory.Engine),
@@ -622,6 +632,13 @@ func (app *application) refreshConnectionSchema(w http.ResponseWriter, r *http.R
 		if !app.authorizeSchemaAccess(w, r) {
 			return
 		}
+		var input refreshRequest
+		if r.Body != nil && r.ContentLength != 0 {
+			if err := request.DecodeJSON(w, r, &input); err != nil {
+				app.badRequest(w, r, err)
+				return
+			}
+		}
 		conn := contextGetConnection(r)
 		// The server's general write timeout is intentionally short. Give this
 		// user-initiated long operation enough time to return its terminal result,
@@ -629,6 +646,47 @@ func (app *application) refreshConnectionSchema(w http.ResponseWriter, r *http.R
 		_ = http.NewResponseController(w).SetWriteDeadline(time.Now().Add(manualSchemaSyncTimeout + 5*time.Second))
 		ctx, cancel := context.WithTimeout(r.Context(), manualSchemaSyncTimeout)
 		defer cancel()
+
+		if input.Ref != nil {
+			snapshot, directory, found, err := app.schemaSnapshots.Active(ctx, conn.ID)
+			if err != nil {
+				app.serverError(w, r, err)
+				return
+			}
+			if !found {
+				app.writeSnapshotPending(w, r)
+				return
+			}
+			driver, err := app.openTargetDriver(ctx, conn, contextGetWorkspace(r))
+			if err != nil {
+				app.schemaSyncHTTPError(w, r, err)
+				return
+			}
+			defer driver.Close()
+			inspector, ok := driver.(metadata.SchemaInspector)
+			if !ok {
+				app.errorMessage(w, r, http.StatusNotImplemented, "This driver does not support schema inspection.", nil)
+				return
+			}
+			if _, err := app.inspectAndUpsertObjects(ctx, inspector, snapshot.ID, []metadata.ObjectRef{*input.Ref}); err != nil {
+				app.schemaSyncHTTPError(w, r, err)
+				return
+			}
+			app.schemaService.RefreshObject(strconv.FormatInt(conn.ID, 10), *input.Ref)
+			app.completionService.InvalidateConnection(strconv.FormatInt(conn.ID, 10))
+			app.logInfo(r, "schema object refreshed",
+				slog.Int64("connection_id", conn.ID),
+				slog.String("kind", input.Ref.Kind),
+				slog.String("scope", string(input.Ref.Scope)),
+				slog.String("name", input.Ref.Name),
+			)
+			if err := response.JSON(w, http.StatusOK, schemaStatusResponse{
+				Status: "ok", Mode: "persistent", SnapshotID: snapshot.ID, GeneratedAt: &directory.GeneratedAt,
+			}); err != nil {
+				app.serverError(w, r, err)
+			}
+			return
+		}
 
 		output, syncErr := app.syncSchemaSnapshot(ctx, conn.ID)
 		if syncErr != nil {
@@ -675,6 +733,90 @@ func (app *application) refreshConnectionSchema(w http.ResponseWriter, r *http.R
 		)
 	}
 	if err := response.JSON(w, http.StatusOK, schemaStatusResponse{Status: "ok", Mode: "ephemeral"}); err != nil {
+		app.serverError(w, r, err)
+	}
+}
+
+// loadConnectionSchemaScope is the manual override for someone who wants full
+// object detail for one scope despite it being marked lazy. It runs the same
+// inspect-and-store code path the sync job uses, scoped to one scope's refs
+// instead of the whole connection, and writes into the already-published
+// snapshot the way a single-object fetch does.
+func (app *application) loadConnectionSchemaScope(w http.ResponseWriter, r *http.Request) {
+	var input loadSchemaScopeRequest
+	if err := request.DecodeJSON(w, r, &input); err != nil {
+		app.badRequest(w, r, err)
+		return
+	}
+	if len(input.Scope) == 0 {
+		app.badRequest(w, r, errors.New("scope is required"))
+		return
+	}
+	persistent, err := app.persistentSchemaMode(r)
+	if err != nil {
+		app.serverError(w, r, err)
+		return
+	}
+	if !persistent {
+		app.errorMessage(w, r, http.StatusNotImplemented, "Loading a full scope on demand is only available for connections with schema snapshots enabled.", nil)
+		return
+	}
+	if !app.authorizeSchemaAccess(w, r) {
+		return
+	}
+	conn := contextGetConnection(r)
+	snapshot, directory, found, err := app.schemaSnapshots.Active(r.Context(), conn.ID)
+	if err != nil {
+		app.serverError(w, r, err)
+		return
+	}
+	if !found {
+		app.writeSnapshotPending(w, r)
+		return
+	}
+	var refs []metadata.ObjectRef
+	for _, node := range directory.ScopeNodes() {
+		if node.Path != metadata.ScopePath(input.Scope) {
+			continue
+		}
+		for _, group := range node.Groups {
+			refs = append(refs, group.Objects...)
+		}
+	}
+	if len(refs) == 0 {
+		if err := response.JSON(w, http.StatusOK, schemaStatusResponse{
+			Status: "ok", Mode: "persistent", SnapshotID: snapshot.ID, GeneratedAt: &directory.GeneratedAt,
+		}); err != nil {
+			app.serverError(w, r, err)
+		}
+		return
+	}
+	ctx, cancel := context.WithTimeout(r.Context(), manualSchemaSyncTimeout)
+	defer cancel()
+	driver, err := app.openTargetDriver(ctx, conn, contextGetWorkspace(r))
+	if err != nil {
+		app.schemaSyncHTTPError(w, r, err)
+		return
+	}
+	defer driver.Close()
+	inspector, ok := driver.(metadata.SchemaInspector)
+	if !ok {
+		app.errorMessage(w, r, http.StatusNotImplemented, "This driver does not support schema inspection.", nil)
+		return
+	}
+	if _, err := app.inspectAndUpsertObjects(ctx, inspector, snapshot.ID, refs); err != nil {
+		app.schemaSyncHTTPError(w, r, err)
+		return
+	}
+	app.schemaService.RefreshConnection(strconv.FormatInt(conn.ID, 10))
+	app.completionService.InvalidateConnection(strconv.FormatInt(conn.ID, 10))
+	app.logInfo(r, "schema scope loaded on demand",
+		slog.Int64("connection_id", conn.ID),
+		slog.Int("object_count", len(refs)),
+	)
+	if err := response.JSON(w, http.StatusOK, schemaStatusResponse{
+		Status: "ok", Mode: "persistent", SnapshotID: snapshot.ID, GeneratedAt: &directory.GeneratedAt,
+	}); err != nil {
 		app.serverError(w, r, err)
 	}
 }

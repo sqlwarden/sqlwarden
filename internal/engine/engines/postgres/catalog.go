@@ -11,18 +11,31 @@ import (
 	build "github.com/sqlwarden/internal/engine/metadata/build"
 )
 
+// schemaFilterArg returns nil (renders as SQL NULL, matched via an "IS NULL
+// OR" clause) for an unrestricted catalog query, or schema to narrow it to
+// one namespace. Pushing the filter into SQL avoids scanning every schema's
+// catalog rows just to discard them in Go when a caller only wants one.
+func schemaFilterArg(schema string) any {
+	if schema == "" {
+		return nil
+	}
+	return schema
+}
+
 // CatalogTables enumerates every table and view visible to the current
 // database, invoking add once per object with its schema, name, and resolved
-// kind ("table" or "view").
-func CatalogTables(ctx context.Context, db *sql.DB, add func(schema, name, kind string)) error {
+// kind ("table" or "view"). schema narrows the scan to one namespace; "" scans
+// every namespace.
+func CatalogTables(ctx context.Context, db *sql.DB, schema string, add func(schema, name, kind string)) error {
 	const q = `
 SELECT table_schema, table_name, table_type
 FROM information_schema.tables
 WHERE table_catalog = current_database()
   AND table_schema NOT IN ('pg_catalog', 'information_schema')
   AND table_type <> 'FOREIGN'
+  AND ($1::text IS NULL OR table_schema = $1)
 ORDER BY table_schema, table_name`
-	return queryRefs(ctx, db, q, func(ns, name, t string) {
+	return queryRefs(ctx, db, q, []any{schemaFilterArg(schema)}, func(ns, name, t string) {
 		kind := "table"
 		if t == "VIEW" {
 			kind = "view"
@@ -32,50 +45,58 @@ ORDER BY table_schema, table_name`
 }
 
 // CatalogMaterializedViews enumerates every materialized view visible to the
-// current database.
-func CatalogMaterializedViews(ctx context.Context, db *sql.DB, add func(schema, name string)) error {
+// current database. schema narrows the scan to one namespace; "" scans every
+// namespace.
+func CatalogMaterializedViews(ctx context.Context, db *sql.DB, schema string, add func(schema, name string)) error {
 	const q = `
 SELECT n.nspname, c.relname
 FROM pg_class c JOIN pg_namespace n ON n.oid = c.relnamespace
 WHERE c.relkind = 'm' AND n.nspname NOT IN ('pg_catalog', 'information_schema')
+  AND ($1::text IS NULL OR n.nspname = $1)
 ORDER BY n.nspname, c.relname`
-	return queryRefs(ctx, db, q, func(ns, name, _ string) { add(ns, name) })
+	return queryRefs(ctx, db, q, []any{schemaFilterArg(schema)}, func(ns, name, _ string) { add(ns, name) })
 }
 
 // CatalogFunctions enumerates every plain function visible to the current
 // database (procedures and aggregates are excluded via prokind = 'f'). A
 // schema+name pair is emitted once even when Postgres overloads it with
 // multiple signatures; FunctionObjects and FunctionDefinition surface every
-// overload under that single entry.
-func CatalogFunctions(ctx context.Context, db *sql.DB, add func(schema, name string)) error {
+// overload under that single entry. schema narrows the scan to one namespace;
+// "" scans every namespace.
+func CatalogFunctions(ctx context.Context, db *sql.DB, schema string, add func(schema, name string)) error {
 	const q = `
 SELECT DISTINCT n.nspname, p.proname
 FROM pg_proc p JOIN pg_namespace n ON n.oid = p.pronamespace
 WHERE p.prokind = 'f' AND n.nspname NOT IN ('pg_catalog', 'information_schema')
+  AND ($1::text IS NULL OR n.nspname = $1)
 ORDER BY n.nspname, p.proname`
-	return queryRefs(ctx, db, q, func(ns, name, _ string) { add(ns, name) })
+	return queryRefs(ctx, db, q, []any{schemaFilterArg(schema)}, func(ns, name, _ string) { add(ns, name) })
 }
 
 // CatalogSequences enumerates every sequence visible to the current database.
-func CatalogSequences(ctx context.Context, db *sql.DB, add func(schema, name string)) error {
+// schema narrows the scan to one namespace; "" scans every namespace.
+func CatalogSequences(ctx context.Context, db *sql.DB, schema string, add func(schema, name string)) error {
 	const q = `
 SELECT sequence_schema, sequence_name
 FROM information_schema.sequences
 WHERE sequence_schema NOT IN ('pg_catalog', 'information_schema')
+  AND ($1::text IS NULL OR sequence_schema = $1)
 ORDER BY sequence_schema, sequence_name`
-	return queryRefs(ctx, db, q, func(ns, name, _ string) { add(ns, name) })
+	return queryRefs(ctx, db, q, []any{schemaFilterArg(schema)}, func(ns, name, _ string) { add(ns, name) })
 }
 
 // AttachRowCounts reports the approximate row count (pg_class.reltuples) for
 // every table and materialized view. reltuples is a planner statistic
 // refreshed by ANALYZE/autovacuum, not a live COUNT(*), which is what keeps
-// this query cheap regardless of table size.
-func AttachRowCounts(ctx context.Context, db *sql.DB, set func(schema, kind, name string, count int64)) error {
+// this query cheap regardless of table size. schema narrows the scan to one
+// namespace; "" scans every namespace.
+func AttachRowCounts(ctx context.Context, db *sql.DB, schema string, set func(schema, kind, name string, count int64)) error {
 	const q = `
 SELECT n.nspname, c.relname, c.relkind, c.reltuples
 FROM pg_class c JOIN pg_namespace n ON n.oid = c.relnamespace
-WHERE c.relkind IN ('r', 'm') AND n.nspname NOT IN ('pg_catalog', 'information_schema')`
-	rows, err := db.QueryContext(ctx, q)
+WHERE c.relkind IN ('r', 'm') AND n.nspname NOT IN ('pg_catalog', 'information_schema')
+  AND ($1::text IS NULL OR n.nspname = $1)`
+	rows, err := db.QueryContext(ctx, q, schemaFilterArg(schema))
 	if err != nil {
 		return err
 	}
@@ -100,8 +121,8 @@ WHERE c.relkind IN ('r', 'm') AND n.nspname NOT IN ('pg_catalog', 'information_s
 
 // queryRefs runs a 2- or 3-column query (schema, name[, type]) and calls fn per
 // row; the third column is passed as "" when the query selects only two columns.
-func queryRefs(ctx context.Context, db *sql.DB, q string, fn func(ns, name, extra string)) error {
-	rows, err := db.QueryContext(ctx, q)
+func queryRefs(ctx context.Context, db *sql.DB, q string, args []any, fn func(ns, name, extra string)) error {
+	rows, err := db.QueryContext(ctx, q, args...)
 	if err != nil {
 		return err
 	}

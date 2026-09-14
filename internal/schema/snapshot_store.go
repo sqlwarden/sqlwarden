@@ -131,6 +131,41 @@ func (s *SnapshotStore) PutObjects(ctx context.Context, snapshotID string, objec
 	return err
 }
 
+// UpsertObjects inserts or replaces object detail in a snapshot that may
+// already be published. Unlike PutObjects (insert-only, used before a
+// snapshot is published), this supports filling in detail for a lazy scope's
+// object after the fact, without waiting for the next full resync.
+func (s *SnapshotStore) UpsertObjects(ctx context.Context, snapshotID string, objects []metadata.Object) error {
+	if len(objects) == 0 {
+		return nil
+	}
+	rows := make([]snapshotObject, 0, len(objects))
+	seen := make(map[[3]string]struct{}, len(objects))
+	for _, object := range objects {
+		key := [3]string{string(object.Ref.Scope), object.Ref.Kind, object.Ref.Name}
+		if _, dup := seen[key]; dup {
+			continue
+		}
+		seen[key] = struct{}{}
+		data, err := encodeSnapshotValue(object)
+		if err != nil {
+			return err
+		}
+		rows = append(rows, snapshotObject{
+			SnapshotID: snapshotID,
+			Scope:      key[0],
+			Kind:       key[1],
+			Name:       key[2],
+			ObjectData: data,
+		})
+	}
+	_, err := s.db.NewInsert().Model(&rows).
+		On("CONFLICT (snapshot_id, scope, kind, name) DO UPDATE").
+		Set("object_data = EXCLUDED.object_data").
+		Exec(ctx)
+	return err
+}
+
 func (s *SnapshotStore) PutRelationship(ctx context.Context, snapshotID string, graph *metadata.RelationshipGraph) error {
 	if graph == nil {
 		return nil

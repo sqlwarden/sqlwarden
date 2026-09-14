@@ -73,6 +73,7 @@ const dataSettingsFields = new Set<string>([
   'exports_sync_max_bytes',
   'exports_background_max_bytes',
   'schema_snapshot_freshness_seconds',
+  'schema_lazy_threshold',
   'file_revisions_enabled',
   'file_revisions_keep_latest',
   'sqlite_local_targets_enabled',
@@ -124,6 +125,7 @@ const emptyForm: InstanceSettingsForm = {
   exports_sync_max_bytes: 52_428_800,
   exports_background_max_bytes: 0,
   schema_snapshot_freshness_seconds: 3_600,
+  schema_lazy_threshold: 500,
   file_revisions_enabled: false,
   file_revisions_keep_latest: 10,
   query_history_mode: 'backend',
@@ -644,6 +646,25 @@ function SettingsInstancePage() {
                   />
                   <FieldDescription>
                     Snapshots older than this are treated as stale and refreshed on next access.
+                  </FieldDescription>
+                </Field>
+                <Field label="Lazy load threshold" error={fieldErrors.schema_lazy_threshold}>
+                  <Input
+                    aria-label="Lazy load threshold"
+                    aria-invalid={Boolean(fieldErrors.schema_lazy_threshold) || undefined}
+                    type="number"
+                    min={1}
+                    step={1}
+                    value={form.schema_lazy_threshold}
+                    disabled={disabled}
+                    onChange={(event) => {
+                      const next = event.target.valueAsNumber
+                      updateField('schema_lazy_threshold', Number.isFinite(next) ? next : 0)
+                    }}
+                  />
+                  <FieldDescription>
+                    Schemas with more objects than this load names first; each object&apos;s columns
+                    and keys load only once you open it.
                   </FieldDescription>
                 </Field>
               </CardContent>

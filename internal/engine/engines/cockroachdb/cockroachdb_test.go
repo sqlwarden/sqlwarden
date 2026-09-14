@@ -161,6 +161,55 @@ func TestInspectDirectoryExcludesSystemSchemas(t *testing.T) {
 	}
 }
 
+func TestInspectDirectoryWithRootScopesToOneSchema(t *testing.T) {
+	d := connect(t)
+	ctx := context.Background()
+	exec := func(stmt string) {
+		t.Helper()
+		if _, err := d.Execute(ctx, stmt); err != nil {
+			t.Fatalf("exec %q: %v", stmt, err)
+		}
+	}
+	exec("DROP TABLE IF EXISTS crdb_root_scope_users")
+	exec("DROP SCHEMA IF EXISTS crdb_root_scope_other CASCADE")
+	t.Cleanup(func() {
+		exec("DROP TABLE IF EXISTS crdb_root_scope_users")
+		exec("DROP SCHEMA IF EXISTS crdb_root_scope_other CASCADE")
+	})
+	exec("CREATE TABLE crdb_root_scope_users (id INT PRIMARY KEY)")
+	exec("CREATE SCHEMA crdb_root_scope_other")
+	exec("CREATE TABLE crdb_root_scope_other.widgets (id INT PRIMARY KEY)")
+
+	full, err := d.InspectDirectory(ctx, metadata.DirectoryOptions{})
+	if err != nil {
+		t.Fatalf("InspectDirectory: %v", err)
+	}
+	database := full.Roots[0].Path
+	publicScope := database.Child(metadata.ScopeSegment{Kind: "schema", Name: "public"})
+
+	scoped, err := d.InspectDirectory(ctx, metadata.DirectoryOptions{Root: publicScope})
+	if err != nil {
+		t.Fatalf("InspectDirectory with Root: %v", err)
+	}
+	if len(scoped.Roots) != 1 || scoped.Roots[0].Path != publicScope {
+		t.Fatalf("expected a single root at %v, got %+v", publicScope, scoped.Roots)
+	}
+	for _, node := range scoped.ScopeNodes() {
+		if node.Path.Name("schema") == "crdb_root_scope_other" {
+			t.Fatalf("crdb_root_scope_other must not appear when scoped to public: %+v", scoped.Roots)
+		}
+	}
+	var found bool
+	for _, ref := range scoped.ObjectRefs() {
+		if ref.Kind == "table" && ref.Name == "crdb_root_scope_users" {
+			found = true
+		}
+	}
+	if !found {
+		t.Fatalf("missing crdb_root_scope_users in scoped directory: %+v", scoped.Roots)
+	}
+}
+
 func TestDiscoverScopesExcludesSystemSchemas(t *testing.T) {
 	d := connect(t)
 	ctx := context.Background()

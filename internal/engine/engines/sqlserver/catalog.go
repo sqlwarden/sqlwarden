@@ -10,6 +10,16 @@ import (
 	"github.com/sqlwarden/internal/engine/metadata/build"
 )
 
+// schemaFilterArg returns nil (renders as SQL NULL, matched via an
+// "IS NULL OR" clause) for an unrestricted catalog query, or schema to
+// narrow it to one schema.
+func schemaFilterArg(schema string) any {
+	if schema == "" {
+		return nil
+	}
+	return schema
+}
+
 // CatalogTables enumerates every table and view in the connection's current
 // database's schemas, invoking add once per object with its schema, name,
 // and resolved kind ("table" or "view"). sys.objects/sys.schemas (not
@@ -21,15 +31,17 @@ import (
 // statement, and sys.* views are always scoped to the connection's *current*
 // database — there is no cross-database sys.tables query. Connect already
 // selects the target database via msdsn.Config.Database, so this query never
-// needs to switch databases itself.
-func CatalogTables(ctx context.Context, db *sql.DB, add func(schema, name, kind string)) error {
+// needs to switch databases itself. schema narrows the scan to one schema;
+// "" scans every schema in the current database.
+func CatalogTables(ctx context.Context, db *sql.DB, schema string, add func(schema, name, kind string)) error {
 	const stmt = `
 SELECT s.name AS schema_name, o.name AS object_name, o.type
 FROM sys.objects o
 JOIN sys.schemas s ON s.schema_id = o.schema_id
 WHERE o.type IN ('U', 'V') AND o.is_ms_shipped = 0
+  AND (@p1 IS NULL OR s.name = @p1)
 ORDER BY s.name, o.name`
-	rows, err := db.QueryContext(ctx, stmt)
+	rows, err := db.QueryContext(ctx, stmt, schemaFilterArg(schema))
 	if err != nil {
 		return fmt.Errorf("sqlserver: catalog tables: %w", err)
 	}
@@ -51,14 +63,17 @@ ORDER BY s.name, o.name`
 // CatalogModules enumerates stored procedures, functions, and DML triggers in
 // the connection's current database, invoking add once per object with its
 // schema, name, and resolved kind ("procedure", "function", or "trigger").
-func CatalogModules(ctx context.Context, db *sql.DB, add func(schema, name, kind string)) error {
+// schema narrows the scan to one schema; "" scans every schema in the
+// current database.
+func CatalogModules(ctx context.Context, db *sql.DB, schema string, add func(schema, name, kind string)) error {
 	const stmt = `
 SELECT s.name AS schema_name, o.name AS object_name, o.type
 FROM sys.objects o
 JOIN sys.schemas s ON s.schema_id = o.schema_id
 WHERE o.type IN ('P', 'FN', 'IF', 'TF', 'TR') AND o.is_ms_shipped = 0
+  AND (@p1 IS NULL OR s.name = @p1)
 ORDER BY s.name, o.name`
-	rows, err := db.QueryContext(ctx, stmt)
+	rows, err := db.QueryContext(ctx, stmt, schemaFilterArg(schema))
 	if err != nil {
 		return fmt.Errorf("sqlserver: catalog modules: %w", err)
 	}

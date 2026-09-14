@@ -170,3 +170,29 @@ func TestCompletionIndexRejectsForeignSession(t *testing.T) {
 
 	assert.Equal(t, res.StatusCode, http.StatusForbidden)
 }
+
+func TestEphemeralCompletionIndexOnlyUsesCachedObjectDetail(t *testing.T) {
+	t.Parallel()
+	app := newTestApp(t)
+	owner, tok, org := seedOrgOwner(t, app, uniqueEmail(t, "completion-lazy"), "Completion Lazy", "Completion Lazy Org")
+	ws := seedWorkspaceForAccount(t, app, org, owner, "Schema WS", "")
+	envID := defaultEnvironmentID(t, app, ws.ID)
+	conn := seedConnection(t, app, ws.ID, &envID, org.ID, "sqlite", "Schema Conn", "open")
+	sess := openSchemaSession(t, app, owner.ID, conn.ID, schemaFakeDriver{})
+
+	endpoint := completionIndexURL(org.Slug, ws.ID, envID, conn.ID)
+	req := newAuthRequest(t, http.MethodGet, endpoint, nil, tok)
+	req.Header.Set("X-Warden-Session", sess.ID)
+	res := send(t, req, app.routes())
+	if res.StatusCode != http.StatusOK {
+		t.Fatalf("completion index: %d %+v", res.StatusCode, res.BodyFields)
+	}
+	objects := completionIndexObjects(res.BodyFields)
+	if !hasIndexObject(objects, "", "widgets", "table") {
+		t.Fatalf("expected the object name to still be listed, got %+v", res.BodyFields)
+	}
+	columns := completionIndexColumns(res.BodyFields)
+	if hasIndexColumn(columns, "", "widgets", "id", "INTEGER", false) {
+		t.Fatalf("expected no column detail without a prior object fetch, got %+v", res.BodyFields)
+	}
+}

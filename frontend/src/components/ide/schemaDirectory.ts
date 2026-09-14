@@ -44,7 +44,11 @@ export function isRelationalKind(spec: SchemaSpec | undefined, kind: string): bo
 }
 
 export function sortedGroups(node: ScopeNode, spec: SchemaSpec | undefined): ObjectGroup[] {
-  return [...node.groups].sort(
+  const byKind = new Map(node.groups.map((group) => [group.kind, group]))
+  for (const specKind of spec?.kinds ?? []) {
+    if (!byKind.has(specKind.kind)) byKind.set(specKind.kind, { kind: specKind.kind, objects: [] })
+  }
+  return [...byKind.values()].sort(
     (a, b) => kindOrder(spec, a.kind) - kindOrder(spec, b.kind) || a.kind.localeCompare(b.kind),
   )
 }
@@ -78,13 +82,23 @@ export function defaultCreateTableScope(roots: ScopeNode[]): ScopePath | null {
   return null
 }
 
-export function filterDirectory(directory: SchemaDirectory, query: string): SchemaDirectory {
+/** Fixes up null slices. Exposed separately from filterDirectory so a caller
+ *  that filters repeatedly (e.g. per keystroke) can memoize normalization
+ *  independently of the query. */
+export function normalizeDirectory(directory: SchemaDirectory): SchemaDirectory {
   const roots = normalizeNodes(directory.roots)
-  const normalized = roots === directory.roots ? directory : { ...directory, roots }
-  const q = query.trim().toLowerCase()
-  if (!q) return normalized
+  return roots === directory.roots ? directory : { ...directory, roots }
+}
 
-  return { ...normalized, roots: filterNodes(roots, q) }
+/** Filters an already-normalized directory by query. */
+export function filterNormalized(directory: SchemaDirectory, query: string): SchemaDirectory {
+  const q = query.trim().toLowerCase()
+  if (!q) return directory
+  return { ...directory, roots: filterNodes(directory.roots, q) }
+}
+
+export function filterDirectory(directory: SchemaDirectory, query: string): SchemaDirectory {
+  return filterNormalized(normalizeDirectory(directory), query)
 }
 
 /**
@@ -118,14 +132,32 @@ function normalizeGroups(groups: ObjectGroup[] | null | undefined): ObjectGroup[
   return changed ? normalized : groups
 }
 
+/** Lowercased names keyed by object identity. normalizeNodes preserves node,
+ *  group, and segment identity when unchanged, so entries persist across
+ *  repeated filtering of the same snapshot. */
+const lowerNameCache = new WeakMap<{ name: string }, string>()
+
+function lowerName(named: { name: string }): string {
+  let cached = lowerNameCache.get(named)
+  if (cached === undefined) {
+    cached = named.name.toLowerCase()
+    lowerNameCache.set(named, cached)
+  }
+  return cached
+}
+
+function pathMatches(path: ScopePath, query: string): boolean {
+  return path.some((segment) => lowerName(segment).includes(query))
+}
+
 function filterNodes(nodes: ScopeNode[], query: string): ScopeNode[] {
   return nodes
     .map((node) => {
-      if (node.path.some((segment) => segment.name.toLowerCase().includes(query))) return node
+      if (pathMatches(node.path, query)) return node
       const groups = node.groups
         .map((group) => ({
           ...group,
-          objects: group.objects.filter((object) => object.name.toLowerCase().includes(query)),
+          objects: group.objects.filter((object) => lowerName(object).includes(query)),
         }))
         .filter((group) => group.objects.length > 0)
       const children = filterNodes(node.children ?? [], query)
@@ -133,8 +165,6 @@ function filterNodes(nodes: ScopeNode[], query: string): ScopeNode[] {
     })
     .filter(
       (node) =>
-        node.groups.length > 0 ||
-        (node.children?.length ?? 0) > 0 ||
-        node.path.some((segment) => segment.name.toLowerCase().includes(query)),
+        node.groups.length > 0 || (node.children?.length ?? 0) > 0 || pathMatches(node.path, query),
     )
 }

@@ -8,6 +8,7 @@ import {
   connectionDirectoryQueryKey,
   connectionObjectDefinitionQueryKey,
   connectionObjectQueryKey,
+  connectionObjectsBatchQueryKey,
   connectionRelationshipsQueryKey,
 } from '#/lib/api/query'
 import { createTestQueryClient } from '#/test/render'
@@ -120,6 +121,49 @@ describe('useSchemaRefresh', () => {
     expect(queryClient.getQueryState(objectKey)?.isInvalidated).toBe(true)
     expect(queryClient.getQueryState(definitionKey)?.isInvalidated).toBe(true)
     expect(queryClient.getQueryState(directoryKey)?.isInvalidated).toBe(false)
+  })
+
+  it('keeps a persistent object refresh scoped to that object', async () => {
+    server.use(
+      http.post('/api/v1/orgs/acme/workspaces/3/connections/7/schema/refresh', () =>
+        HttpResponse.json({
+          status: 'ok',
+          mode: 'persistent',
+          snapshot_id: 'snapshot-4',
+          generated_at: '2026-08-06T00:00:00Z',
+        }),
+      ),
+    )
+    const directoryKey = connectionDirectoryQueryKey('acme', 3, 7)
+    const objectKey = connectionObjectQueryKey('acme', 3, 7, ref)
+    const definitionKey = connectionObjectDefinitionQueryKey('acme', 3, 7, ref)
+    const batchKey = connectionObjectsBatchQueryKey('acme', 3, 7, [
+      ref,
+      { scope: ref.scope, kind: 'table', name: 'orders' },
+    ])
+    queryClient.setQueryData(directoryKey, { directory: {} })
+    queryClient.setQueryData(objectKey, { ref })
+    queryClient.setQueryData(definitionKey, { descriptor: null })
+    queryClient.setQueryData(batchKey, [{ ref }])
+
+    const { result } = renderHook(
+      () =>
+        useSchemaRefresh({
+          orgSlug: 'acme',
+          workspaceId: 3,
+          connectionId: 7,
+          sessionId: 'session-7',
+          ref,
+        }),
+      { wrapper },
+    )
+    act(() => result.current.mutate())
+    await waitFor(() => expect(result.current.isSuccess).toBe(true))
+
+    expect(queryClient.getQueryState(objectKey)?.isInvalidated).toBe(true)
+    expect(queryClient.getQueryState(definitionKey)?.isInvalidated).toBe(true)
+    expect(queryClient.getQueryState(directoryKey)?.isInvalidated).toBe(false)
+    expect(queryClient.getQueryState(batchKey)?.isInvalidated).toBe(true)
   })
 
   it('reports refresh failures without invalidating cached schema data', async () => {

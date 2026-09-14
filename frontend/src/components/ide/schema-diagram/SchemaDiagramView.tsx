@@ -19,7 +19,7 @@ import {
 import '@xyflow/react/dist/style.css'
 import { toPng, toSvg } from 'html-to-image'
 import { toast } from 'sonner'
-import { useQueries, useQuery } from '@tanstack/react-query'
+import { useQuery } from '@tanstack/react-query'
 import { Icon } from '#/lib/icons'
 import { cn } from '#/lib/utils'
 import { Button } from '#/components/ui/button'
@@ -35,13 +35,14 @@ import { api } from '#/lib/api/client'
 import type { ObjectDetail, ObjectRef, ScopeNode, Workspace } from '#/lib/api/types'
 import { scopeKey, scopeLabel } from '#/lib/api/scope'
 import {
+  objectRefKey,
   orgConnectionDirectoryQueryOptions,
-  orgConnectionObjectQueryOptions,
   orgConnectionRelationshipsQueryOptions,
   orgConnectionSchemaSpecQueryOptions,
 } from '#/lib/api/query'
 import { useIde, type EditorTab } from '../useIdeStore'
 import { newObjectTab } from '../object-detail/objectTab'
+import { useObjectDetails } from '../useObjectDetails'
 import {
   edgeCardinality,
   estimateNodeSize,
@@ -289,30 +290,23 @@ function DiagramCanvas({
   )
 
   // Fetch column detail for on-canvas nodes (reuses the object-detail cache).
-  const detailResults = useQueries({
-    queries: present.map((ref) => ({
-      ...orgConnectionObjectQueryOptions(
-        orgSlug,
-        workspace.id,
-        connectionId ?? 0,
-        sessionId ?? '',
-        ref,
-      ),
-      enabled,
-    })),
+  const objectDetails = useObjectDetails({
+    orgSlug,
+    workspaceId: workspace.id,
+    connectionId: connectionId ?? 0,
+    sessionId,
+    refs: present,
+    enabled,
   })
-  useEvictGoneSession(
-    connectionId,
-    detailResults.map((r) => r.error),
-  )
+  useEvictGoneSession(connectionId, objectDetails.errors)
   const detailByKey = useMemo(() => {
     const map = new Map<string, { detail: ObjectDetail | null; loading: boolean }>()
-    present.forEach((ref, i) => {
-      const r = detailResults[i]
-      map.set(refKey(ref), { detail: r?.data ?? null, loading: r?.isLoading ?? false })
-    })
+    for (const ref of present) {
+      const entry = objectDetails.byRef.get(objectRefKey(ref))
+      map.set(refKey(ref), { detail: entry?.detail ?? null, loading: entry?.loading ?? false })
+    }
     return map
-  }, [present, detailResults])
+  }, [present, objectDetails])
 
   const presentKeys = useMemo(() => new Set(present.map(refKey)), [present])
 

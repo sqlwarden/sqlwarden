@@ -27,6 +27,7 @@ type effectiveRuntimeSettings struct {
 	ExportsSyncMaxBytes        int64
 	ExportsBackgroundMaxBytes  int64
 	SchemaSnapshotFreshness    time.Duration
+	SchemaLazyThreshold        int
 	FileRevisionsEnabled       bool
 	FileRevisionsKeepLatest    int
 	ErrorNotificationEmail     string
@@ -196,6 +197,7 @@ func effectiveSettingsFromInstance(settings database.InstanceSettings) effective
 		ExportsSyncMaxBytes:        settings.ExportsSyncMaxBytes,
 		ExportsBackgroundMaxBytes:  settings.ExportsBackgroundMaxBytes,
 		SchemaSnapshotFreshness:    time.Duration(settings.SchemaSnapshotFreshnessSeconds) * time.Second,
+		SchemaLazyThreshold:        settings.SchemaLazyThreshold,
 		FileRevisionsEnabled:       settings.FileRevisionsEnabled,
 		FileRevisionsKeepLatest:    settings.FileRevisionsKeepLatest,
 		ErrorNotificationEmail:     settings.ErrorNotificationEmail,
@@ -313,6 +315,7 @@ func (app *application) instanceSettingsResponse(settings database.InstanceSetti
 		"exports_sync_max_bytes":            settings.ExportsSyncMaxBytes,
 		"exports_background_max_bytes":      settings.ExportsBackgroundMaxBytes,
 		"schema_snapshot_freshness_seconds": settings.SchemaSnapshotFreshnessSeconds,
+		"schema_lazy_threshold":             settings.SchemaLazyThreshold,
 		"file_revisions_enabled":            settings.FileRevisionsEnabled,
 		"file_revisions_keep_latest":        settings.FileRevisionsKeepLatest,
 		"error_notification_email":          settings.ErrorNotificationEmail,

@@ -6,6 +6,7 @@ import (
 	"maps"
 	"net/http"
 	"net/url"
+	"path/filepath"
 	"strconv"
 	"strings"
 	"sync"
@@ -222,6 +223,57 @@ func TestGetConnectionDirectory_InspectsAndCaches(t *testing.T) {
 	objects := firstGroup["objects"].([]any)
 	firstObject := objects[0].(map[string]any)
 	assert.Equal(t, firstObject["name"], "widgets")
+}
+
+func TestEphemeralSchemaDirectoryMarksLargeScopesLazy(t *testing.T) {
+	t.Parallel()
+	app := newTestApp(t)
+	owner, tok, org := seedOrgOwner(t, app, uniqueEmail(t, "ephemeral-lazy"), "Ephemeral Lazy", "Ephemeral Lazy Org")
+	ws := seedWorkspaceForAccount(t, app, org, owner, "Schema WS", "")
+	envID := defaultEnvironmentID(t, app, ws.ID)
+	conn := seedConnection(t, app, ws.ID, &envID, org.ID, "sqlite", "Schema Conn", "open")
+	updateInstanceSettingsForTest(t, app, func(s *database.InstanceSettings) {
+		s.SchemaLazyThreshold = 1
+	})
+	sess := openSchemaSession(t, app, owner.ID, conn.ID, schemaTwoObjectDriver{})
+
+	endpoint := orgConnectionURL(org.Slug, ws.ID, envID, strconv.FormatInt(conn.ID, 10)) + "/schema/directory"
+	req := newAuthRequest(t, http.MethodGet, endpoint, nil, tok)
+	req.Header.Set("X-Warden-Session", sess.ID)
+	res := send(t, req, app.routes())
+	assert.Equal(t, res.StatusCode, http.StatusOK)
+
+	directory, ok := res.BodyFields["directory"].(map[string]any)
+	if !ok {
+		t.Fatalf("missing directory: %+v", res.BodyFields)
+	}
+	roots, ok := directory["roots"].([]any)
+	if !ok || len(roots) != 1 {
+		t.Fatalf("missing roots: %+v", directory)
+	}
+	root, ok := roots[0].(map[string]any)
+	if !ok || root["lazy"] != true {
+		t.Fatalf("expected root scope to be marked lazy: %+v", root)
+	}
+}
+
+type schemaTwoObjectDriver struct{ schemaFakeDriver }
+
+func (schemaTwoObjectDriver) InspectDirectory(_ context.Context, _ metadata.DirectoryOptions) (*metadata.Directory, error) {
+	scope := metadata.NewScopePath(metadata.ScopeSegment{Kind: "database", Name: "main"})
+	return &metadata.Directory{
+		Engine: "sqlite", DefaultScope: scope,
+		Roots: []metadata.ScopeNode{{
+			Path: scope,
+			Groups: []metadata.ObjectGroup{{
+				Kind: "table",
+				Objects: []metadata.ObjectRef{
+					{Scope: scope, Kind: "table", Name: "widgets"},
+					{Scope: scope, Kind: "table", Name: "gadgets"},
+				},
+			}},
+		}},
+	}, nil
 }
 
 func TestGetConnectionSchemaSpec(t *testing.T) {
@@ -611,5 +663,73 @@ func TestApplyConnectionTableEditPayloads(t *testing.T) {
 	index := driver.applied[2]
 	if !index.Unique || len(index.IndexColumns) != 2 || index.IndexColumns[0].Name != "count" || !index.IndexColumns[0].Descending || index.IndexColumns[1].Name != "id" {
 		t.Fatalf("index payload: %+v", index)
+	}
+}
+
+func TestLoadConnectionSchemaScopeFillsDetailForALazyScope(t *testing.T) {
+	t.Parallel()
+	app := newTestApp(t)
+	owner, tok, org := seedOrgOwner(t, app, uniqueEmail(t, "load-scope"), "Load Scope", "Load Scope Org")
+	ws := seedWorkspaceForAccount(t, app, org, owner, "Snapshot WS", "")
+	envID := defaultEnvironmentID(t, app, ws.ID)
+
+	dsn := filepath.Join(t.TempDir(), "target.db")
+	driver, err := engine.New("sqlite")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := driver.Connect(context.Background(), engine.ConnectionConfig{DSN: dsn}); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := driver.Execute(context.Background(), "CREATE TABLE widgets (id INTEGER PRIMARY KEY)"); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := driver.Execute(context.Background(), "CREATE TABLE gadgets (id INTEGER PRIMARY KEY)"); err != nil {
+		t.Fatal(err)
+	}
+	if err := driver.Close(); err != nil {
+		t.Fatal(err)
+	}
+
+	updateInstanceSettingsForTest(t, app, func(s *database.InstanceSettings) {
+		s.SchemaLazyThreshold = 1
+	})
+
+	created := send(t, newAuthRequest(t, http.MethodPost, orgEnvConnectionsURL(org.Slug, ws.ID, envID),
+		map[string]any{"name": "Target", "driver": "sqlite", "dsn": dsn}, tok), app.routes())
+	if created.StatusCode != http.StatusCreated {
+		t.Fatalf("create target connection: status=%d body=%s", created.StatusCode, created.BodyBytes)
+	}
+	connectionID := int64(created.BodyFields["id"].(float64))
+	connIDStr := strconv.FormatInt(connectionID, 10)
+
+	res := send(t, newAuthRequest(t, http.MethodPost,
+		orgConnectionURL(org.Slug, ws.ID, envID, connIDStr)+"/schema/refresh", nil, tok), app.routes())
+	assert.Equal(t, res.StatusCode, http.StatusOK)
+
+	_, directory, found, err := app.schemaSnapshots.Active(context.Background(), connectionID)
+	if err != nil || !found {
+		t.Fatalf("expected active snapshot: found=%v err=%v", found, err)
+	}
+	if !directory.Roots[0].Lazy {
+		t.Fatalf("expected the 2-object scope over threshold 1 to be lazy: %+v", directory.Roots[0])
+	}
+	scope := directory.Roots[0].Path
+
+	loadRes := send(t, newAuthRequest(t, http.MethodPost,
+		orgConnectionURL(org.Slug, ws.ID, envID, connIDStr)+"/schema/scope/load",
+		map[string]any{"scope": scope}, tok), app.routes())
+	assert.Equal(t, loadRes.StatusCode, http.StatusOK)
+
+	snapshot, _, found, err := app.schemaSnapshots.Active(context.Background(), connectionID)
+	if err != nil || !found {
+		t.Fatalf("expected active snapshot: found=%v err=%v", found, err)
+	}
+	stored, err := app.schemaSnapshots.AllObjects(context.Background(), snapshot.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(stored) != 2 {
+		t.Fatalf("expected both objects in the lazy scope to now have detail, got %d", len(stored))
 	}
 }

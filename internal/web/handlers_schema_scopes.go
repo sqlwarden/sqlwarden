@@ -83,7 +83,11 @@ func (app *application) getConnectionSchemaScopeDirectory(w http.ResponseWriter,
 		}
 	}
 	app.withLiveSchemaInspector(w, r, persistent, func(ctx context.Context, connID string, inspector metadata.SchemaInspector) error {
-		if !inspector.SchemaSpec().BrowseScopes {
+		allowed, err := app.canFetchScopeDirectory(ctx, r, connID, scope, persistent, inspector)
+		if err != nil {
+			return err
+		}
+		if !allowed {
 			app.errorMessage(w, r, http.StatusNotImplemented, "This driver does not support browsing additional scopes.", nil)
 			return nil
 		}
@@ -97,10 +101,47 @@ func (app *application) getConnectionSchemaScopeDirectory(w http.ResponseWriter,
 	})
 }
 
+// canFetchScopeDirectory reports whether scope's detail may be fetched. This
+// is true for either of two unrelated capabilities: the driver can browse to
+// scopes outside its own tree (metadata.SchemaSpec.BrowseScopes, e.g.
+// Oracle's cross-schema-owner browsing), or scope is a node the connection's
+// own directory already lists as lazy, in which case fetching its detail is
+// a normal InspectDirectory call every driver already supports.
+func (app *application) canFetchScopeDirectory(ctx context.Context, r *http.Request, connID string, scope metadata.ScopePath, persistent bool, inspector metadata.SchemaInspector) (bool, error) {
+	if inspector.SchemaSpec().BrowseScopes {
+		return true, nil
+	}
+	return app.knownLazyScope(ctx, r, connID, scope, persistent, inspector)
+}
+
+// knownLazyScope reports whether scope is a node the connection's own
+// directory already lists as lazy.
+func (app *application) knownLazyScope(ctx context.Context, r *http.Request, connID string, scope metadata.ScopePath, persistent bool, inspector metadata.SchemaInspector) (bool, error) {
+	if persistent {
+		_, directory, found, err := app.schemaSnapshots.Active(ctx, contextGetConnection(r).ID)
+		if err != nil || !found {
+			return false, err
+		}
+		return lazySchemaScope(directory, scope), nil
+	}
+	directory, err := app.schemaService.Directory(ctx, connID, inspector)
+	if err != nil {
+		return false, err
+	}
+	settings, err := app.effectiveRuntimeSettingsForWorkspace(ctx, contextGetWorkspace(r))
+	if err != nil {
+		return false, err
+	}
+	markLazyScopes(directory, settings.SchemaLazyThreshold)
+	return lazySchemaScope(directory, scope), nil
+}
+
 // liveSchemaObjects resolves persistent-mode object details from the cache,
-// inspecting cache misses through a temporary target connection. Callers must
-// authorize schema access before calling because a full cache hit opens no
-// connection. A false result means an error response has already been written.
+// inspecting cache misses through a temporary target connection and writing
+// them into the connection's active snapshot so later requests read the same
+// fetched detail without re-inspecting the driver. Callers must authorize
+// schema access before calling because a full cache hit opens no connection.
+// A false result means an error response has already been written.
 func (app *application) liveSchemaObjects(w http.ResponseWriter, r *http.Request, refs []metadata.ObjectRef) ([]metadata.Object, bool) {
 	connID := strconv.FormatInt(contextGetConnection(r).ID, 10)
 	cached := app.schemaService.CachedObjects(connID, refs)
@@ -112,8 +153,16 @@ func (app *application) liveSchemaObjects(w http.ResponseWriter, r *http.Request
 	app.withLiveSchemaInspector(w, r, true, func(ctx context.Context, connID string, inspector metadata.SchemaInspector) error {
 		var err error
 		objects, err = app.schemaService.Objects(ctx, connID, refs, inspector)
-		success = err == nil
-		return err
+		if err != nil {
+			return err
+		}
+		if snapshot, _, found, snapErr := app.schemaSnapshots.Active(ctx, contextGetConnection(r).ID); snapErr == nil && found {
+			if upsertErr := app.schemaSnapshots.UpsertObjects(ctx, snapshot.ID, objects); upsertErr != nil {
+				return upsertErr
+			}
+		}
+		success = true
+		return nil
 	})
 	return objects, success
 }

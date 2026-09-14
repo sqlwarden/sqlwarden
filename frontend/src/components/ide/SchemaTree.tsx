@@ -1,9 +1,12 @@
-import { createContext, useContext, useEffect, useState } from 'react'
-import { useQuery } from '@tanstack/react-query'
+import { createContext, useContext, useDeferredValue, useEffect, useMemo, useState } from 'react'
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
+import { toast } from 'sonner'
 import { Icon, type AppIcon } from '#/lib/icons'
 import { cn } from '#/lib/utils'
-import { isApiError } from '#/lib/api/errors'
+import { errorMessage, isApiError } from '#/lib/api/errors'
 import {
+  invalidateConnectionSchemaQueries,
+  loadSchemaScope,
   orgConnectionDirectoryQueryOptions,
   orgConnectionSchemaSpecQueryOptions,
   orgConnectionObjectQueryOptions,
@@ -35,11 +38,13 @@ import { OBJECT_REF_DND_MIME } from './schema-diagram/dnd'
 import {
   defaultCreateTableScope,
   filterDirectory,
+  filterNormalized,
   formatRowCount,
   hasDirectoryObjects,
   isRelationalKind,
   kindLabel,
   kindLabelSingular,
+  normalizeDirectory,
   sortedGroups,
 } from './schemaDirectory'
 import { scopeLabel } from '#/lib/api/scope'
@@ -264,6 +269,18 @@ export function SchemaTree({
     operation: StatementOperation
   } | null>(null)
 
+  const rawDirectory = directoryQuery.data?.directory
+  const normalizedDirectory = useMemo(
+    () => (rawDirectory ? normalizeDirectory(rawDirectory) : undefined),
+    [rawDirectory],
+  )
+  const deferredFilter = useDeferredValue(filter)
+  const filteredDirectory = useMemo(() => {
+    if (!normalizedDirectory) return undefined
+    const q = deferredFilter.trim()
+    return q ? filterNormalized(normalizedDirectory, q) : normalizedDirectory
+  }, [normalizedDirectory, deferredFilter])
+
   // A 410 from any schema endpoint means the server-side session died (idle
   // timeout, restart). Drop it so the tree flips to the reconnect hint instead
   // of erroring forever against a dead session id.
@@ -319,7 +336,7 @@ export function SchemaTree({
     )
   }
 
-  const raw = directoryQuery.data?.directory
+  const raw = normalizedDirectory
   if (!raw) {
     if (directoryQuery.data?.status === 'pending') {
       return (
@@ -352,7 +369,7 @@ export function SchemaTree({
 
   const browseScopes = specQuery.data?.spec.browse_scopes === true
   const filtering = filter.trim() !== ''
-  const roots = filterDirectory(raw, filter).roots
+  const roots = (filteredDirectory ?? raw).roots
   const noScope = roots.length === 0
   // A single unambiguous empty scope (one root, at most one child) collapses to
   // the flat empty state below. A directory with multiple schemas/databases
@@ -386,7 +403,7 @@ export function SchemaTree({
 
   const ctx: TreeCtx = {
     defaultScope: raw.default_scope,
-    objectFilter: filter,
+    objectFilter: deferredFilter,
     dialect,
     insert,
     refresh: () => refreshSchema.mutate(),
@@ -646,6 +663,7 @@ function GuideChildren({ children }: { children: React.ReactNode }) {
 
 function SchemaScopeNode({ node, forceOpen }: { node: ScopeNode; forceOpen: boolean }) {
   const ctx = useContext(SchemaTreeContext)!
+  const queryClient = useQueryClient()
   const [open, setOpen] = useTreeExpansion(`scope:${ctx.connectionId}:${JSON.stringify(node.path)}`)
   const current =
     ctx.spec?.browse_scopes && JSON.stringify(node.path) === JSON.stringify(ctx.defaultScope)
@@ -661,15 +679,34 @@ function SchemaScopeNode({ node, forceOpen }: { node: ScopeNode; forceOpen: bool
     enabled: Boolean(node.lazy && expanded),
     retry: false,
   })
+  const loadAll = useMutation({
+    mutationFn: () =>
+      loadSchemaScope(ctx.orgSlug, ctx.workspaceId, ctx.connectionId, node.path, ctx.sessionId),
+    onSuccess: async () => {
+      await invalidateConnectionSchemaQueries(
+        queryClient,
+        ctx.orgSlug,
+        ctx.workspaceId,
+        ctx.connectionId,
+      )
+      invalidateCompletionIndex(ctx.connectionId)
+      toast.success('Schema loaded')
+    },
+    onError: (error) => {
+      toast.error(errorMessage(error, 'Failed to load schema'))
+    },
+  })
   useEvictGoneSession(ctx.connectionId, [scopeQuery.error])
   useEffect(() => {
     if (scopeQuery.data?.directory) invalidateCompletionIndex(ctx.connectionId)
   }, [scopeQuery.data, ctx.connectionId])
   const loaded = scopeQuery.data?.directory
-  const visible = loaded
-    ? filterDirectory(loaded, ctx.objectFilter).roots.find(
-        (entry) => JSON.stringify(entry.path) === JSON.stringify(node.path),
-      )
+  const filteredRoots = useMemo(
+    () => (loaded ? filterDirectory(loaded, ctx.objectFilter).roots : undefined),
+    [loaded, ctx.objectFilter],
+  )
+  const visible = filteredRoots
+    ? filteredRoots.find((entry) => JSON.stringify(entry.path) === JSON.stringify(node.path))
     : node
   const {
     refresh,
@@ -699,6 +736,7 @@ function SchemaScopeNode({ node, forceOpen }: { node: ScopeNode; forceOpen: bool
     createTableDisabledReason: createGate.allowed ? undefined : createGate.reason,
     onDropScope: dropGate.allowed ? () => openDropScope?.(node.path, scopeKind) : undefined,
     dropScopeDisabledReason: dropGate.allowed ? undefined : dropGate.reason,
+    onLoadAll: node.lazy ? () => loadAll.mutate() : undefined,
   })
 
   return (
@@ -845,6 +883,13 @@ function SchemaObjectNode({
     ),
     enabled: Boolean(ctx) && (expanded || inlineDetail),
   })
+  const objectRefresh = useSchemaRefresh({
+    orgSlug: ctx!.orgSlug,
+    workspaceId: ctx!.workspaceId,
+    connectionId: ctx!.connectionId,
+    sessionId: ctx!.sessionId,
+    ref: objectRef,
+  })
   useEffect(() => {
     if (detailQuery.data && ctx?.connectionId) invalidateCompletionIndex(ctx.connectionId)
   }, [detailQuery.data, ctx?.connectionId])
@@ -886,6 +931,7 @@ function SchemaObjectNode({
     onCreateIndex: createIndexGate.allowed ? () => openCreateIndex?.(objectRef) : undefined,
     isView,
     onOpen: () => ctx?.openObject(objectRef),
+    onRefresh: () => objectRefresh.mutate(),
     onViewDiagram:
       diagramSupportedForKind(spec, objectRef.kind) && openDiagram
         ? () => openDiagram({ kind: 'object', ref: objectRef })

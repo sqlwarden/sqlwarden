@@ -3,6 +3,10 @@ import type { ContextMenuItem } from '#/components/ui/context-menu'
 export type NamespaceMenuCtx = {
   onCopyName: () => void
   onRefresh: () => void
+  /** Fetches full object detail for every object in this scope right now,
+   *  overriding the lazy-load threshold. Present only for a scope currently
+   *  marked lazy. */
+  onLoadAll?: () => void
   onViewDiagram?: () => void
   /** Label naming the scope kind, e.g. "Drop schema" / "Drop database". */
   dropLabel: string
@@ -34,6 +38,17 @@ export function buildNamespaceMenu(ctx: NamespaceMenuCtx): ContextMenuItem[] {
       onSelect: ctx.onCopyName,
     },
     { kind: 'action', id: 'refresh', label: 'Refresh', icon: 'refresh', onSelect: ctx.onRefresh },
+    ...(ctx.onLoadAll
+      ? [
+          {
+            kind: 'action',
+            id: 'load-all',
+            label: 'Load full detail',
+            icon: 'download-01',
+            onSelect: ctx.onLoadAll,
+          } as ContextMenuItem,
+        ]
+      : []),
     { kind: 'separator' },
     {
       kind: 'action',
