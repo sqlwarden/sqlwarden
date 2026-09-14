@@ -20,6 +20,7 @@ const icons: Record<AppIcon, string> = {
   'checkmark-circle-02': 'hugeicons:checkmark-circle-02',
   'chevron-down': 'hugeicons:arrow-down-01',
   'chevron-right': 'hugeicons:arrow-right-01',
+  'code-braces': 'hugeicons:code',
   command: 'hugeicons:command',
   'computer-terminal': 'hugeicons:computer',
   'copy-01': 'hugeicons:copy-01',

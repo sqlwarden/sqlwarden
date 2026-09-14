@@ -209,6 +209,8 @@ describe('SqlEditor', () => {
           onExplainAnalyze: vi.fn(),
           onFormat,
           onSaveFavorite: vi.fn(),
+          onRunSegment: vi.fn(),
+          onExplainSegment: vi.fn(),
         }}
       />,
       { wrapper: Providers },

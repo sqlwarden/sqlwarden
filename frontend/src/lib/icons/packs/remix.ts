@@ -20,6 +20,7 @@ const icons: Record<AppIcon, string> = {
   'checkmark-circle-02': 'ri:checkbox-circle-line',
   'chevron-down': 'ri:arrow-down-s-line',
   'chevron-right': 'ri:arrow-right-s-line',
+  'code-braces': 'ri:braces-line',
   command: 'ri:command-line',
   'computer-terminal': 'ri:computer-line',
   'copy-01': 'ri:file-copy-line',

@@ -123,3 +123,25 @@ export function splitSqlStatements(text: string): string[] {
     .map((statement) => (statement.endsWith(';') ? statement.slice(0, -1).trim() : statement))
     .filter((statement) => statement.length > 0)
 }
+
+/** One non-empty top-level statement plus its byte offsets into the original,
+ *  untrimmed text — for callers that need to map back to editor positions
+ *  (e.g. to place UI over a specific statement). Unlike `splitSqlStatements`,
+ *  the terminating semicolon is kept in both `sql` and the offset range. */
+export type SqlStatementWithOffsets = { sql: string; start: number; end: number }
+
+/** Same statement boundaries as `splitSqlStatements`, with each statement's
+ *  offsets into `text`. Leading/trailing whitespace within a span is excluded
+ *  from the offsets, matching the trimmed `sql`. */
+export function sqlStatementsWithOffsets(text: string): SqlStatementWithOffsets[] {
+  const result: SqlStatementWithOffsets[] = []
+  for (const [start, end] of sqlStatementSpans(text)) {
+    const raw = text.slice(start, end)
+    const sql = raw.trim()
+    const withoutTerminator = sql.endsWith(';') ? sql.slice(0, -1).trim() : sql
+    if (!withoutTerminator) continue
+    const leading = raw.indexOf(sql)
+    result.push({ sql, start: start + leading, end: start + leading + sql.length })
+  }
+  return result
+}

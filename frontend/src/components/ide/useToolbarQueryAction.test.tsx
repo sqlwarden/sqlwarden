@@ -171,6 +171,24 @@ describe('useToolbarQueryAction', () => {
     docs.disposeAll()
   })
 
+  it('run uses sqlOverride instead of re-resolving from the editor when given', async () => {
+    const { result } = renderHook(
+      () =>
+        useToolbarQueryAction({
+          orgSlug: 'acme',
+          workspace,
+          activeTab: { ...tab, content: 'select 1' },
+          activeConnection: connection,
+          hasConnections: true,
+        }),
+      { wrapper },
+    )
+
+    await act(() => result.current.run('select 2'))
+
+    expect(mocks.run).toHaveBeenCalledWith('select 2')
+  })
+
   it('explains a missing selection or an empty workspace connection list', async () => {
     const first = renderHook(
       () =>

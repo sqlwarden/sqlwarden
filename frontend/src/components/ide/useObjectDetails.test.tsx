@@ -26,13 +26,16 @@ describe('useObjectDetails', () => {
   it('groups refs into chunks instead of one request per ref', async () => {
     const requests: ObjectRef[][] = []
     server.use(
-      http.post('/api/v1/orgs/acme/workspaces/3/connections/7/schema/objects', async ({ request }) => {
-        const body = (await request.json()) as { refs: ObjectRef[] }
-        requests.push(body.refs)
-        return HttpResponse.json({
-          objects: body.refs.map((ref) => ({ ref, relational: { columns: [] } })),
-        })
-      }),
+      http.post(
+        '/api/v1/orgs/acme/workspaces/3/connections/7/schema/objects',
+        async ({ request }) => {
+          const body = (await request.json()) as { refs: ObjectRef[] }
+          requests.push(body.refs)
+          return HttpResponse.json({
+            objects: body.refs.map((ref) => ({ ref, relational: { columns: [] } })),
+          })
+        },
+      ),
     )
 
     const refs = Array.from({ length: 5 }, (_, i) => tableRef(`t${i}`))
@@ -52,7 +55,9 @@ describe('useObjectDetails', () => {
     )
 
     await waitFor(() => {
-      expect(result.current.byRef.get('[{"kind":"schema","name":"public"}]:table:t4')?.detail).not.toBeNull()
+      expect(
+        result.current.byRef.get('[{"kind":"schema","name":"public"}]:table:t4')?.detail,
+      ).not.toBeNull()
     })
 
     // 5 refs at chunk size 2 -> 3 requests, not 5.

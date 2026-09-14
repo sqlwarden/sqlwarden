@@ -119,30 +119,33 @@ export function useToolbarQueryAction({
     [activeGroupId, activeTab, viewRegistry, documentRegistry],
   )
 
-  const run = useCallback(async () => {
-    if (!activeTab || isRunning) return
-    if (!activeConnection) {
-      toast.warning(
-        hasConnections
-          ? 'Select a connection to run this query.'
-          : 'No connection available. Add a connection to run queries.',
-      )
-      return
-    }
-    const sql = resolveSql()
-    if (!sql) return
-    if (maximizedPane === 'editor') setMaximizedPane(null)
-    await execute(sql)
-  }, [
-    activeTab,
-    activeConnection,
-    hasConnections,
-    isRunning,
-    maximizedPane,
-    resolveSql,
-    setMaximizedPane,
-    execute,
-  ])
+  const run = useCallback(
+    async (sqlOverride?: string) => {
+      if (!activeTab || isRunning) return
+      if (!activeConnection) {
+        toast.warning(
+          hasConnections
+            ? 'Select a connection to run this query.'
+            : 'No connection available. Add a connection to run queries.',
+        )
+        return
+      }
+      const sql = sqlOverride ?? resolveSql()
+      if (!sql) return
+      if (maximizedPane === 'editor') setMaximizedPane(null)
+      await execute(sql)
+    },
+    [
+      activeTab,
+      activeConnection,
+      hasConnections,
+      isRunning,
+      maximizedPane,
+      resolveSql,
+      setMaximizedPane,
+      execute,
+    ],
+  )
 
   const { data: activeEngine } = useQuery({
     ...engineDetailQueryOptions(activeConnection?.driver ?? ''),
