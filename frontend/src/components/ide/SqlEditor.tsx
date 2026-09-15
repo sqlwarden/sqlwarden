@@ -65,9 +65,7 @@ export type SqlEditorContextMenuConfig = {
   onExplainAnalyze: () => void
   onFormat: () => void
   onSaveFavorite: () => void
-  /** Runs the hovered statement directly, bypassing cursor/selection resolution. */
   onRunSegment: (sql: string) => void
-  /** Explains the hovered statement directly, bypassing cursor/selection resolution. */
   onExplainSegment: (sql: string) => void
 }
 
