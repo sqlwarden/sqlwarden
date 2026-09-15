@@ -88,6 +88,27 @@ func TestOracleExplainRejectsAlreadyExplainedStatement(t *testing.T) {
 	}
 }
 
+func TestTrimTrailingSemicolon(t *testing.T) {
+	cases := []struct {
+		name string
+		sql  string
+		want string
+	}{
+		{"lone statement", "SELECT 1 FROM dual ;  ", "SELECT 1 FROM dual"},
+		{"no trailing semicolon", "SELECT 1 FROM dual", "SELECT 1 FROM dual"},
+		{"anonymous block", "BEGIN DBMS_STATS.GATHER_TABLE_STATS(USER, 'T'); END;", "BEGIN DBMS_STATS.GATHER_TABLE_STATS(USER, 'T'); END;"},
+		{"labeled block end", "BEGIN NULL; END my_block;", "BEGIN NULL; END my_block;"},
+		{"create trigger body", "CREATE OR REPLACE TRIGGER t BEFORE INSERT ON tbl BEGIN NULL; END;", "CREATE OR REPLACE TRIGGER t BEFORE INSERT ON tbl BEGIN NULL; END;"},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			if got := trimTrailingSemicolon(tc.sql); got != tc.want {
+				t.Fatalf("trimTrailingSemicolon(%q) = %q, want %q", tc.sql, got, tc.want)
+			}
+		})
+	}
+}
+
 func TestOracleExplainRejectsUnknownMode(t *testing.T) {
 	driver := &oracleDriver{}
 

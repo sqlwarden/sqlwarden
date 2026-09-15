@@ -106,6 +106,11 @@ func grantPrivileges(ctx context.Context, sysDSN, user string) error {
 			return fmt.Errorf("grant %q: %w", priv, err)
 		}
 	}
+	// AQ (advanced queuing) objects exercised by TestOracleInspectCatalogObjectKinds
+	// need EXECUTE on DBMS_AQADM; it isn't covered by any system privilege.
+	if _, err := db.ExecContext(ctx, "GRANT EXECUTE ON DBMS_AQADM TO "+user); err != nil {
+		return fmt.Errorf("grant execute on dbms_aqadm: %w", err)
+	}
 	return nil
 }
 

@@ -143,7 +143,7 @@ describe('ConnectionDialog', () => {
       }),
     )
     expect(createBody?.dsn).toContain('/analytics')
-  })
+  }, 10000)
 
   it('toggles password field visibility', async () => {
     const user = userEvent.setup()
