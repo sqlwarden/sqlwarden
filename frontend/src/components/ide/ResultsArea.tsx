@@ -14,6 +14,7 @@ import {
 } from './useIdeStore'
 import { closeRunCursors } from './resultRunHistory'
 import { visibleRuns, resolveSelectedRunId } from './resultRunFilter'
+import { useTabStripOverflow } from './useTabStripOverflow'
 import { useContextMenuOpener } from '#/components/ui/context-menu'
 import {
   DropdownMenu,
@@ -32,6 +33,7 @@ import { ExportButton } from './exports/ExportButton'
 import { ViewQueryDialog } from './ViewQueryDialog'
 import { allOrgWorkspaceConnectionsQueryOptions } from '#/lib/api/query'
 import { useResultCursorPaging } from './useResultCursorPaging'
+import { resultRowCountLabel } from './cursorPaging'
 import { DataGrid } from './dataGrid/DataGrid'
 
 type ResultsAreaProps = {
@@ -396,6 +398,8 @@ function RunTabStrip({
   const openContextMenu = useContextMenuOpener()
   const allIds = runs.map((r) => r.id)
   const pinnedIds = new Set(runs.filter((r) => r.pinned).map((r) => r.id))
+  const newestRunId = runs[runs.length - 1]?.id
+  const overflow = useTabStripOverflow(newestRunId, runs.length)
 
   // Bulk-close scopes exclude pinned runs — a pin protects a run from
   // "close others"/"to the right"/"to the left" the same way it protects it
@@ -429,9 +433,11 @@ function RunTabStrip({
 
   return (
     <div
+      ref={overflow.scrollRef}
+      onWheel={overflow.handleWheel}
       role="tablist"
       aria-label="Runs"
-      className="flex h-8 min-w-0 flex-1 items-center gap-0 overflow-x-auto"
+      className="flex h-8 min-w-0 flex-1 items-center gap-0 overflow-x-auto [scrollbar-width:none] [&::-webkit-scrollbar]:hidden"
     >
       {runs.map((run, index) => {
         const status = runStatus(run.results)
@@ -443,6 +449,7 @@ function RunTabStrip({
         return (
           <div
             key={run.id}
+            data-tab-id={run.id}
             role="tab"
             aria-selected={selected}
             title={sourceTabTitle}
@@ -762,7 +769,6 @@ function ResultSetView({
   const rows = result.data.rows ?? []
   const hasColumns = columns.length > 0
   const rowsAffected = result.data.rows_affected
-  const queryCursorId = result.data.query_cursor_id
 
   const tabs = useIde((s) => s.tabs)
   const activeTab = activeTabId ? tabs.find((t) => t.id === activeTabId) : undefined
@@ -833,17 +839,29 @@ function ResultSetView({
             <span className="mx-1.5 shrink-0 opacity-40">·</span>
           </>
         )}
-        <span className="shrink-0 tabular-nums">
-          {rows.length === 1 ? '1 row' : `${rows.length} rows`}
-          {queryCursorId ? ' fetched' : ''}
-        </span>
-        <span className="mx-1.5 shrink-0 opacity-40">·</span>
         <span className="shrink-0 tabular-nums">{durationMs}ms</span>
-        {result.isFetchingNextPage && (
+        <span className="mx-1.5 shrink-0 opacity-40">·</span>
+        <span className="shrink-0 tabular-nums">
+          {resultRowCountLabel(rows.length, result.data.exhausted)}
+        </span>
+        {result.isFetchingNextPage ? (
           <>
             <span className="mx-1.5 shrink-0 opacity-40">·</span>
             <span className="shrink-0">Loading more…</span>
           </>
+        ) : (
+          canFetchMore && (
+            <>
+              <span className="mx-1.5 shrink-0 opacity-40">·</span>
+              <button
+                type="button"
+                onClick={fetchNextPage}
+                className="shrink-0 text-foreground hover:underline"
+              >
+                Load more
+              </button>
+            </>
+          )
         )}
         {result.cursorMessage && (
           <>

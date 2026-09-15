@@ -80,6 +80,18 @@ describe('DataGrid', () => {
     expect(writeText).toHaveBeenCalledWith('Ada')
   })
 
+  it('selects the whole grid with the select-all shortcut', () => {
+    const writeText = vi.spyOn(navigator.clipboard, 'writeText')
+    renderGrid()
+
+    const cell = screen.getByText('Ada').closest('[data-cell]')!
+    fireEvent.mouseDown(cell)
+    fireEvent.keyDown(cell, { key: 'a', ctrlKey: true })
+    fireEvent.keyDown(cell, { key: 'c', ctrlKey: true })
+
+    expect(writeText).toHaveBeenCalledWith('1\tAda\n2\tGrace')
+  })
+
   it('falls back to the default copy-only cell menu when no builder is passed', () => {
     renderGrid()
     fireEvent.contextMenu(screen.getByText('Ada').closest('td')!)

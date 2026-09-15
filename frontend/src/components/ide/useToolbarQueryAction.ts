@@ -6,6 +6,7 @@ import type { Connection, Workspace } from '#/lib/api/types'
 import { sqlStatementAtCursor } from './sqlStatements'
 import type { EditorTab } from './useIdeStore'
 import { useIde } from './useIdeStore'
+import { useConnectionActions } from './useConnectionActions'
 import { useEditorViewRegistry, type EditorViewRegistry } from './useEditorViewRegistry'
 import { useQueryExecution } from './useQueryExecution'
 import { useRunAllStatements } from './useRunAllStatements'
@@ -77,6 +78,21 @@ export function useToolbarQueryAction({
   const viewRegistry = useEditorViewRegistry()
   const maximizedPane = useIde((state) => state.maximizedPane)
   const setMaximizedPane = useIde((state) => state.setMaximizedPane)
+  const { connect, sessions } = useConnectionActions(orgSlug, workspace)
+
+  const needsConnect = useCallback(
+    (connection: Connection) => {
+      if (sessions[connection.id]) return false
+      toast.warning(`Not connected to ${connection.name}.`, {
+        action: {
+          label: 'Connect',
+          onClick: () => connect(connection, { openConsole: false }),
+        },
+      })
+      return true
+    },
+    [connect, sessions],
+  )
   const {
     cancel: cancelRun,
     confirmAt: confirmAtPlain,
@@ -130,6 +146,7 @@ export function useToolbarQueryAction({
         )
         return
       }
+      if (needsConnect(activeConnection)) return
       const sql = sqlOverride ?? resolveSql()
       if (!sql) return
       if (maximizedPane === 'editor') setMaximizedPane(null)
@@ -141,6 +158,7 @@ export function useToolbarQueryAction({
       hasConnections,
       isRunning,
       maximizedPane,
+      needsConnect,
       resolveSql,
       setMaximizedPane,
       execute,
@@ -165,6 +183,7 @@ export function useToolbarQueryAction({
         )
         return
       }
+      if (needsConnect(activeConnection)) return
       const sql = sqlOverride ?? resolveSql()
       if (!sql) return
       if (analyze && !canExplainAnalyze) {
@@ -183,6 +202,7 @@ export function useToolbarQueryAction({
       hasConnections,
       isRunning,
       maximizedPane,
+      needsConnect,
       resolveSql,
       setMaximizedPane,
       execute,
@@ -227,6 +247,7 @@ export function useToolbarQueryAction({
         )
         return
       }
+      if (needsConnect(activeConnection)) return
       if (maximizedPane === 'editor') setMaximizedPane(null)
       await executeAll(sqls)
     },
@@ -237,6 +258,7 @@ export function useToolbarQueryAction({
       hasConnections,
       isRunning,
       maximizedPane,
+      needsConnect,
       setMaximizedPane,
     ],
   )

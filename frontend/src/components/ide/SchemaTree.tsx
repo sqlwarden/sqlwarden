@@ -108,6 +108,7 @@ type TreeCtx = {
   openDropColumn: (ref: ObjectRef, columnName: string) => void
   openDropIndex: (ref: ObjectRef, indexName: string) => void
   openGenerateStatement: (ref: ObjectRef, operation: StatementOperation) => void
+  onConnect?: () => void
 }
 
 const SchemaTreeContext = createContext<TreeCtx | null>(null)
@@ -179,6 +180,7 @@ function useTreeCtx() {
     openDropColumn: ctx?.openDropColumn,
     openDropIndex: ctx?.openDropIndex,
     openGenerateStatement: ctx?.openGenerateStatement,
+    onConnect: ctx?.onConnect,
   }
 }
 
@@ -426,6 +428,7 @@ export function SchemaTree({
     openDropColumn: (ref, columnName) => setDropTarget({ kind: 'column', ref, columnName }),
     openDropIndex: (ref, indexName) => setDropTarget({ kind: 'index', ref, indexName }),
     openGenerateStatement: (ref, operation) => setGenerateTarget({ ref, operation }),
+    onConnect,
   }
 
   return (
@@ -444,7 +447,13 @@ export function SchemaTree({
         <div className="py-0.5">
           {single && (single.children?.length ?? 0) === 0 && single.groups.length > 0
             ? sortedGroups(single, spec).map((g) => (
-                <SchemaGroupNode key={g.kind} group={g} scope={single.path} forceOpen={filtering} />
+                <SchemaGroupNode
+                  key={g.kind}
+                  group={g}
+                  scope={single.path}
+                  forceOpen={filtering}
+                  lazyScope={Boolean(single.lazy)}
+                />
               ))
             : single && single.groups.length === 0 && (single.children?.length ?? 0) > 0
               ? (single.children ?? []).map((node) => (
@@ -777,7 +786,13 @@ function SchemaScopeNode({ node, forceOpen }: { node: ScopeNode; forceOpen: bool
             </SchemaMessage>
           )}
           {groups.map((g) => (
-            <SchemaGroupNode key={g.kind} group={g} scope={node.path} forceOpen={forceOpen} />
+            <SchemaGroupNode
+              key={g.kind}
+              group={g}
+              scope={node.path}
+              forceOpen={forceOpen}
+              lazyScope={Boolean(node.lazy)}
+            />
           ))}
           {(visible?.children ?? []).map((child) => (
             <SchemaScopeNode key={JSON.stringify(child.path)} node={child} forceOpen={forceOpen} />
@@ -792,10 +807,12 @@ function SchemaGroupNode({
   group,
   scope,
   forceOpen,
+  lazyScope,
 }: {
   group: ObjectGroup
   scope: ScopePath
   forceOpen: boolean
+  lazyScope: boolean
 }) {
   const {
     refresh,
@@ -849,6 +866,7 @@ function SchemaGroupNode({
               objectRef={ref}
               forceOpen={forceOpen}
               rowCount={group.row_counts?.[ref.name]}
+              lazyScope={lazyScope}
             />
           ))}
         </GuideChildren>
@@ -861,10 +879,12 @@ function SchemaObjectNode({
   objectRef,
   forceOpen,
   rowCount,
+  lazyScope,
 }: {
   objectRef: ObjectRef
   forceOpen: boolean
   rowCount?: number
+  lazyScope: boolean
 }) {
   const ctx = useContext(SchemaTreeContext)
   const [open, setOpen] = useTreeExpansion(
@@ -872,7 +892,13 @@ function SchemaObjectNode({
   )
   const expandable = isRelationalKind(ctx?.spec, objectRef.kind)
   const inlineDetail = objectRef.kind === 'sequence'
-  const expanded = expandable && (open ?? forceOpen)
+  // A lazy scope's object detail isn't guaranteed to be cached, so restoring a
+  // persisted expand with no live session would silently re-fire its fetch on
+  // every mount (reload, tab switch) with nobody looking at it. Require one
+  // fresh click per mount to re-confirm before auto-restoring it.
+  const [manuallyExpanded, setManuallyExpanded] = useState(false)
+  const blockAutoRestore = lazyScope && open === true && !ctx?.sessionId && !manuallyExpanded
+  const expanded = expandable && !blockAutoRestore && (open ?? forceOpen)
   const detailQuery = useQuery({
     ...orgConnectionObjectQueryOptions(
       ctx!.orgSlug,
@@ -891,10 +917,11 @@ function SchemaObjectNode({
     ref: objectRef,
   })
   useEffect(() => {
-    if (detailQuery.data && ctx?.connectionId) invalidateCompletionIndex(ctx.connectionId)
+    if (detailQuery.data?.detail && ctx?.connectionId) invalidateCompletionIndex(ctx.connectionId)
   }, [detailQuery.data, ctx?.connectionId])
   useEvictGoneSession(ctx?.connectionId, [detailQuery.error])
-  const detail = detailQuery.data ?? null
+  const detail = detailQuery.data?.detail ?? null
+  const pendingConnection = detailQuery.data?.pendingConnection ?? false
   const columns = detail?.relational?.columns ?? []
   const insertable = useObjectInsert(objectRef)
   const {
@@ -963,7 +990,14 @@ function SchemaObjectNode({
           label={objectRef.name}
           meta={inlineMeta}
           insertable={insertable}
-          onClick={expandable ? () => setOpen(!expanded) : undefined}
+          onClick={
+            expandable
+              ? () => {
+                  setManuallyExpanded(true)
+                  setOpen(!expanded)
+                }
+              : undefined
+          }
           onDoubleClickRow={() => ctx?.openObject(objectRef)}
         />
       </ContextMenu>
@@ -972,6 +1006,7 @@ function SchemaObjectNode({
           <SchemaObjectDetail
             detail={detail}
             loading={detailQuery.isLoading}
+            pendingConnection={pendingConnection}
             objectRef={objectRef}
           />
         </GuideChildren>
@@ -983,10 +1018,12 @@ function SchemaObjectNode({
 function SchemaObjectDetail({
   detail,
   loading,
+  pendingConnection,
   objectRef,
 }: {
   detail: ObjectDetail | null
   loading: boolean
+  pendingConnection: boolean
   objectRef: ObjectRef
 }) {
   const {
@@ -998,6 +1035,7 @@ function SchemaObjectDetail({
     openDropColumn,
     openDropIndex,
     openEditColumn,
+    onConnect,
   } = useTreeCtx()
   const objectName = objectRef.name
   const objectKind = objectRef.kind
@@ -1006,6 +1044,22 @@ function SchemaObjectDetail({
       <DetailMessage>
         <SchemaSpinner size={11} />
         Loading...
+      </DetailMessage>
+    )
+  }
+  if (pendingConnection && !detail) {
+    return (
+      <DetailMessage>
+        <span>Not connected.</span>
+        {onConnect && (
+          <button
+            type="button"
+            className="font-medium text-primary hover:underline"
+            onClick={onConnect}
+          >
+            Connect
+          </button>
+        )}
       </DetailMessage>
     )
   }

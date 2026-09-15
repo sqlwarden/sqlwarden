@@ -1,7 +1,12 @@
 import { describe, expect, it } from 'vitest'
 import { ApiError } from '#/lib/api/errors'
 import type { ResultSet } from '#/lib/api/types'
-import { applyCursorPageError, mergeCursorPage, type SuccessfulQueryResult } from './cursorPaging'
+import {
+  applyCursorPageError,
+  mergeCursorPage,
+  resultRowCountLabel,
+  type SuccessfulQueryResult,
+} from './cursorPaging'
 
 const initial: SuccessfulQueryResult = {
   status: 'ok',
@@ -62,6 +67,22 @@ describe('mergeCursorPage', () => {
     )
     expect(merged.data.query_cursor_id).toBeUndefined()
     expect(merged.data.exhausted).toBe(true)
+  })
+})
+
+describe('resultRowCountLabel', () => {
+  it('shows a plain count when exhaustion is unknown', () => {
+    expect(resultRowCountLabel(5, undefined)).toBe('5 rows')
+    expect(resultRowCountLabel(1, undefined)).toBe('1 row')
+  })
+
+  it('marks the count as complete once the cursor is exhausted', () => {
+    expect(resultRowCountLabel(5, true)).toBe('All 5 rows fetched')
+    expect(resultRowCountLabel(1, true)).toBe('All 1 row fetched')
+  })
+
+  it('marks the count as partial while more rows remain', () => {
+    expect(resultRowCountLabel(5, false)).toBe('Fetched 5 rows')
   })
 })
 

@@ -29,6 +29,7 @@ import {
   statementPreviewHighlightExtension,
   setStatementPreview,
 } from './statementPreviewHighlight'
+import { sqlStatementWithOffsetsAtCursor } from './sqlStatements'
 
 function makeBaseTheme(fontFamily: string, fontSize: EditorFontSize): Extension {
   return EditorView.theme({
@@ -151,6 +152,7 @@ export function SqlEditor({
   const viewRef = useRef<EditorView | null>(null)
   const [findHost, setFindHost] = useState<FindPanelHost | null>(null)
   const [hoveredStatement, setHoveredStatement] = useState<HoveredStatement | null>(null)
+  const [cursorStatement, setCursorStatement] = useState<HoveredStatement | null>(null)
 
   // Re-mount the editor whenever the active doc changes.
   // key={activeTab.id} at the call site also ensures clean remount on tab switch.
@@ -177,9 +179,27 @@ export function SqlEditor({
           EditorView.lineWrapping,
           yCollab(yText, null), // handles all CodeMirror ↔ Y.js sync
           EditorView.updateListener.of((update) => {
-            // Statement offsets shift on edit — drop the pill rather than show it
-            // over stale text until the pointer moves again.
-            if (update.docChanged) setHoveredStatement(null)
+            if (update.docChanged) {
+              setHoveredStatement(null)
+              setCursorStatement(null)
+            }
+            if (update.selectionSet) {
+              const head = update.state.selection.main.head
+              const statement = sqlStatementWithOffsetsAtCursor(update.state.doc.toString(), head)
+              const coords = statement ? update.view.coordsAtPos(statement.start) : null
+              if (statement && coords) {
+                const editorRect = update.view.dom.getBoundingClientRect()
+                setCursorStatement({
+                  sql: statement.sql,
+                  start: statement.start,
+                  end: statement.end,
+                  top: coords.top - editorRect.top,
+                  left: coords.left - editorRect.left,
+                })
+              } else {
+                setCursorStatement(null)
+              }
+            }
             if (!update.selectionSet && !update.docChanged) return
             const cb = onCursorChangeRef.current
             if (!cb) return
@@ -379,9 +399,8 @@ export function SqlEditor({
     [handleCut, handleCopy, handlePaste, handleSelectAll, contextMenu],
   )
 
-  // Only shown when a connection is selected — an unconnected editor has
-  // nothing to run the hovered statement against.
-  const showHoverActions = contextMenu?.isSqlTab && contextMenu.canRun && hoveredStatement
+  const activeStatement = hoveredStatement ?? cursorStatement
+  const showHoverActions = contextMenu?.isSqlTab && contextMenu.canRun && activeStatement
 
   return (
     <>
@@ -393,16 +412,20 @@ export function SqlEditor({
           viewRef.current?.dispatch({ effects: setStatementPreview.of(null) })
         }}
       >
-        <div ref={containerRef} className={cn('h-full overflow-hidden', className)} />
+        <div
+          ref={containerRef}
+          className={cn('h-full overflow-hidden', className)}
+          onBlur={() => setCursorStatement(null)}
+        />
         {showHoverActions && (
           <div
             className="absolute z-10 flex -translate-y-full items-center gap-2 rounded-sm bg-card px-1 text-[11px] leading-none whitespace-nowrap"
-            style={{ top: hoveredStatement.top, left: hoveredStatement.left }}
+            style={{ top: activeStatement.top, left: activeStatement.left }}
             onMouseEnter={() => {
               viewRef.current?.dispatch({
                 effects: setStatementPreview.of({
-                  from: hoveredStatement.start,
-                  to: hoveredStatement.end,
+                  from: activeStatement.start,
+                  to: activeStatement.end,
                 }),
               })
             }}
@@ -414,8 +437,9 @@ export function SqlEditor({
               type="button"
               className="flex items-center gap-1 text-muted-foreground hover:text-foreground hover:underline"
               onClick={() => {
-                contextMenu.onRunSegment(hoveredStatement.sql)
+                contextMenu.onRunSegment(activeStatement.sql)
                 setHoveredStatement(null)
+                setCursorStatement(null)
                 viewRef.current?.dispatch({ effects: setStatementPreview.of(null) })
               }}
             >
@@ -427,8 +451,9 @@ export function SqlEditor({
                 type="button"
                 className="flex items-center gap-1 text-muted-foreground hover:text-foreground hover:underline"
                 onClick={() => {
-                  contextMenu.onExplainSegment(hoveredStatement.sql)
+                  contextMenu.onExplainSegment(activeStatement.sql)
                   setHoveredStatement(null)
+                  setCursorStatement(null)
                   viewRef.current?.dispatch({ effects: setStatementPreview.of(null) })
                 }}
               >

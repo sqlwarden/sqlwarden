@@ -200,6 +200,16 @@ export function IdeToolbar({ orgSlug, workspace, selection }: IdeToolbarProps) {
   return (
     <>
       <div className="flex h-10 shrink-0 items-center gap-2 border-b border-border bg-background px-2.5">
+        <ConnectionSelector
+          activeConnection={activeConnection}
+          activeConnectionId={activeTab?.connectionId}
+          connections={connItems}
+          environments={envItems}
+          isLoading={connections.isLoading}
+          tabAvailable={Boolean(activeTab)}
+          onSelect={selectConnection}
+        />
+
         {/* Run button — combined with quick-export options via the split arrow, when the active tab is a runnable query */}
         <div className="flex items-stretch">
           <Button
@@ -348,16 +358,6 @@ export function IdeToolbar({ orgSlug, workspace, selection }: IdeToolbarProps) {
             onSwitchToAutoBlocked={() => setSwitchToAutoGuardOpen(true)}
           />
         )}
-
-        <ConnectionSelector
-          activeConnection={activeConnection}
-          activeConnectionId={activeTab?.connectionId}
-          connections={connItems}
-          environments={envItems}
-          isLoading={connections.isLoading}
-          tabAvailable={Boolean(activeTab)}
-          onSelect={selectConnection}
-        />
 
         {/* Maximize toggle */}
         <Tip label={maximizedPane === 'editor' ? 'Restore layout' : 'Maximize editor'}>

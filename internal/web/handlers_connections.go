@@ -1400,6 +1400,8 @@ func (app *application) executeQueryWithCursor(r *http.Request, session *connect
 	rs.DurationMs = time.Since(start).Milliseconds()
 	rs.PageSize = pageSize
 	if state.Exhausted {
+		exhausted := true
+		rs.Exhausted = &exhausted
 		qc.MarkExhausted()
 		app.queryCursorManager().Remove(qc.ID)
 	} else {

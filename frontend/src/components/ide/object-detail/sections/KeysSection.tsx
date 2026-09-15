@@ -59,12 +59,22 @@ export function DescriptorList({ vm }: { vm: ObjectViewModel }) {
     <div className="flex flex-col gap-4 p-3 text-xs">
       {descriptors.map((d) => (
         <Group key={`${d.kind}:${d.title}`} title={d.title}>
-          {(d.fields ?? []).map((f) => (
-            <div key={f.name} className="flex gap-2">
-              <span className="text-muted-foreground">{f.name}</span>
-              <span className="font-mono text-foreground">{f.value}</span>
-            </div>
-          ))}
+          {d.fields && d.fields.length > 0 && (
+            <table className="border-separate border-spacing-0">
+              <tbody>
+                {d.fields.map((f) => (
+                  <tr key={f.name}>
+                    <td className="border-b border-border px-2 py-1 text-muted-foreground">
+                      {f.name}
+                    </td>
+                    <td className="border-b border-border px-2 py-1 font-mono text-foreground">
+                      {f.value}
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          )}
           {d.rows && (
             <table className="border-separate border-spacing-0">
               <thead>

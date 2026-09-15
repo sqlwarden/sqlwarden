@@ -581,6 +581,34 @@ describe('ResultsArea', () => {
     expect(screen.getByText('· 1 row affected')).toBeInTheDocument()
   })
 
+  it('scrolls the newest run tab into view when a run begins', async () => {
+    const scrollIntoView = vi.spyOn(HTMLElement.prototype, 'scrollIntoView')
+    beginRunWithResult({
+      status: 'ok',
+      durationMs: 2,
+      sql: 'select 1',
+      connectionId: 7,
+      data: {
+        columns: [],
+        rows: [],
+        duration_ms: 2,
+        truncated: false,
+        rows_returned: 0,
+        bytes_returned: 0,
+        transaction: { mode: 'auto', open: false, pending_statements: 0, statements: [] },
+        rows_affected: 1,
+      },
+    })
+
+    renderResultsArea()
+    await screen.findByRole('tablist', { name: 'Runs' })
+    scrollIntoView.mockClear()
+
+    store.getState().beginRun('scratch-1', ['select 2'], 7)
+
+    await waitFor(() => expect(scrollIntoView).toHaveBeenCalled())
+  })
+
   it('shows the connection a failed query ran against', async () => {
     renderResult({ status: 'error', sql: 'select 1', message: 'permission denied' }, 7)
 

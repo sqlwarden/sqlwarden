@@ -466,4 +466,16 @@ describe('DatabasePanel', () => {
       screen.queryByRole('button', { name: 'Maximize connections panel' }),
     ).not.toBeInTheDocument()
   })
+
+  it('persists a maximized pane across remount', async () => {
+    handlers('populated')
+    const { user, unmount } = renderPanel()
+
+    await user.click(await screen.findByRole('button', { name: 'Maximize connections panel' }))
+    expect(await screen.findByRole('button', { name: 'Restore schema panel' })).toBeInTheDocument()
+    unmount()
+
+    renderPanel()
+    expect(await screen.findByRole('button', { name: 'Restore schema panel' })).toBeInTheDocument()
+  })
 })

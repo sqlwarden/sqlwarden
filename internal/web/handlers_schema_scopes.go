@@ -141,12 +141,22 @@ func (app *application) knownLazyScope(ctx context.Context, r *http.Request, con
 // them into the connection's active snapshot so later requests read the same
 // fetched detail without re-inspecting the driver. Callers must authorize
 // schema access before calling because a full cache hit opens no connection.
+//
+// A cache miss only opens that temporary connection when the caller already
+// has a live session on this connection — otherwise the user would get a
+// database connection they never asked for just by expanding a tree node.
+// Without a session, uncached refs come back in the second return value so
+// the caller can prompt to connect instead.
+//
 // A false result means an error response has already been written.
-func (app *application) liveSchemaObjects(w http.ResponseWriter, r *http.Request, refs []metadata.ObjectRef) ([]metadata.Object, bool) {
+func (app *application) liveSchemaObjects(w http.ResponseWriter, r *http.Request, refs []metadata.ObjectRef) ([]metadata.Object, []metadata.ObjectRef, bool) {
 	connID := strconv.FormatInt(contextGetConnection(r).ID, 10)
 	cached := app.schemaService.CachedObjects(connID, refs)
 	if len(cached) == len(refs) {
-		return cached, true
+		return cached, nil, true
+	}
+	if !app.liveSchemaSessionAvailable(r) {
+		return cached, missingObjectRefs(refs, cached), true
 	}
 	var objects []metadata.Object
 	success := false
@@ -164,7 +174,41 @@ func (app *application) liveSchemaObjects(w http.ResponseWriter, r *http.Request
 		success = true
 		return nil
 	})
-	return objects, success
+	return objects, nil, success
+}
+
+// liveSchemaSessionAvailable reports whether the request carries a live
+// session authorized for this connection, without writing a response on
+// failure — a missing or invalid session here means "not connected", not a
+// request error, so callers can fall back to cache instead of failing.
+func (app *application) liveSchemaSessionAvailable(r *http.Request) bool {
+	sessionID := r.Header.Get("X-Warden-Session")
+	if sessionID == "" {
+		return false
+	}
+	session, ok := app.connManager.Get(sessionID)
+	if !ok {
+		return false
+	}
+	conn := contextGetConnection(r)
+	return session.AccountID == strconv.FormatInt(contextGetAccount(r).ID, 10) &&
+		session.ConnectionID == strconv.FormatInt(conn.ID, 10)
+}
+
+// missingObjectRefs returns the requested refs not present in found, by ref
+// identity, preserving the caller's request order.
+func missingObjectRefs(refs []metadata.ObjectRef, found []metadata.Object) []metadata.ObjectRef {
+	have := make(map[metadata.ObjectRef]bool, len(found))
+	for _, object := range found {
+		have[object.Ref] = true
+	}
+	var missing []metadata.ObjectRef
+	for _, ref := range refs {
+		if !have[ref] {
+			missing = append(missing, ref)
+		}
+	}
+	return missing
 }
 
 // getLiveSchemaRelationships serves relationships for a persistent-mode scope

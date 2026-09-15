@@ -38,7 +38,7 @@ export function ConnectionSelector({
             : 'Not connected — Run connects automatically'
           : 'Choose a connection to run queries'
       }
-      align="end"
+      align="start"
       onSelectConnection={onSelect}
     />
   )

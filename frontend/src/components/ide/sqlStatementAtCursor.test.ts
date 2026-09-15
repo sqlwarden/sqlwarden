@@ -4,6 +4,7 @@ import {
   countSqlStatements,
   splitSqlStatements,
   sqlStatementsWithOffsets,
+  sqlStatementWithOffsetsAtCursor,
 } from './sqlStatements'
 
 // Helper: find the index of the Nth occurrence of a substring.
@@ -372,5 +373,42 @@ describe('sqlStatementsWithOffsets', () => {
       { sql: 'select 1;', start: 0, end: 9 },
       { sql: 'select 2;', start: secondStart, end: text.length },
     ])
+  })
+})
+
+describe('sqlStatementWithOffsetsAtCursor', () => {
+  it('returns null for empty text', () => {
+    expect(sqlStatementWithOffsetsAtCursor('', 0)).toBeNull()
+  })
+
+  it('returns the statement containing the cursor', () => {
+    const text = 'select 1;\nselect 2;'
+    const secondStart = text.indexOf('select 2')
+    expect(sqlStatementWithOffsetsAtCursor(text, secondStart + 3)).toEqual({
+      sql: 'select 2;',
+      start: secondStart,
+      end: text.length,
+    })
+  })
+
+  it('is inclusive of the statement’s own end offset', () => {
+    const text = 'select 1;\nselect 2;'
+    const semi1 = text.indexOf(';')
+    expect(sqlStatementWithOffsetsAtCursor(text, semi1 + 1)).toEqual({
+      sql: 'select 1;',
+      start: 0,
+      end: semi1 + 1,
+    })
+  })
+
+  it('falls back to the preceding statement when the cursor sits in whitespace', () => {
+    const text = 'select 1;\n\nselect 2;'
+    const gap = text.indexOf(';') + 2
+    expect(sqlStatementWithOffsetsAtCursor(text, gap)?.sql).toBe('select 1;')
+  })
+
+  it('falls back to the last statement when the cursor is past the end of text', () => {
+    const text = 'select 1;\nselect 2;'
+    expect(sqlStatementWithOffsetsAtCursor(text, text.length + 5)?.sql).toBe('select 2;')
   })
 })

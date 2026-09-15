@@ -42,7 +42,7 @@ func TestOracleSchemaSpec(t *testing.T) {
 	for _, k := range spec.Kinds {
 		got[k.Kind] = k
 	}
-	for _, want := range []string{"table", "view", "materialized_view", "sequence", "function", "procedure", "package", "package_body", "trigger", "type", "type_body", "synonym", "db_link", "index", "constraint"} {
+	for _, want := range []string{"table", "view", "materialized_view", "sequence", "function", "procedure", "package", "package_body", "trigger", "type", "type_body", "synonym", "db_link", "index", "constraint", "queue"} {
 		if _, ok := got[want]; !ok {
 			t.Errorf("SchemaSpec missing kind %q", want)
 		}

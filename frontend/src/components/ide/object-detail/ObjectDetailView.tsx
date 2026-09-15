@@ -1,11 +1,12 @@
 import { useMemo, useState } from 'react'
-import { useQuery } from '@tanstack/react-query'
+import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { Icon } from '#/lib/icons'
 import { cn } from '#/lib/utils'
 import { api } from '#/lib/api/client'
 import type { Connection, ObjectRef, Workspace } from '#/lib/api/types'
 import { scopeLabel } from '#/lib/api/scope'
 import {
+  invalidateConnectionSchemaQueries,
   orgConnectionObjectQueryOptions,
   orgConnectionSchemaSpecQueryOptions,
 } from '#/lib/api/query'
@@ -35,6 +36,7 @@ export function ObjectDetailView({
   const setSession = useIde((s) => s.setSession)
   const setConnectionStatus = useIde((s) => s.setConnectionStatus)
   const openTab = useIde((s) => s.openTab)
+  const queryClient = useQueryClient()
   const [activeSection, setActiveSection] = useState<string>('columns')
 
   const refreshSchema = useSchemaRefresh({
@@ -64,7 +66,7 @@ export function ObjectDetailView({
   // so the view flips to the reconnect pane instead of erroring on stale data.
   useEvictGoneSession(connectionId, [detailQuery.error, specQuery.error])
 
-  const detail = detailQuery.data ?? null
+  const detail = detailQuery.data?.detail ?? null
   const state = resolveObjectViewState({
     hasSession: Boolean(sessionId) || Boolean(detail),
     isLoading: detailQuery.isLoading,
@@ -109,6 +111,7 @@ export function ObjectDetailView({
         `/api/v1/orgs/${orgSlug}/workspaces/${workspace.id}/connections/${connectionId}/connect`,
       )
       setSession(connectionId!, data.session_id)
+      void invalidateConnectionSchemaQueries(queryClient, orgSlug, workspace.id, connectionId!)
     } catch {
       /* the next query attempt surfaces the failure */
     } finally {

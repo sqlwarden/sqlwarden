@@ -61,7 +61,7 @@ describe('useSchemaRefresh', () => {
       }),
     )
     const directoryKey = connectionDirectoryQueryKey('acme', 3, 7)
-    const objectKey = connectionObjectQueryKey('acme', 3, 7, ref)
+    const objectKey = connectionObjectQueryKey('acme', 3, 7, ref, 'session-7')
     const definitionKey = connectionObjectDefinitionQueryKey('acme', 3, 7, ref)
     const relationshipsKey = connectionRelationshipsQueryKey('acme', 3, 7, ref.scope)
     queryClient.setQueryData(directoryKey, { directory: {} })
@@ -98,7 +98,7 @@ describe('useSchemaRefresh', () => {
       ),
     )
     const directoryKey = connectionDirectoryQueryKey('acme', 3, 7)
-    const objectKey = connectionObjectQueryKey('acme', 3, 7, ref)
+    const objectKey = connectionObjectQueryKey('acme', 3, 7, ref, 'session-7')
     const definitionKey = connectionObjectDefinitionQueryKey('acme', 3, 7, ref)
     queryClient.setQueryData(directoryKey, { directory: {} })
     queryClient.setQueryData(objectKey, { ref })
@@ -135,7 +135,7 @@ describe('useSchemaRefresh', () => {
       ),
     )
     const directoryKey = connectionDirectoryQueryKey('acme', 3, 7)
-    const objectKey = connectionObjectQueryKey('acme', 3, 7, ref)
+    const objectKey = connectionObjectQueryKey('acme', 3, 7, ref, 'session-7')
     const definitionKey = connectionObjectDefinitionQueryKey('acme', 3, 7, ref)
     const batchKey = connectionObjectsBatchQueryKey('acme', 3, 7, [
       ref,

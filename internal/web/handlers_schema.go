@@ -42,6 +42,11 @@ type objectsRequest struct {
 
 type objectsResponse struct {
 	Objects []metadata.Object `json:"objects"`
+	// PendingConnection lists requested refs that need a live connection to
+	// resolve but were skipped because the caller has no active session —
+	// the schema tree shows a connect prompt for these instead of silently
+	// opening a connection the user never asked for.
+	PendingConnection []metadata.ObjectRef `json:"pending_connection,omitempty"`
 }
 
 type objectDefinitionResponse struct {
@@ -319,7 +324,7 @@ func (app *application) generateConnectionStatement(w http.ResponseWriter, r *ht
 		return
 	}
 
-	objects, ok := app.resolveSchemaObjects(w, r, []metadata.ObjectRef{input.Ref})
+	objects, _, ok := app.resolveSchemaObjects(w, r, []metadata.ObjectRef{input.Ref})
 	if !ok {
 		return
 	}
@@ -341,24 +346,26 @@ func (app *application) generateConnectionStatement(w http.ResponseWriter, r *ht
 // It authorizes snapshot access, inspects lazy scopes on demand, and otherwise
 // requires a valid live session. A false result means a response (including
 // snapshot-pending status) has already been written and the caller must stop.
-func (app *application) resolveSchemaObjects(w http.ResponseWriter, r *http.Request, refs []metadata.ObjectRef) ([]metadata.Object, bool) {
+// The returned refs are ones that need a live connection to resolve but were
+// skipped because the caller has no active session (see liveSchemaObjects).
+func (app *application) resolveSchemaObjects(w http.ResponseWriter, r *http.Request, refs []metadata.ObjectRef) ([]metadata.Object, []metadata.ObjectRef, bool) {
 	persistent, err := app.persistentSchemaMode(r)
 	if err != nil {
 		app.serverError(w, r, err)
-		return nil, false
+		return nil, nil, false
 	}
 	if persistent {
 		if !app.authorizeSchemaAccess(w, r) {
-			return nil, false
+			return nil, nil, false
 		}
 		snapshot, directory, found, err := app.schemaSnapshots.Active(r.Context(), contextGetConnection(r).ID)
 		if err != nil {
 			app.serverError(w, r, err)
-			return nil, false
+			return nil, nil, false
 		}
 		if !found {
 			app.writeSnapshotPending(w, r)
-			return nil, false
+			return nil, nil, false
 		}
 		for _, ref := range refs {
 			if lazySchemaScope(directory, ref.Scope) {
@@ -368,25 +375,25 @@ func (app *application) resolveSchemaObjects(w http.ResponseWriter, r *http.Requ
 		objects, err := app.schemaSnapshots.Objects(r.Context(), snapshot.ID, refs)
 		if err != nil {
 			app.serverError(w, r, err)
-			return nil, false
+			return nil, nil, false
 		}
-		return objects, true
+		return objects, nil, true
 	}
 	session, inspector, ok := app.resolveSchemaInspector(w, r)
 	if !ok {
-		return nil, false
+		return nil, nil, false
 	}
 	objects, err := app.schemaService.Objects(r.Context(), session.ConnectionID, refs, inspector)
 	if err != nil {
 		app.serverError(w, r, err)
-		return nil, false
+		return nil, nil, false
 	}
 	app.logDebug(r, "schema objects returned",
 		slog.String("session_id", session.ID),
 		slog.Int("requested_ref_count", len(refs)),
 		slog.Int("object_count", len(objects)),
 	)
-	return objects, true
+	return objects, nil, true
 }
 
 func (app *application) applyConnectionDDL(w http.ResponseWriter, r *http.Request) {
@@ -538,11 +545,14 @@ func (app *application) getConnectionSchemaObjects(w http.ResponseWriter, r *htt
 		app.badRequest(w, r, err)
 		return
 	}
-	objects, ok := app.resolveSchemaObjects(w, r, input.Refs)
+	objects, pending, ok := app.resolveSchemaObjects(w, r, input.Refs)
 	if !ok {
 		return
 	}
-	if err := response.JSON(w, http.StatusOK, objectsResponse{Objects: objects}); err != nil {
+	if objects == nil {
+		objects = []metadata.Object{}
+	}
+	if err := response.JSON(w, http.StatusOK, objectsResponse{Objects: objects, PendingConnection: pending}); err != nil {
 		app.serverError(w, r, err)
 	}
 }

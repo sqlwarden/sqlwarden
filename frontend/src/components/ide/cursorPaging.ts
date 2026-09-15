@@ -30,6 +30,17 @@ export function mergeCursorPage(
   }
 }
 
+/** Row-count status text for the results status bar. `exhausted` is
+ *  undefined for result fixtures that never went through the cursor
+ *  pipeline (e.g. tests), in which case the plain count is shown without
+ *  claiming to know whether more rows exist. */
+export function resultRowCountLabel(rowCount: number, exhausted: boolean | undefined): string {
+  const noun = rowCount === 1 ? 'row' : 'rows'
+  if (exhausted === undefined) return `${rowCount} ${noun}`
+  if (exhausted) return `All ${rowCount} ${noun} fetched`
+  return `Fetched ${rowCount} ${noun}`
+}
+
 export function applyCursorPageError(
   result: SuccessfulQueryResult,
   error: unknown,

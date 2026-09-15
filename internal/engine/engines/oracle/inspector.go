@@ -40,6 +40,7 @@ func (d *oracleDriver) SchemaSpec() metadata.SchemaSpec {
 			{Kind: "db_link", Label: "Database Link", PluralLabel: "Database Links", Order: 13, Listing: "enumerated", HasDefinition: true},
 			{Kind: "index", Label: "Index", PluralLabel: "Indexes", Order: 14, Listing: "enumerated", HasDefinition: true},
 			{Kind: "constraint", Label: "Constraint", PluralLabel: "Constraints", Order: 15, Listing: "enumerated", HasDefinition: true},
+			{Kind: "queue", Label: "Queue", PluralLabel: "Queues", Order: 16, Listing: "enumerated", HasDefinition: true},
 		},
 	}
 }
@@ -94,6 +95,7 @@ func (d *oracleDriver) InspectDirectory(ctx context.Context, opts metadata.Direc
 		{"db_link", `SELECT db_link FROM all_db_links WHERE owner = :1 ORDER BY db_link`},
 		{"index", `SELECT index_name FROM all_indexes WHERE owner = :1 ORDER BY index_name`},
 		{"constraint", `SELECT constraint_name FROM all_constraints WHERE owner = :1 ORDER BY constraint_name`},
+		{"queue", `SELECT name FROM all_queues WHERE owner = :1 ORDER BY name`},
 	} {
 		if err := d.listInto(ctx, b, scope, l.kind, l.sql, owner); err != nil {
 			return nil, err
@@ -312,7 +314,7 @@ func (d *oracleDriver) InspectObjects(ctx context.Context, refs []metadata.Objec
 			sequences = append(sequences, ref)
 		case "function", "procedure", "package", "package_body", "trigger", "type", "type_body":
 			routines = append(routines, ref)
-		case "synonym", "db_link", "index", "constraint":
+		case "synonym", "db_link", "index", "constraint", "queue":
 			catalog = append(catalog, ref)
 		}
 	}
@@ -672,6 +674,8 @@ func (d *oracleDriver) InspectDefinition(ctx context.Context, ref metadata.Objec
 		metadataType = "DB_LINK"
 	case "index":
 		metadataType = "INDEX"
+	case "queue":
+		metadataType = "AQ_QUEUE"
 	case "constraint":
 		return d.oracleConstraintDefinition(ctx, owner, name)
 	default:

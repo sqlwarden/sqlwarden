@@ -344,6 +344,18 @@ describe('useIdeStore', () => {
     expect(active(mockWorkspace.id)).toBe('scratch:1:1')
   })
 
+  it('openConsole titles the tab with the given title instead of "Console N"', () => {
+    store.getState().openConsole(mockWorkspace, [], 7, 'postgres', 'analytics-pg')
+    expect(store.getState().tabs[0].title).toBe('analytics-pg')
+    expect(store.getState().tabs[0].connectionId).toBe(7)
+  })
+
+  it('openConsole disambiguates a title that collides with an open console tab', () => {
+    store.getState().openConsole(mockWorkspace, [], 7, 'postgres', 'analytics-pg')
+    store.getState().openConsole(mockWorkspace, [], 7, 'postgres', 'analytics-pg')
+    expect(store.getState().tabs[1].title).toBe('analytics-pg (2)')
+  })
+
   describe('moveTab', () => {
     function addTabs(ids: string[]) {
       for (const id of ids) {
@@ -512,6 +524,26 @@ describe('activityBarExpanded', () => {
     const store = createIdeStore('test-org', 1)
     store.getState().setActivityBarExpanded(true)
     expect(store.getState().activityBarExpanded).toBe(true)
+  })
+})
+
+describe('selectedConnectionId', () => {
+  it('defaults to undefined for a workspace with no selection', () => {
+    const store = createIdeStore('test-org', 1)
+    expect(store.getState().selectedConnectionId[1]).toBeUndefined()
+  })
+
+  it('setSelectedConnectionId sets and clears the highlighted connection per workspace', () => {
+    const store = createIdeStore('test-org', 1)
+    store.getState().setSelectedConnectionId(1, 7)
+    expect(store.getState().selectedConnectionId[1]).toBe(7)
+
+    store.getState().setSelectedConnectionId(2, 9)
+    expect(store.getState().selectedConnectionId[1]).toBe(7)
+    expect(store.getState().selectedConnectionId[2]).toBe(9)
+
+    store.getState().setSelectedConnectionId(1, null)
+    expect(store.getState().selectedConnectionId[1]).toBeNull()
   })
 })
 

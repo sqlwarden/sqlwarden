@@ -37,6 +37,7 @@ import {
   workspaceSettingsPagePermissions,
 } from '#/lib/workspace-page-permissions'
 import { IdeActivityBar } from './IdeActivityBar'
+import { useConnectionLayout } from './useConnectionLayout'
 import { visibleActivities, type ActivityVisibilityContext } from './ideActivities'
 import type { Workspace } from '#/lib/api/types'
 import { useSession } from '#/hooks/use-session'
@@ -534,6 +535,7 @@ function WorkspaceIdeSurface({
   const setSidebarCollapsed = useIde((s) => s.setSidebarCollapsed)
   const activeActivityId = useIde((s) => s.activeActivityId)
   const isMobile = useIsMobile()
+  const { sidebarLayout, setSidebarLayout } = useConnectionLayout()
 
   // Reconcile persisted sessions with the backend for as long as the editor is
   // open — regardless of which sidebar activity is visible.
@@ -647,8 +649,14 @@ function WorkspaceIdeSurface({
         canAccessWorkspaceGeneralSettings={canAccessWorkspaceGeneralSettings}
         canAccessWorkspaceAccessControl={canAccessWorkspaceAccessControl}
       />
-      <ResizablePanelGroup orientation="horizontal" className="min-h-0 flex-1 overflow-hidden">
+      <ResizablePanelGroup
+        orientation="horizontal"
+        className="min-h-0 flex-1 overflow-hidden"
+        defaultLayout={sidebarLayout}
+        onLayoutChanged={setSidebarLayout}
+      >
         <ResizablePanel
+          id="ide-sidebar"
           panelRef={sidebarRef}
           defaultSize="16%"
           minSize="14%"
@@ -663,7 +671,7 @@ function WorkspaceIdeSurface({
 
         <ResizableHandle withHandle />
 
-        <ResizablePanel defaultSize="84%" minSize="45%" className="overflow-hidden">
+        <ResizablePanel id="ide-main" defaultSize="84%" minSize="45%" className="overflow-hidden">
           <IdeEditorAndResults orgSlug={orgSlug} workspace={workspace} />
         </ResizablePanel>
       </ResizablePanelGroup>
@@ -701,6 +709,7 @@ function IdeEditorAndResults({ orgSlug, workspace }: { orgSlug: string; workspac
   const editorRef = useRef<PanelImperativeHandle>(null)
   const resultsRef = useRef<PanelImperativeHandle>(null)
   const maximizedPane = useIde((s) => s.maximizedPane)
+  const { editorResultsLayout, setEditorResultsLayout } = useConnectionLayout()
 
   useEffect(() => {
     if (maximizedPane === 'editor') {
@@ -716,8 +725,14 @@ function IdeEditorAndResults({ orgSlug, workspace }: { orgSlug: string; workspac
   }, [maximizedPane])
 
   return (
-    <ResizablePanelGroup orientation="vertical" className="min-h-0 flex-1 overflow-hidden">
+    <ResizablePanelGroup
+      orientation="vertical"
+      className="min-h-0 flex-1 overflow-hidden"
+      defaultLayout={editorResultsLayout}
+      onLayoutChanged={setEditorResultsLayout}
+    >
       <ResizablePanel
+        id="ide-editor"
         panelRef={editorRef}
         defaultSize="58%"
         minSize="15%"
@@ -729,6 +744,7 @@ function IdeEditorAndResults({ orgSlug, workspace }: { orgSlug: string; workspac
       </ResizablePanel>
       <ResizableHandle withHandle />
       <ResizablePanel
+        id="ide-results"
         panelRef={resultsRef}
         defaultSize="42%"
         minSize="12%"

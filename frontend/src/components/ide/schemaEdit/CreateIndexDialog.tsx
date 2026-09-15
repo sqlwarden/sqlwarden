@@ -47,7 +47,7 @@ export function CreateIndexDialog({
     orgConnectionObjectQueryOptions(orgSlug, workspaceId, connectionId, sessionId, objectRef),
   )
   useEvictGoneSession(connectionId, [detail.error])
-  const columns = detail.data?.relational?.columns ?? []
+  const columns = detail.data?.detail?.relational?.columns ?? []
   const [name, setName] = useState('')
   const [unique, setUnique] = useState(false)
   const [rows, setRows] = useState<(SchemaEditIndexColumn & { id: number })[]>([

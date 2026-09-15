@@ -15,6 +15,8 @@ const mocks = vi.hoisted(() => ({
   cancel: vi.fn(),
   run: vi.fn(() => Promise.resolve()),
   warning: vi.fn(),
+  connect: vi.fn(),
+  sessions: {} as Record<number, string>,
 }))
 vi.mock('./useQueryExecution', () => ({
   useQueryExecution: () => ({
@@ -31,6 +33,9 @@ vi.mock('./useRunAllStatements', () => ({
     cancel: vi.fn(),
     isRunning: false,
   }),
+}))
+vi.mock('./useConnectionActions', () => ({
+  useConnectionActions: () => ({ connect: mocks.connect, sessions: mocks.sessions }),
 }))
 vi.mock('sonner', () => ({ toast: { warning: mocks.warning } }))
 
@@ -122,6 +127,10 @@ describe('useToolbarQueryAction', () => {
     vi.clearAllMocks()
     store = createIdeStore('acme', 1, 'ephemeral')
     store.getState().setMaximizedPane('editor')
+    // Run/Explain require a live session; give the fixture connection one so
+    // existing "runs the query" tests aren't blocked by the disconnected-run
+    // CTA (covered separately below).
+    mocks.sessions = { [connection.id]: 'session-7' }
     views = createEditorViewRegistry()
     docs = createYDocRegistry(1, `toolbar-${Math.random()}`)
     queryClient = createTestQueryClient()
@@ -318,5 +327,73 @@ describe('useToolbarQueryAction', () => {
 
     expect(mocks.run).not.toHaveBeenCalled()
     expect(mocks.warning).toHaveBeenCalled()
+  })
+
+  describe('disconnected-run CTA', () => {
+    beforeEach(() => {
+      mocks.sessions = {}
+    })
+
+    it('blocks run and surfaces a connect CTA when the connection has no session', async () => {
+      const { result } = renderHook(
+        () =>
+          useToolbarQueryAction({
+            orgSlug: 'acme',
+            workspace,
+            activeTab: tab,
+            activeConnection: connection,
+            hasConnections: true,
+          }),
+        { wrapper },
+      )
+
+      await act(() => result.current.run())
+
+      expect(mocks.run).not.toHaveBeenCalled()
+      expect(mocks.warning).toHaveBeenCalledWith(
+        'Not connected to warehouse.',
+        expect.objectContaining({ action: expect.objectContaining({ label: 'Connect' }) }),
+      )
+    })
+
+    it('connects without opening a new console when the CTA action is clicked', async () => {
+      const { result } = renderHook(
+        () =>
+          useToolbarQueryAction({
+            orgSlug: 'acme',
+            workspace,
+            activeTab: tab,
+            activeConnection: connection,
+            hasConnections: true,
+          }),
+        { wrapper },
+      )
+
+      await act(() => result.current.run())
+      const [, options] = mocks.warning.mock.calls[0]
+      options.action.onClick()
+
+      expect(mocks.connect).toHaveBeenCalledWith(connection, { openConsole: false })
+    })
+
+    it('blocks runAll and explain the same way', async () => {
+      const { result } = renderHook(
+        () =>
+          useToolbarQueryAction({
+            orgSlug: 'acme',
+            workspace,
+            activeTab: tab,
+            activeConnection: connection,
+            hasConnections: true,
+          }),
+        { wrapper },
+      )
+
+      await act(() => result.current.runAll(['select 1']))
+      await act(() => result.current.explain(false))
+
+      expect(mocks.run).not.toHaveBeenCalled()
+      expect(mocks.warning).toHaveBeenCalledTimes(2)
+    })
   })
 })

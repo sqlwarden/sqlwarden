@@ -146,6 +146,17 @@ export function DataGrid({
   function handleTableKeyDown(e: React.KeyboardEvent) {
     if (!selection) return
 
+    if ((e.metaKey || e.ctrlKey) && e.key === 'a') {
+      e.preventDefault()
+      if (rows.length === 0 || columns.length === 0) return
+      setRowSelectionMode(false)
+      setSelection({
+        anchor: { rowIdx: 0, colIdx: 0 },
+        active: { rowIdx: rows.length - 1, colIdx: columns.length - 1 },
+      })
+      return
+    }
+
     if ((e.metaKey || e.ctrlKey) && e.key === 'c') {
       e.preventDefault()
       const minR = Math.min(selection.anchor.rowIdx, selection.active.rowIdx)

@@ -1,5 +1,5 @@
 import { useState, type RefObject } from 'react'
-import type { PanelImperativeHandle } from 'react-resizable-panels'
+import type { Layout, PanelImperativeHandle } from 'react-resizable-panels'
 import { SearchInput } from '#/components/SearchInput'
 import { Button } from '#/components/ui/button'
 import { Icon } from '#/lib/icons'
@@ -52,6 +52,8 @@ export function ExplorerSplitView({
   bottomPanelRef,
   topCollapsed,
   onToggleTopPanel,
+  layout,
+  onLayoutChange,
 }: {
   orgSlug: string
   workspace: Workspace
@@ -77,6 +79,8 @@ export function ExplorerSplitView({
   bottomPanelRef: RefObject<PanelImperativeHandle | null>
   topCollapsed: boolean
   onToggleTopPanel: () => void
+  layout: Layout | undefined
+  onLayoutChange: (layout: Layout) => void
 }) {
   const [connectionFilter, setConnectionFilter] = useState('')
   const [schemaFilter, setSchemaFilter] = useState('')
@@ -95,8 +99,14 @@ export function ExplorerSplitView({
   const selectedConnection = connections.find((c) => c.id === selectedConnectionId) ?? null
 
   return (
-    <ResizablePanelGroup orientation="vertical" className="min-h-0 flex-1">
+    <ResizablePanelGroup
+      orientation="vertical"
+      className="min-h-0 flex-1"
+      defaultLayout={layout}
+      onLayoutChanged={onLayoutChange}
+    >
       <ResizablePanel
+        id="explorer-connections"
         panelRef={topPanelRef}
         defaultSize="55%"
         minSize="20%"
@@ -236,6 +246,7 @@ export function ExplorerSplitView({
       </ResizablePanel>
       <ResizableHandle withHandle />
       <ResizablePanel
+        id="explorer-schema"
         panelRef={bottomPanelRef}
         defaultSize="45%"
         minSize="20%"

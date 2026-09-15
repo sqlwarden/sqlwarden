@@ -90,6 +90,16 @@ const TERMINAL_STATUSES: ReadonlySet<QueryResult['status']> = new Set([
   'skipped',
 ])
 
+/** Appends " (n)" when `title` collides with an existing console tab title,
+ *  so opening a console for the same connection twice doesn't yield two
+ *  identically named tabs. */
+export function dedupeConsoleTitle(title: string, existingTitles: string[]): string {
+  if (!existingTitles.includes(title)) return title
+  let n = 2
+  while (existingTitles.includes(`${title} (${n})`)) n++
+  return `${title} (${n})`
+}
+
 /**
  * Returns `list` with every entry from `fromIndex` onward marked `skipped`,
  * unless it already reached a terminal status.
@@ -146,6 +156,9 @@ export type IdeState = {
   layout: Record<number, LayoutNode>
   /** Focused group id per workspace — drives which group Run/Save/results target. */
   activeGroupId: Record<number, string>
+  /** Highlighted connection row in the explorer sidebar, per workspace. Persisted
+   *  so it survives a tab switch or reload instead of resetting on remount. */
+  selectedConnectionId: Record<number, number | null>
   /** Tab + source group currently being dragged (transient; drives edge-split drop zones). */
   draggingTab: { tabId: string; fromGroupId: string } | null
   /** Transient per-connection connect status (not persisted): 'connecting' or an error. */
@@ -239,6 +252,8 @@ export type IdeActions = {
   setActiveActivity: (activityId: string) => void
   setSidebarCollapsed: (collapsed: boolean) => void
   setActivityBarExpanded: (expanded: boolean) => void
+  /** Sets (or clears, with null) the highlighted connection for a workspace's explorer. */
+  setSelectedConnectionId: (workspaceId: number, connectionId: number | null) => void
   setSession: (connectionId: number, sessionId: string) => void
   clearSession: (connectionId: number) => void
   /** Reconcile the sessions map with authoritative backend data. When
@@ -276,12 +291,14 @@ export type IdeActions = {
   toggleRunPin: (tabId: string, runId: string) => void
   /** Opens a new numbered console tab. Pass yState (encoded Y.Doc) so all windows
    *  that receive this tab share the same canonical Y.js initial history.
-   *  Pass connectionId to pre-select a connection on the new tab. */
+   *  Pass connectionId to pre-select a connection on the new tab. Pass title to
+   *  override the default "Console N" label (e.g. with the connection name). */
   openConsole: (
     workspace: Workspace,
     yState: number[],
     connectionId?: number,
     driver?: string,
+    title?: string,
   ) => void
   /** Sets (or replaces) a connection's transaction state from a backend response. */
   setTransactionState: (connectionId: number, state: TransactionState) => void
@@ -402,6 +419,7 @@ export function createIdeStore(orgSlug: string, accountId: number, role: WindowR
         activityBarExpanded: false,
         layout: {},
         activeGroupId: {},
+        selectedConnectionId: {},
         draggingTab: null,
         focusEditorRequest: null,
         pendingJump: null,
@@ -691,6 +709,10 @@ export function createIdeStore(orgSlug: string, accountId: number, role: WindowR
         setActiveActivity: (activityId) => set({ activeActivityId: activityId }),
         setSidebarCollapsed: (collapsed) => set({ sidebarCollapsed: collapsed }),
         setActivityBarExpanded: (expanded) => set({ activityBarExpanded: expanded }),
+        setSelectedConnectionId: (workspaceId, connectionId) =>
+          set((s) => ({
+            selectedConnectionId: { ...s.selectedConnectionId, [workspaceId]: connectionId },
+          })),
 
         setSession: (connectionId, sessionId) =>
           set((s) => ({ sessions: { ...s.sessions, [connectionId]: sessionId } })),
@@ -888,7 +910,7 @@ export function createIdeStore(orgSlug: string, accountId: number, role: WindowR
             }
           }),
 
-        openConsole: (workspace, yState, connectionId, driver) =>
+        openConsole: (workspace, yState, connectionId, driver, title) =>
           set((s) => {
             const wsConsoleTabs = s.tabs.filter(
               (t) => t.workspaceId === workspace.id && t.kind === 'scratch',
@@ -901,7 +923,12 @@ export function createIdeStore(orgSlug: string, accountId: number, role: WindowR
             const tab: EditorTab = {
               id: `scratch:${workspace.id}:${num}`,
               workspaceId: workspace.id,
-              title: `Console ${num}`,
+              title: title
+                ? dedupeConsoleTitle(
+                    title,
+                    wsConsoleTabs.map((t) => t.title),
+                  )
+                : `Console ${num}`,
               kind: 'scratch',
               content: DEFAULT_CONSOLE_CONTENT,
               yState,
@@ -1002,6 +1029,7 @@ const _contextFallback = createStore<IdeState & IdeActions>()(() => ({
   activityBarExpanded: false,
   layout: {},
   activeGroupId: {},
+  selectedConnectionId: {},
   draggingTab: null,
   focusEditorRequest: null,
   pendingJump: null,
@@ -1045,6 +1073,7 @@ const _contextFallback = createStore<IdeState & IdeActions>()(() => ({
   setActiveActivity: _noop,
   setSidebarCollapsed: _noop,
   setActivityBarExpanded: _noop,
+  setSelectedConnectionId: _noop,
   setSession: _noop,
   clearSession: _noop,
   syncSessions: _noop,

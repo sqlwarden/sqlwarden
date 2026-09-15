@@ -168,6 +168,10 @@ func (d *oracleDriver) Query(ctx context.Context, query string, args ...any) (*r
 }
 
 func (d *oracleDriver) QueryWithOptions(ctx context.Context, query string, opts cursor.ScanOptions, args ...any) (*result.ResultSet, error) {
+	// go-ora rejects a trailing statement terminator on a lone statement (ORA-00933);
+	// editor-resolved single statements keep their trailing ";", so strip it here
+	// rather than relying on every caller to have already done so.
+	query = trimTrailingSemicolon(query)
 	// SQL is intentionally user-authored editor input and is permission-gated by the web layer.
 	// codeql[go/sql-injection]
 	rows, err := d.conn().QueryContext(ctx, query, args...)
@@ -182,6 +186,7 @@ func (d *oracleDriver) Execute(ctx context.Context, query string, args ...any) (
 }
 
 func (d *oracleDriver) ExecuteWithOptions(ctx context.Context, query string, _ cursor.ScanOptions, args ...any) (*result.ResultSet, error) {
+	query = trimTrailingSemicolon(query)
 	// SQL is intentionally user-authored editor input and is permission-gated by the web layer.
 	// codeql[go/sql-injection]
 	execResult, err := d.conn().ExecContext(ctx, query, args...)

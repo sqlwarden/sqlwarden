@@ -35,8 +35,11 @@ const RULER_COLUMN = 100
 // The find panel supplies its own design-system chrome, so strip CodeMirror's
 // default panel border/background and theme the in-document match highlights
 // with the app's tokens. var(...) values pass straight through to CSS.
+// CodeMirror's baseTheme also sets .cm-panels to z-index: 300, which sits
+// above the app's dialog overlay (z-50) and lets the find/replace panel float
+// on top of open dialogs instead of being covered by them; pull it back down.
 const sqlwardenSearchTheme = EditorView.theme({
-  '.cm-panels': { backgroundColor: 'transparent', color: 'inherit', border: 'none' },
+  '.cm-panels': { backgroundColor: 'transparent', color: 'inherit', border: 'none', zIndex: '10' },
   '.cm-panels.cm-panels-top': { borderBottom: '1px solid var(--border)' },
   '.cm-panel': { padding: '0', margin: '0' },
   '.cm-searchMatch': {
