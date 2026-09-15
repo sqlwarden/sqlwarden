@@ -17,7 +17,7 @@ const (
 	DefaultExportsSyncMaxBytes            int64 = 104857600
 	DefaultExportsBackgroundMaxBytes      int64 = 0
 	DefaultSchemaSnapshotFreshnessSeconds int64 = 86400
-	DefaultSchemaLazyThreshold                 = 500
+	DefaultSchemaLazyThreshold                  = 500
 	DefaultFileRevisionsKeepLatest              = 50
 	DefaultJobsWorkerCount                      = 16
 	DefaultJobsPollIntervalSeconds        int64 = 1
