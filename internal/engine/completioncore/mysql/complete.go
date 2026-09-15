@@ -786,20 +786,20 @@ func projectedNames(sql string) []string {
 	}
 	var names []string
 	start := selectIndex + 1
-	for i := start; i <= len(tokens); i++ {
-		atEnd := i == len(tokens)
-		if !atEnd && tokens[i].depth == selectDepth && tokens[i].Type == parser.FROM {
-			atEnd = true
+	i := start
+	for ; i < len(tokens); i++ {
+		if tokens[i].depth == selectDepth && tokens[i].Type == parser.FROM {
+			break
 		}
-		if atEnd || (tokens[i].depth == selectDepth && tokens[i].Type == ',') {
+		if tokens[i].depth == selectDepth && tokens[i].Type == ',' {
 			if name := projectionName(tokens[start:i]); name != "" {
 				names = append(names, name)
 			}
 			start = i + 1
-			if atEnd {
-				break
-			}
 		}
+	}
+	if name := projectionName(tokens[start:i]); name != "" {
+		names = append(names, name)
 	}
 	return names
 }

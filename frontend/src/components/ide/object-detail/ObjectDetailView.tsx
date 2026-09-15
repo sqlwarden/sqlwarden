@@ -129,7 +129,7 @@ export function ObjectDetailView({
         canRefresh={state.kind === 'ready'}
         refreshing={refreshSchema.isPending}
         onViewInDiagram={
-          ref && connectionId && diagramSupportedForKind(specQuery.data?.spec, ref.kind)
+          diagramSupportedForKind(specQuery.data?.spec, ref.kind)
             ? () =>
                 openTab(
                   newDiagramTab({ id: connectionId, driver } as Connection, workspace, {

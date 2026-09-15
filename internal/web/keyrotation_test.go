@@ -154,8 +154,8 @@ func TestRotateEncryptionKeys(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	defer reader.Close()
 	raw, err := io.ReadAll(reader)
-	reader.Close()
 	if err != nil {
 		t.Fatal(err)
 	}

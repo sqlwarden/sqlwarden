@@ -34,13 +34,14 @@ const (
 )
 
 var (
-	ErrUnknownType  = errors.New("unknown job type")
-	ErrNotFound     = errors.New("job not found")
-	ErrNotRunnable  = errors.New("job is not runnable")
-	ErrNotOwned     = errors.New("job is not owned by account")
-	ErrInvalidScope = errors.New("job scope is invalid")
-	ErrInvalidEvent = errors.New("job event is invalid")
-	ErrActiveExists = errors.New("active singleton job already exists")
+	ErrUnknownType            = errors.New("unknown job type")
+	ErrNotFound               = errors.New("job not found")
+	ErrNotRunnable            = errors.New("job is not runnable")
+	ErrNotOwned               = errors.New("job is not owned by account")
+	ErrInvalidScope           = errors.New("job scope is invalid")
+	ErrInvalidEvent           = errors.New("job event is invalid")
+	ErrActiveExists           = errors.New("active singleton job already exists")
+	ErrSingletonKeyNotAllowed = errors.New("singleton key not allowed for non-singleton enqueue")
 )
 
 // Record mirrors a persisted job row. Payloads are stored as strings for
