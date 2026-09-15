@@ -1,5 +1,21 @@
 # Changelog
 
+## [0.9.2](https://github.com/sqlwarden/sqlwarden/compare/v0.9.1...v0.9.2) (2026-09-15)
+
+
+### Features
+
+* **ide:** add hovered Run/Explain buttons on query segments (SQLW-142) ([2cec354](https://github.com/sqlwarden/sqlwarden/commit/2cec35420c8145e4d839a89d82849915629e1b80))
+* **ide:** initial user feedback round UI fixes (SQLW-149) ([ee48084](https://github.com/sqlwarden/sqlwarden/commit/ee4808476ee210d17e15edbe1c07b7ede6418166))
+* **ide:** lazy load schema tree and objects (SQLW-132) ([65c794e](https://github.com/sqlwarden/sqlwarden/commit/65c794e3ab82ea83c200c2c394126ec8e31a3c7e))
+
+
+### Bug Fixes
+
+* gofmt instance_settings.go and drop narration comments (SQLW-150) ([7f53c05](https://github.com/sqlwarden/sqlwarden/commit/7f53c050dbfb0791ec2e7ead40234d324e86cf42))
+* preserve PL/SQL block terminators and stabilize flaky ConnectionDialog test ([ba26910](https://github.com/sqlwarden/sqlwarden/commit/ba269107545878a80ad33089f353bcb6c1560b98))
+* resolve GitHub code-quality scan findings (SQLW-150) ([f05661d](https://github.com/sqlwarden/sqlwarden/commit/f05661db398cd8b55eef5acf1091cd7c0e62af01))
+
 ## [0.9.1](https://github.com/sqlwarden/sqlwarden/compare/v0.9.0...v0.9.1) (2026-09-11)
 
 
