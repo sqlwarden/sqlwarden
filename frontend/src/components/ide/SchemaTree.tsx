@@ -526,7 +526,7 @@ export function SchemaTree({
 
       {renameTarget && (
         <RenameColumnDialog
-          open={renameTarget !== null}
+          open={true}
           onOpenChange={(open) => !open && setRenameTarget(null)}
           tableName={renameTarget.ref.name}
           columnName={renameTarget.columnName}
@@ -547,7 +547,7 @@ export function SchemaTree({
 
       {dropTarget && (
         <DropConfirmDialog
-          open={dropTarget !== null}
+          open={true}
           onOpenChange={(open) => !open && setDropTarget(null)}
           objectType={dropTargetLabel(dropTarget, spec)}
           objectName={dropTargetName(dropTarget)}

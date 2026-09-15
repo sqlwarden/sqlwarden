@@ -970,28 +970,26 @@ func projectedNames(sql string) []string {
 	var names []string
 	itemStart := selectIndex + 1
 	depth = selectDepth
-	for i := selectIndex + 1; i <= len(tokens); i++ {
-		atEnd := i == len(tokens)
-		if !atEnd {
-			switch tokens[i].Type {
-			case '(':
-				depth++
-			case ')':
-				depth--
-			}
-			if depth == selectDepth && tokens[i].Type == parser.FROM {
-				atEnd = true
-			}
+	i := selectIndex + 1
+	for ; i < len(tokens); i++ {
+		switch tokens[i].Type {
+		case '(':
+			depth++
+		case ')':
+			depth--
 		}
-		if atEnd || (depth == selectDepth && tokens[i].Type == ',') {
+		if depth == selectDepth && tokens[i].Type == parser.FROM {
+			break
+		}
+		if depth == selectDepth && tokens[i].Type == ',' {
 			if name := projectionName(tokens[itemStart:i]); name != "" {
 				names = append(names, name)
 			}
 			itemStart = i + 1
-			if atEnd {
-				break
-			}
 		}
+	}
+	if name := projectionName(tokens[itemStart:i]); name != "" {
+		names = append(names, name)
 	}
 	return names
 }

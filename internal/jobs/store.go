@@ -29,7 +29,7 @@ func NewStore(db *database.DB) *Store {
 
 func (s *Store) Enqueue(ctx context.Context, input EnqueueInput) (Record, error) {
 	if strings.TrimSpace(input.SingletonKey) != "" {
-		return Record{}, ErrInvalidScope
+		return Record{}, ErrSingletonKeyNotAllowed
 	}
 	job, err := newRecord(input)
 	if err != nil {
@@ -158,11 +158,24 @@ func (s *Store) ListUserWorkspaceJobs(ctx context.Context, orgID, workspaceID, a
 		pageSize = 100
 	}
 
+	offset := (page - 1) * pageSize
+
+	total, err := s.db.NewSelect().
+		Model((*Record)(nil)).
+		Where("visibility = ?", VisibilityUser).
+		Where("org_id = ? AND workspace_id = ? AND owner_account_id = ?", orgID, workspaceID, accountID).
+		Count(ctx)
+	if err != nil {
+		return response.Paginated[Record]{}, err
+	}
+
 	var jobs []Record
-	err := s.db.NewSelect().Model(&jobs).
+	err = s.db.NewSelect().Model(&jobs).
 		Where("visibility = ?", VisibilityUser).
 		Where("org_id = ? AND workspace_id = ? AND owner_account_id = ?", orgID, workspaceID, accountID).
 		OrderExpr("created_at DESC, id DESC").
+		Limit(pageSize).
+		Offset(offset).
 		Scan(ctx)
 	if err != nil {
 		return response.Paginated[Record]{}, err
@@ -170,7 +183,12 @@ func (s *Store) ListUserWorkspaceJobs(ctx context.Context, orgID, workspaceID, a
 	for i := range jobs {
 		populateOutput(&jobs[i])
 	}
-	return response.PaginateItems(jobs, page, pageSize), nil
+	return response.Paginated[Record]{
+		Items:    jobs,
+		Page:     page,
+		PageSize: pageSize,
+		Total:    total,
+	}, nil
 }
 
 func (s *Store) GetUserWorkspaceJob(ctx context.Context, orgID, workspaceID, accountID int64, jobID string) (Record, bool, error) {

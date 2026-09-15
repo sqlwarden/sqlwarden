@@ -207,8 +207,8 @@ func TestStoreEnqueueRejectsSingletonKey(t *testing.T) {
 		SingletonKey: "noop",
 		Visibility:   VisibilityInternal,
 	})
-	if !errors.Is(err, ErrInvalidScope) {
-		t.Fatalf("error = %v, want ErrInvalidScope", err)
+	if !errors.Is(err, ErrSingletonKeyNotAllowed) {
+		t.Fatalf("error = %v, want ErrSingletonKeyNotAllowed", err)
 	}
 }
 
