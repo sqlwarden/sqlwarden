@@ -6,6 +6,7 @@ import type {
   GenerateStatementResponse,
   ObjectDefinitionResponse,
   ObjectDescriptor,
+  ObjectDetail,
   ObjectRef,
   ScopePath,
   ObjectsResponse,
@@ -265,13 +266,25 @@ export function connectionObjectQueryKey(
   workspaceId: string | number,
   connectionId: string | number,
   ref: ObjectRef,
+  sessionId?: string,
 ) {
+  // Keys on session presence so a session change never reuses another
+  // session's cached response — notably a pending_connection result cached
+  // while disconnected, which would otherwise sit stale for its full
+  // staleTime with nothing to trigger a refetch until the next remount.
+  const sessionKeyPart = sessionId ?? 'no-session'
   return [
     ...connectionObjectsQueryKeyPrefix(slug, workspaceId, connectionId),
     JSON.stringify(ref.scope),
     ref.kind,
     ref.name,
+    sessionKeyPart,
   ] as const
+}
+
+export interface ObjectDetailResult {
+  detail: ObjectDetail | null
+  pendingConnection: boolean
 }
 
 export function orgConnectionObjectQueryOptions(
@@ -282,14 +295,17 @@ export function orgConnectionObjectQueryOptions(
   ref: ObjectRef,
 ) {
   return queryOptions({
-    queryKey: connectionObjectQueryKey(slug, workspaceId, connectionId, ref),
-    queryFn: async () => {
+    queryKey: connectionObjectQueryKey(slug, workspaceId, connectionId, ref, sessionId),
+    queryFn: async (): Promise<ObjectDetailResult> => {
       const res = await api.post<ObjectsResponse>(
         `${schemaBase(slug, workspaceId, connectionId)}/objects`,
         { refs: [ref] },
         schemaRequestOptions(sessionId),
       )
-      return res.objects[0] ?? null
+      return {
+        detail: res.objects?.[0] ?? null,
+        pendingConnection: (res.pending_connection?.length ?? 0) > 0,
+      }
     },
     staleTime: 3 * 60_000,
   })
@@ -666,19 +682,24 @@ export function applyConnectionSchemaEdit(
  * any non-relational kind served through it) — without it, the DDL tab keeps
  * showing pre-refresh text until a full page reload clears the whole cache.
  */
-export function invalidateConnectionSchemaQueries(
+/** Caps how many previously-expanded object rows refetch at once on
+ *  reconnect. Each row is its own request (see orgConnectionObjectQueryOptions),
+ *  so refetching every active one in parallel would fire a request burst
+ *  proportional to how much of the tree the user had open. */
+const RECONNECT_OBJECT_REFETCH_CONCURRENCY = 4
+
+export async function invalidateConnectionSchemaQueries(
   queryClient: QueryClient,
   slug: string,
   workspaceId: string | number,
   connectionId: string | number,
 ) {
-  return Promise.all([
+  const objectsPrefix = connectionObjectsQueryKeyPrefix(slug, workspaceId, connectionId)
+  await Promise.all([
     queryClient.invalidateQueries({
       queryKey: connectionDirectoryQueryKey(slug, workspaceId, connectionId),
     }),
-    queryClient.invalidateQueries({
-      queryKey: connectionObjectsQueryKeyPrefix(slug, workspaceId, connectionId),
-    }),
+    queryClient.invalidateQueries({ queryKey: objectsPrefix, refetchType: 'none' }),
     queryClient.invalidateQueries({
       queryKey: connectionObjectDefinitionQueryKeyPrefix(slug, workspaceId, connectionId),
     }),
@@ -686,4 +707,19 @@ export function invalidateConnectionSchemaQueries(
       queryKey: connectionRelationshipsQueryKeyPrefix(slug, workspaceId, connectionId),
     }),
   ])
+  await refetchThrottled(queryClient, objectsPrefix, RECONNECT_OBJECT_REFETCH_CONCURRENCY)
+}
+
+async function refetchThrottled(
+  queryClient: QueryClient,
+  queryKeyPrefix: readonly unknown[],
+  concurrency: number,
+) {
+  const queries = queryClient.getQueryCache().findAll({ queryKey: queryKeyPrefix, type: 'active' })
+  for (let i = 0; i < queries.length; i += concurrency) {
+    const batch = queries.slice(i, i + concurrency)
+    await Promise.all(
+      batch.map((query) => queryClient.refetchQueries({ queryKey: query.queryKey, exact: true })),
+    )
+  }
 }

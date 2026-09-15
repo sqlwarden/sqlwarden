@@ -772,6 +772,7 @@ export interface SchemaSpecResponse {
 
 export interface ObjectsResponse {
   objects: ObjectDetail[]
+  pending_connection?: ObjectRef[]
 }
 
 export interface ObjectDefinitionResponse {

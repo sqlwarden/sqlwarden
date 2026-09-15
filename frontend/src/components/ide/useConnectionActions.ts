@@ -4,6 +4,7 @@ import { toast } from 'sonner'
 import { api } from '#/lib/api/client'
 import { errorMessage } from '#/lib/api/errors'
 import { queryKeys } from '#/lib/api/query-keys'
+import { invalidateConnectionSchemaQueries } from '#/lib/api/queries/database'
 import type { Connection, Workspace } from '#/lib/api/types'
 import { invalidateCompletionIndex } from './completion'
 import { DEFAULT_CONSOLE_CONTENT, newConnectionTab, useIde } from './useIdeStore'
@@ -20,17 +21,19 @@ export function useConnectionActions(orgSlug: string, workspace: Workspace) {
   const sessionsQueryKey = queryKeys.workspaceSessions(orgSlug, workspace.id)
 
   const connectMutation = useMutation({
-    mutationFn: (connection: Connection) =>
+    mutationFn: ({ connection }: { connection: Connection; openConsole: boolean }) =>
       api.post<{ session_id: string; reused: boolean }>(
         `/api/v1/orgs/${orgSlug}/workspaces/${workspace.id}/connections/${connection.id}/connect`,
       ),
-    onMutate: (connection) => setConnectionStatus(connection.id, 'connecting'),
-    onSuccess: (data, connection) => {
+    onMutate: ({ connection }) => setConnectionStatus(connection.id, 'connecting'),
+    onSuccess: (data, { connection, openConsole: shouldOpenConsole }) => {
       setConnectionStatus(connection.id, null)
       setSession(connection.id, data.session_id)
       void queryClient.invalidateQueries({ queryKey: sessionsQueryKey })
+      void invalidateConnectionSchemaQueries(queryClient, orgSlug, workspace.id, connection.id)
+      if (shouldOpenConsole) openConnectionConsole(connection)
     },
-    onError: (error, connection) => {
+    onError: (error, { connection }) => {
       const message = errorMessage(error, 'Failed to connect')
       setConnectionStatus(connection.id, { error: message })
       toast.error(message)
@@ -62,11 +65,12 @@ export function useConnectionActions(orgSlug: string, workspace: Workspace) {
     doc.getText('content').insert(0, DEFAULT_CONSOLE_CONTENT)
     const initialState = Array.from(Y.encodeStateAsUpdate(doc))
     doc.destroy()
-    openConsole(workspace, initialState, connection.id, connection.driver)
+    openConsole(workspace, initialState, connection.id, connection.driver, connection.name)
   }
 
-  function connect(connection: Connection) {
-    void connectMutation.mutateAsync(connection).catch(() => undefined)
+  function connect(connection: Connection, options: { openConsole?: boolean } = {}) {
+    const openConsole = options.openConsole ?? true
+    void connectMutation.mutateAsync({ connection, openConsole }).catch(() => undefined)
   }
 
   function disconnect(connection: Connection, transactionOpen: boolean, onBlocked?: () => void) {

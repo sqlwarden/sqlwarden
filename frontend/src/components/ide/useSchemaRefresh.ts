@@ -34,7 +34,7 @@ export function useSchemaRefresh({
       if (ref) {
         await Promise.all([
           queryClient.invalidateQueries({
-            queryKey: connectionObjectQueryKey(orgSlug, workspaceId, connectionId, ref),
+            queryKey: connectionObjectQueryKey(orgSlug, workspaceId, connectionId, ref, sessionId),
           }),
           queryClient.invalidateQueries({
             queryKey: connectionObjectDefinitionQueryKey(orgSlug, workspaceId, connectionId, ref),

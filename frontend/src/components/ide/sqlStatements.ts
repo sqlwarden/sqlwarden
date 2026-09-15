@@ -145,3 +145,26 @@ export function sqlStatementsWithOffsets(text: string): SqlStatementWithOffsets[
   }
   return result
 }
+
+/** Same containment/fallback rule as `sqlStatementAtCursor` (cursor in
+ *  whitespace between statements resolves to the preceding one), but returns
+ *  offsets too — for callers that need to position UI at the statement under
+ *  the cursor. The end bound is inclusive so a cursor sitting right after the
+ *  statement's last character (e.g. on its semicolon) still resolves to it. */
+export function sqlStatementWithOffsetsAtCursor(
+  text: string,
+  cursor: number,
+): SqlStatementWithOffsets | null {
+  const statements = sqlStatementsWithOffsets(text)
+  if (statements.length === 0) return null
+
+  for (const s of statements) {
+    if (cursor >= s.start && cursor <= s.end) return s
+  }
+
+  let best = statements[0]
+  for (const s of statements) {
+    if (s.start <= cursor) best = s
+  }
+  return best
+}

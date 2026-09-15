@@ -310,6 +310,30 @@ func TestOracleExecuteDMLRowsAffected(t *testing.T) {
 	}
 }
 
+// The editor's single-statement run resolves "the statement at the cursor"
+// including its trailing ";" (see frontend sqlStatementAtCursor), so Query and
+// Execute must tolerate that terminator even though go-ora rejects it verbatim
+// (ORA-00933).
+func TestOracleQueryAndExecuteTrimTrailingSemicolon(t *testing.T) {
+	d := newConnectedDriver(t)
+	ctx := context.Background()
+	t.Cleanup(func() { dropQuietly(d, "DROP TABLE trailing_semi_test") })
+
+	if _, err := d.Execute(ctx, `CREATE TABLE trailing_semi_test (id NUMBER PRIMARY KEY) ;`); err != nil {
+		t.Fatalf("create with trailing semicolon: %v", err)
+	}
+	if _, err := d.Execute(ctx, `INSERT INTO trailing_semi_test (id) VALUES (1);`); err != nil {
+		t.Fatalf("insert with trailing semicolon: %v", err)
+	}
+	rs, err := d.Query(ctx, `SELECT id FROM trailing_semi_test;`)
+	if err != nil {
+		t.Fatalf("query with trailing semicolon: %v", err)
+	}
+	if len(rs.Rows) != 1 {
+		t.Fatalf("rows = %d, want 1", len(rs.Rows))
+	}
+}
+
 func TestOracleQueryCursorDoesNotMaterializeLargeResultSet(t *testing.T) {
 	d := newConnectedDriver(t)
 

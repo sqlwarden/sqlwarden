@@ -1529,7 +1529,7 @@ func TestExecuteQueryDoesNotReturnCursorWhenDQLFitsFirstPage(t *testing.T) {
 	assert.Equal(t, queryRes.StatusCode, http.StatusOK)
 	assert.Equal(t, queryRes.BodyFields["rows_returned"], any(float64(1)))
 	assert.Nil(t, queryRes.BodyFields["query_cursor_id"])
-	assert.Nil(t, queryRes.BodyFields["exhausted"])
+	assert.Equal(t, queryRes.BodyFields["exhausted"], true)
 }
 
 func TestExecuteDQLQueryFallsBackToSessionQueryWhenCursorUnsupported(t *testing.T) {

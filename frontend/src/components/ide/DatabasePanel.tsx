@@ -89,10 +89,23 @@ export function DatabasePanel({
   const connectionActions = useConnectionActions(orgSlug, workspace)
 
   const [filter, setFilter] = useState('')
-  const { groupByEnvironment, setGroupByEnvironment, splitView, setSplitView } =
-    useConnectionLayout()
+  const {
+    groupByEnvironment,
+    setGroupByEnvironment,
+    splitView,
+    setSplitView,
+    explorerLayout,
+    setExplorerLayout,
+    explorerTopCollapsed: topCollapsed,
+    setExplorerTopCollapsed: setTopCollapsed,
+    explorerBottomCollapsed: bottomCollapsed,
+    setExplorerBottomCollapsed: setBottomCollapsed,
+  } = useConnectionLayout()
   const [envFilter, setEnvFilter] = useState<number | 'all'>('all')
-  const [selectedConnectionId, setSelectedConnectionId] = useState<number | null>(null)
+  const selectedConnectionId = useIde((s) => s.selectedConnectionId[workspace.id] ?? null)
+  const setSelectedConnectionIdForWorkspace = useIde((s) => s.setSelectedConnectionId)
+  const setSelectedConnectionId = (connectionId: number | null) =>
+    setSelectedConnectionIdForWorkspace(workspace.id, connectionId)
   const [addEnvOpen, setAddEnvOpen] = useState(false)
   const [addConnEnvironmentId, setAddConnEnvironmentId] = useState<number | null>(null)
   const [addConnOpen, setAddConnOpen] = useState(false)
@@ -109,8 +122,6 @@ export function DatabasePanel({
 
   const topPanelRef = useRef<PanelImperativeHandle>(null)
   const bottomPanelRef = useRef<PanelImperativeHandle>(null)
-  const [topCollapsed, setTopCollapsed] = useState(false)
-  const [bottomCollapsed, setBottomCollapsed] = useState(false)
 
   const toggleTopPanel = () => {
     if (topCollapsed) {
@@ -389,6 +400,8 @@ export function DatabasePanel({
             bottomPanelRef={bottomPanelRef}
             topCollapsed={topCollapsed}
             onToggleTopPanel={toggleTopPanel}
+            layout={explorerLayout}
+            onLayoutChange={setExplorerLayout}
           />
         ) : (
           <>

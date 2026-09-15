@@ -81,13 +81,20 @@ func TestOracleInspectSourceObjectKinds(t *testing.T) {
 func TestOracleInspectCatalogObjectKinds(t *testing.T) {
 	d := newConnectedDriver(t)
 	t.Cleanup(func() {
-		dropQuietly(d, "DROP SYNONYM catalog_alias", "DROP DATABASE LINK catalog_link", "DROP TABLE catalog_table")
+		dropQuietly(d,
+			`BEGIN DBMS_AQADM.STOP_QUEUE('catalog_queue'); END;`,
+			`BEGIN DBMS_AQADM.DROP_QUEUE('catalog_queue'); END;`,
+			`BEGIN DBMS_AQADM.DROP_QUEUE_TABLE('catalog_queue_tab'); END;`,
+			"DROP SYNONYM catalog_alias", "DROP DATABASE LINK catalog_link", "DROP TABLE catalog_table")
 	})
 	for _, sql := range []string{
 		`CREATE TABLE catalog_table (id NUMBER CONSTRAINT catalog_pk PRIMARY KEY, amount NUMBER CONSTRAINT catalog_check CHECK (amount >= 0))`,
 		`CREATE INDEX "catalog'index" ON catalog_table (amount)`,
 		`CREATE SYNONYM catalog_alias FOR catalog_table`,
 		`CREATE DATABASE LINK catalog_link CONNECT TO remote_user IDENTIFIED BY "test_only" USING 'unreachable.example/FREEPDB1'`,
+		`BEGIN DBMS_AQADM.CREATE_QUEUE_TABLE(queue_table => 'catalog_queue_tab', queue_payload_type => 'RAW'); END;`,
+		`BEGIN DBMS_AQADM.CREATE_QUEUE(queue_name => 'catalog_queue', queue_table => 'catalog_queue_tab'); END;`,
+		`BEGIN DBMS_AQADM.START_QUEUE(queue_name => 'catalog_queue'); END;`,
 	} {
 		mustExec(t, d, sql)
 	}
@@ -100,6 +107,7 @@ func TestOracleInspectCatalogObjectKinds(t *testing.T) {
 		{Scope: itScope(), Kind: "index", Name: "catalog'index"},
 		{Scope: itScope(), Kind: "constraint", Name: "CATALOG_PK"},
 		{Scope: itScope(), Kind: "constraint", Name: "CATALOG_CHECK"},
+		{Scope: itScope(), Kind: "queue", Name: "CATALOG_QUEUE"},
 	}
 	listed := map[metadata.ObjectRef]bool{}
 	for _, scope := range directory.ScopeNodes() {
@@ -113,7 +121,7 @@ func TestOracleInspectCatalogObjectKinds(t *testing.T) {
 			}
 		}
 	}
-	if len(refs) != 5 {
+	if len(refs) != 6 {
 		t.Fatal("database link was not listed")
 	}
 	for _, ref := range refs {
@@ -151,6 +159,8 @@ func TestOracleInspectCatalogObjectKinds(t *testing.T) {
 			}
 		case "db_link":
 			key, want = "Remote user", "REMOTE_USER"
+		case "queue":
+			key, want = "Queue table", "CATALOG_QUEUE_TAB"
 		}
 		if fields[key] != want {
 			t.Errorf("%+v: %s = %q, want %q", object.Ref, key, fields[key], want)

@@ -38,6 +38,11 @@ var oracleCatalogSpecs = []oracleCatalogSpec{
 		columns: []string{"table_name", "constraint_type", "status", "validated", "deferrable", "deferred", "r_owner", "r_constraint_name", "delete_rule", "search_condition"},
 		labels:  []string{"Table", "Type", "Status", "Validation", "Deferrable", "Initially deferred", "Referenced schema", "Referenced constraint", "Delete rule", "Check condition"},
 	},
+	{
+		kind: "queue", title: "Queue", from: "all_queues", owner: "owner", name: "name",
+		columns: []string{"queue_table", "queue_type", "enqueue_enabled", "dequeue_enabled", "retention", "user_comment"},
+		labels:  []string{"Queue table", "Type", "Enqueue enabled", "Dequeue enabled", "Retention (seconds)", "Comment"},
+	},
 }
 
 func (d *oracleDriver) inspectCatalogObjects(ctx context.Context, refs []metadata.ObjectRef) ([]metadata.Object, error) {

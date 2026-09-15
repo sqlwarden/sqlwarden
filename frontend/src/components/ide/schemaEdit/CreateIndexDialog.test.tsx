@@ -5,7 +5,10 @@ import { describe, expect, it, vi } from 'vitest'
 import { CreateIndexDialog } from './CreateIndexDialog'
 
 const queryFn = vi.hoisted(() =>
-  vi.fn(async () => ({ relational: { columns: [{ name: 'ID' }, { name: 'LABEL' }] } })),
+  vi.fn(async () => ({
+    detail: { relational: { columns: [{ name: 'ID' }, { name: 'LABEL' }] } },
+    pendingConnection: false,
+  })),
 )
 vi.mock('#/lib/api/query', () => ({
   orgConnectionObjectQueryOptions: () => ({ queryKey: ['index-table'], queryFn }),

@@ -3,6 +3,7 @@ import { QueryClientProvider } from '@tanstack/react-query'
 import { act, renderHook, waitFor } from '@testing-library/react'
 import { http, HttpResponse } from 'msw'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
+import { connectionObjectsQueryKeyPrefix } from '#/lib/api/queries/database'
 import type { Connection, Workspace } from '#/lib/api/types'
 import { createTestQueryClient } from '#/test/render'
 import { server } from '#/test/server'
@@ -74,6 +75,29 @@ describe('useConnectionActions', () => {
     expect(store.getState().connectionStatus[7]).toBeUndefined()
     expect(invalidate).toHaveBeenCalledWith({
       queryKey: ['org-workspace-sessions', 'acme', 3],
+    })
+    expect(store.getState().tabs).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ kind: 'scratch', connectionId: 7, title: 'analytics-pg' }),
+      ]),
+    )
+  })
+
+  it('invalidates schema object queries on connect so a stale pending_connection result refetches', async () => {
+    server.use(
+      http.post('/api/v1/orgs/acme/workspaces/3/connections/7/connect', () =>
+        HttpResponse.json({ session_id: 'session-7', reused: false }),
+      ),
+    )
+    const invalidate = vi.spyOn(queryClient, 'invalidateQueries')
+    const { result } = renderHook(() => useConnectionActions('acme', workspace), { wrapper })
+
+    act(() => result.current.connect(connection))
+    await waitFor(() => expect(store.getState().sessions[7]).toBe('session-7'))
+
+    expect(invalidate).toHaveBeenCalledWith({
+      queryKey: connectionObjectsQueryKeyPrefix('acme', 3, 7),
+      refetchType: 'none',
     })
   })
 
@@ -165,6 +189,7 @@ describe('useConnectionActions', () => {
           kind: 'scratch',
           connectionId: 7,
           driver: 'postgres',
+          title: 'analytics-pg',
         }),
       ]),
     )

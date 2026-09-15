@@ -86,4 +86,53 @@ describe('invalidateConnectionSchemaQueries', () => {
     expect(objectFn).toHaveBeenCalledTimes(2)
     unsubscribe()
   })
+
+  it('caps how many expanded object rows refetch in parallel on reconnect', async () => {
+    const qc = new QueryClient()
+    const refs: ObjectRef[] = Array.from({ length: 10 }, (_, i) => ({
+      scope: ref.scope,
+      kind: 'table',
+      name: `t${i}`,
+    }))
+
+    let inFlight = 0
+    let maxInFlight = 0
+    const unsubscribes = refs.map((r) => {
+      const observer = new QueryObserver(qc, {
+        queryKey: connectionObjectQueryKey(slug, workspaceId, connectionId, r),
+        queryFn: async () => {
+          inFlight += 1
+          maxInFlight = Math.max(maxInFlight, inFlight)
+          await Promise.resolve()
+          inFlight -= 1
+          return { ref: r }
+        },
+      })
+      return observer.subscribe(() => {})
+    })
+
+    await vi.waitFor(() => {
+      for (const r of refs) {
+        expect(
+          qc.getQueryState(connectionObjectQueryKey(slug, workspaceId, connectionId, r))?.status,
+        ).toBe('success')
+      }
+    })
+    // Reset after the initial mount fetches settle so the assertion below
+    // measures concurrency during the reconnect refetch, not the burst of
+    // ten independent observers all subscribing for the first time.
+    inFlight = 0
+    maxInFlight = 0
+
+    await invalidateConnectionSchemaQueries(qc, slug, workspaceId, connectionId)
+
+    expect(maxInFlight).toBeLessThanOrEqual(4)
+    for (const r of refs) {
+      expect(
+        qc.getQueryState(connectionObjectQueryKey(slug, workspaceId, connectionId, r))
+          ?.isInvalidated,
+      ).toBe(false)
+    }
+    unsubscribes.forEach((u) => u())
+  })
 })
