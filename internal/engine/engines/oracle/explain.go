@@ -2,6 +2,7 @@ package oracle
 
 import (
 	"context"
+	"regexp"
 	"strings"
 
 	"github.com/bytebase/omni/oracle/ast"
@@ -69,11 +70,22 @@ func validateExplainable(sql string) error {
 	return nil
 }
 
+// plsqlBlockTerminator matches a trailing "END;" or "END <label>;" that closes
+// a PL/SQL block or object body (anonymous block, trigger, package, type body,
+// procedure/function). That semicolon is part of the block syntax, not a
+// statement terminator, so trimTrailingSemicolon must leave it in place.
+var plsqlBlockTerminator = regexp.MustCompile(`(?is)\bend\s*[A-Za-z0-9_$#"]*\s*;\s*$`)
+
 // trimTrailingSemicolon removes a single trailing statement terminator and
 // surrounding whitespace. go-ora rejects a trailing ";" on a lone statement,
-// and "EXPLAIN PLAN FOR <stmt>;" would carry it into the wrapped text.
+// and "EXPLAIN PLAN FOR <stmt>;" would carry it into the wrapped text. PL/SQL
+// blocks and object bodies require their closing "END;", so those are left
+// untouched.
 func trimTrailingSemicolon(sql string) string {
 	trimmed := strings.TrimSpace(sql)
+	if plsqlBlockTerminator.MatchString(trimmed) {
+		return trimmed
+	}
 	trimmed = strings.TrimSuffix(trimmed, ";")
 	return strings.TrimSpace(trimmed)
 }
