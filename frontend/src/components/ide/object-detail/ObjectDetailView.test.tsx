@@ -113,6 +113,21 @@ describe('ObjectDetailView', () => {
     expect(await screen.findByRole('button', { name: 'Columns' })).toBeInTheDocument()
   })
 
+  it('shows the reconnect CTA without fetching object data while disconnected and uncached', async () => {
+    const objectsSpy = vi.fn()
+    server.use(
+      http.post('/api/v1/orgs/acme/workspaces/3/connections/7/schema/objects', () => {
+        objectsSpy()
+        return HttpResponse.json({ objects: [detail] })
+      }),
+    )
+    renderView()
+
+    expect(screen.getByRole('button', { name: 'Reconnect' })).toBeInTheDocument()
+    await new Promise((resolve) => setTimeout(resolve, 20))
+    expect(objectsSpy).not.toHaveBeenCalled()
+  })
+
   it('renders relational sections and opens a supported object diagram', async () => {
     store.getState().setSession(7, 'session-7')
     respondReady()

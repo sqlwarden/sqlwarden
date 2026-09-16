@@ -57,6 +57,7 @@ import { EditorLayout } from './EditorLayout'
 import { ResultsArea } from './ResultsArea'
 import { createYDocRegistry, YDocRegistryContext, useYDocRegistry } from './useYDocRegistry'
 import { createEditorViewRegistry, EditorViewRegistryContext } from './useEditorViewRegistry'
+import { createTabViewStateCache, TabViewStateCacheContext } from './tabViewStateCache'
 import { Tip } from './schema-diagram/Tip'
 import { useSessionSync } from './useSessionSync'
 import { useSaveEditorTab } from './useSaveEditorTab'
@@ -82,6 +83,7 @@ export function WorkspaceIde({ orgSlug, workspaceId }: WorkspaceIdeProps) {
   const store = useMemo(() => createIdeStore(orgSlug, accountId), [orgSlug, accountId])
   const registry = useMemo(() => createYDocRegistry(accountId, orgSlug), [orgSlug, accountId])
   const viewRegistry = useMemo(() => createEditorViewRegistry(), [])
+  const tabViewStateCache = useMemo(() => createTabViewStateCache(), [])
 
   // Release the primary lock when this editor window unmounts so another window can
   // take over persistence.
@@ -115,17 +117,19 @@ export function WorkspaceIde({ orgSlug, workspaceId }: WorkspaceIdeProps) {
     <IdeStoreContext.Provider value={store}>
       <YDocRegistryContext.Provider value={registry}>
         <EditorViewRegistryContext.Provider value={viewRegistry}>
-          <WorkspaceIdeContent
-            orgSlug={orgSlug}
-            requestedWorkspaceId={workspaceId}
-            isLoading={workspaces.isLoading}
-            isError={workspaces.isError}
-            isRetrying={workspaces.isFetching}
-            workspaces={workspaces.data?.items ?? []}
-            onRetry={() => {
-              void workspaces.refetch()
-            }}
-          />
+          <TabViewStateCacheContext.Provider value={tabViewStateCache}>
+            <WorkspaceIdeContent
+              orgSlug={orgSlug}
+              requestedWorkspaceId={workspaceId}
+              isLoading={workspaces.isLoading}
+              isError={workspaces.isError}
+              isRetrying={workspaces.isFetching}
+              workspaces={workspaces.data?.items ?? []}
+              onRetry={() => {
+                void workspaces.refetch()
+              }}
+            />
+          </TabViewStateCacheContext.Provider>
         </EditorViewRegistryContext.Provider>
       </YDocRegistryContext.Provider>
     </IdeStoreContext.Provider>

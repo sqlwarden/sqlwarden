@@ -55,11 +55,11 @@ export function ObjectDetailView({
       sessionId,
       ref ?? EMPTY_REF,
     ),
-    enabled: Boolean(connectionId && ref),
+    enabled: Boolean(connectionId && ref && sessionId),
   })
   const specQuery = useQuery({
     ...orgConnectionSchemaSpecQueryOptions(orgSlug, workspace.id, connectionId ?? 0, sessionId),
-    enabled: Boolean(connectionId && ref),
+    enabled: Boolean(connectionId && ref && sessionId),
   })
 
   // A 410 means the server-side session died while this tab was open — drop it

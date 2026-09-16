@@ -180,6 +180,83 @@ describe('SchemaTree', () => {
     expect(await screen.findByText('REPORTING')).toBeInTheDocument()
   })
 
+  it('filtering never fetches an uncached lazy scope just to check it for matches', async () => {
+    const other = [{ kind: 'schema', name: 'REPORTING' }]
+    let loads = 0
+    server.use(
+      http.get('/api/v1/orgs/acme/workspaces/3/connections/7/schema/spec', () =>
+        HttpResponse.json({
+          spec: {
+            dialect: 'oracle',
+            browse_scopes: true,
+            kinds: [{ kind: 'table', label: 'Table', plural_label: 'Tables' }],
+          },
+        }),
+      ),
+      http.get('/api/v1/orgs/acme/workspaces/3/connections/7/schema/directory', ({ request }) => {
+        if (new URL(request.url).searchParams.has('scope')) {
+          loads++
+          return HttpResponse.json({
+            directory: {
+              roots: [
+                {
+                  path: other,
+                  groups: [
+                    { kind: 'table', objects: [{ scope: other, kind: 'table', name: 'REPORTS' }] },
+                  ],
+                },
+              ],
+            },
+          })
+        }
+        return HttpResponse.json({
+          directory: {
+            default_scope: scope,
+            roots: [
+              { path: scope, groups: [] },
+              { path: other, groups: [], lazy: true },
+            ],
+          },
+        })
+      }),
+    )
+    const { rerender, queryClient } = renderTree()
+    expect(await screen.findByText('REPORTING')).toBeInTheDocument()
+    rerender(treeElement(queryClient, 'report', vi.fn()))
+    expect(await screen.findByText('REPORTING')).toBeInTheDocument()
+    await waitFor(() => expect(loads).toBe(0))
+  })
+
+  it('filtering does not expand a matched table to fetch its column detail', async () => {
+    respondReady()
+    let objectFetches = 0
+    server.use(
+      http.post('/api/v1/orgs/acme/workspaces/3/connections/7/schema/objects', () => {
+        objectFetches++
+        return HttpResponse.json({
+          objects: [
+            {
+              ref,
+              relational: {
+                columns: [{ name: 'id', data_type: 'bigint', nullable: false, ordinal: 1 }],
+                primary_key: ['id'],
+                foreign_keys: [],
+                indexes: [],
+              },
+            },
+          ],
+        })
+      }),
+    )
+    const { rerender, queryClient } = renderTree()
+    fireEvent.click(await screen.findByText('Tables'))
+    expect(await screen.findByText('orders')).toBeInTheDocument()
+    expect(objectFetches).toBe(0)
+    rerender(treeElement(queryClient, 'orders', vi.fn()))
+    expect(await screen.findByText('orders')).toBeInTheDocument()
+    await waitFor(() => expect(objectFetches).toBe(0))
+  })
+
   const createTableEditor: SchemaEditSpec = {
     operations: ['create_table'],
     column_types: ['text', 'integer'],
