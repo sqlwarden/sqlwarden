@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
 import { createPortal } from 'react-dom'
 import { toast } from 'sonner'
 import { EditorView } from '@codemirror/view'
@@ -18,18 +18,42 @@ import { sqlwardenBasicSetup } from './codemirrorSetup'
 import { findPanelHost, type FindPanelHost } from './findPanelBridge'
 import { FindPanel } from './FindPanel'
 import { useEditorViewRegistry } from './useEditorViewRegistry'
+import { useTabViewStateCache } from './tabViewStateCache'
 import { useIde } from './useIdeStore'
 import { sqlCompletionExtension, type SQLCompletionConfig } from './completion'
 import { Icon, useIconPack } from '#/lib/icons'
 import { sqlFormatterForDriver, sqlFormattingKeymap } from './sqlFormatting'
 import { buildSqlEditorMenu } from './contextMenus/editorMenu'
 import { readClipboardFallback, writeClipboard } from './contextMenus/clipboard'
-import { statementHoverExtension, type HoveredStatement } from './statementHover'
 import {
   statementPreviewHighlightExtension,
   setStatementPreview,
 } from './statementPreviewHighlight'
-import { sqlStatementWithOffsetsAtCursor } from './sqlStatements'
+
+type SelectionHint = {
+  sql: string
+  start: number
+  end: number
+  top: number
+  left: number
+  placement: 'above' | 'below'
+}
+
+function computeSelectionHint(view: EditorView): SelectionHint | null {
+  const main = view.state.selection.main
+  if (main.empty) return null
+  const forward = main.head >= main.anchor
+  const coords = view.coordsAtPos(main.head)
+  const editorRect = view.dom.getBoundingClientRect()
+  return {
+    sql: view.state.sliceDoc(main.from, main.to),
+    start: main.from,
+    end: main.to,
+    top: (coords ? (forward ? coords.bottom : coords.top) : editorRect.top) - editorRect.top,
+    left: (coords ? coords.left : editorRect.left) - editorRect.left,
+    placement: forward ? 'below' : 'above',
+  }
+}
 
 function makeBaseTheme(fontFamily: string, fontSize: EditorFontSize): Extension {
   return EditorView.theme({
@@ -95,6 +119,7 @@ export function SqlEditor({
   const viewKey = groupId ? `${groupId}:${tabId}` : tabId
   const containerRef = useRef<HTMLDivElement>(null)
   const viewRegistry = useEditorViewRegistry()
+  const tabViewStateCache = useTabViewStateCache()
   const onCursorChangeRef = useRef(onCursorChange)
   onCursorChangeRef.current = onCursorChange
 
@@ -148,19 +173,29 @@ export function SqlEditor({
     })
   }, [])
   const viewRef = useRef<EditorView | null>(null)
+  const isDraggingRef = useRef(false)
   const [findHost, setFindHost] = useState<FindPanelHost | null>(null)
-  const [hoveredStatement, setHoveredStatement] = useState<HoveredStatement | null>(null)
-  const [cursorStatement, setCursorStatement] = useState<HoveredStatement | null>(null)
+  const [selectionHint, setSelectionHint] = useState<SelectionHint | null>(null)
 
   // Re-mount the editor whenever the active doc changes.
   // key={activeTab.id} at the call site also ensures clean remount on tab switch.
-  useEffect(() => {
+  // useLayoutEffect (not useEffect) so cleanup runs synchronously before React
+  // detaches the container — scrollSnapshot() needs live layout measurements.
+  useLayoutEffect(() => {
     if (!containerRef.current) return
     const yText = doc.getText('content')
+    const docText = yText.toString()
+    const restored = tabViewStateCache.load(viewKey)
 
     const view = new EditorView({
       state: EditorState.create({
-        doc: yText.toString(),
+        doc: docText,
+        selection: restored
+          ? {
+              anchor: Math.min(restored.selection.anchor, docText.length),
+              head: Math.min(restored.selection.head, docText.length),
+            }
+          : undefined,
         extensions: [
           sqlwardenBasicSetup,
           completionCompartment.current.of(sqlCompletionExtension(initialCompletionConfig.current)),
@@ -172,31 +207,20 @@ export function SqlEditor({
           ),
           themeCompartment.current.of(getCachedTheme(initialAppearance.current.themeName) ?? []),
           findPanelHost.of(setFindHost),
-          statementHoverExtension(setHoveredStatement),
           statementPreviewHighlightExtension(),
           EditorView.lineWrapping,
           yCollab(yText, null), // handles all CodeMirror ↔ Y.js sync
+          EditorView.domEventHandlers({
+            mousedown: (event) => {
+              if (event.button === 0) isDraggingRef.current = true
+            },
+          }),
           EditorView.updateListener.of((update) => {
             if (update.docChanged) {
-              setHoveredStatement(null)
-              setCursorStatement(null)
+              setSelectionHint(null)
             }
             if (update.selectionSet) {
-              const head = update.state.selection.main.head
-              const statement = sqlStatementWithOffsetsAtCursor(update.state.doc.toString(), head)
-              const coords = statement ? update.view.coordsAtPos(statement.start) : null
-              if (statement && coords) {
-                const editorRect = update.view.dom.getBoundingClientRect()
-                setCursorStatement({
-                  sql: statement.sql,
-                  start: statement.start,
-                  end: statement.end,
-                  top: coords.top - editorRect.top,
-                  left: coords.left - editorRect.left,
-                })
-              } else {
-                setCursorStatement(null)
-              }
+              setSelectionHint(isDraggingRef.current ? null : computeSelectionHint(update.view))
             }
             if (!update.selectionSet && !update.docChanged) return
             const cb = onCursorChangeRef.current
@@ -209,17 +233,35 @@ export function SqlEditor({
         ],
       }),
       parent: containerRef.current,
+      scrollTo: restored?.scroll,
     })
 
     viewRef.current = view
     viewRegistry.register(viewKey, view)
 
     return () => {
+      tabViewStateCache.save(viewKey, {
+        selection: {
+          anchor: view.state.selection.main.anchor,
+          head: view.state.selection.main.head,
+        },
+        scroll: view.scrollSnapshot(),
+      })
       viewRef.current = null
       viewRegistry.unregister(viewKey)
       view.destroy()
     }
-  }, [doc, viewKey, viewRegistry, notifyFormattingError])
+  }, [doc, viewKey, viewRegistry, notifyFormattingError, tabViewStateCache])
+
+  useEffect(() => {
+    function handleMouseUp() {
+      if (!isDraggingRef.current) return
+      isDraggingRef.current = false
+      if (viewRef.current) setSelectionHint(computeSelectionHint(viewRef.current))
+    }
+    window.addEventListener('mouseup', handleMouseUp)
+    return () => window.removeEventListener('mouseup', handleMouseUp)
+  }, [])
 
   useEffect(() => {
     if (!viewRef.current) return
@@ -397,33 +439,24 @@ export function SqlEditor({
     [handleCut, handleCopy, handlePaste, handleSelectAll, contextMenu],
   )
 
-  const activeStatement = hoveredStatement ?? cursorStatement
-  const showHoverActions = contextMenu?.isSqlTab && contextMenu.canRun && activeStatement
+  const showHoverActions = contextMenu?.isSqlTab && contextMenu.canRun && selectionHint
 
   return (
     <>
-      <ContextMenu
-        items={menuItems}
-        className="relative h-full overflow-hidden"
-        onMouseLeave={() => {
-          setHoveredStatement(null)
-          viewRef.current?.dispatch({ effects: setStatementPreview.of(null) })
-        }}
-      >
-        <div
-          ref={containerRef}
-          className={cn('h-full overflow-hidden', className)}
-          onBlur={() => setCursorStatement(null)}
-        />
+      <ContextMenu items={menuItems} className="relative h-full overflow-hidden">
+        <div ref={containerRef} className={cn('h-full overflow-hidden', className)} />
         {showHoverActions && (
           <div
-            className="absolute z-10 flex -translate-y-full items-center gap-2 rounded-sm bg-card px-1 text-[11px] leading-none whitespace-nowrap"
-            style={{ top: activeStatement.top, left: activeStatement.left }}
+            className={cn(
+              'absolute z-10 flex items-center gap-2 rounded-sm bg-card px-1 text-[11px] leading-none whitespace-nowrap',
+              selectionHint.placement === 'above' && '-translate-y-full',
+            )}
+            style={{ top: selectionHint.top, left: selectionHint.left }}
             onMouseEnter={() => {
               viewRef.current?.dispatch({
                 effects: setStatementPreview.of({
-                  from: activeStatement.start,
-                  to: activeStatement.end,
+                  from: selectionHint.start,
+                  to: selectionHint.end,
                 }),
               })
             }}
@@ -435,9 +468,8 @@ export function SqlEditor({
               type="button"
               className="flex items-center gap-1 text-muted-foreground hover:text-foreground hover:underline"
               onClick={() => {
-                contextMenu.onRunSegment(activeStatement.sql)
-                setHoveredStatement(null)
-                setCursorStatement(null)
+                contextMenu.onRunSegment(selectionHint.sql)
+                setSelectionHint(null)
                 viewRef.current?.dispatch({ effects: setStatementPreview.of(null) })
               }}
             >
@@ -449,9 +481,8 @@ export function SqlEditor({
                 type="button"
                 className="flex items-center gap-1 text-muted-foreground hover:text-foreground hover:underline"
                 onClick={() => {
-                  contextMenu.onExplainSegment(activeStatement.sql)
-                  setHoveredStatement(null)
-                  setCursorStatement(null)
+                  contextMenu.onExplainSegment(selectionHint.sql)
+                  setSelectionHint(null)
                   viewRef.current?.dispatch({ effects: setStatementPreview.of(null) })
                 }}
               >

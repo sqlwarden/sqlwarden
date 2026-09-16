@@ -1,5 +1,6 @@
 import type { PropsWithChildren } from 'react'
 import { openSearchPanel } from '@codemirror/search'
+import { EditorView } from '@codemirror/view'
 import { act, fireEvent, render, screen, waitFor } from '@testing-library/react'
 import { describe, expect, it, vi } from 'vitest'
 import * as Y from 'yjs'
@@ -9,11 +10,13 @@ import { EditorFontProvider } from '#/lib/editor-font/context'
 import { EditorThemeProvider } from '#/lib/editor-themes/context'
 import { SqlEditor } from './SqlEditor'
 import { createEditorViewRegistry, EditorViewRegistryContext } from './useEditorViewRegistry'
+import { createTabViewStateCache, TabViewStateCacheContext } from './tabViewStateCache'
 import { createIdeStore, IdeStoreContext } from './useIdeStore'
 
 describe('SqlEditor', () => {
   it('owns the CodeMirror and Y.Doc lifecycle for a pane', async () => {
     const registry = createEditorViewRegistry()
+    const tabViewStateCache = createTabViewStateCache()
     const store = createIdeStore('acme', 1, 'ephemeral')
     const doc = new Y.Doc()
     doc.getText('content').insert(0, 'select 1')
@@ -26,7 +29,9 @@ describe('SqlEditor', () => {
             <EditorFontProvider>
               <IdeStoreContext.Provider value={store}>
                 <EditorViewRegistryContext.Provider value={registry}>
-                  {children}
+                  <TabViewStateCacheContext.Provider value={tabViewStateCache}>
+                    {children}
+                  </TabViewStateCacheContext.Provider>
                 </EditorViewRegistryContext.Provider>
               </IdeStoreContext.Provider>
             </EditorFontProvider>
@@ -79,8 +84,72 @@ describe('SqlEditor', () => {
     doc.destroy()
   })
 
+  it('restores scroll position and selection when a tab remounts after being switched away from', async () => {
+    const registry = createEditorViewRegistry()
+    const tabViewStateCache = createTabViewStateCache()
+    const store = createIdeStore('acme', 1, 'ephemeral')
+    const scrollSnapshotSpy = vi.spyOn(EditorView.prototype, 'scrollSnapshot')
+    const doc = new Y.Doc()
+    doc
+      .getText('content')
+      .insert(0, Array.from({ length: 200 }, (_, i) => `select ${i};`).join('\n'))
+
+    function Providers({ children }: PropsWithChildren) {
+      return (
+        <ThemeProvider defaultTheme="light" disableTransitionOnChange={false}>
+          <EditorThemeProvider>
+            <EditorFontProvider>
+              <IdeStoreContext.Provider value={store}>
+                <EditorViewRegistryContext.Provider value={registry}>
+                  <TabViewStateCacheContext.Provider value={tabViewStateCache}>
+                    {children}
+                  </TabViewStateCacheContext.Provider>
+                </EditorViewRegistryContext.Provider>
+              </IdeStoreContext.Provider>
+            </EditorFontProvider>
+          </EditorThemeProvider>
+        </ThemeProvider>
+      )
+    }
+
+    const rendered = render(<SqlEditor tabId="query" groupId="left" doc={doc} />, {
+      wrapper: Providers,
+    })
+
+    const firstEditor = await waitFor(() => {
+      const registered = registry.get('left:query')
+      expect(registered).toBeDefined()
+      return registered!
+    })
+
+    act(() => {
+      firstEditor.dispatch({ selection: { anchor: 20, head: 30 } })
+    })
+
+    act(() => rendered.unmount())
+    expect(registry.get('left:query')).toBeUndefined()
+    expect(scrollSnapshotSpy).toHaveBeenCalledTimes(1)
+    const savedScroll = tabViewStateCache.load('left:query')?.scroll
+    expect(savedScroll).toBeDefined()
+    expect(scrollSnapshotSpy.mock.results[0]?.value).toBe(savedScroll)
+
+    render(<SqlEditor tabId="query" groupId="left" doc={doc} />, { wrapper: Providers })
+
+    const secondEditor = await waitFor(() => {
+      const registered = registry.get('left:query')
+      expect(registered).toBeDefined()
+      return registered!
+    })
+
+    expect(secondEditor.state.selection.main.anchor).toBe(20)
+    expect(secondEditor.state.selection.main.head).toBe(30)
+
+    doc.destroy()
+  })
+
   it('passes the selected text to onCursorChange', async () => {
     const registry = createEditorViewRegistry()
+    const tabViewStateCache = createTabViewStateCache()
     const store = createIdeStore('acme', 1, 'ephemeral')
     const doc = new Y.Doc()
     doc.getText('content').insert(0, 'select 1;\nselect 2;')
@@ -93,7 +162,9 @@ describe('SqlEditor', () => {
             <EditorFontProvider>
               <IdeStoreContext.Provider value={store}>
                 <EditorViewRegistryContext.Provider value={registry}>
-                  {children}
+                  <TabViewStateCacheContext.Provider value={tabViewStateCache}>
+                    {children}
+                  </TabViewStateCacheContext.Provider>
                 </EditorViewRegistryContext.Provider>
               </IdeStoreContext.Provider>
             </EditorFontProvider>
@@ -124,6 +195,7 @@ describe('SqlEditor', () => {
 
   it('applies a pending line/column jump from search and clears it', async () => {
     const registry = createEditorViewRegistry()
+    const tabViewStateCache = createTabViewStateCache()
     const store = createIdeStore('acme', 1, 'ephemeral')
     const doc = new Y.Doc()
     doc.getText('content').insert(0, 'select 1\nselect 2\nselect 3')
@@ -135,7 +207,9 @@ describe('SqlEditor', () => {
             <EditorFontProvider>
               <IdeStoreContext.Provider value={store}>
                 <EditorViewRegistryContext.Provider value={registry}>
-                  {children}
+                  <TabViewStateCacheContext.Provider value={tabViewStateCache}>
+                    {children}
+                  </TabViewStateCacheContext.Provider>
                 </EditorViewRegistryContext.Provider>
               </IdeStoreContext.Provider>
             </EditorFontProvider>
@@ -171,6 +245,7 @@ describe('SqlEditor', () => {
 
   it('right-click opens a context menu that differs by tab type', async () => {
     const registry = createEditorViewRegistry()
+    const tabViewStateCache = createTabViewStateCache()
     const store = createIdeStore('acme', 1, 'ephemeral')
     const doc = new Y.Doc()
     doc.getText('content').insert(0, 'select 1')
@@ -184,7 +259,9 @@ describe('SqlEditor', () => {
             <EditorFontProvider>
               <IdeStoreContext.Provider value={store}>
                 <EditorViewRegistryContext.Provider value={registry}>
-                  <ContextMenuProvider>{children}</ContextMenuProvider>
+                  <TabViewStateCacheContext.Provider value={tabViewStateCache}>
+                    <ContextMenuProvider>{children}</ContextMenuProvider>
+                  </TabViewStateCacheContext.Provider>
                 </EditorViewRegistryContext.Provider>
               </IdeStoreContext.Provider>
             </EditorFontProvider>
@@ -229,8 +306,164 @@ describe('SqlEditor', () => {
     doc.destroy()
   })
 
+  it('shows the Run/Explain hint only while text is selected, runs exactly the selection, and positions by selection direction', async () => {
+    const registry = createEditorViewRegistry()
+    const tabViewStateCache = createTabViewStateCache()
+    const store = createIdeStore('acme', 1, 'ephemeral')
+    const doc = new Y.Doc()
+    doc.getText('content').insert(0, 'select 1;\nselect 2;')
+    const onRunSegment = vi.fn()
+
+    function Providers({ children }: PropsWithChildren) {
+      return (
+        <ThemeProvider defaultTheme="light" disableTransitionOnChange={false}>
+          <EditorThemeProvider>
+            <EditorFontProvider>
+              <IdeStoreContext.Provider value={store}>
+                <EditorViewRegistryContext.Provider value={registry}>
+                  <TabViewStateCacheContext.Provider value={tabViewStateCache}>
+                    {children}
+                  </TabViewStateCacheContext.Provider>
+                </EditorViewRegistryContext.Provider>
+              </IdeStoreContext.Provider>
+            </EditorFontProvider>
+          </EditorThemeProvider>
+        </ThemeProvider>
+      )
+    }
+
+    render(
+      <SqlEditor
+        tabId="query"
+        groupId="left"
+        doc={doc}
+        contextMenu={{
+          isSqlTab: true,
+          canRun: true,
+          onRunStatement: vi.fn(),
+          onRunAll: vi.fn(),
+          canExplain: true,
+          canExplainAnalyze: true,
+          onExplain: vi.fn(),
+          onExplainAnalyze: vi.fn(),
+          onFormat: vi.fn(),
+          onSaveFavorite: vi.fn(),
+          onRunSegment,
+          onExplainSegment: vi.fn(),
+        }}
+      />,
+      { wrapper: Providers },
+    )
+
+    const editor = await waitFor(() => {
+      const registered = registry.get('left:query')
+      expect(registered).toBeDefined()
+      return registered!
+    })
+
+    act(() => {
+      editor.dispatch({ selection: { anchor: 3 } })
+    })
+    expect(screen.queryByText('Run')).not.toBeInTheDocument()
+
+    act(() => {
+      editor.dispatch({ selection: { anchor: 0, head: 8 } })
+    })
+    const runButton = await screen.findByText('Run')
+    expect(runButton.parentElement).not.toHaveClass('-translate-y-full')
+
+    fireEvent.click(runButton)
+    expect(onRunSegment).toHaveBeenCalledWith('select 1')
+    expect(screen.queryByText('Run')).not.toBeInTheDocument()
+
+    act(() => {
+      editor.dispatch({ selection: { anchor: 8, head: 0 } })
+    })
+    const runButtonBackward = await screen.findByText('Run')
+    expect(runButtonBackward.parentElement).toHaveClass('-translate-y-full')
+
+    act(() => {
+      editor.dispatch({ selection: { anchor: 0 } })
+    })
+    await waitFor(() => expect(screen.queryByText('Run')).not.toBeInTheDocument())
+
+    doc.destroy()
+  })
+
+  it('withholds the Run/Explain hint while the mouse button is held during a drag-selection, showing it only on mouseup', async () => {
+    const registry = createEditorViewRegistry()
+    const tabViewStateCache = createTabViewStateCache()
+    const store = createIdeStore('acme', 1, 'ephemeral')
+    const doc = new Y.Doc()
+    doc.getText('content').insert(0, 'select 1;\nselect 2;')
+
+    function Providers({ children }: PropsWithChildren) {
+      return (
+        <ThemeProvider defaultTheme="light" disableTransitionOnChange={false}>
+          <EditorThemeProvider>
+            <EditorFontProvider>
+              <IdeStoreContext.Provider value={store}>
+                <EditorViewRegistryContext.Provider value={registry}>
+                  <TabViewStateCacheContext.Provider value={tabViewStateCache}>
+                    {children}
+                  </TabViewStateCacheContext.Provider>
+                </EditorViewRegistryContext.Provider>
+              </IdeStoreContext.Provider>
+            </EditorFontProvider>
+          </EditorThemeProvider>
+        </ThemeProvider>
+      )
+    }
+
+    render(
+      <SqlEditor
+        tabId="query"
+        groupId="left"
+        doc={doc}
+        contextMenu={{
+          isSqlTab: true,
+          canRun: true,
+          onRunStatement: vi.fn(),
+          onRunAll: vi.fn(),
+          canExplain: true,
+          canExplainAnalyze: true,
+          onExplain: vi.fn(),
+          onExplainAnalyze: vi.fn(),
+          onFormat: vi.fn(),
+          onSaveFavorite: vi.fn(),
+          onRunSegment: vi.fn(),
+          onExplainSegment: vi.fn(),
+        }}
+      />,
+      { wrapper: Providers },
+    )
+
+    const editor = await waitFor(() => {
+      const registered = registry.get('left:query')
+      expect(registered).toBeDefined()
+      return registered!
+    })
+
+    fireEvent.mouseDown(editor.contentDOM, { button: 0 })
+    act(() => {
+      editor.dispatch({ selection: { anchor: 0, head: 4 } })
+    })
+    expect(screen.queryByText('Run')).not.toBeInTheDocument()
+
+    act(() => {
+      editor.dispatch({ selection: { anchor: 0, head: 8 } })
+    })
+    expect(screen.queryByText('Run')).not.toBeInTheDocument()
+
+    fireEvent.mouseUp(window)
+    expect(await screen.findByText('Run')).toBeInTheDocument()
+
+    doc.destroy()
+  })
+
   it('omits the run/format section when the tab is not SQL', async () => {
     const registry = createEditorViewRegistry()
+    const tabViewStateCache = createTabViewStateCache()
     const store = createIdeStore('acme', 1, 'ephemeral')
     const doc = new Y.Doc()
     doc.getText('content').insert(0, 'not sql')
@@ -242,7 +475,9 @@ describe('SqlEditor', () => {
             <EditorFontProvider>
               <IdeStoreContext.Provider value={store}>
                 <EditorViewRegistryContext.Provider value={registry}>
-                  <ContextMenuProvider>{children}</ContextMenuProvider>
+                  <TabViewStateCacheContext.Provider value={tabViewStateCache}>
+                    <ContextMenuProvider>{children}</ContextMenuProvider>
+                  </TabViewStateCacheContext.Provider>
                 </EditorViewRegistryContext.Provider>
               </IdeStoreContext.Provider>
             </EditorFontProvider>

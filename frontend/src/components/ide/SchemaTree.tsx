@@ -676,15 +676,20 @@ function SchemaScopeNode({ node, forceOpen }: { node: ScopeNode; forceOpen: bool
   const [open, setOpen] = useTreeExpansion(`scope:${ctx.connectionId}:${JSON.stringify(node.path)}`)
   const current =
     ctx.spec?.browse_scopes && JSON.stringify(node.path) === JSON.stringify(ctx.defaultScope)
-  const expanded = open ?? (forceOpen || Boolean(current))
+  const directoryQueryOptions = orgConnectionDirectoryQueryOptions(
+    ctx.orgSlug,
+    ctx.workspaceId,
+    ctx.connectionId,
+    ctx.sessionId,
+    node.path,
+  )
+  // Filtering must only reveal matches already in cache, never trigger a fetch
+  // of a lazy scope's contents just because the search box is non-empty.
+  const canAutoExpandForFilter =
+    forceOpen && (!node.lazy || Boolean(queryClient.getQueryData(directoryQueryOptions.queryKey)))
+  const expanded = open ?? (canAutoExpandForFilter || Boolean(current))
   const scopeQuery = useQuery({
-    ...orgConnectionDirectoryQueryOptions(
-      ctx.orgSlug,
-      ctx.workspaceId,
-      ctx.connectionId,
-      ctx.sessionId,
-      node.path,
-    ),
+    ...directoryQueryOptions,
     enabled: Boolean(node.lazy && expanded),
     retry: false,
   })
@@ -864,7 +869,6 @@ function SchemaGroupNode({
             <SchemaObjectNode
               key={`${ref.kind}:${ref.name}`}
               objectRef={ref}
-              forceOpen={forceOpen}
               rowCount={group.row_counts?.[ref.name]}
               lazyScope={lazyScope}
             />
@@ -877,12 +881,10 @@ function SchemaGroupNode({
 
 function SchemaObjectNode({
   objectRef,
-  forceOpen,
   rowCount,
   lazyScope,
 }: {
   objectRef: ObjectRef
-  forceOpen: boolean
   rowCount?: number
   lazyScope: boolean
 }) {
@@ -898,7 +900,10 @@ function SchemaObjectNode({
   // fresh click per mount to re-confirm before auto-restoring it.
   const [manuallyExpanded, setManuallyExpanded] = useState(false)
   const blockAutoRestore = lazyScope && open === true && !ctx?.sessionId && !manuallyExpanded
-  const expanded = expandable && !blockAutoRestore && (open ?? forceOpen)
+  // The object search filter only matches directory-level names (schemas,
+  // tables), never column names, so it has no reason to auto-expand a table's
+  // columns — that would just fetch relational detail for every match.
+  const expanded = expandable && !blockAutoRestore && open === true
   const detailQuery = useQuery({
     ...orgConnectionObjectQueryOptions(
       ctx!.orgSlug,

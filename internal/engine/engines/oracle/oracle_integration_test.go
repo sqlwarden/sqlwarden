@@ -337,6 +337,22 @@ func TestOracleQueryAndExecuteTrimTrailingSemicolon(t *testing.T) {
 	if len(rs.Rows) != 1 {
 		t.Fatalf("rows = %d, want 1", len(rs.Rows))
 	}
+
+	// The editor's default DQL execution path opens a query cursor
+	// (StartQuery) rather than calling Query directly, and must tolerate the
+	// same trailing terminator.
+	qc, err := d.StartQuery(ctx, cursor.QueryRequest{SQL: `SELECT id FROM trailing_semi_test;`})
+	if err != nil {
+		t.Fatalf("start query with trailing semicolon: %v", err)
+	}
+	defer qc.Close()
+	cursorRS, _, err := qc.Fetch(ctx, cursor.ScanOptions{})
+	if err != nil {
+		t.Fatalf("fetch cursor with trailing semicolon: %v", err)
+	}
+	if len(cursorRS.Rows) != 1 {
+		t.Fatalf("cursor rows = %d, want 1", len(cursorRS.Rows))
+	}
 }
 
 func TestOracleQueryCursorDoesNotMaterializeLargeResultSet(t *testing.T) {

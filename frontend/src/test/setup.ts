@@ -32,10 +32,12 @@ class IntersectionObserverMock implements IntersectionObserver {
   constructor(private readonly callback: IntersectionObserverCallback) {}
 
   observe(target: Element) {
-    this.callback(
-      [{ target, isIntersecting: true, intersectionRatio: 1 } as IntersectionObserverEntry],
-      this,
-    )
+    queueMicrotask(() => {
+      this.callback(
+        [{ target, isIntersecting: true, intersectionRatio: 1 } as IntersectionObserverEntry],
+        this,
+      )
+    })
   }
 
   unobserve() {}

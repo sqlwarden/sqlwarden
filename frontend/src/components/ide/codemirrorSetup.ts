@@ -13,15 +13,18 @@ import { highlightSelectionMatches, search, searchKeymap } from '@codemirror/sea
 import { EditorState, type Extension } from '@codemirror/state'
 import {
   crosshairCursor,
+  Decoration,
+  type DecorationSet,
   drawSelection,
   dropCursor,
   EditorView,
-  highlightActiveLine,
   highlightActiveLineGutter,
   highlightSpecialChars,
   keymap,
   lineNumbers,
   rectangularSelection,
+  ViewPlugin,
+  type ViewUpdate,
 } from '@codemirror/view'
 import { indentationMarkers } from '@replit/codemirror-indentation-markers'
 import { showMinimap } from '@replit/codemirror-minimap'
@@ -84,6 +87,45 @@ const editorMinimap = showMinimap.of({
   showOverlay: 'mouse-over',
 })
 
+const activeLineDeco = Decoration.line({ attributes: { class: 'cm-activeLine' } })
+
+// CodeMirror's stock highlightActiveLine() paints the cursor's line
+// unconditionally, even while a selection is active. Composited under the
+// translucent .cm-selectionBackground layer, that makes the cursor's line
+// within a selection read as a visibly different (fainter) shade than the
+// rest of the selected block. Only decorate genuinely collapsed cursors so
+// the active-line tint and the selection tint never stack on the same line.
+const highlightActiveLineWhenCollapsed = ViewPlugin.fromClass(
+  class {
+    decorations: DecorationSet
+
+    constructor(view: EditorView) {
+      this.decorations = this.buildDeco(view)
+    }
+
+    update(update: ViewUpdate) {
+      if (update.docChanged || update.selectionSet) {
+        this.decorations = this.buildDeco(update.view)
+      }
+    }
+
+    buildDeco(view: EditorView): DecorationSet {
+      let lastLineStart = -1
+      const ranges = []
+      for (const range of view.state.selection.ranges) {
+        if (!range.empty) continue
+        const line = view.lineBlockAt(range.head)
+        if (line.from > lastLineStart) {
+          ranges.push(activeLineDeco.range(line.from))
+          lastLineStart = line.from
+        }
+      }
+      return Decoration.set(ranges)
+    }
+  },
+  { decorations: (plugin) => plugin.decorations },
+)
+
 // Inserts a dragged schema identifier at the drop position. Returns false for any
 // other drop (e.g. CodeMirror's own text drags) so default handling stays intact.
 const schemaDropHandler = EditorView.domEventHandlers({
@@ -117,7 +159,7 @@ export const sqlwardenBasicSetup: Extension = [
   closeBrackets(),
   rectangularSelection(),
   crosshairCursor(),
-  highlightActiveLine(),
+  highlightActiveLineWhenCollapsed,
   highlightSelectionMatches(),
   search({ top: true, createPanel: createFindPanel }),
   sqlwardenSearchTheme,

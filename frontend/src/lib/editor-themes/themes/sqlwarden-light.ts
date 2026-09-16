@@ -24,7 +24,7 @@ const ideThemeLight = EditorView.theme(
     },
     '.cm-cursor, .cm-dropCursor': { borderLeftColor: 'var(--color-foreground)' },
     '&.cm-focused .cm-selectionBackground, .cm-selectionBackground, ::selection': {
-      backgroundColor: 'oklch(from var(--color-primary) 0.6 0.14 h / 25%) !important',
+      backgroundColor: 'oklch(from var(--color-primary) 0.6 0.14 h / 45%) !important',
     },
     '.cm-matchingBracket': {
       backgroundColor: 'color-mix(in oklch, var(--color-primary) 20%, transparent)',
