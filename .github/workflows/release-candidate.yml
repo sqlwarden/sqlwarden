@@ -1,0 +1,137 @@
+name: Release Candidate
+
+on:
+  workflow_dispatch:
+    inputs:
+      version:
+        description: 'Release candidate version without the v prefix (for example, 0.10.0-rc.1)'
+        required: true
+        type: string
+      target_ref:
+        description: 'Branch to release from (main or release/**)'
+        required: true
+        default: main
+        type: string
+
+permissions:
+  contents: write
+  pull-requests: read
+
+concurrency:
+  group: release-candidate-${{ inputs.version }}
+  cancel-in-progress: false
+
+jobs:
+  create:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout release target
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ inputs.target_ref }}
+          fetch-depth: 0
+
+      - name: Validate release candidate
+        id: validate
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RC_VERSION: ${{ inputs.version }}
+          TARGET_REF: ${{ inputs.target_ref }}
+        run: |
+          set -euo pipefail
+
+          if [[ ! "$RC_VERSION" =~ ^(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)-rc\.([1-9][0-9]*)$ ]]; then
+            echo "version must match X.Y.Z-rc.N, with N starting at 1" >&2
+            exit 1
+          fi
+
+          case "$TARGET_REF" in
+            main|release/*) ;;
+            *)
+              echo "target_ref must be main or a release/** branch" >&2
+              exit 1
+              ;;
+          esac
+
+          tag="v$RC_VERSION"
+          target_sha="$(git rev-parse HEAD)"
+          stable_version="$(jq -er '.["."]' .release-please-manifest.json)"
+          previous_tag="v$stable_version"
+          candidate_stable_version="${RC_VERSION%%-rc.*}"
+
+          if [[ ! "$stable_version" =~ ^(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)$ ]]; then
+            echo ".release-please-manifest.json does not contain a stable SemVer version" >&2
+            exit 1
+          fi
+
+          if ! git rev-parse --verify "$previous_tag^{commit}" >/dev/null 2>&1; then
+            echo "previous stable tag $previous_tag does not exist" >&2
+            exit 1
+          fi
+          if ! git merge-base --is-ancestor "$previous_tag" "$target_sha"; then
+            echo "previous stable tag $previous_tag is not an ancestor of $TARGET_REF" >&2
+            exit 1
+          fi
+
+          if git ls-remote --exit-code --tags origin "refs/tags/$tag" >/dev/null 2>&1; then
+            echo "tag $tag already exists; release candidate versions must never be reused" >&2
+            exit 1
+          fi
+          if gh release view "$tag" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
+            echo "release $tag already exists; release candidate versions must never be reused" >&2
+            exit 1
+          fi
+
+          release_prs="$(gh pr list \
+            --repo "$GITHUB_REPOSITORY" \
+            --state open \
+            --base "$TARGET_REF" \
+            --label 'autorelease: pending' \
+            --limit 2 \
+            --json number,title,url)"
+          release_pr_count="$(jq 'length' <<<"$release_prs")"
+          if [[ "$release_pr_count" -ne 1 ]]; then
+            echo "expected exactly one open Release Please PR targeting $TARGET_REF; found $release_pr_count" >&2
+            exit 1
+          fi
+
+          release_pr_title="$(jq -r '.[0].title' <<<"$release_prs")"
+          release_pr_url="$(jq -r '.[0].url' <<<"$release_prs")"
+          if [[ ! "$release_pr_title" =~ ([0-9]+\.[0-9]+\.[0-9]+)$ ]]; then
+            echo "could not read the proposed stable version from Release Please PR: $release_pr_title" >&2
+            exit 1
+          fi
+          proposed_version="${BASH_REMATCH[1]}"
+          if [[ "$candidate_stable_version" != "$proposed_version" ]]; then
+            echo "candidate targets $candidate_stable_version, but Release Please proposes $proposed_version ($release_pr_url)" >&2
+            exit 1
+          fi
+
+          {
+            echo "tag=$tag"
+            echo "target_sha=$target_sha"
+            echo "previous_tag=$previous_tag"
+          } >> "$GITHUB_OUTPUT"
+
+          echo "Validated $tag at $target_sha against $previous_tag and $release_pr_url"
+
+      - name: Create GitHub prerelease
+        env:
+          GH_TOKEN: ${{ secrets.RELEASE_PLEASE_TOKEN }}
+          TAG: ${{ steps.validate.outputs.tag }}
+          TARGET_SHA: ${{ steps.validate.outputs.target_sha }}
+          PREVIOUS_TAG: ${{ steps.validate.outputs.previous_tag }}
+        run: |
+          set -euo pipefail
+
+          notes="$(printf 'This is a release candidate for testing and is not recommended for production use.\n\nDocker image: `ghcr.io/%s:%s`' "$GITHUB_REPOSITORY" "${TAG#v}")"
+
+          gh release create "$TAG" \
+            --repo "$GITHUB_REPOSITORY" \
+            --target "$TARGET_SHA" \
+            --title "$TAG" \
+            --prerelease \
+            --latest=false \
+            --generate-notes \
+            --notes-start-tag "$PREVIOUS_TAG" \
+            --notes "$notes"

@@ -1,143 +1,104 @@
-# Release Automation Quick Reference
+# Release Process
 
-## What Was Implemented
+SQLWarden uses Release Please for stable versioning and changelogs, GoReleaser
+for downloadable binaries, and a separate Docker workflow for multi-architecture
+images in GitHub Container Registry (GHCR).
 
-### GitHub Actions Workflows
+## Stable releases
 
-1. **`.github/workflows/release-please.yml`**
-   - Runs on every push to `main`
-   - Creates/updates release PRs with changelog
-   - Creates GitHub releases when release PR is merged
-
-2. **`.github/workflows/goreleaser.yml`**
-   - Triggered when a version tag is created (e.g., `v1.0.0`)
-   - Builds binaries for: Linux, macOS, Windows (amd64 & arm64)
-   - Uploads artifacts to GitHub releases
-   - Generates checksums and SBOMs
-
-3. **`.github/workflows/conventional-commits.yml`**
-   - Runs on all pull requests
-   - Validates commit messages and PR titles
-   - Blocks merge if commits don't follow conventional format
-
-### Configuration Files
-
-- **`.goreleaser.yml`**: GoReleaser configuration for multi-platform builds
-- **`release-please-config.json`**: Release-please settings for changelog and versioning
-- **`.release-please-manifest.json`**: Current version tracker (starts at 0.1.0)
-- **`.commitlintrc.json`**: Commit message linting rules
+1. Merge conventional commits into `main` (or a supported `release/**` branch).
+2. Release Please creates or updates an `autorelease: pending` pull request. The
+   pull request contains the next version, the complete changelog since the
+   previous stable release, and the manifest update.
+3. Review and merge the release pull request.
+4. Release Please creates the stable `vX.Y.Z` tag and GitHub release.
+5. The tag starts the GoReleaser and Docker workflows. GoReleaser attaches the
+   platform archives and `checksums.txt`; Docker publishes the multi-architecture
+   GHCR image and its stable SemVer aliases.
 
 While SQLWarden is below `1.0.0`, fixes and features increment the patch
 version. Breaking changes increment the minor version. Mark a breaking change
 with `type(scope)!: description` or a `BREAKING CHANGE:` commit footer.
 
-### Documentation
+## Release candidates
 
-- **`CONTRIBUTING.md`**: Complete guide to conventional commits and release process
+Release candidates are operational prereleases. They do not change
+`CHANGELOG.md` or `.release-please-manifest.json`; those files continue to
+describe stable releases only.
 
-### Code Changes
+Before creating a candidate:
 
-- **`internal/version/version.go`**: Updated to support version injection from goreleaser
-- **`Makefile`**: Added `build` with version injection and `build/release` targets
-- **`README.md`**: Updated with release process documentation
+1. Merge all intended changes into `main` or the applicable `release/**` branch.
+2. Wait for Release Please to open or update the release pull request.
+3. Confirm that the proposed stable version is correct.
 
-## How to Use
+To publish a candidate:
 
-### Making Changes
+1. Open **Actions → Release Candidate → Run workflow**.
+2. Enter the full candidate version without the `v` prefix, such as
+   `0.10.0-rc.1`.
+3. Leave `target_ref` as `main`, or enter the applicable `release/**` branch.
+4. Run the workflow.
 
-1. **Create commits following conventional format:**
-   ```bash
-   git commit -m "feat: add user authentication"
-   git commit -m "fix: prevent memory leak in database pool"
-   git commit -m "docs: update API documentation"
-   ```
+The workflow verifies the version against the open Release Please PR and creates
+a `vX.Y.Z-rc.N` GitHub prerelease. The existing tag workflows then attach the
+same platform archives and checksums as a stable release and publish a
+multi-architecture image as `ghcr.io/sqlwarden/sqlwarden:X.Y.Z-rc.N`.
 
-2. **Create PR with conventional title:**
-   ```
-   feat: add OAuth2 support
-   fix(api): handle null pointer in user handler
-   ```
+Candidate images never update stable `X.Y`, `X`, or `latest` tags. Candidate
+GitHub release notes are cumulative from the previous stable tag, so every
+candidate is independently useful to testers.
 
-### Releasing
+If testing finds a problem, merge the fix normally, wait for the Release Please
+PR to update, and publish the next candidate number. Never move, delete, or
+reuse a published candidate tag. A failed artifact workflow can be rerun against
+the unchanged tag; a changed candidate must receive a new number.
 
-1. **Push to main** (or merge PR) with conventional commits
-2. **Release-please creates/updates a release PR** automatically
-3. **Review the release PR** - check changelog and version bump
-4. **Merge the release PR** - this triggers:
-   - Tag creation (e.g., `v0.2.0`)
-   - GitHub release creation
-   - GoReleaser builds binaries for all platforms
-   - Artifacts uploaded to release
+When the latest candidate is approved, merge the Release Please PR normally.
+The final `CHANGELOG.md` entry and stable release notes cover the entire range
+from the previous stable release to the new stable release; RC tags do not split
+that history.
 
-### Commit Types & Version Bumps
+## Published outputs
 
-- `feat:` → Minor bump (0.1.0 → 0.2.0)
-- `fix:` → Patch bump (0.1.0 → 0.1.1)
-- `feat!:` or `BREAKING CHANGE:` → Major bump (0.1.0 → 1.0.0)
-- `docs:`, `chore:`, `ci:` → No version bump (appear in changelog but don't trigger release)
+Every stable release and release candidate publishes:
 
-### Local Development
+- Linux, macOS, and Windows archives for amd64 and arm64
+- `checksums.txt` for the archives
+- A Linux amd64/arm64 image in GHCR
+
+Stable tags publish full, minor, major, and `latest` Docker aliases as allowed by
+the Docker metadata rules. Prerelease tags publish only the full prerelease and
+commit-SHA aliases.
+
+## Local validation
 
 ```bash
-# Build with version injection
-make build
+# Run tests and quality checks.
+make audit
 
-# Test release build locally (requires goreleaser)
+# Build a local snapshot with GoReleaser.
 make build/release
 
-# Run tests
-make test
-
-# Code quality checks
-make audit
+# Check the version in a Docker build.
+docker build \
+  --build-arg VERSION=0.10.0-rc.1 \
+  --build-arg COMMIT="$(git rev-parse HEAD)" \
+  --build-arg DATE="$(date -u +%Y-%m-%dT%H:%M:%SZ)" \
+  -t sqlwarden:release-test .
+docker run --rm sqlwarden:release-test ./sqlwarden --version
 ```
-
-## First Release
-
-To create your first release:
-
-1. **Update initial version** in `.release-please-manifest.json` if needed (currently set to 0.1.0)
-
-2. **Make commits with conventional format:**
-   ```bash
-   git add .
-   git commit -m "chore: setup automated releases with release-please and goreleaser"
-   git push origin main
-   ```
-
-3. **Wait for release-please** to create the first release PR
-
-4. **Merge the release PR** to publish v0.1.0
 
 ## Troubleshooting
 
-- **PR checks failing**: Ensure commits follow conventional format
-- **No release PR created**: Check that commits are on `main` branch
-- **Release build fails**: Verify `.goreleaser.yml` configuration
-- **Wrong version bump**: Review commit message types
-
-## Examples
-
-### Breaking Change
-```bash
-git commit -m "feat!: redesign authentication API
-
-BREAKING CHANGE: The /auth endpoint now requires OAuth2 tokens instead of API keys."
-```
-
-### Feature with Scope
-```bash
-git commit -m "feat(database): add connection pooling with configurable limits"
-```
-
-### Bug Fix
-```bash
-git commit -m "fix(api): prevent SQL injection in user search"
-```
-
-### Multiple Changes (separate commits)
-```bash
-git commit -m "feat: add rate limiting middleware"
-git commit -m "docs: update rate limiting configuration"
-git commit -m "test: add rate limiting tests"
-```
+- **No pending Release Please PR:** wait for the Release Please workflow or fix
+  the conventional commits that should cause a release.
+- **Candidate version mismatch:** use the stable version proposed by the pending
+  Release Please PR and append `-rc.N`.
+- **Candidate tag already exists:** increment `N`; candidate tags are immutable.
+- **GitHub prerelease has no archives:** rerun the failed **Artifact Release via
+  GoReleaser** workflow for that tag.
+- **Candidate image is missing:** rerun the failed **Docker Image** workflow for
+  that tag.
+- **Wrong stable version bump:** review commit types and breaking-change markers
+  before merging the Release Please PR.
