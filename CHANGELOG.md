@@ -1,5 +1,17 @@
 # Changelog
 
+## [0.9.3](https://github.com/sqlwarden/sqlwarden/compare/v0.9.2...v0.9.3) (2026-09-16)
+
+
+### Features
+
+* **release:** support release candidates (SQLW-173) ([23b6fd1](https://github.com/sqlwarden/sqlwarden/commit/23b6fd1b084f2e32f0a4743376ca0e27d225e774))
+
+
+### Bug Fixes
+
+* **ide:** second user feedback round UI changes implementation, details in the ticket (SQLW-171) ([829e25e](https://github.com/sqlwarden/sqlwarden/commit/829e25ed7b8d759c79f76cdd11e52df6cba8d67f))
+
 ## [0.9.2](https://github.com/sqlwarden/sqlwarden/compare/v0.9.1...v0.9.2) (2026-09-15)
 
 
