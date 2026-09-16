@@ -12,6 +12,9 @@ FROM --platform=$BUILDPLATFORM golang:1.26.6-alpine AS builder
 
 ARG TARGETOS
 ARG TARGETARCH
+ARG VERSION=dev
+ARG COMMIT=unknown
+ARG DATE=unknown
 
 RUN apk add --no-cache git ca-certificates tzdata
 
@@ -25,7 +28,10 @@ COPY . .
 COPY --from=frontend-builder /build/assets/static ./assets/static
 
 RUN CGO_ENABLED=0 GOOS=$TARGETOS GOARCH=$TARGETARCH go build \
-    -ldflags="-s -w" \
+    -ldflags="-s -w \
+      -X github.com/sqlwarden/internal/version.version=${VERSION} \
+      -X github.com/sqlwarden/internal/version.commit=${COMMIT} \
+      -X github.com/sqlwarden/internal/version.date=${DATE}" \
     -o sqlwarden \
     ./cmd/api
 

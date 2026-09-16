@@ -113,6 +113,20 @@ Releases are automated using release-please:
    - A new tag is created
    - A GitHub release is created with changelog
    - GoReleaser builds and uploads binaries for multiple platforms
+   - The Docker workflow publishes a multi-architecture image to GHCR
+
+Release candidates are created manually through the **Release Candidate**
+GitHub Actions workflow after Release Please has opened the stable release PR.
+Use a version such as `0.10.0-rc.1`. Candidates are GitHub prereleases with
+downloadable archives, checksums, and a version-specific GHCR image.
+
+Release candidates do not modify `CHANGELOG.md` or the Release Please manifest.
+Their GitHub release notes are cumulative from the previous stable release. The
+eventual stable release therefore retains one complete changelog covering the
+previous stable version through the new stable version. Never reuse an RC
+number; fixes require a new candidate.
+
+See [the release process](.github/RELEASE_PROCESS.md) for operator instructions.
 
 ## Questions?
 

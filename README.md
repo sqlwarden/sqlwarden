@@ -161,6 +161,6 @@ Security-sensitive defaults are intended to make local development easy, not to 
 
 ## Releases
 
-The project uses conventional commits, Release Please, and GoReleaser. Release builds publish server binaries and container images from version tags.
+The project uses conventional commits, Release Please, and GoReleaser. Stable releases and manually initiated release candidates publish server binaries and container images from version tags. Release candidates use version-specific `-rc.N` tags and never update the `latest` container tag.
 
 Use squash or rebase workflows that keep `main` linear and preserve clear conventional commit messages for user-facing changes.
