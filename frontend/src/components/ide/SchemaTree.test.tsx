@@ -176,7 +176,7 @@ describe('SchemaTree', () => {
     expect(await screen.findByText('REPORTS')).toBeInTheDocument()
     expect(loads).toBe(1)
     rerender(treeElement(queryClient, 'report', vi.fn()))
-    expect(screen.queryByText('public')).not.toBeInTheDocument()
+    await waitFor(() => expect(screen.queryByText('public')).not.toBeInTheDocument())
     expect(await screen.findByText('REPORTING')).toBeInTheDocument()
   })
 
@@ -845,8 +845,10 @@ describe('SchemaTree', () => {
     expect(procedureRow).not.toHaveAttribute('aria-expanded')
     expect(sequenceRow).not.toHaveAttribute('aria-expanded')
     expect(triggerRow).not.toHaveAttribute('aria-expanded')
-    expect(await screen.findByText('bigint')).toBeInTheDocument()
-    expect(requestedKinds).toEqual(['sequence'])
+    // A sequence row behaves like any other non-relational kind: no fetch
+    // and no inline detail until it's opened in the object viewer.
+    expect(screen.queryByText('bigint')).not.toBeInTheDocument()
+    expect(requestedKinds).toEqual([])
 
     fireEvent.doubleClick(functionRow)
     await waitFor(() =>
@@ -872,8 +874,21 @@ describe('SchemaTree', () => {
         ]),
       ),
     )
-    // A single click does not expand/fetch a non-expandable kind like trigger.
-    expect(requestedKinds).toEqual(['sequence'])
+
+    fireEvent.doubleClick(sequenceRow)
+    await waitFor(() =>
+      expect(store.getState().tabs).toEqual(
+        expect.arrayContaining([
+          expect.objectContaining({
+            kind: 'object',
+            objectRef: expect.objectContaining({ kind: 'sequence', name: 'orders_id_seq' }),
+          }),
+        ]),
+      ),
+    )
+    // Opening a row in the object viewer tab is handled by that tab's own
+    // query, not the tree — the tree itself never fetches for these kinds.
+    expect(requestedKinds).toEqual([])
   })
 
   it('derives expandability from the spec relational flag, not a hardcoded kind list', async () => {

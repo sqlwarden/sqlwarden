@@ -301,6 +301,7 @@ function SchemaPane({
     connectionId: connection.id,
     sessionId,
   })
+  const [isFiltering, setIsFiltering] = useState(false)
 
   return (
     <>
@@ -352,6 +353,7 @@ function SchemaPane({
           placeholder="Filter schema…"
           size="sm"
           variant="muted"
+          loading={isFiltering}
         />
       </div>
       <div className="min-h-0 flex-1 overflow-y-auto overflow-x-hidden [scrollbar-width:thin]">
@@ -362,6 +364,7 @@ function SchemaPane({
           driver={connection.driver}
           filter={schemaFilter}
           onConnect={onConnect}
+          onFilteringChange={setIsFiltering}
         />
       </div>
     </>

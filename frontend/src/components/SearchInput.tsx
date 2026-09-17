@@ -14,6 +14,9 @@ type SearchInputProps = {
   /** 'muted' fills the input with a subtle background instead of a border,
    *  which reads better inside an already-bordered sidebar pane. */
   variant?: 'default' | 'muted'
+  /** Shows a spinner in place of the search icon while a slower, async or
+   *  deferred filter pass is still catching up to the typed value. */
+  loading?: boolean
 }
 
 export function SearchInput({
@@ -24,6 +27,7 @@ export function SearchInput({
   className = 'max-w-md',
   size = 'default',
   variant = 'default',
+  loading = false,
 }: SearchInputProps) {
   const isSm = size === 'sm'
   const isMuted = variant === 'muted'
@@ -31,11 +35,12 @@ export function SearchInput({
   return (
     <div className={cn('relative', className)}>
       <Icon
-        name="search-01"
+        name={loading ? 'loading-03' : 'search-01'}
         size={isSm ? 12 : 20}
         className={cn(
           'pointer-events-none absolute top-1/2 -translate-y-1/2 text-muted-foreground',
           isSm ? 'start-2 size-3' : 'start-3 size-4',
+          loading && 'animate-spin',
         )}
       />
       <Input
