@@ -1,5 +1,18 @@
 # Changelog
 
+## [0.9.4](https://github.com/sqlwarden/sqlwarden/compare/v0.9.3...v0.9.4) (2026-09-17)
+
+
+### Features
+
+* **ide:** implement a persistent bottom toolbar, move history and favorites to bottom toolbar (SQLW-175) ([4850224](https://github.com/sqlwarden/sqlwarden/commit/4850224b758bc2c19727920966a4d1ea62187ff5))
+* **ui:** polish empty states and standardize typography across the app (SQLW-176) ([c896aa3](https://github.com/sqlwarden/sqlwarden/commit/c896aa3b76f6ee5b7d13eb97a15859f8ecf9324a))
+
+
+### Bug Fixes
+
+* **ide:** stop per-keystroke sequence fetches and debounce schema filter (SQLW-174) ([77f636a](https://github.com/sqlwarden/sqlwarden/commit/77f636a6de375eead7c6231cc0371b995ac6c972))
+
 ## [0.9.3](https://github.com/sqlwarden/sqlwarden/compare/v0.9.2...v0.9.3) (2026-09-16)
 
 
