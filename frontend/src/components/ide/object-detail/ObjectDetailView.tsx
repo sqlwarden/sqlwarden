@@ -193,7 +193,7 @@ function Header({
 }) {
   return (
     <div className="flex h-10 shrink-0 items-center gap-2 border-b border-border px-3">
-      <span className="truncate text-sm font-medium text-foreground">
+      <span className="truncate font-heading text-sm font-medium tracking-tight text-foreground">
         {objectRef.scope.length > 0 ? `${scopeLabel(objectRef.scope)}.` : ''}
         {objectRef.name}
       </span>
@@ -286,7 +286,7 @@ function StatePane({
   return (
     <div className="flex h-full flex-col items-center justify-center gap-3 text-center">
       <div className="flex flex-col gap-1">
-        <div className="text-sm font-medium text-foreground">
+        <div className="font-heading text-sm font-medium tracking-tight text-foreground">
           {objectRef?.scope?.length ? `${scopeLabel(objectRef.scope)}.` : ''}
           {objectRef?.name}
         </div>

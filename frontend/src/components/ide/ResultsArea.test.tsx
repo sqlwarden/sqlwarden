@@ -217,7 +217,7 @@ describe('ResultsArea', () => {
     // the grid needs, to exercise the real fill-and-realign wiring.
     const RealResizeObserver = globalThis.ResizeObserver
     class WideResizeObserverMock implements ResizeObserver {
-      constructor(private readonly callback: ResizeObserverCallback) { }
+      constructor(private readonly callback: ResizeObserverCallback) {}
       observe(target: Element) {
         // Other ResizeObserver consumers on the page (react-resizable-panels)
         // expect a richer entry shape than this stub provides; ignore their
@@ -228,8 +228,8 @@ describe('ResultsArea', () => {
           // ignore - unrelated observer expected a fuller ResizeObserverEntry
         }
       }
-      unobserve() { }
-      disconnect() { }
+      unobserve() {}
+      disconnect() {}
     }
     vi.stubGlobal('ResizeObserver', WideResizeObserverMock)
 

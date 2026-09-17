@@ -10,6 +10,8 @@ const fontsDir = join(dir, '..', 'public', 'fonts', 'satoshi')
 const calSansUiDir = join(dir, '..', 'public', 'fonts', 'cal-sans-ui')
 const calSansHeadingDir = join(dir, '..', 'public', 'fonts', 'cal-sans-heading')
 const paperMonoDir = join(dir, '..', 'public', 'fonts', 'paper-mono')
+const glideDir = join(dir, '..', 'public', 'fonts', 'glide')
+const zalandoSansDir = join(dir, '..', 'public', 'fonts', 'zalando-sans')
 
 describe('Satoshi self-hosting', () => {
   it('declares @font-face rules for the three self-hosted weights', () => {
@@ -43,8 +45,11 @@ describe('Cal Sans / Paper Mono self-hosting', () => {
     expect(existsSync(join(paperMonoDir, 'PaperMono-Regular.woff2'))).toBe(true)
   })
 
-  it('makes Inter the default interface font stack', () => {
-    expect(css).toContain("--font-interface: 'Inter Variable', system-ui, sans-serif;")
+  it('makes Zalando Sans the default interface font stack', () => {
+    expect(css).toContain("@import '@fontsource-variable/zalando-sans';")
+    expect(css).toContain("@import '@fontsource-variable/zalando-sans/wght-italic.css';")
+    expect(css).toContain("--font-interface: 'Zalando Sans Variable', system-ui, sans-serif;")
+    expect(existsSync(join(zalandoSansDir, 'OFL.txt'))).toBe(true)
   })
 
   it('leaves Satoshi as the default heading font stack', () => {
@@ -59,5 +64,20 @@ describe('Cal Sans / Paper Mono self-hosting', () => {
 
   it('routes heading text through the heading font picker slot', () => {
     expect(css).toContain('--font-heading: var(--font-heading-face);')
+  })
+})
+
+describe('Glide self-hosting', () => {
+  it('declares variable roman and italic @font-face rules', () => {
+    expect(css).toContain("font-family: 'Glide';")
+    expect(css).toContain("url('/fonts/glide/Glide-Variable.woff2') format('woff2')")
+    expect(css).toContain("url('/fonts/glide/Glide-VariableItalic.woff2') format('woff2')")
+    expect(css).toContain('font-weight: 100 950;')
+  })
+
+  it('ships the WOFF2 files and license referenced by the font option', () => {
+    expect(existsSync(join(glideDir, 'Glide-Variable.woff2'))).toBe(true)
+    expect(existsSync(join(glideDir, 'Glide-VariableItalic.woff2'))).toBe(true)
+    expect(existsSync(join(glideDir, 'OFL.txt'))).toBe(true)
   })
 })

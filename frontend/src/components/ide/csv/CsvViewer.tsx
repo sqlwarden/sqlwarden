@@ -187,7 +187,9 @@ function CsvErrorState({ error }: { error: CsvParseError }) {
       <div className="flex items-start gap-2.5 rounded-lg border border-destructive/30 bg-destructive/5 p-3">
         <Icon name="cancel-01" size={14} className="mt-0.5 shrink-0 text-destructive" />
         <div className="flex min-w-0 flex-col gap-1">
-          <span className="text-xs font-medium text-destructive">Could not parse CSV</span>
+          <span className="font-heading text-xs font-medium tracking-tight text-destructive">
+            Could not parse CSV
+          </span>
           <span className="text-xs text-destructive/90">{error.message}</span>
         </div>
       </div>
@@ -211,7 +213,9 @@ function CsvMessageState({
           <Icon name={icon} size={17} className="text-muted-foreground" />
         </div>
         <div className="flex flex-col gap-1">
-          <div className="text-sm font-medium text-foreground">{title}</div>
+          <div className="font-heading text-sm font-medium tracking-tight text-foreground">
+            {title}
+          </div>
           {description && <div className="text-xs text-muted-foreground">{description}</div>}
         </div>
       </div>

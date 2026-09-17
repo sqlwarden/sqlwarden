@@ -2,8 +2,9 @@
 @import 'tw-animate-css';
 @import 'shadcn/tailwind.css';
 @import '@fontsource-variable/geist';
-@import '@fontsource-variable/inter';
 @import '@fontsource-variable/jetbrains-mono';
+@import '@fontsource-variable/zalando-sans';
+@import '@fontsource-variable/zalando-sans/wght-italic.css';
 
 @font-face {
   font-family: 'Satoshi';
@@ -45,6 +46,20 @@
   src: url('/fonts/paper-mono/PaperMono-Regular.woff2') format('woff2');
   font-weight: 400;
   font-style: normal;
+  font-display: swap;
+}
+@font-face {
+  font-family: 'Glide';
+  src: url('/fonts/glide/Glide-Variable.woff2') format('woff2');
+  font-weight: 100 950;
+  font-style: normal;
+  font-display: swap;
+}
+@font-face {
+  font-family: 'Glide';
+  src: url('/fonts/glide/Glide-VariableItalic.woff2') format('woff2');
+  font-weight: 100 950;
+  font-style: italic;
   font-display: swap;
 }
 
@@ -98,7 +113,7 @@
   --accent-datatype: #595cf0;
   /* Runtime font slots — overridden from the heading/interface/editor font pickers. */
   --font-heading-face: 'Satoshi', 'Geist Variable', system-ui, sans-serif;
-  --font-interface: 'Inter Variable', system-ui, sans-serif;
+  --font-interface: 'Zalando Sans Variable', system-ui, sans-serif;
   --font-data: 'JetBrains Mono Variable', ui-monospace, monospace;
 }
 

@@ -206,7 +206,7 @@ function WorkspaceOverviewPage({ orgSlug, workspaceId }: { orgSlug: string; work
                 <Icon name={item.icon} size={18} />
               </div>
               <div className="min-w-0 flex-1">
-                <p className="truncate font-medium leading-tight tracking-tight transition-colors group-hover:text-primary">
+                <p className="truncate font-heading font-medium leading-tight tracking-tight transition-colors group-hover:text-primary">
                   {item.label}
                 </p>
                 <p className="mt-0.5 truncate text-xs leading-relaxed text-muted-foreground">

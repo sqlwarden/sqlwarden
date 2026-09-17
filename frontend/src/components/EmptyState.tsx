@@ -14,7 +14,7 @@ export function EmptyState({ action, description, icon, message }: EmptyStatePro
     <div className="flex min-h-56 flex-col items-center justify-center gap-3 text-center">
       {icon ? <Icon name={icon} size={40} className="text-muted-foreground" /> : null}
       <div className="flex flex-col gap-1">
-        <p className="font-medium text-foreground">{message}</p>
+        <p className="font-heading font-medium tracking-tight text-foreground">{message}</p>
         {description ? <p className="text-sm text-muted-foreground">{description}</p> : null}
       </div>
       {action ? <div className="mt-1">{action}</div> : null}

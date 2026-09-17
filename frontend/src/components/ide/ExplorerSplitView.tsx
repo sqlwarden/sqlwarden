@@ -114,7 +114,7 @@ export function ExplorerSplitView({
         collapsedSize="0%"
         className="flex flex-col overflow-hidden"
       >
-        <div className="flex items-center gap-1.5 border-b border-border p-2">
+        <div className="flex h-9 shrink-0 items-center gap-1.5 px-2">
           <SearchInput
             value={connectionFilter}
             onValueChange={setConnectionFilter}
@@ -172,7 +172,7 @@ export function ExplorerSplitView({
             </DropdownMenu>
           )}
         </div>
-        <div className="min-h-0 flex-1 overflow-y-auto overflow-x-hidden [scrollbar-width:thin]">
+        <div className="min-h-0 flex-1 overflow-y-auto overflow-x-hidden border-t border-border [scrollbar-width:thin]">
           <div className="flex flex-col py-1">
             {connectionsLoading ? (
               <SidebarMessage>Loading...</SidebarMessage>
@@ -305,12 +305,15 @@ function SchemaPane({
 
   return (
     <>
-      <div className="flex h-8 shrink-0 items-center gap-2 border-b border-border px-2 text-xs font-medium">
+      <div className="flex h-8 shrink-0 items-center gap-2 border-b border-border px-2 text-xs">
         <span className="relative shrink-0">
           <DriverBadge driver={connection.driver} size="sm" />
           <ConnectionStatusDot state={connState} />
         </span>
-        <span className="min-w-0 flex-1 truncate" title={connection.name}>
+        <span
+          className="min-w-0 flex-1 truncate font-heading font-medium tracking-tight"
+          title={connection.name}
+        >
           {connection.name}
         </span>
         {sessionId && (
