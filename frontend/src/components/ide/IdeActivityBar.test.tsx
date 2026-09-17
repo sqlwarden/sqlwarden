@@ -61,7 +61,7 @@ describe('IdeActivityBar', () => {
     )
   })
 
-  it('renders activities in Search, Explorer, Files, History, Favorites, Exports order', () => {
+  it('renders activities in Search, Explorer, Files, Exports order', () => {
     const store = createIdeStore('acme', 1, 'ephemeral')
     const workspace = makeWorkspace(1, 'Analytics')
     render(
@@ -90,8 +90,6 @@ describe('IdeActivityBar', () => {
       'Search',
       'Explorer',
       'Files',
-      'History',
-      'Favorites',
       'Exports',
     ])
   })

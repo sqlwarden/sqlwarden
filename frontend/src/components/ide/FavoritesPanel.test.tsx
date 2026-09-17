@@ -143,7 +143,13 @@ describe('FavoritesPanel', () => {
         <QueryClientProvider client={createTestQueryClient()}>
           <IdeStoreContext.Provider value={store}>
             <EditorViewRegistryContext.Provider value={views}>
-              <FavoritesPanel orgSlug="acme" workspace={workspace} />
+              <FavoritesPanel
+                orgSlug="acme"
+                workspace={workspace}
+                isMaximized={false}
+                onMaximize={vi.fn()}
+                onClose={vi.fn()}
+              />
             </EditorViewRegistryContext.Provider>
           </IdeStoreContext.Provider>
         </QueryClientProvider>,

@@ -54,11 +54,10 @@ import {
 import { SaveAsDialog } from './SaveAsDialog'
 import { IdeToolbar } from './IdeToolbar'
 import { EditorLayout } from './EditorLayout'
-import { ResultsArea } from './ResultsArea'
+import { BottomPanelBar, BottomPanelContent } from './BottomPanel'
 import { createYDocRegistry, YDocRegistryContext, useYDocRegistry } from './useYDocRegistry'
 import { createEditorViewRegistry, EditorViewRegistryContext } from './useEditorViewRegistry'
 import { createTabViewStateCache, TabViewStateCacheContext } from './tabViewStateCache'
-import { Tip } from './schema-diagram/Tip'
 import { useSessionSync } from './useSessionSync'
 import { useSaveEditorTab } from './useSaveEditorTab'
 import { createStoreSync } from './storeSync'
@@ -713,10 +712,11 @@ function IdeEditorAndResults({ orgSlug, workspace }: { orgSlug: string; workspac
   const editorRef = useRef<PanelImperativeHandle>(null)
   const resultsRef = useRef<PanelImperativeHandle>(null)
   const maximizedPane = useIde((s) => s.maximizedPane)
+  const activeBottomPanelId = useIde((s) => s.activeBottomPanelId)
   const { editorResultsLayout, setEditorResultsLayout } = useConnectionLayout()
 
   useEffect(() => {
-    if (maximizedPane === 'editor') {
+    if (activeBottomPanelId === null || maximizedPane === 'editor') {
       resultsRef.current?.collapse()
       editorRef.current?.expand()
     } else if (maximizedPane === 'results') {
@@ -726,39 +726,42 @@ function IdeEditorAndResults({ orgSlug, workspace }: { orgSlug: string; workspac
       editorRef.current?.expand()
       resultsRef.current?.expand()
     }
-  }, [maximizedPane])
+  }, [maximizedPane, activeBottomPanelId])
 
   return (
-    <ResizablePanelGroup
-      orientation="vertical"
-      className="min-h-0 flex-1 overflow-hidden"
-      defaultLayout={editorResultsLayout}
-      onLayoutChanged={setEditorResultsLayout}
-    >
-      <ResizablePanel
-        id="ide-editor"
-        panelRef={editorRef}
-        defaultSize="58%"
-        minSize="15%"
-        collapsible
-        collapsedSize="0%"
-        className="flex min-h-0 flex-col overflow-hidden"
+    <div className="flex h-full min-h-0 flex-col overflow-hidden">
+      <ResizablePanelGroup
+        orientation="vertical"
+        className="min-h-0 flex-1 overflow-hidden"
+        defaultLayout={editorResultsLayout}
+        onLayoutChanged={setEditorResultsLayout}
       >
-        <EditorSection orgSlug={orgSlug} workspace={workspace} />
-      </ResizablePanel>
-      <ResizableHandle withHandle />
-      <ResizablePanel
-        id="ide-results"
-        panelRef={resultsRef}
-        defaultSize="42%"
-        minSize="12%"
-        collapsible
-        collapsedSize="0%"
-        className="flex min-h-0 flex-col overflow-hidden"
-      >
-        <ResultsArea orgSlug={orgSlug} workspace={workspace} />
-      </ResizablePanel>
-    </ResizablePanelGroup>
+        <ResizablePanel
+          id="ide-editor"
+          panelRef={editorRef}
+          defaultSize="58%"
+          minSize="15%"
+          collapsible
+          collapsedSize="0%"
+          className="flex min-h-0 flex-col overflow-hidden"
+        >
+          <EditorSection orgSlug={orgSlug} workspace={workspace} />
+        </ResizablePanel>
+        <ResizableHandle withHandle />
+        <ResizablePanel
+          id="ide-results"
+          panelRef={resultsRef}
+          defaultSize="42%"
+          minSize="12%"
+          collapsible
+          collapsedSize="0%"
+          className="flex min-h-0 flex-col overflow-hidden"
+        >
+          <BottomPanelContent orgSlug={orgSlug} workspace={workspace} />
+        </ResizablePanel>
+      </ResizablePanelGroup>
+      <BottomPanelBar orgSlug={orgSlug} />
+    </div>
   )
 }
 
@@ -893,10 +896,6 @@ function EditorSection({ orgSlug, workspace }: { orgSlug: string; workspace: Wor
 // ─── Editor status bar ─────────────────────────────────────────────────────────
 
 function EditorStatusBar({ cursorInfo }: { cursorInfo: CursorInfo | null }) {
-  const maximizedPane = useIde((s) => s.maximizedPane)
-  const setMaximizedPane = useIde((s) => s.setMaximizedPane)
-  const resultsVisible = maximizedPane !== 'editor'
-
   return (
     <div className="flex h-6 shrink-0 items-center gap-3 border-t border-border bg-card pl-3 pr-1 text-[11px] text-muted-foreground">
       {cursorInfo && (
@@ -909,20 +908,6 @@ function EditorStatusBar({ cursorInfo }: { cursorInfo: CursorInfo | null }) {
       )}
       <div className="flex-1" />
       <span className="font-medium">SQL</span>
-      <Tip label={resultsVisible ? 'Hide results panel' : 'Show results panel'}>
-        <button
-          type="button"
-          aria-label={resultsVisible ? 'Hide results panel' : 'Show results panel'}
-          aria-pressed={resultsVisible}
-          onClick={() => setMaximizedPane(resultsVisible ? 'editor' : null)}
-          className={cn(
-            'flex h-5 items-center rounded-sm px-1.5 transition-colors hover:bg-sidebar-accent hover:text-foreground',
-            resultsVisible ? 'text-foreground' : 'text-muted-foreground',
-          )}
-        >
-          <Icon name="layout-bottom" size={12} />
-        </button>
-      </Tip>
     </div>
   )
 }
@@ -968,82 +953,36 @@ type EmptyEditorStateProps = {
 
 function EmptyEditorState({ onNewConsole, onNewFile }: EmptyEditorStateProps) {
   return (
-    <div className="flex h-full flex-col items-center justify-center gap-8 p-8">
-      <div className="flex flex-col items-center gap-3 text-center">
-        <div className="flex size-11 items-center justify-center rounded-xl border border-border bg-muted/50">
-          <Icon name="terminal" size={20} className="text-muted-foreground" />
+    <Empty className="h-full gap-6 rounded-none border-0 p-8">
+      <EmptyHeader className="gap-1.5">
+        <EmptyMedia variant="icon" className="mb-2 size-9 rounded-lg text-muted-foreground">
+          <Icon name="terminal" size={17} aria-hidden="true" />
+        </EmptyMedia>
+        <EmptyTitle>No editors open</EmptyTitle>
+        <EmptyDescription>
+          Start a console to run a query, or create a reusable SQL file.
+        </EmptyDescription>
+      </EmptyHeader>
+
+      <EmptyContent className="gap-4">
+        <div className="flex flex-wrap items-center justify-center gap-2">
+          <Button type="button" size="lg" onClick={onNewConsole}>
+            <Icon name="terminal" size={16} data-icon="inline-start" aria-hidden="true" />
+            New console
+          </Button>
+          <Button type="button" variant="outline" size="lg" onClick={onNewFile}>
+            <Icon name="file-01" size={16} data-icon="inline-start" aria-hidden="true" />
+            New file
+          </Button>
         </div>
-        <div>
-          <p className="text-sm font-semibold text-foreground">No editors open</p>
-          <p className="mt-1 text-xs text-muted-foreground">
-            Start by opening a console or a file.
-          </p>
-        </div>
-      </div>
 
-      <div className="flex gap-3">
-        <EmptyStateCard
-          icon="terminal"
-          title="New Console"
-          description="Write and run SQL queries against a connection"
-          onClick={onNewConsole}
-        />
-        <EmptyStateCard
-          icon="file-01"
-          title="New File"
-          description="Create a reusable SQL script saved to this workspace"
-          onClick={onNewFile}
-        />
-      </div>
-
-      <p className="flex items-center gap-1.5 text-[11px] text-muted-foreground">
-        <Icon name="folder-open" size={12} className="shrink-0" />
-        To open an existing file, browse the
-        <span className="font-medium text-foreground">Files</span>
-        panel in the sidebar.
-      </p>
-    </div>
-  )
-}
-
-function EmptyStateCard({
-  icon,
-  title,
-  description,
-  onClick,
-}: {
-  icon: import('#/lib/icons').AppIcon
-  title: string
-  description: string
-  onClick: () => void
-}) {
-  return (
-    <button
-      type="button"
-      onClick={onClick}
-      className={cn(
-        'group flex w-48 flex-col items-center gap-3 rounded-xl border border-border bg-background/60 p-5 text-center',
-        'transition hover:border-primary/40 hover:bg-accent/50 hover:shadow-sm',
-        'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring',
-      )}
-    >
-      <div
-        className={cn(
-          'flex size-10 items-center justify-center rounded-lg',
-          'bg-muted transition-colors group-hover:bg-primary/10',
-        )}
-      >
-        <Icon
-          name={icon}
-          size={18}
-          className="text-muted-foreground transition-colors group-hover:text-primary"
-        />
-      </div>
-      <div className="flex flex-col gap-1">
-        <p className="text-xs font-medium text-foreground">{title}</p>
-        <p className="text-[11px] leading-relaxed text-muted-foreground">{description}</p>
-      </div>
-    </button>
+        <p className="flex flex-wrap items-center justify-center gap-x-1.5 text-[11px] text-muted-foreground">
+          <Icon name="folder-open" size={12} className="shrink-0" aria-hidden="true" />
+          Open existing files from <span className="font-medium text-foreground">Files</span> in the
+          sidebar.
+        </p>
+      </EmptyContent>
+    </Empty>
   )
 }
 

@@ -78,7 +78,17 @@ export function useToolbarQueryAction({
   const viewRegistry = useEditorViewRegistry()
   const maximizedPane = useIde((state) => state.maximizedPane)
   const setMaximizedPane = useIde((state) => state.setMaximizedPane)
+  const activeBottomPanelId = useIde((state) => state.activeBottomPanelId)
+  const setActiveBottomPanel = useIde((state) => state.setActiveBottomPanel)
   const { connect, sessions } = useConnectionActions(orgSlug, workspace)
+
+  // Running a query should surface its output; if the bottom panel is
+  // closed, open it to Results rather than leaving results invisible.
+  // If some other tab (History/Favorites) is already open, leave it be.
+  const ensureResultsVisible = useCallback(() => {
+    if (maximizedPane === 'editor') setMaximizedPane(null)
+    if (activeBottomPanelId === null) setActiveBottomPanel('results')
+  }, [maximizedPane, setMaximizedPane, activeBottomPanelId, setActiveBottomPanel])
 
   const needsConnect = useCallback(
     (connection: Connection) => {
@@ -149,7 +159,7 @@ export function useToolbarQueryAction({
       if (needsConnect(activeConnection)) return
       const sql = sqlOverride ?? resolveSql()
       if (!sql) return
-      if (maximizedPane === 'editor') setMaximizedPane(null)
+      ensureResultsVisible()
       await execute(sql)
     },
     [
@@ -157,10 +167,9 @@ export function useToolbarQueryAction({
       activeConnection,
       hasConnections,
       isRunning,
-      maximizedPane,
+      ensureResultsVisible,
       needsConnect,
       resolveSql,
-      setMaximizedPane,
       execute,
     ],
   )
@@ -190,7 +199,7 @@ export function useToolbarQueryAction({
         toast.warning('This connection does not support EXPLAIN ANALYZE.')
         return
       }
-      if (maximizedPane === 'editor') setMaximizedPane(null)
+      ensureResultsVisible()
       // The backend wraps `sql` in its EXPLAIN form and validates it is a
       // single statement — see POST .../query's `explain` field.
       await execute(sql, analyze ? 'analyze' : 'plain')
@@ -201,10 +210,9 @@ export function useToolbarQueryAction({
       canExplainAnalyze,
       hasConnections,
       isRunning,
-      maximizedPane,
+      ensureResultsVisible,
       needsConnect,
       resolveSql,
-      setMaximizedPane,
       execute,
     ],
   )
@@ -248,7 +256,7 @@ export function useToolbarQueryAction({
         return
       }
       if (needsConnect(activeConnection)) return
-      if (maximizedPane === 'editor') setMaximizedPane(null)
+      ensureResultsVisible()
       await executeAll(sqls)
     },
     [
@@ -257,9 +265,8 @@ export function useToolbarQueryAction({
       executeAll,
       hasConnections,
       isRunning,
-      maximizedPane,
+      ensureResultsVisible,
       needsConnect,
-      setMaximizedPane,
     ],
   )
 

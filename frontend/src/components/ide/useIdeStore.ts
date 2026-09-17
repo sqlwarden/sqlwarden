@@ -150,6 +150,8 @@ export type IdeState = {
   /** Active sidebar/page activity id (see ideActivities). */
   activeActivityId: string
   sidebarCollapsed: boolean
+  /** Open tab id in the bottom panel (see bottomPanels); null when the panel is closed. */
+  activeBottomPanelId: string | null
   /** Whether the leftmost activity rail shows icon+label rows and the brand wordmark. Persisted. */
   activityBarExpanded: boolean
   /** Per-workspace editor layout tree (split groups + their tab lists). */
@@ -251,6 +253,7 @@ export type IdeActions = {
   setMaximizedPane: (pane: IdeState['maximizedPane']) => void
   setActiveActivity: (activityId: string) => void
   setSidebarCollapsed: (collapsed: boolean) => void
+  setActiveBottomPanel: (panelId: string | null) => void
   setActivityBarExpanded: (expanded: boolean) => void
   /** Sets (or clears, with null) the highlighted connection for a workspace's explorer. */
   setSelectedConnectionId: (workspaceId: number, connectionId: number | null) => void
@@ -416,6 +419,7 @@ export function createIdeStore(orgSlug: string, accountId: number, role: WindowR
         maximizedPane: null,
         activeActivityId: 'connections',
         sidebarCollapsed: false,
+        activeBottomPanelId: 'results',
         activityBarExpanded: false,
         layout: {},
         activeGroupId: {},
@@ -708,6 +712,7 @@ export function createIdeStore(orgSlug: string, accountId: number, role: WindowR
         setMaximizedPane: (pane) => set({ maximizedPane: pane }),
         setActiveActivity: (activityId) => set({ activeActivityId: activityId }),
         setSidebarCollapsed: (collapsed) => set({ sidebarCollapsed: collapsed }),
+        setActiveBottomPanel: (panelId) => set({ activeBottomPanelId: panelId }),
         setActivityBarExpanded: (expanded) => set({ activityBarExpanded: expanded }),
         setSelectedConnectionId: (workspaceId, connectionId) =>
           set((s) => ({
@@ -1026,6 +1031,7 @@ const _contextFallback = createStore<IdeState & IdeActions>()(() => ({
   maximizedPane: null,
   activeActivityId: 'connections',
   sidebarCollapsed: false,
+  activeBottomPanelId: 'results',
   activityBarExpanded: false,
   layout: {},
   activeGroupId: {},
@@ -1072,6 +1078,7 @@ const _contextFallback = createStore<IdeState & IdeActions>()(() => ({
   setMaximizedPane: _noop,
   setActiveActivity: _noop,
   setSidebarCollapsed: _noop,
+  setActiveBottomPanel: _noop,
   setActivityBarExpanded: _noop,
   setSelectedConnectionId: _noop,
   setSession: _noop,

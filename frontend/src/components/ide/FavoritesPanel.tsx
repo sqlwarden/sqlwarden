@@ -13,7 +13,7 @@ import { Icon } from '#/lib/icons'
 import { copyWithToast } from './contextMenus/clipboard'
 import { DriverBadge } from './DriverBadge'
 import { FavoriteQueryDialog } from './FavoriteQueryDialog'
-import type { IdeSidebarPanelProps } from './ideActivities'
+import type { BottomPanelTabProps } from './bottomPanels'
 import { insertAtCursor } from './insertAtCursor'
 import { listLocalFavorites, type LocalFavorite } from './localQueryStore'
 import { formatExactTime, formatRelativeTime } from './relativeTime'
@@ -128,7 +128,13 @@ function FavoriteRowItem({
   )
 }
 
-export function FavoritesPanel({ orgSlug, workspace }: IdeSidebarPanelProps) {
+export function FavoritesPanel({
+  orgSlug,
+  workspace,
+  isMaximized,
+  onMaximize,
+  onClose,
+}: BottomPanelTabProps) {
   const activeTabId = useIde((s) => selectActiveTabId(s, workspace.id))
   const activeGroupId = useIde((s) => s.activeGroupId[workspace.id])
   const viewRegistry = useEditorViewRegistry()
@@ -214,7 +220,13 @@ export function FavoritesPanel({ orgSlug, workspace }: IdeSidebarPanelProps) {
 
   if (mode === 'off') {
     return (
-      <SidebarPane title="Favorites" icon="star">
+      <SidebarPane
+        title="Favorites"
+        icon="star"
+        maximized={isMaximized}
+        onMaximizedChange={onMaximize}
+        onClose={onClose}
+      >
         <div className="px-3 py-4 text-center text-xs text-muted-foreground">
           Query favorites are turned off for this organization.
         </div>
@@ -229,6 +241,9 @@ export function FavoritesPanel({ orgSlug, workspace }: IdeSidebarPanelProps) {
       title="Favorites"
       icon="star"
       scroll={false}
+      maximized={isMaximized}
+      onMaximizedChange={onMaximize}
+      onClose={onClose}
       headerContent={
         <SearchInput
           value={searchText}

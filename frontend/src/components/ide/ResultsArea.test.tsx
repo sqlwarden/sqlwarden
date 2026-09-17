@@ -91,7 +91,13 @@ describe('ResultsArea', () => {
       <QueryClientProvider client={queryClient}>
         <IdeStoreContext.Provider value={store}>
           <ContextMenuProvider>
-            <ResultsArea orgSlug="acme" workspace={workspace} />
+            <ResultsArea
+              orgSlug="acme"
+              workspace={workspace}
+              isMaximized={false}
+              onMaximize={vi.fn()}
+              onClose={vi.fn()}
+            />
           </ContextMenuProvider>
         </IdeStoreContext.Provider>
       </QueryClientProvider>,
@@ -110,7 +116,7 @@ describe('ResultsArea', () => {
   }
 
   it.each([
-    [{ status: 'idle' } as const, 'Run a query to see results'],
+    [{ status: 'idle' } as const, 'Nothing to show yet'],
     [{ status: 'running', sql: 'select 1' } as const, 'Running query…'],
     [{ status: 'cancelled', sql: 'select 1' } as const, 'Query cancelled'],
     [{ status: 'error', sql: 'select 1', message: 'permission denied' } as const, 'Query failed'],
@@ -211,7 +217,7 @@ describe('ResultsArea', () => {
     // the grid needs, to exercise the real fill-and-realign wiring.
     const RealResizeObserver = globalThis.ResizeObserver
     class WideResizeObserverMock implements ResizeObserver {
-      constructor(private readonly callback: ResizeObserverCallback) {}
+      constructor(private readonly callback: ResizeObserverCallback) { }
       observe(target: Element) {
         // Other ResizeObserver consumers on the page (react-resizable-panels)
         // expect a richer entry shape than this stub provides; ignore their
@@ -222,8 +228,8 @@ describe('ResultsArea', () => {
           // ignore - unrelated observer expected a fuller ResizeObserverEntry
         }
       }
-      unobserve() {}
-      disconnect() {}
+      unobserve() { }
+      disconnect() { }
     }
     vi.stubGlobal('ResizeObserver', WideResizeObserverMock)
 
@@ -393,19 +399,6 @@ describe('ResultsArea', () => {
     await waitFor(() =>
       expect(screen.queryByRole('menuitem', { name: 'Copy' })).not.toBeInTheDocument(),
     )
-  })
-
-  it('maximizes, restores, and hides the results pane', async () => {
-    const user = userEvent.setup()
-    renderResult({ status: 'idle' })
-    const toggle = screen.getByRole('button', { name: 'Toggle results maximize' })
-
-    await user.click(toggle)
-    expect(store.getState().maximizedPane).toBe('results')
-    await user.click(toggle)
-    expect(store.getState().maximizedPane).toBeNull()
-    await user.click(screen.getByRole('button', { name: 'Hide results panel' }))
-    expect(store.getState().maximizedPane).toBe('editor')
   })
 
   it('lists every statement in a sidebar and shows the first one selected by default', async () => {

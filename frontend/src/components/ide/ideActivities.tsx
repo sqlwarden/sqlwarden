@@ -2,9 +2,7 @@ import type { ComponentType } from 'react'
 import type { AppIcon } from '#/lib/icons'
 import type { Workspace } from '#/lib/api/types'
 import { DatabasePanel } from './DatabasePanel'
-import { FavoritesPanel } from './FavoritesPanel'
 import { FilesPanel } from './FilesPanel'
-import { HistoryPanel } from './HistoryPanel'
 import { ExportsPanel } from './exports/ExportsPanel'
 import { SearchPanel } from './SearchPanel'
 
@@ -45,22 +43,6 @@ export const IDE_ACTIVITIES: IdeActivity[] = [
     component: DatabasePanel,
   },
   { id: 'files', label: 'Files', icon: 'file-01', mode: 'sidebar', component: FilesPanel },
-  {
-    id: 'history',
-    label: 'History',
-    icon: 'history',
-    mode: 'sidebar',
-    component: HistoryPanel,
-    requires: (ctx) => ctx.queryHistoryMode !== 'off',
-  },
-  {
-    id: 'favorites',
-    label: 'Favorites',
-    icon: 'star',
-    mode: 'sidebar',
-    component: FavoritesPanel,
-    requires: (ctx) => ctx.queryFavoritesMode !== 'off',
-  },
   {
     id: 'exports',
     label: 'Exports',

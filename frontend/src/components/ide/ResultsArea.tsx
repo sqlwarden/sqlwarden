@@ -39,11 +39,18 @@ import { DataGrid } from './dataGrid/DataGrid'
 type ResultsAreaProps = {
   orgSlug: string
   workspace: Workspace
+  isMaximized: boolean
+  onMaximize: () => void
+  onClose: () => void
 }
 
-export function ResultsArea({ orgSlug, workspace }: ResultsAreaProps) {
-  const maximizedPane = useIde((s) => s.maximizedPane)
-  const setMaximizedPane = useIde((s) => s.setMaximizedPane)
+export function ResultsArea({
+  orgSlug,
+  workspace,
+  isMaximized,
+  onMaximize,
+  onClose,
+}: ResultsAreaProps) {
   const activeTabId = useIde((s) =>
     s.activeWorkspaceId ? selectActiveTabId(s, s.activeWorkspaceId) : undefined,
   )
@@ -85,10 +92,6 @@ export function ResultsArea({ orgSlug, workspace }: ResultsAreaProps) {
   const rawSelectedIndex = activeRun?.selectedIndex ?? 0
   const selectedIndex = Math.min(Math.max(rawSelectedIndex, 0), Math.max(resultList.length - 1, 0))
 
-  function toggleMaximize() {
-    setMaximizedPane(maximizedPane === 'results' ? null : 'results')
-  }
-
   function handleSelectRun(runId: string) {
     if (resultsPanelMode === 'per-editor') {
       if (activeTabId) setSelectedRun(activeTabId, runId)
@@ -121,7 +124,12 @@ export function ResultsArea({ orgSlug, workspace }: ResultsAreaProps) {
 
   return (
     <div className="flex min-h-0 flex-1 flex-col gap-0">
-      <div className="flex h-8 shrink-0 items-center bg-sidebar">
+      <div
+        className={cn(
+          'flex h-8 shrink-0 items-center',
+          runs.length > 0 ? 'bg-sidebar' : 'bg-background',
+        )}
+      >
         <RunTabStrip
           runs={runs}
           connections={connections}
@@ -135,26 +143,24 @@ export function ResultsArea({ orgSlug, workspace }: ResultsAreaProps) {
         />
         <div className="flex shrink-0 items-center gap-0.5 border-l border-border px-1">
           <ResultsPanelModeMenu mode={resultsPanelMode} onChange={setResultsPanelMode} />
-          <Tip
-            label={maximizedPane === 'results' ? 'Restore results panel' : 'Maximize results panel'}
-          >
+          <Tip label={isMaximized ? 'Restore bottom panel' : 'Maximize bottom panel'}>
             <Button
               type="button"
               variant="ghost"
               size="icon-sm"
-              aria-label="Toggle results maximize"
-              onClick={toggleMaximize}
+              aria-label="Toggle bottom panel maximize"
+              onClick={onMaximize}
             >
-              <Icon name={maximizedPane === 'results' ? 'minimize' : 'maximize'} size={14} />
+              <Icon name={isMaximized ? 'minimize' : 'maximize'} size={14} />
             </Button>
           </Tip>
-          <Tip label="Hide results panel">
+          <Tip label="Close panel">
             <Button
               type="button"
               variant="ghost"
               size="icon-sm"
-              aria-label="Hide results panel"
-              onClick={() => setMaximizedPane('editor')}
+              aria-label="Close panel"
+              onClick={onClose}
             >
               <Icon name="cancel-01" size={14} />
             </Button>
@@ -621,7 +627,7 @@ function CancelledState({
   connection: Connection | undefined
 }) {
   return (
-    <div className="flex h-full min-h-0 flex-col bg-card">
+    <div className="flex h-full min-h-0 flex-col bg-background">
       <ResultSqlCaption
         sql={sql}
         orgSlug={orgSlug}
@@ -645,20 +651,18 @@ function CancelledState({
 
 function EmptyState() {
   return (
-    <div className="flex h-full min-h-0 flex-col bg-card">
+    <div className="flex h-full min-h-0 flex-col bg-background">
       <div className="flex min-h-0 flex-1 items-center justify-center p-8 text-center">
-        <div className="flex flex-col items-center gap-3">
-          <div className="flex size-10 items-center justify-center rounded-lg bg-muted/50">
-            <Icon name="table" size={17} className="text-muted-foreground" />
+        <div className="flex flex-col items-center gap-2">
+          <div className="flex items-center gap-1.5 font-heading text-sm font-medium tracking-tight text-muted-foreground">
+            <Icon name="table" size={14} className="shrink-0" />
+            Nothing to show yet
           </div>
-          <div className="flex flex-col gap-1.5">
-            <div className="text-sm font-medium text-foreground">Run a query to see results</div>
-            <div className="flex items-center justify-center gap-1 text-xs text-muted-foreground">
-              Select a connection and press Run or
-              <kbd className="rounded border border-border bg-muted px-1 font-sans text-[10px] leading-4 text-foreground">
-                {RUN_SHORTCUT}
-              </kbd>
-            </div>
+          <div className="flex items-center gap-1.5 text-xs text-muted-foreground">
+            Run a query with
+            <kbd className="rounded border border-border bg-muted px-1 font-sans text-[10px] leading-4 text-foreground">
+              {RUN_SHORTCUT}
+            </kbd>
           </div>
         </div>
       </div>
@@ -668,7 +672,7 @@ function EmptyState() {
 
 function RunningState() {
   return (
-    <div className="flex h-full min-h-0 flex-col bg-card">
+    <div className="flex h-full min-h-0 flex-col bg-background">
       <div className="flex min-h-0 flex-1 items-center justify-center gap-2 text-xs text-muted-foreground">
         <Icon name="loading-03" size={14} className="animate-spin text-primary" />
         Running query…
@@ -691,7 +695,7 @@ function ErrorState({
   connection: Connection | undefined
 }) {
   return (
-    <div className="flex h-full min-h-0 flex-col bg-card">
+    <div className="flex h-full min-h-0 flex-col bg-background">
       <ResultSqlCaption
         sql={sql}
         orgSlug={orgSlug}
@@ -715,7 +719,7 @@ function ErrorState({
 
 function PendingState() {
   return (
-    <div className="flex h-full min-h-0 flex-col items-center justify-center gap-1 bg-card p-6 text-center text-sm text-muted-foreground">
+    <div className="flex h-full min-h-0 flex-col items-center justify-center gap-1 bg-background p-6 text-center text-sm text-muted-foreground">
       Queued
     </div>
   )
@@ -733,7 +737,7 @@ function SkippedState({
   connection: Connection | undefined
 }) {
   return (
-    <div className="flex h-full min-h-0 flex-col bg-card">
+    <div className="flex h-full min-h-0 flex-col bg-background">
       <ResultSqlCaption
         sql={sql}
         orgSlug={orgSlug}
@@ -785,7 +789,7 @@ function ResultSetView({
 
   if (!hasColumns) {
     return (
-      <div className="flex h-full min-h-0 flex-col bg-card">
+      <div className="flex h-full min-h-0 flex-col bg-background">
         <ResultSqlCaption
           sql={result.sql}
           orgSlug={orgSlug}
@@ -809,7 +813,7 @@ function ResultSetView({
   }
 
   return (
-    <div className="flex h-full min-h-0 flex-col bg-card">
+    <div className="flex h-full min-h-0 flex-col bg-background">
       <ResultSqlCaption
         sql={result.sql}
         orgSlug={orgSlug}
