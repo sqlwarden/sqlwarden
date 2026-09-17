@@ -175,7 +175,7 @@ function OrganizationChoiceCard({
           </div>
           <div className="min-w-0 flex-1 pt-0.5">
             <div className="flex min-w-0 items-center gap-2">
-              <p className="min-w-0 flex-1 truncate font-semibold leading-tight tracking-tight">
+              <p className="min-w-0 flex-1 truncate font-heading font-semibold leading-tight tracking-tight">
                 {organization.name}
               </p>
               {role ? (
@@ -237,7 +237,7 @@ function CreateOrganizationCard() {
           <Icon name="plus-sign" size={20} />
         </div>
         <div>
-          <p className="font-semibold leading-tight tracking-tight transition-colors group-hover:text-primary">
+          <p className="font-heading font-semibold leading-tight tracking-tight transition-colors group-hover:text-primary">
             Add organization
           </p>
           <p className="mt-1.5 text-xs text-muted-foreground">Create a new organization.</p>

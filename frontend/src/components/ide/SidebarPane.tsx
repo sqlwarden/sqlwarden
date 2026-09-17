@@ -1,6 +1,4 @@
 import { Icon, type AppIcon } from '#/lib/icons'
-import { sectionCaptionClass } from '#/lib/typography'
-import { cn } from '#/lib/utils'
 import { Button } from '#/components/ui/button'
 import { ScrollArea } from '#/components/ui/scroll-area'
 import { Tip } from './schema-diagram/Tip'
@@ -42,7 +40,9 @@ export function SidebarPane({
         ) : (
           <div className="flex min-w-0 items-center gap-2">
             <Icon name={icon} size={13} className="shrink-0 text-muted-foreground" />
-            <span className={cn(sectionCaptionClass, 'truncate')}>{title}</span>
+            <span className="truncate font-heading text-xs font-medium tracking-tight text-foreground">
+              {title}
+            </span>
           </div>
         )}
         <div className="flex items-center gap-0.5">

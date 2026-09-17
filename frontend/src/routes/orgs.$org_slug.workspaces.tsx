@@ -318,7 +318,7 @@ function OrganizationWorkspacesPage({ orgSlug }: { orgSlug: string }) {
                     <Icon name="briefcase-01" size={18} />
                   </div>
                   <div className="min-w-0 flex-1 pt-0.5">
-                    <p className="truncate font-semibold leading-tight tracking-tight transition-colors group-hover:text-primary">
+                    <p className="truncate font-heading font-semibold leading-tight tracking-tight transition-colors group-hover:text-primary">
                       {workspace.name}
                     </p>
                     {workspace.description ? (

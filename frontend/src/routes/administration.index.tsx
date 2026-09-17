@@ -51,26 +51,29 @@ function AdministrationIndexPage() {
         <p className="text-sm text-muted-foreground">Instance-wide users, orgs, and settings.</p>
       </div>
 
-      <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-3">
+      <div className="flex flex-col divide-y divide-border rounded-lg border border-border bg-card">
         {cards.map((card) => (
           <Link
             key={card.to}
             to={card.to}
-            className="group flex flex-col rounded-lg border border-border bg-card text-card-foreground transition-all hover:border-foreground/20 hover:bg-muted/20 hover:shadow-sm"
+            className="group flex items-center gap-3 p-4 text-card-foreground transition-colors first:rounded-t-lg last:rounded-b-lg hover:bg-muted/40"
           >
-            <div className="flex flex-1 items-start gap-3 p-5">
-              <div className="flex size-10 shrink-0 items-center justify-center rounded-md bg-muted text-muted-foreground">
-                <Icon name={card.icon} size={20} />
-              </div>
-              <div className="min-w-0 flex-1 pt-0.5">
-                <p className="truncate font-semibold leading-tight tracking-tight transition-colors group-hover:text-primary">
-                  {card.label}
-                </p>
-                <p className="mt-1.5 text-xs leading-relaxed text-muted-foreground">
-                  {card.description}
-                </p>
-              </div>
+            <div className="flex size-9 shrink-0 items-center justify-center rounded-md bg-muted text-muted-foreground">
+              <Icon name={card.icon} size={18} />
             </div>
+            <div className="min-w-0 flex-1">
+              <p className="truncate font-heading font-medium leading-tight tracking-tight transition-colors group-hover:text-primary">
+                {card.label}
+              </p>
+              <p className="mt-0.5 truncate text-xs leading-relaxed text-muted-foreground">
+                {card.description}
+              </p>
+            </div>
+            <Icon
+              name="arrow-right-01"
+              size={16}
+              className="shrink-0 text-muted-foreground transition-transform group-hover:translate-x-0.5"
+            />
           </Link>
         ))}
       </div>

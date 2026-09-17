@@ -33,6 +33,7 @@ import { ExportButton } from './exports/ExportButton'
 import { ViewQueryDialog } from './ViewQueryDialog'
 import { allOrgWorkspaceConnectionsQueryOptions } from '#/lib/api/query'
 import { useResultCursorPaging } from './useResultCursorPaging'
+import { IdeEmptyState } from './IdeEmptyState'
 import { resultRowCountLabel } from './cursorPaging'
 import { DataGrid } from './dataGrid/DataGrid'
 
@@ -638,7 +639,9 @@ function CancelledState({
         <div className="flex items-start gap-2.5 rounded-lg bg-muted/40 p-3">
           <Icon name="cancel-01" size={14} className="mt-0.5 shrink-0 text-muted-foreground" />
           <div className="flex flex-col gap-0.5">
-            <span className="text-xs font-medium text-foreground">Query cancelled</span>
+            <span className="font-heading text-xs font-medium tracking-tight text-foreground">
+              Query cancelled
+            </span>
             <span className="text-xs text-muted-foreground">
               The request was stopped before it finished.
             </span>
@@ -652,20 +655,18 @@ function CancelledState({
 function EmptyState() {
   return (
     <div className="flex h-full min-h-0 flex-col bg-background">
-      <div className="flex min-h-0 flex-1 items-center justify-center p-8 text-center">
-        <div className="flex flex-col items-center gap-2">
-          <div className="flex items-center gap-1.5 font-heading text-sm font-medium tracking-tight text-muted-foreground">
-            <Icon name="table" size={14} className="shrink-0" />
-            Nothing to show yet
-          </div>
-          <div className="flex items-center gap-1.5 text-xs text-muted-foreground">
+      <IdeEmptyState
+        icon="table"
+        title="Nothing to show yet"
+        description={
+          <>
             Run a query with
             <kbd className="rounded border border-border bg-muted px-1 font-sans text-[10px] leading-4 text-foreground">
               {RUN_SHORTCUT}
             </kbd>
-          </div>
-        </div>
-      </div>
+          </>
+        }
+      />
     </div>
   )
 }
@@ -706,7 +707,9 @@ function ErrorState({
         <div className="flex items-start gap-2.5 rounded-lg border border-destructive/30 bg-destructive/5 p-3">
           <Icon name="cancel-01" size={14} className="mt-0.5 shrink-0 text-destructive" />
           <div className="flex min-w-0 flex-col gap-1">
-            <span className="text-xs font-medium text-destructive">Query failed</span>
+            <span className="font-heading text-xs font-medium tracking-tight text-destructive">
+              Query failed
+            </span>
             <pre className="whitespace-pre-wrap break-all text-xs text-destructive/90">
               {message}
             </pre>
@@ -799,7 +802,9 @@ function ResultSetView({
         <div className="flex min-h-0 flex-1 items-center justify-center">
           <div className="flex items-center gap-2 rounded-lg bg-muted/40 px-3 py-2 text-xs text-muted-foreground">
             <Icon name="checkmark-circle-02" size={14} className="text-success" />
-            <span className="font-medium text-foreground">Query executed</span>
+            <span className="font-heading font-medium tracking-tight text-foreground">
+              Query executed
+            </span>
             {rowsAffected !== undefined && (
               <span className="tabular-nums">
                 · {rowsAffected} {rowsAffected === 1 ? 'row' : 'rows'} affected

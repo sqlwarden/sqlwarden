@@ -22,6 +22,7 @@ import { Tip } from './schema-diagram/Tip'
 import { useEditorViewRegistry } from './useEditorViewRegistry'
 import { useFavoritesMutations } from './useFavoritesMutations'
 import { useIde, activeTabId as selectActiveTabId } from './useIdeStore'
+import { IdeEmptyState } from './IdeEmptyState'
 
 type FavoriteRow = {
   id: number | string
@@ -223,13 +224,16 @@ export function FavoritesPanel({
       <SidebarPane
         title="Favorites"
         icon="star"
+        scroll={false}
         maximized={isMaximized}
         onMaximizedChange={onMaximize}
         onClose={onClose}
       >
-        <div className="px-3 py-4 text-center text-xs text-muted-foreground">
-          Query favorites are turned off for this organization.
-        </div>
+        <IdeEmptyState
+          icon="star"
+          title="Query favorites are turned off"
+          description="Saved queries aren't available while it is disabled."
+        />
       </SidebarPane>
     )
   }
@@ -259,19 +263,15 @@ export function FavoritesPanel({
       <div className="flex h-full min-h-0 flex-col">
         <div ref={scrollRef} className="min-h-0 flex-1 overflow-y-auto">
           {rows.length === 0 ? (
-            <div className="px-3 py-4 text-center text-xs text-muted-foreground">
-              {debouncedQuery ? (
-                <>
-                  <p className="font-medium text-foreground">No matching favorites</p>
-                  <p className="mt-0.5">Try a different search term.</p>
-                </>
-              ) : (
-                <>
-                  <p className="font-medium text-foreground">No saved favorites yet</p>
-                  <p className="mt-0.5">Save a query from the toolbar to see it here.</p>
-                </>
-              )}
-            </div>
+            <IdeEmptyState
+              icon={debouncedQuery ? 'search-01' : 'star'}
+              title={debouncedQuery ? 'No matching favorites' : 'No saved favorites yet'}
+              description={
+                debouncedQuery
+                  ? 'Try a different search term.'
+                  : 'Save a query as a favorite to see it here.'
+              }
+            />
           ) : (
             <div style={{ height: rowVirtualizer.getTotalSize(), position: 'relative' }}>
               {virtualItems.map((vr) => {

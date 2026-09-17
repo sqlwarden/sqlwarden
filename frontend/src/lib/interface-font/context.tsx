@@ -7,7 +7,8 @@ export type InterfaceFont = {
 }
 
 export const INTERFACE_FONTS: InterfaceFont[] = [
-  // Inter is the brand default — matches the shipped styles.css --font-interface.
+  // Zalando Sans is the brand default — matches the shipped styles.css --font-interface.
+  { label: 'Zalando Sans', fontFamily: "'Zalando Sans Variable', system-ui, sans-serif" },
   { label: 'Inter', fontFamily: "'Inter Variable', system-ui, sans-serif" },
   { label: 'Satoshi', fontFamily: "'Satoshi', 'Geist Variable', system-ui, sans-serif" },
   { label: 'Cal Sans UI', fontFamily: "'Cal Sans UI', 'Geist Variable', system-ui, sans-serif" },
@@ -16,6 +17,8 @@ export const INTERFACE_FONTS: InterfaceFont[] = [
   { label: 'Manrope', fontFamily: "'Manrope Variable', system-ui, sans-serif" },
   { label: 'Space Grotesk', fontFamily: "'Space Grotesk Variable', system-ui, sans-serif" },
   { label: 'Epilogue', fontFamily: "'Epilogue Variable', system-ui, sans-serif" },
+  { label: 'Glide', fontFamily: "'Glide', 'Inter Variable', system-ui, sans-serif" },
+  { label: 'Mozilla Text', fontFamily: "'Mozilla Text Variable', system-ui, sans-serif" },
   { label: 'System Font', fontFamily: 'system-ui, sans-serif' },
 ]
 
@@ -28,6 +31,9 @@ export async function loadInterfaceFont(font: InterfaceFont): Promise<void> {
   if (_loadedFonts.has(font.fontFamily)) return
   _loadedFonts.add(font.fontFamily)
   switch (font.label) {
+    case 'Inter':
+      await import('@fontsource-variable/inter')
+      break
     case 'Geist':
       await import('@fontsource-variable/geist')
       break
@@ -43,8 +49,11 @@ export async function loadInterfaceFont(font: InterfaceFont): Promise<void> {
     case 'Epilogue':
       await import('@fontsource-variable/epilogue')
       break
-    // Cal Sans UI, Satoshi: self-hosted via @font-face in styles.css, no package to load.
-    // Inter: loaded globally in styles.css. System Font: no web font.
+    case 'Mozilla Text':
+      await import('@fontsource-variable/mozilla-text')
+      break
+    // Cal Sans UI, Glide, Satoshi: self-hosted via @font-face in styles.css, no package to load.
+    // Zalando Sans: loaded globally in styles.css. System Font: no web font.
   }
 }
 

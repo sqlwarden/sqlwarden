@@ -36,6 +36,7 @@ import { Tip } from './schema-diagram/Tip'
 import { useEditorViewRegistry } from './useEditorViewRegistry'
 import { useFavoritesMutations } from './useFavoritesMutations'
 import { useIde, activeTabId as selectActiveTabId } from './useIdeStore'
+import { IdeEmptyState } from './IdeEmptyState'
 
 function favoriteKey(connectionId: number | null, sqlText: string): string {
   return `${connectionId ?? 'none'}::${sqlText.trim()}`
@@ -49,6 +50,16 @@ type HistoryRow = {
   sqlText: string
   status: 'ok' | 'error' | 'cancelled'
   executedAt: string
+}
+
+function HistoryEmptyState({ filtered = false }: { filtered?: boolean }) {
+  return (
+    <IdeEmptyState
+      icon={filtered ? 'search-01' : 'history'}
+      title={filtered ? 'No matching queries' : 'No queries run yet'}
+      description={filtered ? 'Try a different search term.' : 'Queries you run will show up here.'}
+    />
+  )
 }
 
 function statusBorderClass(status: HistoryRow['status']): string {
@@ -357,13 +368,16 @@ export function HistoryPanel({
       <SidebarPane
         title="History"
         icon="history"
+        scroll={false}
         maximized={isMaximized}
         onMaximizedChange={onMaximize}
         onClose={onClose}
       >
-        <div className="px-3 py-4 text-center text-xs text-muted-foreground">
-          Query history is turned off for this organization.
-        </div>
+        <IdeEmptyState
+          icon="history"
+          title="Query history is turned off"
+          description="Queries won't be recorded while it is disabled."
+        />
       </SidebarPane>
     )
   }
@@ -412,19 +426,7 @@ export function HistoryPanel({
               Loading history…
             </div>
           ) : rows.length === 0 ? (
-            <div className="px-3 py-4 text-center text-xs text-muted-foreground">
-              {debouncedQuery ? (
-                <>
-                  <p className="font-medium text-foreground">No matching queries</p>
-                  <p className="mt-0.5">Try a different search term.</p>
-                </>
-              ) : (
-                <>
-                  <p className="font-medium text-foreground">No queries run yet</p>
-                  <p className="mt-0.5">Queries you run will show up here.</p>
-                </>
-              )}
-            </div>
+            <HistoryEmptyState filtered={Boolean(debouncedQuery)} />
           ) : (
             <div className="flex flex-col">
               <div style={{ height: rowVirtualizer.getTotalSize(), position: 'relative' }}>

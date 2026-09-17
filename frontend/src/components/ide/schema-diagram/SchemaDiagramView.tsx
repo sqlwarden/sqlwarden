@@ -877,7 +877,7 @@ function DiagramCanvas({
   return (
     <div ref={containerRef} className="flex h-full min-h-0 flex-col">
       <div className="flex h-9 shrink-0 items-center gap-1 border-b border-border px-2">
-        <span className="truncate text-xs font-medium text-foreground">
+        <span className="truncate font-heading text-xs font-medium tracking-tight text-foreground">
           {target.kind === 'scope' ? currentScopeLabel : `${currentScopeLabel}.${target.ref.name}`}
         </span>
         <span className="text-[10px] text-muted-foreground">{driver}</span>
@@ -1096,7 +1096,9 @@ function Reconnect({
   return (
     <div className="flex h-full flex-col items-center justify-center gap-3 text-center">
       <div className="flex flex-col gap-1">
-        <div className="text-sm font-medium text-foreground">{scopeLabel}</div>
+        <div className="font-heading text-sm font-medium tracking-tight text-foreground">
+          {scopeLabel}
+        </div>
         <div className="text-xs text-muted-foreground">{driver} · connection not available</div>
       </div>
       <Button variant="outline" size="sm" onClick={onReconnect}>

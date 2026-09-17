@@ -301,7 +301,9 @@ function CsvTooLargeState({
           <Icon name="file-01" size={17} className="text-muted-foreground" />
         </div>
         <div className="flex flex-col gap-1">
-          <div className="text-sm font-medium text-foreground">CSV is too large to preview</div>
+          <div className="font-heading text-sm font-medium tracking-tight text-foreground">
+            CSV is too large to preview
+          </div>
           <div className="text-xs text-muted-foreground">
             <span className="font-medium text-foreground">{filename}</span> is{' '}
             {formatBytesValue(sizeBytes)}. Browser previews are limited to{' '}

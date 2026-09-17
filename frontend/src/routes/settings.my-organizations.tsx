@@ -136,7 +136,7 @@ function SettingsMyOrganizationsPage() {
                   </div>
                   <div className="min-w-0 flex-1 pt-0.5">
                     <div className="flex items-center gap-2">
-                      <p className="truncate font-semibold leading-tight tracking-tight transition-colors group-hover:text-primary">
+                      <p className="truncate font-heading font-semibold leading-tight tracking-tight transition-colors group-hover:text-primary">
                         {organization.name}
                       </p>
                       <Badge
