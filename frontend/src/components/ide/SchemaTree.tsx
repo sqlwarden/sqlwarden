@@ -116,6 +116,15 @@ const SchemaTreeContext = createContext<TreeCtx | null>(null)
 // Backed by useIdeStore's expandedNodes so a node's expand state survives it
 // unmounting and remounting (e.g. switching the split view's selected
 // connection away and back re-renders the tree with fresh node instances).
+function useDebouncedFilter(value: string, delayMs: number): string {
+  const [debounced, setDebounced] = useState(value)
+  useEffect(() => {
+    const timer = window.setTimeout(() => setDebounced(value), delayMs)
+    return () => window.clearTimeout(timer)
+  }, [value, delayMs])
+  return debounced
+}
+
 function useTreeExpansion(key: string): [boolean | null, (value: boolean) => void] {
   const value = useIde((s) => s.expandedNodes[key]) ?? null
   const setNodeExpanded = useIde((s) => s.setNodeExpanded)
@@ -207,6 +216,7 @@ export function SchemaTree({
   driver,
   filter,
   onConnect,
+  onFilteringChange,
 }: {
   orgSlug: string
   workspaceId: number
@@ -215,6 +225,9 @@ export function SchemaTree({
   filter: string
   /** Starts a fresh session for this connection (used by the reconnect hint). */
   onConnect?: () => void
+  /** Reports whether the debounced/deferred filter pass is still catching up
+   *  to the raw typed value, so a caller can surface a loading indicator. */
+  onFilteringChange?: (pending: boolean) => void
 }) {
   const sessionId = useIde((s) => s.sessions[connectionId])
   const connStatus = useIde((s) => s.connectionStatus[connectionId])
@@ -276,7 +289,16 @@ export function SchemaTree({
     () => (rawDirectory ? normalizeDirectory(rawDirectory) : undefined),
     [rawDirectory],
   )
-  const deferredFilter = useDeferredValue(filter)
+  // Filtering re-scans the entire directory tree, so for large schemas a raw
+  // per-keystroke pass can block the main thread. Debounce collapses bursts
+  // of fast typing into a single pass; useDeferredValue then keeps that pass
+  // from blocking the next keystroke's render.
+  const debouncedFilter = useDebouncedFilter(filter, 150)
+  const deferredFilter = useDeferredValue(debouncedFilter)
+  useEffect(() => {
+    onFilteringChange?.(filter !== deferredFilter)
+  }, [filter, deferredFilter, onFilteringChange])
+  useEffect(() => () => onFilteringChange?.(false), [onFilteringChange])
   const filteredDirectory = useMemo(() => {
     if (!normalizedDirectory) return undefined
     const q = deferredFilter.trim()
@@ -893,7 +915,6 @@ function SchemaObjectNode({
     `object:${ctx?.connectionId}:${JSON.stringify(objectRef.scope)}:${objectRef.kind}:${objectRef.name}`,
   )
   const expandable = isRelationalKind(ctx?.spec, objectRef.kind)
-  const inlineDetail = objectRef.kind === 'sequence'
   // A lazy scope's object detail isn't guaranteed to be cached, so restoring a
   // persisted expand with no live session would silently re-fire its fetch on
   // every mount (reload, tab switch) with nobody looking at it. Require one
@@ -912,7 +933,7 @@ function SchemaObjectNode({
       ctx!.sessionId,
       objectRef,
     ),
-    enabled: Boolean(ctx) && (expanded || inlineDetail),
+    enabled: Boolean(ctx) && expanded,
   })
   const objectRefresh = useSchemaRefresh({
     orgSlug: ctx!.orgSlug,
@@ -943,11 +964,7 @@ function SchemaObjectNode({
     openGenerateStatement,
   } = useTreeCtx()
   const style = kindStyle(objectRef.kind)
-  const inlineMeta = inlineDetail
-    ? sequenceDataType(detail)
-    : rowCount !== undefined
-      ? formatRowCount(rowCount)
-      : undefined
+  const inlineMeta = rowCount !== undefined ? formatRowCount(rowCount) : undefined
   const isView = objectRef.kind === 'view' || objectRef.kind === 'materialized_view'
   const dropGate = canDropObject(editor, sessionId, canMutate, objectRef.kind)
   const addColumnGate = tableOnlyGate(editor, sessionId, canMutate, objectRef.kind, 'add_column')
@@ -1143,12 +1160,6 @@ function SchemaObjectDetail({
       )}
     </>
   )
-}
-
-function sequenceDataType(detail: ObjectDetail | null): string | undefined {
-  return detail?.descriptors
-    ?.flatMap((descriptor) => descriptor.fields ?? [])
-    .find((field) => field.name.toLowerCase() === 'data type')?.value
 }
 
 function SchemaTriggerDetail({ descriptors }: { descriptors: ObjectDescriptor[] }) {

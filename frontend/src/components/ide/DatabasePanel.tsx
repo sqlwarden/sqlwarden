@@ -1,5 +1,5 @@
 import { errorMessage } from '#/lib/api/errors'
-import { useEffect, useRef, useState } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
 import type { PanelImperativeHandle } from 'react-resizable-panels'
 import { SearchInput } from '#/components/SearchInput'
 import { queryKeys } from '#/lib/api/query-keys'
@@ -89,6 +89,17 @@ export function DatabasePanel({
   const connectionActions = useConnectionActions(orgSlug, workspace)
 
   const [filter, setFilter] = useState('')
+  const [filteringConnIds, setFilteringConnIds] = useState<Set<number>>(() => new Set())
+  const isFiltering = filteringConnIds.size > 0
+  const handleConnectionFiltering = useCallback((connectionId: number, pending: boolean) => {
+    setFilteringConnIds((prev) => {
+      if (prev.has(connectionId) === pending) return prev
+      const next = new Set(prev)
+      if (pending) next.add(connectionId)
+      else next.delete(connectionId)
+      return next
+    })
+  }, [])
   const {
     groupByEnvironment,
     setGroupByEnvironment,
@@ -414,6 +425,7 @@ export function DatabasePanel({
                 className="min-w-0 flex-1"
                 size="sm"
                 variant="muted"
+                loading={isFiltering}
               />
               {!groupByEnvironment && envItems.length > 0 && (
                 <DropdownMenu>
@@ -503,6 +515,7 @@ export function DatabasePanel({
                       onAddConnection={() => setAddConnEnvironmentId(env.id)}
                       onRenameEnvironment={() => openRenameEnvironment(env)}
                       onDeleteEnvironment={() => setDeletingEnvironment(env)}
+                      onFilteringChange={handleConnectionFiltering}
                     />
                   ))
                 ) : (
@@ -530,6 +543,7 @@ export function DatabasePanel({
                         onOpenConsole={() => connectionActions.openConnectionConsole(conn)}
                         onConnect={() => connectionActions.connect(conn)}
                         onDisconnect={() => handleDisconnect(conn)}
+                        onFilteringChange={handleConnectionFiltering}
                       />
                     ))
                   })()
@@ -746,6 +760,7 @@ export function EnvironmentRow({
   onRenameEnvironment,
   onDeleteEnvironment,
   wholeRowClickable = false,
+  onFilteringChange,
 }: {
   environment: Environment
   connections: Connection[]
@@ -765,6 +780,8 @@ export function EnvironmentRow({
   onDeleteEnvironment: () => void
   /** Forwarded to each ConnectionRow. */
   wholeRowClickable?: boolean
+  /** Forwarded to each ConnectionRow's SchemaTree. */
+  onFilteringChange?: (connectionId: number, pending: boolean) => void
 }) {
   const nodeKey = `env:${environment.id}`
   const navigate = useNavigate()
@@ -850,6 +867,7 @@ export function EnvironmentRow({
                 onOpenConsole={() => onOpenConsole(conn)}
                 onConnect={() => onConnect(conn)}
                 onDisconnect={() => onDisconnect(conn)}
+                onFilteringChange={onFilteringChange}
               />
             ))
           )}
@@ -876,6 +894,7 @@ export function ConnectionRow({
   onOpenConsole,
   onConnect,
   onDisconnect,
+  onFilteringChange,
 }: {
   connection: Connection
   isConnected: boolean
@@ -895,6 +914,8 @@ export function ConnectionRow({
   onOpenConsole: () => void
   onConnect: () => void
   onDisconnect: () => void
+  /** Forwarded to this row's SchemaTree, keyed by connection id. */
+  onFilteringChange?: (connectionId: number, pending: boolean) => void
 }) {
   const nodeKey = `conn:${connection.id}`
   const navigate = useNavigate()
@@ -925,6 +946,11 @@ export function ConnectionRow({
     connectionId: connection.id,
     sessionId,
   })
+  const connectionId = connection.id
+  const handleFilteringChange = useCallback(
+    (pending: boolean) => onFilteringChange?.(connectionId, pending),
+    [connectionId, onFilteringChange],
+  )
   const deleteConnection = useMutation({
     mutationFn: () =>
       api.delete<void>(
@@ -1079,6 +1105,7 @@ export function ConnectionRow({
             driver={connection.driver}
             filter={filter}
             onConnect={onConnect}
+            onFilteringChange={handleFilteringChange}
           />
         </div>
       )}
