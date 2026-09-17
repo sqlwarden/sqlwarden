@@ -20,7 +20,7 @@ import { cn } from '#/lib/utils'
 import { copyWithToast } from './contextMenus/clipboard'
 import { DriverBadge } from './DriverBadge'
 import { ALL_CONNECTIONS, HistoryConnectionSelector } from './HistoryConnectionSelector'
-import type { IdeSidebarPanelProps } from './ideActivities'
+import type { BottomPanelTabProps } from './bottomPanels'
 import { insertAtCursor } from './insertAtCursor'
 import {
   listLocalFavorites,
@@ -208,7 +208,13 @@ function HistoryRowItem({
   )
 }
 
-export function HistoryPanel({ orgSlug, workspace }: IdeSidebarPanelProps) {
+export function HistoryPanel({
+  orgSlug,
+  workspace,
+  isMaximized,
+  onMaximize,
+  onClose,
+}: BottomPanelTabProps) {
   const activeTabId = useIde((s) => selectActiveTabId(s, workspace.id))
   const activeGroupId = useIde((s) => s.activeGroupId[workspace.id])
   const activeConnectionId = useIde((s) => s.tabs.find((t) => t.id === activeTabId)?.connectionId)
@@ -348,7 +354,13 @@ export function HistoryPanel({ orgSlug, workspace }: IdeSidebarPanelProps) {
 
   if (mode === 'off') {
     return (
-      <SidebarPane title="History" icon="history">
+      <SidebarPane
+        title="History"
+        icon="history"
+        maximized={isMaximized}
+        onMaximizedChange={onMaximize}
+        onClose={onClose}
+      >
         <div className="px-3 py-4 text-center text-xs text-muted-foreground">
           Query history is turned off for this organization.
         </div>
@@ -361,6 +373,9 @@ export function HistoryPanel({ orgSlug, workspace }: IdeSidebarPanelProps) {
       title="History"
       icon="history"
       scroll={false}
+      maximized={isMaximized}
+      onMaximizedChange={onMaximize}
+      onClose={onClose}
       headerContent={
         <SearchInput
           value={searchText}

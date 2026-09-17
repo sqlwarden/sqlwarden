@@ -10,6 +10,7 @@ type SidebarPaneProps = {
   icon: AppIcon
   maximized?: boolean
   onMaximizedChange?: (maximized: boolean) => void
+  onClose?: () => void
   actions?: React.ReactNode
   /** Replaces the icon+title block with custom content (e.g. a search input)
    *  for panels whose body is a single control that already states the
@@ -27,6 +28,7 @@ export function SidebarPane({
   icon,
   maximized,
   onMaximizedChange,
+  onClose,
   actions,
   headerContent,
   scroll = true,
@@ -61,6 +63,19 @@ export function SidebarPane({
                 onClick={() => onMaximizedChange(!maximized)}
               >
                 <Icon name={maximized ? 'minimize' : 'maximize'} size={14} />
+              </Button>
+            </Tip>
+          ) : null}
+          {onClose ? (
+            <Tip label="Close panel">
+              <Button
+                type="button"
+                variant="ghost"
+                size="icon-sm"
+                aria-label="Close panel"
+                onClick={onClose}
+              >
+                <Icon name="cancel-01" size={14} />
               </Button>
             </Tip>
           ) : null}
