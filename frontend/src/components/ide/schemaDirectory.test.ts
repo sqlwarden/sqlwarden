@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import type { SchemaDirectory, SchemaSpec } from '#/lib/api/types'
+import type { ScopeNode, SchemaDirectory, SchemaSpec } from '#/lib/api/types'
 import {
   filterDirectory,
   formatRowCount,
@@ -168,6 +168,72 @@ describe('formatRowCount', () => {
   it('compacts thousands and millions with one decimal', () => {
     expect(formatRowCount(1200)).toBe('~1.2K')
     expect(formatRowCount(2_500_000)).toBe('~2.5M')
+  })
+})
+
+describe('filterDirectory at scale', () => {
+  function buildLargeDirectory(schemaCount: number, tablesPerSchema: number): SchemaDirectory {
+    const roots: ScopeNode[] = Array.from({ length: schemaCount }, (_, s) => ({
+      path: [{ kind: 'schema', name: `schema_${s}` }],
+      groups: [
+        {
+          kind: 'table',
+          objects: Array.from({ length: tablesPerSchema }, (_, t) => ({
+            scope: [{ kind: 'schema', name: `schema_${s}` }],
+            kind: 'table',
+            name: t === 0 && s === schemaCount - 1 ? 'needle_target' : `table_${s}_${t}`,
+          })),
+        },
+      ],
+    }))
+    return { ...directory, roots }
+  }
+
+  it('prunes non-matching subtrees without disturbing siblings that do match', () => {
+    const source: SchemaDirectory = {
+      ...directory,
+      roots: [
+        {
+          path: [{ kind: 'schema', name: 'a' }],
+          groups: [],
+          children: [
+            {
+              path: [
+                { kind: 'schema', name: 'a' },
+                { kind: 'table_group', name: 'no_match' },
+              ],
+              groups: [
+                { kind: 'table', objects: [{ scope: [], kind: 'table', name: 'unrelated' }] },
+              ],
+            },
+            {
+              path: [
+                { kind: 'schema', name: 'a' },
+                { kind: 'table_group', name: 'has_match' },
+              ],
+              groups: [{ kind: 'table', objects: [{ scope: [], kind: 'table', name: 'target' }] }],
+            },
+          ],
+        },
+      ],
+    }
+    const out = filterDirectory(source, 'target')
+    const child = out.roots[0].children ?? []
+    expect(child).toHaveLength(1)
+    expect(child[0].path[1].name).toBe('has_match')
+  })
+
+  it('finds a single matching object across a large schema and returns quickly', () => {
+    const large = buildLargeDirectory(50, 200)
+    const start = performance.now()
+    const out = filterDirectory(large, 'needle_target')
+    const elapsed = performance.now() - start
+
+    const matches = out.roots.flatMap((root) => root.groups.flatMap((g) => g.objects))
+    expect(matches.map((o) => o.name)).toEqual(['needle_target'])
+    // Generous ceiling: guards against regressing to a full tree rebuild on
+    // every keystroke, not a tight performance SLA.
+    expect(elapsed).toBeLessThan(500)
   })
 })
 

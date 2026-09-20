@@ -47,7 +47,8 @@ describe('SchemaDiagramView', () => {
     store = createIdeStore('acme', 1, 'ephemeral')
   })
 
-  function renderDiagram(editorTab: EditorTab = tab) {
+  function renderDiagram(editorTab: EditorTab = tab, { loadRequested = true } = {}) {
+    if (loadRequested) store.getState().requestDiagramLoad(editorTab.id)
     return {
       user: userEvent.setup(),
       ...render(
@@ -111,6 +112,29 @@ describe('SchemaDiagramView', () => {
   it('explains a malformed diagram tab without issuing schema requests', () => {
     renderDiagram({ ...tab, connectionId: undefined, diagramTarget: undefined })
     expect(screen.getByText('This tab is missing its diagram target.')).toBeInTheDocument()
+  })
+
+  it('requires an explicit load for a restored diagram tab, then resolves normally', async () => {
+    store.getState().setSession(7, 'session-7')
+    schemaHandlers()
+    const { user } = renderDiagram(tab, { loadRequested: false })
+
+    expect(screen.getByText('Load diagram')).toBeInTheDocument()
+    expect(screen.queryByText('postgres')).not.toBeInTheDocument()
+
+    await user.click(screen.getByRole('button', { name: 'Load diagram' }))
+
+    expect(await screen.findByText('No tables to diagram in this schema.')).toBeInTheDocument()
+  })
+
+  it('skips the load CTA when the tab was opened explicitly this session', async () => {
+    store.getState().setSession(7, 'session-7')
+    schemaHandlers()
+    store.getState().openTab(tab)
+    renderDiagram(tab, { loadRequested: false })
+
+    expect(await screen.findByText('No tables to diagram in this schema.')).toBeInTheDocument()
+    expect(screen.queryByText('Load diagram')).not.toBeInTheDocument()
   })
 
   it('reconnects a stale diagram tab and stores the new session', async () => {

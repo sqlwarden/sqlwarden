@@ -130,12 +130,14 @@ function DiagramCanvas({
   const setSession = useIde((s) => s.setSession)
   const setConnectionStatus = useIde((s) => s.setConnectionStatus)
   const openTab = useIde((s) => s.openTab)
+  const loadRequested = useIde((s) => Boolean(s.diagramLoadRequested[tab.id]))
+  const requestDiagramLoad = useIde((s) => s.requestDiagramLoad)
   const { fitView, screenToFlowPosition, getNodes, getViewport, setViewport } = useReactFlow()
   const savedViewport = useRef<Viewport | null>(null)
   const viewportRestored = useRef(false)
   const containerRef = useRef<HTMLDivElement | null>(null)
 
-  const enabled = Boolean(sessionId && connectionId && target)
+  const enabled = Boolean(sessionId && connectionId && target && loadRequested)
 
   const specQuery = useQuery({
     ...orgConnectionSchemaSpecQueryOptions(
@@ -177,7 +179,9 @@ function DiagramCanvas({
   useEvictGoneSession(connectionId, [specQuery.error, directoryQuery.error, relQuery.error])
 
   const spec = specQuery.data?.spec
-  const edges = useMemo(() => relQuery.data?.relationships ?? [], [relQuery.data])
+  const edges = useMemo(() => relQuery.data?.graph?.relationships ?? [], [relQuery.data])
+  const directoryReady = directoryQuery.isSuccess && directoryQuery.data?.status !== 'pending'
+  const relationshipsReady = relQuery.isSuccess && relQuery.data?.status !== 'pending'
 
   const refByKey = useMemo(() => {
     const map = new Map<string, ObjectRef>()
@@ -229,7 +233,7 @@ function DiagramCanvas({
   // expanded/removed tables are exactly where the user left them on reload. If
   // there's a saved set, mark it seeded so the fresh seed below doesn't run.
   useEffect(() => {
-    if (hydratedRef.current || !directoryQuery.isSuccess || !relQuery.isSuccess) return
+    if (hydratedRef.current || !directoryReady || !relationshipsReady) return
     hydratedRef.current = true
     void loadDiagram(tab.id).then((saved) => {
       savedPositions.current = saved.positions
@@ -247,7 +251,7 @@ function DiagramCanvas({
       }
       setHydrateChecked(true)
     })
-  }, [tab.id, refByKey, directoryQuery.isSuccess, relQuery.isSuccess])
+  }, [tab.id, refByKey, directoryReady, relationshipsReady])
 
   // Seed the working set from the target — only after the queries have
   // SUCCEEDED (so edges are populated) and persisted positions have loaded.
@@ -256,7 +260,7 @@ function DiagramCanvas({
   // edges and show only the anchor table.
   useEffect(() => {
     if (seededRef.current || !hydrateChecked || !target) return
-    if (!directoryQuery.isSuccess || !relQuery.isSuccess) return
+    if (!directoryReady || !relationshipsReady) return
     seededRef.current = true
     const seed =
       target.kind === 'object'
@@ -270,8 +274,8 @@ function DiagramCanvas({
     target,
     edges,
     refByKey,
-    directoryQuery.isSuccess,
-    relQuery.isSuccess,
+    directoryReady,
+    relationshipsReady,
     hydrateChecked,
     requestLayout,
     depth,
@@ -847,18 +851,27 @@ function DiagramCanvas({
     hasTarget: Boolean(target),
     hasConnection: Boolean(connectionId),
     hasSession: Boolean(sessionId),
+    loadRequested,
     spec,
     specError: specQuery.error,
     directoryError: directoryQuery.error,
     relationshipsError: relQuery.error,
-    directoryLoading: directoryQuery.isLoading,
-    relationshipsLoading: relQuery.isLoading,
+    directoryLoading: directoryQuery.isLoading || directoryQuery.data?.status === 'pending',
+    relationshipsLoading: relQuery.isLoading || relQuery.data?.status === 'pending',
     presentCount: present.length,
   })
   if (viewState === 'missing-target' || !target || !connectionId)
     return <Center>This tab is missing its diagram target.</Center>
   if (viewState === 'no-session')
     return <Reconnect scopeLabel={currentScopeLabel} driver={driver} onReconnect={reconnect} />
+  if (viewState === 'needs-load')
+    return (
+      <LoadDiagram
+        scopeLabel={currentScopeLabel}
+        driver={driver}
+        onLoad={() => requestDiagramLoad(tab.id)}
+      />
+    )
   if (viewState === 'unsupported')
     return <Center>Diagrams aren&apos;t available for this connection.</Center>
   if (viewState === 'forbidden')
@@ -1080,6 +1093,32 @@ function Center({ children, className = '' }: { children: React.ReactNode; class
       className={`flex h-full items-center justify-center gap-2 text-xs text-muted-foreground ${className}`}
     >
       {children}
+    </div>
+  )
+}
+
+function LoadDiagram({
+  scopeLabel,
+  driver,
+  onLoad,
+}: {
+  scopeLabel: string
+  driver: string
+  onLoad: () => void
+}) {
+  return (
+    <div className="flex h-full flex-col items-center justify-center gap-3 text-center">
+      <div className="flex flex-col gap-1">
+        <div className="font-heading text-sm font-medium tracking-tight text-foreground">
+          {scopeLabel}
+        </div>
+        <div className="max-w-xs text-xs text-muted-foreground">
+          {driver} · resolving tables and relationships can take a while on large schemas
+        </div>
+      </div>
+      <Button variant="outline" size="sm" onClick={onLoad}>
+        Load diagram
+      </Button>
     </div>
   )
 }

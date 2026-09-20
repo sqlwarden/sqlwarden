@@ -771,8 +771,11 @@ export interface SchemaSpecResponse {
 }
 
 export interface ObjectsResponse {
-  objects: ObjectDetail[]
+  objects?: ObjectDetail[]
   pending_connection?: ObjectRef[]
+  status?: 'pending'
+  mode?: 'persistent' | 'ephemeral'
+  job_id?: string
 }
 
 export interface ObjectDefinitionResponse {
@@ -793,7 +796,10 @@ export interface RelationshipGraph {
 }
 
 export interface RelationshipsResponse {
-  graph: RelationshipGraph
+  graph?: RelationshipGraph
+  status?: 'pending'
+  mode?: 'persistent' | 'ephemeral'
+  job_id?: string
 }
 
 export type JobStatus = 'queued' | 'running' | 'succeeded' | 'failed' | 'cancelled'

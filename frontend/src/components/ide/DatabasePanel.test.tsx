@@ -252,10 +252,47 @@ describe('DatabasePanel', () => {
     )
     const { user } = renderPanel()
 
-    await screen.findByText('analytics-pg')
-    await user.click(screen.getByRole('button', { name: 'Refresh schema' }))
+    const connectionName = await screen.findByText('analytics-pg')
+    fireEvent.contextMenu(connectionName)
+    await user.click(await screen.findByRole('menuitem', { name: 'Refresh schema' }))
 
     await waitFor(() => expect(refreshes).toBe(1))
+  })
+
+  it('shows a non-interactive spinner on the connection row while refreshing and blocks a duplicate refresh', async () => {
+    handlers('populated')
+    store.getState().setSession(7, 'session-7')
+    let refreshes = 0
+    server.use(
+      http.post('/api/v1/orgs/acme/workspaces/3/connections/7/schema/refresh', async () => {
+        refreshes++
+        await delay(50)
+        return HttpResponse.json({
+          status: 'ok',
+          mode: 'persistent',
+          snapshot_id: 'snapshot-2',
+          generated_at: '2026-08-06T00:00:00Z',
+        })
+      }),
+    )
+    const { user } = renderPanel({ splitView: false })
+
+    const connectionName = await screen.findByText('analytics-pg')
+    fireEvent.contextMenu(connectionName)
+    await user.click(await screen.findByRole('menuitem', { name: 'Refresh schema' }))
+
+    expect(await screen.findByLabelText('Refreshing schema')).toBeInTheDocument()
+
+    fireEvent.contextMenu(connectionName)
+    expect(await screen.findByRole('menuitem', { name: 'Refresh schema' })).toHaveAttribute(
+      'aria-disabled',
+      'true',
+    )
+
+    await waitFor(() =>
+      expect(screen.queryByLabelText('Refreshing schema')).not.toBeInTheDocument(),
+    )
+    expect(refreshes).toBe(1)
   })
 
   it('collapses an expanded connection schema tree when the connection disconnects', async () => {
@@ -424,8 +461,7 @@ describe('DatabasePanel', () => {
     const { user } = renderPanel()
 
     await user.click(await screen.findByText('analytics-pg'))
-    // One button lives on the connection's row, the other on the schema pane header.
-    expect(await screen.findAllByRole('button', { name: 'Refresh schema' })).toHaveLength(2)
+    expect(await screen.findByRole('button', { name: 'Refresh schema' })).toBeInTheDocument()
   })
 
   it('maximizes the schema pane from the split view and restores it', async () => {

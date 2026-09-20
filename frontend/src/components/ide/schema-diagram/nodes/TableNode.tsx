@@ -121,7 +121,7 @@ export function TableNode({ id, data }: NodeProps & { data: TableNodeData }) {
         >
           <Icon name={data.collapsed ? 'arrow-right-01' : 'arrow-down-01'} size={12} />
         </Button>
-        <span className="min-w-0 flex-1 truncate font-heading font-medium tracking-tight text-foreground">
+        <span className="min-w-0 flex-1 truncate font-medium tracking-tight text-foreground">
           {data.label}
         </span>
         {data.collapsed && data.hasHidden && (

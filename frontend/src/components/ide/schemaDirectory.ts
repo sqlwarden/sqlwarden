@@ -150,21 +150,47 @@ function pathMatches(path: ScopePath, query: string): boolean {
   return path.some((segment) => lowerName(segment).includes(query))
 }
 
+/** Lowercase text of everything under a scope node — its own path segments,
+ *  every object name in every group, and all descendant scopes — joined into
+ *  one string and cached per node identity. Lets filtering test "could this
+ *  subtree possibly match?" with a single string search instead of walking
+ *  and reallocating the whole subtree on every keystroke; normalizeNodes
+ *  preserves node identity for unchanged data, so the cache survives across
+ *  filter passes of the same directory. */
+const subtreeSignatureCache = new WeakMap<ScopeNode, string>()
+
+function subtreeSignature(node: ScopeNode): string {
+  const cached = subtreeSignatureCache.get(node)
+  if (cached !== undefined) return cached
+  const parts: string[] = node.path.map((segment) => lowerName(segment))
+  for (const group of node.groups) {
+    for (const object of group.objects) parts.push(lowerName(object))
+  }
+  for (const child of node.children ?? []) parts.push(subtreeSignature(child))
+  const signature = parts.join(' ')
+  subtreeSignatureCache.set(node, signature)
+  return signature
+}
+
 function filterNodes(nodes: ScopeNode[], query: string): ScopeNode[] {
-  return nodes
-    .map((node) => {
-      if (pathMatches(node.path, query)) return node
-      const groups = node.groups
-        .map((group) => ({
-          ...group,
-          objects: group.objects.filter((object) => lowerName(object).includes(query)),
-        }))
-        .filter((group) => group.objects.length > 0)
-      const children = filterNodes(node.children ?? [], query)
-      return { ...node, groups, children }
-    })
-    .filter(
-      (node) =>
-        node.groups.length > 0 || (node.children?.length ?? 0) > 0 || pathMatches(node.path, query),
-    )
+  const result: ScopeNode[] = []
+  for (const node of nodes) {
+    if (pathMatches(node.path, query)) {
+      result.push(node)
+      continue
+    }
+    // No match anywhere in this subtree: skip it without allocating a single
+    // filtered group/child, instead of the old map+filter that rebuilt every
+    // subtree (matching or not) on every pass.
+    if (!subtreeSignature(node).includes(query)) continue
+    const groups = node.groups
+      .map((group) => ({
+        ...group,
+        objects: group.objects.filter((object) => lowerName(object).includes(query)),
+      }))
+      .filter((group) => group.objects.length > 0)
+    const children = filterNodes(node.children ?? [], query)
+    if (groups.length > 0 || children.length > 0) result.push({ ...node, groups, children })
+  }
+  return result
 }

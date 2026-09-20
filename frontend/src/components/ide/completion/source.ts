@@ -30,6 +30,7 @@ import {
   automaticSQLCompletionTrigger,
   classifyCursorContext,
   hasSemanticIdentifierContext,
+  isEmptyPositionAfterStatementBoundary,
   type CursorContext,
 } from './context'
 import {
@@ -171,6 +172,13 @@ export function remoteSQLCompletionSource(config: SQLCompletionConfig): Completi
 
     if (context.explicit && config.connectionId === undefined) {
       config.onConnectionRequired?.()
+    }
+
+    // A statement terminator resets the scan, so an automatic reopen right
+    // there would dump every schema object at a position with no meaningful
+    // context. Explicit invocation (Ctrl-Space) is unaffected.
+    if (!context.explicit && isEmptyPositionAfterStatementBoundary(source, context.pos)) {
+      return null
     }
 
     const cursorContext = classifyCursorContext(source, context.pos)

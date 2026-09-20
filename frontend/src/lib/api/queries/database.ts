@@ -242,14 +242,13 @@ export function orgConnectionRelationshipsQueryOptions(
 ) {
   return queryOptions({
     queryKey: connectionRelationshipsQueryKey(slug, workspaceId, connectionId, scope),
-    queryFn: async () => {
-      const res = await api.get<RelationshipsResponse>(
+    queryFn: () =>
+      api.get<RelationshipsResponse>(
         `${schemaBase(slug, workspaceId, connectionId)}/relationships?scope=${encodeURIComponent(JSON.stringify(scope))}`,
         schemaRequestOptions(sessionId),
-      )
-      return res.graph
-    },
+      ),
     staleTime: 3 * 60_000,
+    refetchInterval: (query) => (query.state.data?.status === 'pending' ? 1_000 : false),
   })
 }
 
@@ -285,6 +284,7 @@ export function connectionObjectQueryKey(
 export interface ObjectDetailResult {
   detail: ObjectDetail | null
   pendingConnection: boolean
+  snapshotPending: boolean
 }
 
 export function orgConnectionObjectQueryOptions(
@@ -305,9 +305,11 @@ export function orgConnectionObjectQueryOptions(
       return {
         detail: res.objects?.[0] ?? null,
         pendingConnection: (res.pending_connection?.length ?? 0) > 0,
+        snapshotPending: res.status === 'pending',
       }
     },
     staleTime: 3 * 60_000,
+    refetchInterval: (query) => (query.state.data?.snapshotPending ? 1_000 : false),
   })
 }
 
@@ -346,15 +348,14 @@ export function orgConnectionObjectsQueryOptions(
 ) {
   return queryOptions({
     queryKey: connectionObjectsBatchQueryKey(slug, workspaceId, connectionId, refs),
-    queryFn: async () => {
-      const res = await api.post<ObjectsResponse>(
+    queryFn: () =>
+      api.post<ObjectsResponse>(
         `${schemaBase(slug, workspaceId, connectionId)}/objects`,
         { refs },
         schemaRequestOptions(sessionId),
-      )
-      return res.objects
-    },
+      ),
     staleTime: 3 * 60_000,
+    refetchInterval: (query) => (query.state.data?.status === 'pending' ? 1_000 : false),
   })
 }
 

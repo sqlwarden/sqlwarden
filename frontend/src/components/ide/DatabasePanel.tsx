@@ -976,7 +976,10 @@ export function ConnectionRow({
     onOpenConsole,
     onConnect,
     onDisconnect,
-    onRefreshSchema: () => refresh.mutate(),
+    onRefreshSchema: () => {
+      if (!refresh.isPending) refresh.mutate()
+    },
+    isRefreshingSchema: refresh.isPending,
     onCopyName: () => copyWithToast(connection.name),
     onManageConnections: () =>
       navigate({
@@ -1053,24 +1056,14 @@ export function ConnectionRow({
             </button>
           )}
 
-          {isConnected && (
-            <Tip label="Refresh schema">
-              <button
-                type="button"
-                aria-label="Refresh schema"
-                disabled={refresh.isPending}
-                onClick={(e) => {
-                  e.stopPropagation()
-                  refresh.mutate()
-                }}
-                className="ml-1 flex size-5 shrink-0 items-center justify-center rounded text-muted-foreground transition-colors hover:text-foreground disabled:opacity-50"
+          {isConnected && refresh.isPending && (
+            <Tip label="Refreshing schema">
+              <span
+                aria-label="Refreshing schema"
+                className="ml-1 flex size-5 shrink-0 items-center justify-center text-muted-foreground"
               >
-                <Icon
-                  name="refresh"
-                  size={11}
-                  className={refresh.isPending ? 'animate-spin' : undefined}
-                />
-              </button>
+                <Icon name="loading-03" size={11} className="animate-spin" />
+              </span>
             </Tip>
           )}
           <div className="flex h-6 min-w-0 flex-1 items-center justify-end gap-1">

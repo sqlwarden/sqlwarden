@@ -45,6 +45,10 @@ export type QueryResult =
       connectionId?: number
       isFetchingNextPage?: boolean
       cursorMessage?: string
+      /** Duration of the most recently fetched cursor page, set once a
+       *  second page has been merged in. Lets the status bar show the
+       *  latest page's cost alongside the cumulative `durationMs`. */
+      lastPageDurationMs?: number
     }
   | { status: 'error'; message: string; sql: string }
   | { status: 'cancelled'; sql: string }
@@ -196,6 +200,8 @@ export type IdeState = {
    *  reality: every tab on a connection sees the same transaction. Not
    *  persisted — hydrated from the backend on connect/reconnect. */
   transactions: Record<number, TransactionState>
+  /** Diagram tabs explicitly opened this page session, keyed by tab id. Not persisted. */
+  diagramLoadRequested: Record<string, boolean>
 }
 
 export type IdeActions = {
@@ -203,6 +209,7 @@ export type IdeActions = {
   openTab: (tab: EditorTab) => void
   openTabToSide: (tab: EditorTab) => void
   ensureTab: (tab: EditorTab) => void
+  requestDiagramLoad: (tabId: string) => void
   closeTab: (tabId: string) => void
   /** Renames the open tab for a file (title + subtitle), preserving all other tab state. */
   renameTabByFileId: (fileId: number, name: string) => void
@@ -331,6 +338,11 @@ function ensureWorkspaceLayout(
   return { layout: group, groupId: group.id }
 }
 
+function diagramLoadPatch(s: IdeState, tab: EditorTab): Partial<IdeState> {
+  if (tab.kind !== 'diagram' || s.diagramLoadRequested[tab.id]) return {}
+  return { diagramLoadRequested: { ...s.diagramLoadRequested, [tab.id]: true } }
+}
+
 /** The focused group's active tab id for a workspace (replaces the old activeTabIds[ws]). */
 export function activeTabId(s: IdeState, workspaceId: number): string | undefined {
   const layout = s.layout[workspaceId]
@@ -440,6 +452,7 @@ export function createIdeStore(orgSlug: string, accountId: number, role: WindowR
         abortControllers: {},
         pendingConfirmations: {},
         transactions: {},
+        diagramLoadRequested: {},
 
         setActiveWorkspace: (id) => set({ activeWorkspaceId: id }),
 
@@ -452,6 +465,7 @@ export function createIdeStore(orgSlug: string, accountId: number, role: WindowR
               tabs: exists ? s.tabs : [...s.tabs, tab],
               layout: { ...s.layout, [tab.workspaceId]: nextLayout },
               activeGroupId: { ...s.activeGroupId, [tab.workspaceId]: groupId },
+              ...diagramLoadPatch(s, tab),
             }
           }),
 
@@ -469,6 +483,7 @@ export function createIdeStore(orgSlug: string, accountId: number, role: WindowR
                   [tab.workspaceId]: setActive(addTab(layout, groupId, tab.id), tab.id),
                 },
                 activeGroupId: { ...s.activeGroupId, [tab.workspaceId]: groupId },
+                ...diagramLoadPatch(s, tab),
               }
             }
             const { node, newGroupId: gid } = placeTabAtEdge(layout, tab.id, 'right', newGroupId())
@@ -477,6 +492,7 @@ export function createIdeStore(orgSlug: string, accountId: number, role: WindowR
               layout: { ...s.layout, [tab.workspaceId]: node },
               activeGroupId: { ...s.activeGroupId, [tab.workspaceId]: gid },
               focusEditorRequest: `${gid}:${tab.id}`,
+              ...diagramLoadPatch(s, tab),
             }
           }),
 
@@ -491,8 +507,12 @@ export function createIdeStore(orgSlug: string, accountId: number, role: WindowR
                 ...s.activeGroupId,
                 [tab.workspaceId]: s.activeGroupId[tab.workspaceId] ?? groupId,
               },
+              ...diagramLoadPatch(s, tab),
             }
           }),
+
+        requestDiagramLoad: (tabId) =>
+          set((s) => ({ diagramLoadRequested: { ...s.diagramLoadRequested, [tabId]: true } })),
 
         closeTab: (tabId) =>
           set((s) => {
@@ -995,6 +1015,7 @@ export function createIdeStore(orgSlug: string, accountId: number, role: WindowR
           pendingJump: _pj,
           connectionStatus: _cs,
           transactions: _t,
+          diagramLoadRequested: _dlr,
           ...state
         }) => state,
       },
@@ -1052,10 +1073,12 @@ const _contextFallback = createStore<IdeState & IdeActions>()(() => ({
   abortControllers: {},
   pendingConfirmations: {},
   transactions: {},
+  diagramLoadRequested: {},
   setActiveWorkspace: _noop,
   openTab: _noop,
   openTabToSide: _noop,
   ensureTab: _noop,
+  requestDiagramLoad: _noop,
   closeTab: _noop,
   renameTabByFileId: _noop,
   closeTabInstance: _noop,

@@ -6,6 +6,7 @@ const base = {
   hasTarget: true,
   hasConnection: true,
   hasSession: true,
+  loadRequested: true,
   spec: {
     dialect: 'postgres',
     kinds: [
@@ -38,6 +39,7 @@ describe('resolveDiagramViewState', () => {
         relationshipsError: new ApiError('Forbidden', 403),
       }),
     ).toBe('no-session')
+    expect(resolveDiagramViewState({ ...base, loadRequested: false })).toBe('needs-load')
   })
 
   it('distinguishes unsupported capabilities and authorization loss', () => {

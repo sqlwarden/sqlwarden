@@ -311,24 +311,26 @@ function SchemaPane({
           <ConnectionStatusDot state={connState} />
         </span>
         <span
-          className="min-w-0 flex-1 truncate font-heading font-medium tracking-tight"
+          className="min-w-0 flex-1 truncate font-medium tracking-tight"
           title={connection.name}
         >
           {connection.name}
         </span>
         {sessionId && (
-          <Tip label="Refresh schema">
+          <Tip label={refresh.isPending ? 'Refreshing schema' : 'Refresh schema'}>
             <Button
               type="button"
               variant="ghost"
               size="icon-sm"
-              aria-label="Refresh schema"
+              aria-label={refresh.isPending ? 'Refreshing schema' : 'Refresh schema'}
               disabled={refresh.isPending}
               className="size-6"
-              onClick={() => refresh.mutate()}
+              onClick={() => {
+                if (!refresh.isPending) refresh.mutate()
+              }}
             >
               <Icon
-                name="refresh"
+                name={refresh.isPending ? 'loading-03' : 'refresh'}
                 size={13}
                 className={refresh.isPending ? 'animate-spin' : undefined}
               />

@@ -29,11 +29,13 @@ export type SQLTriggerScan = {
   tokens: SQLTriggerToken[]
   protectedRegion: boolean
   depth: number
+  terminatedAtTop: boolean
 }
 
 export function scanSQLTriggerPrefix(source: string): SQLTriggerScan {
   let tokens: SQLTriggerToken[] = []
   let depth = 0
+  let terminatedAtTop = false
   let i = 0
 
   const push = (text: string, kind: SQLTriggerToken['kind']) => {
@@ -50,13 +52,13 @@ export function scanSQLTriggerPrefix(source: string): SQLTriggerScan {
     }
     if (char === '-' && next === '-') {
       const newline = source.indexOf('\n', i + 2)
-      if (newline === -1) return { tokens, protectedRegion: true, depth }
+      if (newline === -1) return { tokens, protectedRegion: true, depth, terminatedAtTop }
       i = newline + 1
       continue
     }
     if (char === '/' && next === '*') {
       const end = source.indexOf('*/', i + 2)
-      if (end === -1) return { tokens, protectedRegion: true, depth }
+      if (end === -1) return { tokens, protectedRegion: true, depth, terminatedAtTop }
       i = end + 2
       continue
     }
@@ -76,7 +78,7 @@ export function scanSQLTriggerPrefix(source: string): SQLTriggerScan {
         closed = true
         break
       }
-      if (!closed) return { tokens, protectedRegion: true, depth }
+      if (!closed) return { tokens, protectedRegion: true, depth, terminatedAtTop }
       push('', 'value')
       continue
     }
@@ -97,7 +99,7 @@ export function scanSQLTriggerPrefix(source: string): SQLTriggerScan {
         closed = true
         break
       }
-      if (!closed) return { tokens, protectedRegion: true, depth }
+      if (!closed) return { tokens, protectedRegion: true, depth, terminatedAtTop }
       push('', 'identifier')
       continue
     }
@@ -105,7 +107,7 @@ export function scanSQLTriggerPrefix(source: string): SQLTriggerScan {
       const tag = source.slice(i).match(/^\$(?:[A-Za-z_][A-Za-z0-9_]*)?\$/)?.[0]
       if (tag) {
         const end = source.indexOf(tag, i + tag.length)
-        if (end === -1) return { tokens, protectedRegion: true, depth }
+        if (end === -1) return { tokens, protectedRegion: true, depth, terminatedAtTop }
         i = end + tag.length
         push('', 'value')
         continue
@@ -128,6 +130,7 @@ export function scanSQLTriggerPrefix(source: string): SQLTriggerScan {
       // parenthesised group (e.g. a routine body) is not a boundary.
       if (depth === 0) {
         tokens = []
+        terminatedAtTop = true
       } else {
         push(char, 'symbol')
       }
@@ -150,7 +153,7 @@ export function scanSQLTriggerPrefix(source: string): SQLTriggerScan {
     i++
   }
 
-  return { tokens, protectedRegion: false, depth }
+  return { tokens, protectedRegion: false, depth, terminatedAtTop }
 }
 
 function previousWord(
@@ -649,4 +652,13 @@ export function automaticSQLCompletionTrigger(source: string, cursor: number): s
       : undefined
   }
   return undefined
+}
+
+// isEmptyPositionAfterStatementBoundary reports whether the cursor sits right
+// after a top-level (depth 0, outside strings/comments) statement terminator
+// with no meaningful text typed since. Automatic completion must not reopen
+// there — only once the next statement has real context should it resume.
+export function isEmptyPositionAfterStatementBoundary(source: string, cursor: number): boolean {
+  const scan = scanSQLTriggerPrefix(source.slice(0, cursor))
+  return !scan.protectedRegion && scan.terminatedAtTop && scan.tokens.length === 0
 }
