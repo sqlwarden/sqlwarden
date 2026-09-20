@@ -47,7 +47,10 @@ multi-architecture image as `ghcr.io/sqlwarden/sqlwarden:X.Y.Z-rc.N`.
 
 Candidate images never update stable `X.Y`, `X`, or `latest` tags. Candidate
 GitHub release notes are cumulative from the previous stable tag, so every
-candidate is independently useful to testers.
+candidate is independently useful to testers. The candidate workflow uses the
+categorized notes from the pending Release Please pull request, with a
+candidate-specific heading and warning, so its changelog format matches the
+eventual stable release.
 
 If testing finds a problem, merge the fix normally, wait for the Release Please
 PR to update, and publish the next candidate number. Never move, delete, or
