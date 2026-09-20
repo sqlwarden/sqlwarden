@@ -35,6 +35,7 @@ const icons: Record<AppIcon, string> = {
   'delete-01': 'hugeicons:delete-01',
   'delete-02': 'hugeicons:delete-02',
   'download-01': 'hugeicons:download-01',
+  'drag-handle': 'hugeicons:drag-drop-vertical',
   'file-01': 'hugeicons:file-01',
   'floppy-disk': 'hugeicons:floppy-disk',
   'flow-connection': 'hugeicons:flow-connection',

@@ -4,7 +4,7 @@ import { EditorView } from '@codemirror/view'
 import { fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { delay, http, HttpResponse } from 'msw'
-import { beforeEach, describe, expect, it, vi } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import type { Workspace } from '#/lib/api/types'
 import { createTestQueryClient } from '#/test/render'
 import { organizationRuntimeSettingsFixture } from '#/test/fixtures'
@@ -13,15 +13,18 @@ import { HistoryPanel } from './HistoryPanel'
 import { createEditorViewRegistry, EditorViewRegistryContext } from './useEditorViewRegistry'
 import { createIdeStore, IdeStoreContext, type EditorTab } from './useIdeStore'
 
-const { copyWithToastMock, createFavoriteMock, removeFavoriteMock } = vi.hoisted(() => ({
+const { copyWithToastMock, createFavoriteMock, removeFavoriteMock, toastMock } = vi.hoisted(() => ({
   copyWithToastMock: vi.fn(),
   createFavoriteMock: vi.fn().mockResolvedValue(undefined),
   removeFavoriteMock: vi.fn().mockResolvedValue(undefined),
+  toastMock: vi.fn(),
 }))
 
 vi.mock('./object-detail/ReadOnlySqlView', () => ({
   ReadOnlySqlView: ({ value }: { value: string }) => <pre>{value}</pre>,
 }))
+
+vi.mock('sonner', () => ({ toast: toastMock }))
 
 vi.mock('@tanstack/react-virtual', () => ({
   useVirtualizer: ({
@@ -81,6 +84,13 @@ type HistoryFixture = {
   id: number
   connectionId: number
   sqlText: string
+}
+
+function sqlText(value: string) {
+  return (_content: string, element: Element | null) => {
+    if (!element || element.textContent !== value) return false
+    return Array.from(element.children).every((child) => child.textContent !== value)
+  }
 }
 
 function entryFor(fixture: HistoryFixture) {
@@ -152,6 +162,11 @@ describe('HistoryPanel', () => {
         HttpResponse.json({ items: [] }),
       ),
     )
+  })
+
+  afterEach(() => {
+    vi.useRealTimers()
+    toastMock.mockClear()
   })
 
   function mockFavorites(favorites: { connectionId: number | null; sqlText: string }[]) {
@@ -230,8 +245,8 @@ describe('HistoryPanel', () => {
 
     renderPanel()
 
-    expect(await screen.findByText('select 1')).toBeInTheDocument()
-    expect(screen.getByText('select 2')).toBeInTheDocument()
+    expect(await screen.findByText(sqlText('select 1'))).toBeInTheDocument()
+    expect(screen.getByText(sqlText('select 2'))).toBeInTheDocument()
     expect(screen.getByRole('combobox', { name: 'Filter by connection' })).toHaveTextContent(
       'All connections',
     )
@@ -246,8 +261,8 @@ describe('HistoryPanel', () => {
 
     renderPanel()
 
-    expect(await screen.findByText('select 1')).toBeInTheDocument()
-    expect(screen.queryByText('select 2')).not.toBeInTheDocument()
+    expect(await screen.findByText(sqlText('select 1'))).toBeInTheDocument()
+    expect(screen.queryByText(sqlText('select 2'))).not.toBeInTheDocument()
     expect(within(screen.getByTestId('history-row')).getByText('primary-pg')).toBeInTheDocument()
     expect(screen.getByRole('combobox', { name: 'Filter by connection' })).toHaveTextContent(
       'primary-pg',
@@ -262,13 +277,13 @@ describe('HistoryPanel', () => {
     ])
 
     const { user } = renderPanel()
-    await screen.findByText('select 1')
+    await screen.findByText(sqlText('select 1'))
 
     await user.click(screen.getByRole('combobox', { name: 'Filter by connection' }))
     await user.click(await screen.findByRole('option', { name: /secondary-pg/ }))
 
-    expect(await screen.findByText('select 2')).toBeInTheDocument()
-    expect(screen.queryByText('select 1')).not.toBeInTheDocument()
+    expect(await screen.findByText(sqlText('select 2'))).toBeInTheDocument()
+    expect(screen.queryByText(sqlText('select 1'))).not.toBeInTheDocument()
   })
 
   it('filters back to all connections via the pinned option', async () => {
@@ -279,14 +294,14 @@ describe('HistoryPanel', () => {
     ])
 
     const { user } = renderPanel()
-    await screen.findByText('select 1')
-    expect(screen.queryByText('select 2')).not.toBeInTheDocument()
+    await screen.findByText(sqlText('select 1'))
+    expect(screen.queryByText(sqlText('select 2'))).not.toBeInTheDocument()
 
     await user.click(screen.getByRole('combobox', { name: 'Filter by connection' }))
     await user.click(await screen.findByRole('option', { name: 'All connections' }))
 
-    expect(await screen.findByText('select 2')).toBeInTheDocument()
-    expect(screen.getByText('select 1')).toBeInTheDocument()
+    expect(await screen.findByText(sqlText('select 2'))).toBeInTheDocument()
+    expect(screen.getByText(sqlText('select 1'))).toBeInTheDocument()
   })
 
   it('marks the active tab connection with an Active hint in the filter dropdown', async () => {
@@ -294,7 +309,7 @@ describe('HistoryPanel', () => {
     mockWorkspaceHistory([{ id: 1, connectionId: 42, sqlText: 'select 1' }])
 
     const { user } = renderPanel()
-    await screen.findByText('select 1')
+    await screen.findByText(sqlText('select 1'))
 
     await user.click(screen.getByRole('combobox', { name: 'Filter by connection' }))
     const primaryOption = await screen.findByRole('option', { name: /primary-pg/ })
@@ -315,8 +330,8 @@ describe('HistoryPanel', () => {
     )
 
     renderPanel()
-    await screen.findByText('select 1')
-    expect(screen.queryByText('select 2')).not.toBeInTheDocument()
+    await screen.findByText(sqlText('select 1'))
+    expect(screen.queryByText(sqlText('select 2'))).not.toBeInTheDocument()
 
     const scrollEl = screen.getByTestId('history-scroll')
     Object.defineProperties(scrollEl, {
@@ -327,32 +342,71 @@ describe('HistoryPanel', () => {
     fireEvent.scroll(scrollEl)
 
     expect(await screen.findByText('Loading more…')).toBeInTheDocument()
-    expect(await screen.findByText('select 2')).toBeInTheDocument()
+    expect(await screen.findByText(sqlText('select 2'))).toBeInTheDocument()
   })
 
-  it('deletes a history entry and refetches the list', async () => {
+  it('optimistically hides a deleted entry, then calls the API after the undo window elapses', async () => {
+    vi.useFakeTimers({ shouldAdvanceTime: true })
     store.getState().openTab(scratchTab)
-    let deleted = false
+    let deleteCalled = false
     server.use(
       http.get('/api/v1/orgs/acme/workspaces/3/history', () =>
         HttpResponse.json({
-          items: deleted ? [] : [entryFor({ id: 1, connectionId: 42, sqlText: 'select 1' })],
+          items: deleteCalled ? [] : [entryFor({ id: 1, connectionId: 42, sqlText: 'select 1' })],
           page: 1,
           page_size: 25,
-          total: deleted ? 0 : 1,
+          total: deleteCalled ? 0 : 1,
         }),
       ),
       http.delete('/api/v1/orgs/acme/workspaces/3/connections/42/history/1', () => {
-        deleted = true
+        deleteCalled = true
         return new HttpResponse(null, { status: 204 })
       }),
     )
 
     const { user } = renderPanel()
-    await screen.findByText('select 1')
+    await screen.findByText(sqlText('select 1'))
     await user.click(screen.getByRole('button', { name: 'Delete history entry' }))
 
-    await waitFor(() => expect(screen.queryByText('select 1')).not.toBeInTheDocument())
+    expect(screen.queryByText(sqlText('select 1'))).not.toBeInTheDocument()
+    expect(deleteCalled).toBe(false)
+
+    await vi.advanceTimersByTimeAsync(5000)
+    await waitFor(() => expect(deleteCalled).toBe(true))
+    vi.useRealTimers()
+  })
+
+  it('restores a deleted entry when Undo is clicked before the window elapses', async () => {
+    vi.useFakeTimers({ shouldAdvanceTime: true })
+    store.getState().openTab(scratchTab)
+    let deleteCalled = false
+    server.use(
+      http.get('/api/v1/orgs/acme/workspaces/3/history', () =>
+        HttpResponse.json({
+          items: [entryFor({ id: 1, connectionId: 42, sqlText: 'select 1' })],
+          page: 1,
+          page_size: 25,
+          total: 1,
+        }),
+      ),
+      http.delete('/api/v1/orgs/acme/workspaces/3/connections/42/history/1', () => {
+        deleteCalled = true
+        return new HttpResponse(null, { status: 204 })
+      }),
+    )
+
+    const { user } = renderPanel()
+    await screen.findByText(sqlText('select 1'))
+    await user.click(screen.getByRole('button', { name: 'Delete history entry' }))
+    expect(screen.queryByText(sqlText('select 1'))).not.toBeInTheDocument()
+
+    const [, options] = toastMock.mock.calls[toastMock.mock.calls.length - 1]!
+    options.action.onClick()
+    expect(await screen.findByText(sqlText('select 1'))).toBeInTheDocument()
+
+    await vi.advanceTimersByTimeAsync(5000)
+    expect(deleteCalled).toBe(false)
+    vi.useRealTimers()
   })
 
   it('copies the query to the clipboard', async () => {
@@ -360,7 +414,7 @@ describe('HistoryPanel', () => {
     mockWorkspaceHistory([{ id: 1, connectionId: 42, sqlText: 'select 1' }])
 
     const { user } = renderPanel()
-    await screen.findByText('select 1')
+    await screen.findByText(sqlText('select 1'))
     await user.click(screen.getByRole('button', { name: 'Copy query' }))
 
     expect(copyWithToastMock).toHaveBeenCalledWith('select 1', 'Query copied')
@@ -377,7 +431,7 @@ describe('HistoryPanel', () => {
     views.register(`${groupId}:${scratchTab.id}`, editor)
 
     const { user } = renderPanel()
-    await screen.findByText('select 1')
+    await screen.findByText(sqlText('select 1'))
     await user.click(screen.getByRole('button', { name: 'Insert query at cursor' }))
 
     expect(editor.state.doc.toString()).toBe('select 2select 1 from foo;\n')
@@ -391,20 +445,22 @@ describe('HistoryPanel', () => {
     ])
 
     const { user } = renderPanel()
-    await screen.findByText('select * from widgets')
-    expect(screen.getByText('select * from gadgets')).toBeInTheDocument()
+    await screen.findByText(sqlText('select * from widgets'))
+    expect(screen.getByText(sqlText('select * from gadgets'))).toBeInTheDocument()
 
     await user.type(screen.getByPlaceholderText('Search query history…'), 'widgets')
 
-    await waitFor(() => expect(screen.queryByText('select * from gadgets')).not.toBeInTheDocument())
-    expect(await screen.findByText('select * from widgets')).toBeInTheDocument()
+    await waitFor(() =>
+      expect(screen.queryByText(sqlText('select * from gadgets'))).not.toBeInTheDocument(),
+    )
+    expect(await screen.findByText(sqlText('select * from widgets'))).toBeInTheDocument()
   })
 
   it('shows a no-results empty state when search matches nothing', async () => {
     mockWorkspaceHistory([{ id: 1, connectionId: 42, sqlText: 'select * from widgets' }])
 
     const { user } = renderPanel()
-    await screen.findByText('select * from widgets')
+    await screen.findByText(sqlText('select * from widgets'))
 
     await user.type(screen.getByPlaceholderText('Search query history…'), 'nonexistent')
 
@@ -417,7 +473,7 @@ describe('HistoryPanel', () => {
     mockWorkspaceHistory([{ id: 1, connectionId: 42, sqlText: 'select 1' }])
 
     const { user } = renderPanel()
-    await screen.findByText('select 1')
+    await screen.findByText(sqlText('select 1'))
     await user.click(screen.getByRole('button', { name: 'Save as favorite' }))
 
     await user.type(screen.getByLabelText('Name'), 'Top customers')
@@ -452,26 +508,50 @@ describe('HistoryPanel', () => {
     expect(unfavoritedRow).toBeInTheDocument()
   })
 
-  it('opens a dialog with the full query and actions when a history row is clicked', async () => {
+  it('expands a history row inline to show the full query, and collapses again', async () => {
     store.getState().openTab(scratchTab)
-    mockWorkspaceHistory([{ id: 1, connectionId: 42, sqlText: 'select 1 from widgets' }])
+    const longSql =
+      "select id, name, email from widgets where status = 'active' and archived = false and deleted = false"
+    mockWorkspaceHistory([{ id: 1, connectionId: 42, sqlText: longSql }])
 
     const { user } = renderPanel()
-    await user.click(await screen.findByRole('button', { name: 'select 1 from widgets' }))
+    await user.click(await screen.findByRole('button', { name: 'Expand query' }))
 
-    const dialog = await screen.findByRole('dialog')
-    expect(within(dialog).getByText('primary-pg')).toBeInTheDocument()
-    expect(within(dialog).getByText('select 1 from widgets')).toBeInTheDocument()
-    expect(within(dialog).getByRole('button', { name: 'Copy query' })).toBeInTheDocument()
+    expect(screen.queryByRole('dialog')).not.toBeInTheDocument()
+    const row = screen.getByTestId('history-row')
+    expect(within(row).getByRole('button', { name: 'Collapse query' })).toBeInTheDocument()
+
+    await user.click(within(row).getByRole('button', { name: 'Collapse query' }))
+    expect(within(row).getByRole('button', { name: 'Expand query' })).toBeInTheDocument()
   })
 
-  it('groups history entries under a "Today" heading', async () => {
+  it('does not allow expanding a short single-line query', async () => {
+    store.getState().openTab(scratchTab)
     mockWorkspaceHistory([{ id: 1, connectionId: 42, sqlText: 'select 1' }])
 
     renderPanel()
+    await screen.findByText(sqlText('select 1'))
+    const row = screen.getByTestId('history-row')
 
-    expect(await screen.findByText('select 1')).toBeInTheDocument()
-    expect(screen.getByText('Today')).toBeInTheDocument()
+    expect(within(row).queryByRole('button', { name: 'Expand query' })).not.toBeInTheDocument()
+    expect(within(row).queryByRole('button', { name: 'select 1' })).not.toBeInTheDocument()
+  })
+
+  it('puts the raw query text on the drag payload when a row is dragged', async () => {
+    store.getState().openTab(scratchTab)
+    mockWorkspaceHistory([{ id: 1, connectionId: 42, sqlText: 'select   1\n' }])
+
+    renderPanel()
+    const row = await screen.findByTestId('history-row')
+
+    const dataTransfer = {
+      setData: vi.fn(),
+      effectAllowed: '',
+    } as unknown as DataTransfer
+    fireEvent.dragStart(row, { dataTransfer })
+
+    expect(dataTransfer.setData).toHaveBeenCalledWith('text/plain', 'select   1\n')
+    expect(dataTransfer.effectAllowed).toBe('copy')
   })
 
   it('removes a favorite when its already-favorited button is clicked', async () => {
@@ -485,5 +565,37 @@ describe('HistoryPanel', () => {
     await user.click(within(row).getByRole('button', { name: 'Remove from favorites' }))
 
     await waitFor(() => expect(removeFavoriteMock).toHaveBeenCalledWith(1))
+  })
+
+  it('disables Clear All until a specific connection is selected', async () => {
+    mockWorkspaceHistory([{ id: 1, connectionId: 42, sqlText: 'select 1' }])
+
+    renderPanel()
+    await screen.findByText(sqlText('select 1'))
+
+    expect(screen.getByRole('button', { name: 'Clear all history' })).toBeDisabled()
+  })
+
+  it('clears history for the selected connection after confirming', async () => {
+    store.getState().openTab(scratchTab)
+    let cleared = false
+    mockWorkspaceHistory([{ id: 1, connectionId: 42, sqlText: 'select 1' }])
+    server.use(
+      http.delete('/api/v1/orgs/acme/workspaces/3/connections/42/history', () => {
+        cleared = true
+        return new HttpResponse(null, { status: 204 })
+      }),
+    )
+
+    const { user } = renderPanel()
+    await screen.findByText(sqlText('select 1'))
+
+    const clearButton = screen.getByRole('button', { name: 'Clear all history' })
+    expect(clearButton).toBeEnabled()
+    await user.click(clearButton)
+
+    await user.click(await screen.findByRole('button', { name: 'Clear all' }))
+
+    await waitFor(() => expect(cleared).toBe(true))
   })
 })
