@@ -96,6 +96,7 @@ jobs:
           fi
 
           release_pr_title="$(jq -r '.[0].title' <<<"$release_prs")"
+          release_pr_number="$(jq -r '.[0].number' <<<"$release_prs")"
           release_pr_url="$(jq -r '.[0].url' <<<"$release_prs")"
           if [[ ! "$release_pr_title" =~ ([0-9]+\.[0-9]+\.[0-9]+)$ ]]; then
             echo "could not read the proposed stable version from Release Please PR: $release_pr_title" >&2
@@ -111,20 +112,68 @@ jobs:
             echo "tag=$tag"
             echo "target_sha=$target_sha"
             echo "previous_tag=$previous_tag"
+            echo "release_pr_number=$release_pr_number"
           } >> "$GITHUB_OUTPUT"
 
           echo "Validated $tag at $target_sha against $previous_tag and $release_pr_url"
+
+      - name: Prepare GitHub prerelease notes
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RC_VERSION: ${{ inputs.version }}
+          TAG: ${{ steps.validate.outputs.tag }}
+          PREVIOUS_TAG: ${{ steps.validate.outputs.previous_tag }}
+          RELEASE_PR_NUMBER: ${{ steps.validate.outputs.release_pr_number }}
+        run: |
+          set -euo pipefail
+
+          release_pr_body="$RUNNER_TEMP/release-pr-body.md"
+          release_sections="$RUNNER_TEMP/release-sections.md"
+          release_notes="$RUNNER_TEMP/release-notes.md"
+          candidate_stable_version="${RC_VERSION%%-rc.*}"
+
+          gh pr view "$RELEASE_PR_NUMBER" \
+            --repo "$GITHUB_REPOSITORY" \
+            --json body \
+            --jq '.body' > "$release_pr_body"
+
+          release_heading="$(awk '/^## \[/{ print; exit }' "$release_pr_body")"
+          if [[ "$release_heading" != "## [$candidate_stable_version]"* ]]; then
+            echo "Release Please PR heading does not match candidate version $candidate_stable_version" >&2
+            exit 1
+          fi
+
+          if ! awk '
+            /^## \[/ && !in_release { in_release = 1; next }
+            in_release && /^---$/ { found_end = 1; exit }
+            in_release && !has_content && /^[[:space:]]*$/ { next }
+            in_release { has_content = 1; print }
+            END {
+              if (!in_release || !found_end || !has_content) {
+                exit 1
+              }
+            }
+          ' "$release_pr_body" > "$release_sections"; then
+            echo "Could not extract categorized release notes from Release Please PR #$RELEASE_PR_NUMBER" >&2
+            exit 1
+          fi
+
+          {
+            printf '## [%s](https://github.com/%s/compare/%s...%s) (%s)\n\n' \
+              "${TAG#v}" "$GITHUB_REPOSITORY" "$PREVIOUS_TAG" "$TAG" "$(date -u +%Y-%m-%d)"
+            printf '> [!WARNING]\n'
+            printf '> This is a release candidate for testing and is not recommended for production use.\n\n'
+            printf 'Docker image: `ghcr.io/%s:%s`\n\n' "$GITHUB_REPOSITORY" "${TAG#v}"
+            cat "$release_sections"
+          } > "$release_notes"
 
       - name: Create GitHub prerelease
         env:
           GH_TOKEN: ${{ secrets.RELEASE_PLEASE_TOKEN }}
           TAG: ${{ steps.validate.outputs.tag }}
           TARGET_SHA: ${{ steps.validate.outputs.target_sha }}
-          PREVIOUS_TAG: ${{ steps.validate.outputs.previous_tag }}
         run: |
           set -euo pipefail
-
-          notes="$(printf 'This is a release candidate for testing and is not recommended for production use.\n\nDocker image: `ghcr.io/%s:%s`' "$GITHUB_REPOSITORY" "${TAG#v}")"
 
           gh release create "$TAG" \
             --repo "$GITHUB_REPOSITORY" \
@@ -132,6 +181,4 @@ jobs:
             --title "$TAG" \
             --prerelease \
             --latest=false \
-            --generate-notes \
-            --notes-start-tag "$PREVIOUS_TAG" \
-            --notes "$notes"
+            --notes-file "$RUNNER_TEMP/release-notes.md"
