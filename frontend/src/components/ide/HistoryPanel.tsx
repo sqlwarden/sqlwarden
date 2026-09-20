@@ -339,13 +339,7 @@ function HistoryRowItem({
   )
 }
 
-export function HistoryPanel({
-  orgSlug,
-  workspace,
-  isMaximized,
-  onMaximize,
-  onClose,
-}: BottomPanelTabProps) {
+export function HistoryPanel({ orgSlug, workspace }: BottomPanelTabProps) {
   const activeTabId = useIde((s) => selectActiveTabId(s, workspace.id))
   const activeConnectionId = useIde((s) => s.tabs.find((t) => t.id === activeTabId)?.connectionId)
   const activeGroupId = useIde((s) => s.activeGroupId[workspace.id])
@@ -550,14 +544,7 @@ export function HistoryPanel({
 
   if (mode === 'off') {
     return (
-      <SidebarPane
-        title="History"
-        icon="history"
-        scroll={false}
-        maximized={isMaximized}
-        onMaximizedChange={onMaximize}
-        onClose={onClose}
-      >
+      <SidebarPane title="History" icon="history" scroll={false}>
         <IdeEmptyState
           icon="history"
           title="Query history is turned off"
@@ -576,9 +563,6 @@ export function HistoryPanel({
       title="History"
       icon="history"
       scroll={false}
-      maximized={isMaximized}
-      onMaximizedChange={onMaximize}
-      onClose={onClose}
       headerContent={
         <div className="flex min-w-0 flex-1 items-center gap-2">
           <HistoryConnectionSelector

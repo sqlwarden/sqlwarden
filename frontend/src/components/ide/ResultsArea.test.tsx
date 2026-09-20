@@ -91,13 +91,7 @@ describe('ResultsArea', () => {
       <QueryClientProvider client={queryClient}>
         <IdeStoreContext.Provider value={store}>
           <ContextMenuProvider>
-            <ResultsArea
-              orgSlug="acme"
-              workspace={workspace}
-              isMaximized={false}
-              onMaximize={vi.fn()}
-              onClose={vi.fn()}
-            />
+            <ResultsArea orgSlug="acme" workspace={workspace} />
           </ContextMenuProvider>
         </IdeStoreContext.Provider>
       </QueryClientProvider>,

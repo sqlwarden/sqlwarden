@@ -195,13 +195,7 @@ describe('HistoryPanel', () => {
         <QueryClientProvider client={createTestQueryClient()}>
           <IdeStoreContext.Provider value={store}>
             <EditorViewRegistryContext.Provider value={views}>
-              <HistoryPanel
-                orgSlug="acme"
-                workspace={workspace}
-                isMaximized={false}
-                onMaximize={vi.fn()}
-                onClose={vi.fn()}
-              />
+              <HistoryPanel orgSlug="acme" workspace={workspace} />
             </EditorViewRegistryContext.Provider>
           </IdeStoreContext.Provider>
         </QueryClientProvider>,

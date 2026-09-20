@@ -248,13 +248,7 @@ function FavoriteRowItem({
   )
 }
 
-export function FavoritesPanel({
-  orgSlug,
-  workspace,
-  isMaximized,
-  onMaximize,
-  onClose,
-}: BottomPanelTabProps) {
+export function FavoritesPanel({ orgSlug, workspace }: BottomPanelTabProps) {
   const activeTabId = useIde((s) => selectActiveTabId(s, workspace.id))
   const activeGroupId = useIde((s) => s.activeGroupId[workspace.id])
   const viewRegistry = useEditorViewRegistry()
@@ -381,14 +375,7 @@ export function FavoritesPanel({
 
   if (mode === 'off') {
     return (
-      <SidebarPane
-        title="Favorites"
-        icon="star"
-        scroll={false}
-        maximized={isMaximized}
-        onMaximizedChange={onMaximize}
-        onClose={onClose}
-      >
+      <SidebarPane title="Favorites" icon="star" scroll={false}>
         <IdeEmptyState
           icon="star"
           title="Query favorites are turned off"
@@ -403,9 +390,6 @@ export function FavoritesPanel({
       title="Favorites"
       icon="star"
       scroll={false}
-      maximized={isMaximized}
-      onMaximizedChange={onMaximize}
-      onClose={onClose}
       headerContent={
         <SearchInput
           value={searchText}

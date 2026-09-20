@@ -40,18 +40,9 @@ import { DataGrid } from './dataGrid/DataGrid'
 type ResultsAreaProps = {
   orgSlug: string
   workspace: Workspace
-  isMaximized: boolean
-  onMaximize: () => void
-  onClose: () => void
 }
 
-export function ResultsArea({
-  orgSlug,
-  workspace,
-  isMaximized,
-  onMaximize,
-  onClose,
-}: ResultsAreaProps) {
+export function ResultsArea({ orgSlug, workspace }: ResultsAreaProps) {
   const activeTabId = useIde((s) =>
     s.activeWorkspaceId ? selectActiveTabId(s, s.activeWorkspaceId) : undefined,
   )
@@ -144,28 +135,6 @@ export function ResultsArea({
         />
         <div className="flex shrink-0 items-center gap-0.5 border-l border-border px-1">
           <ResultsPanelModeMenu mode={resultsPanelMode} onChange={setResultsPanelMode} />
-          <Tip label={isMaximized ? 'Restore bottom panel' : 'Maximize bottom panel'}>
-            <Button
-              type="button"
-              variant="ghost"
-              size="icon-sm"
-              aria-label="Toggle bottom panel maximize"
-              onClick={onMaximize}
-            >
-              <Icon name={isMaximized ? 'minimize' : 'maximize'} size={14} />
-            </Button>
-          </Tip>
-          <Tip label="Close panel">
-            <Button
-              type="button"
-              variant="ghost"
-              size="icon-sm"
-              aria-label="Close panel"
-              onClick={onClose}
-            >
-              <Icon name="cancel-01" size={14} />
-            </Button>
-          </Tip>
         </div>
       </div>
 
