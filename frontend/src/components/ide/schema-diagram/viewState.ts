@@ -2,12 +2,20 @@ import { isApiError } from '#/lib/api/errors'
 import type { SchemaSpec } from '#/lib/api/types'
 
 export type DiagramViewState =
-  'missing-target' | 'no-session' | 'unsupported' | 'forbidden' | 'loading' | 'empty' | 'ready'
+  | 'missing-target'
+  | 'no-session'
+  | 'needs-load'
+  | 'unsupported'
+  | 'forbidden'
+  | 'loading'
+  | 'empty'
+  | 'ready'
 
 export function resolveDiagramViewState({
   hasTarget,
   hasConnection,
   hasSession,
+  loadRequested,
   spec,
   specError,
   directoryError,
@@ -19,6 +27,7 @@ export function resolveDiagramViewState({
   hasTarget: boolean
   hasConnection: boolean
   hasSession: boolean
+  loadRequested: boolean
   spec?: SchemaSpec
   specError: unknown
   directoryError: unknown
@@ -29,6 +38,7 @@ export function resolveDiagramViewState({
 }): DiagramViewState {
   if (!hasTarget || !hasConnection) return 'missing-target'
   if (!hasSession) return 'no-session'
+  if (!loadRequested) return 'needs-load'
   if (
     (isApiError(relationshipsError) && relationshipsError.status === 501) ||
     (spec != null && !spec.kinds.some((kind) => kind.supports_diagram))

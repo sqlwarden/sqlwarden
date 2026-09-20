@@ -9,6 +9,7 @@ export type ConnectionMenuCtx = {
   onConnect: () => void
   onDisconnect: () => void
   onRefreshSchema: () => void
+  isRefreshingSchema: boolean
   onCopyName: () => void
   onManageConnections: () => void
   onEditConnection: () => void
@@ -47,7 +48,7 @@ export function buildConnectionMenu(ctx: ConnectionMenuCtx): ContextMenuItem[] {
       id: 'refresh-schema',
       label: 'Refresh schema',
       icon: 'refresh',
-      disabled: !ctx.isConnected,
+      disabled: !ctx.isConnected || ctx.isRefreshingSchema,
       onSelect: ctx.onRefreshSchema,
     },
     { kind: 'separator' },

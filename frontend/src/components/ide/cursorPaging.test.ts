@@ -51,6 +51,9 @@ describe('mergeCursorPage', () => {
     expect(merged.data.query_cursor_id).toBe('cursor-1')
     expect(merged.data.exhausted).toBe(false)
     expect(merged.isFetchingNextPage).toBe(false)
+    expect(merged.durationMs).toBe(7)
+    expect(merged.data.duration_ms).toBe(7)
+    expect(merged.lastPageDurationMs).toBe(2)
   })
 
   it('removes the cursor when the page exhausts it', () => {

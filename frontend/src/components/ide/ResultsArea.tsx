@@ -771,7 +771,7 @@ function ResultSetView({
   index: number
   connection: Connection | undefined
 }) {
-  const { durationMs } = result
+  const { durationMs, lastPageDurationMs } = result
   const columns = result.data.columns ?? []
   const rows = result.data.rows ?? []
   const hasColumns = columns.length > 0
@@ -848,7 +848,12 @@ function ResultSetView({
             <span className="mx-1.5 shrink-0 opacity-40">·</span>
           </>
         )}
-        <span className="shrink-0 tabular-nums">{durationMs}ms</span>
+        <span className="shrink-0 tabular-nums">
+          {durationMs}ms
+          {lastPageDurationMs !== undefined && Math.round(lastPageDurationMs) > 0 && (
+            <span className="text-muted-foreground/70"> (+{Math.round(lastPageDurationMs)}ms)</span>
+          )}
+        </span>
         <span className="mx-1.5 shrink-0 opacity-40">·</span>
         <span className="shrink-0 tabular-nums">
           {resultRowCountLabel(rows.length, result.data.exhausted)}

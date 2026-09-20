@@ -62,6 +62,7 @@ describe('buildConnectionMenu', () => {
     onConnect: noop,
     onDisconnect: noop,
     onRefreshSchema: noop,
+    isRefreshingSchema: false,
     onCopyName: noop,
     onManageConnections: noop,
     onEditConnection: noop,
@@ -78,6 +79,10 @@ describe('buildConnectionMenu', () => {
     expect(action(items, 'disconnect')).toBeDefined()
     expect(action(items, 'connect')).toBeUndefined()
     expect(action(items, 'refresh-schema')?.disabled).toBeFalsy()
+  })
+  it('disables refresh while a refresh is already running', () => {
+    const items = buildConnectionMenu({ ...base, isConnected: true, isRefreshingSchema: true })
+    expect(action(items, 'refresh-schema')?.disabled).toBe(true)
   })
   it('has a live edit-connection action', () => {
     const items = buildConnectionMenu({ ...base, isConnected: true })

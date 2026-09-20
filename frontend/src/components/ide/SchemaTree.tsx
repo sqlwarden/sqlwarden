@@ -392,7 +392,12 @@ export function SchemaTree({
   )
 
   const browseScopes = specQuery.data?.spec.browse_scopes === true
-  const filtering = filter.trim() !== ''
+  // Must track deferredFilter, not the raw keystroke value: roots below is
+  // built from deferredFilter too, and forceOpen={filtering} force-mounts
+  // every collapsed node in whatever tree is currently rendered. Gating it on
+  // the immediate filter would force-expand the still-unfiltered full
+  // directory for the render(s) before deferredFilter catches up.
+  const filtering = deferredFilter.trim() !== ''
   const roots = (filteredDirectory ?? raw).roots
   const noScope = roots.length === 0
   // A single unambiguous empty scope (one root, at most one child) collapses to

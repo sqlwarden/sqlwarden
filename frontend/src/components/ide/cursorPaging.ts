@@ -11,16 +11,20 @@ export function mergeCursorPage(
 ): SuccessfulQueryResult {
   const rows = [...(result.data.rows ?? []), ...(page.rows ?? [])]
   const exhausted = page.exhausted ?? true
+  const durationMs = result.durationMs + page.duration_ms
 
   return {
     ...result,
     isFetchingNextPage: false,
     cursorMessage: undefined,
+    durationMs,
+    lastPageDurationMs: page.duration_ms,
     data: {
       ...result.data,
       rows,
       rows_returned: rows.length,
       bytes_returned: result.data.bytes_returned + page.bytes_returned,
+      duration_ms: durationMs,
       truncated: result.data.truncated || page.truncated,
       truncation_reason: page.truncation_reason ?? result.data.truncation_reason,
       query_cursor_id: exhausted ? undefined : (page.query_cursor_id ?? currentCursorId),

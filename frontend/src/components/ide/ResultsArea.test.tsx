@@ -289,6 +289,50 @@ describe('ResultsArea', () => {
     expect(within(caption).queryByText('analytics-pg')).not.toBeInTheDocument()
   })
 
+  it('shows the last cursor page duration alongside the cumulative duration', async () => {
+    renderResult({
+      status: 'ok',
+      durationMs: 7,
+      lastPageDurationMs: 2,
+      sql: 'select id from users',
+      connectionId: 7,
+      data: {
+        columns: [{ name: 'id', type: 'integer', raw_type: 'int4', nullable: false }],
+        rows: [],
+        duration_ms: 7,
+        truncated: false,
+        rows_returned: 0,
+        bytes_returned: 0,
+        transaction: { mode: 'auto', open: false, pending_statements: 0, statements: [] },
+      },
+    })
+
+    expect(await screen.findByText('7ms')).toBeInTheDocument()
+    expect(screen.getByText('(+2ms)')).toBeInTheDocument()
+  })
+
+  it('hides the last cursor page duration when it rounds to zero', async () => {
+    renderResult({
+      status: 'ok',
+      durationMs: 5,
+      lastPageDurationMs: 0,
+      sql: 'select id from users',
+      connectionId: 7,
+      data: {
+        columns: [{ name: 'id', type: 'integer', raw_type: 'int4', nullable: false }],
+        rows: [],
+        duration_ms: 5,
+        truncated: false,
+        rows_returned: 0,
+        bytes_returned: 0,
+        transaction: { mode: 'auto', open: false, pending_statements: 0, statements: [] },
+      },
+    })
+
+    expect(await screen.findByText('5ms')).toBeInTheDocument()
+    expect(screen.queryByText(/\(\+\d+ms\)/)).not.toBeInTheDocument()
+  })
+
   it('opens the full query in a dialog when the sql caption is clicked', async () => {
     const user = userEvent.setup()
     renderResult({

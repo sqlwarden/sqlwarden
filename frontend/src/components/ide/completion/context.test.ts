@@ -1,5 +1,9 @@
 import { expect, it } from 'vitest'
-import { classifyCursorContext, scanSQLTriggerPrefix } from './context'
+import {
+  classifyCursorContext,
+  isEmptyPositionAfterStatementBoundary,
+  scanSQLTriggerPrefix,
+} from './context'
 
 const at = (sql: string) => classifyCursorContext(sql, sql.length)
 
@@ -129,4 +133,21 @@ it('still captures a real table joined after a derived table', () => {
 it('does not reset the token scan on a semicolon inside parentheses', () => {
   const scan = scanSQLTriggerPrefix('SELECT f(a ; b) ')
   expect(scan.tokens.some((t) => t.kind === 'word' && t.text === 'SELECT')).toBe(true)
+})
+
+it.each(['SELECT 1;', 'SELECT 1; ', 'SELECT 1;\n', 'SELECT 1; -- trailing comment\n'])(
+  'flags an empty position right after a top-level statement terminator in %j',
+  (sql) => {
+    expect(isEmptyPositionAfterStatementBoundary(sql, sql.length)).toBe(true)
+  },
+)
+
+it.each([
+  ['SELECT 1', 'SELECT 1'.length],
+  ['SELECT 1; S', 'SELECT 1; S'.length],
+  ["SELECT ';'", "SELECT ';'".length],
+  ['SELECT f(a ; b) ', 'SELECT f(a ; b) '.length],
+  ['-- a ; b\n', '-- a ; b\n'.length],
+])('does not flag %j as an empty statement-boundary position', (sql, cursor) => {
+  expect(isEmptyPositionAfterStatementBoundary(sql, cursor)).toBe(false)
 })

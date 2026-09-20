@@ -1059,6 +1059,41 @@ describe('SchemaTree', () => {
     expect(await screen.findByText('No matches.')).toBeInTheDocument()
   })
 
+  it('does not force-open the full unfiltered tree before the debounced filter settles', async () => {
+    const objects = Array.from({ length: 300 }, (_, i) => ({
+      scope,
+      kind: 'table' as const,
+      name: i === 0 ? 'target_match' : `noise_${i}`,
+    }))
+    respondReady()
+    server.use(
+      http.get('/api/v1/orgs/acme/workspaces/3/connections/7/schema/directory', () =>
+        HttpResponse.json({
+          directory: {
+            connection: 'warehouse',
+            dialect: 'postgres',
+            database: 'analytics',
+            generated_at: '',
+            roots: [{ segment: scope[0], path: scope, groups: [{ kind: 'table', objects }] }],
+          },
+        }),
+      ),
+    )
+    const view = renderTree('')
+    expect(await screen.findByText('Tables')).toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: 'target_match' })).not.toBeInTheDocument()
+
+    view.rerender(treeElement(view.queryClient, 'target_match', view.onConnect))
+
+    // Right after the keystroke, deferredFilter hasn't settled yet: the group
+    // must stay collapsed rather than force-mounting all 300 unfiltered rows.
+    expect(screen.queryByRole('button', { name: 'noise_1' })).not.toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: 'target_match' })).not.toBeInTheDocument()
+
+    expect(await screen.findByRole('button', { name: 'target_match' })).toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: 'noise_1' })).not.toBeInTheDocument()
+  })
+
   it('uses the backend refresh endpoint from schema group menus', async () => {
     store.getState().setSession(7, 'session-7')
     respondReady()

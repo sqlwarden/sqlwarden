@@ -723,6 +723,61 @@ describe('SQL completion', () => {
     expect(automaticSQLCompletionTrigger(source, source.length)).toBeUndefined()
   })
 
+  it('does not reopen automatically at an empty position right after a semicolon', async () => {
+    const fetchMock = vi.fn(async () => {
+      throw new Error('unexpected request')
+    })
+    vi.stubGlobal('fetch', fetchMock)
+    const state = EditorState.create({ doc: 'SELECT 1; ' })
+    const source = remoteSQLCompletionSource({
+      orgSlug: 'acme',
+      workspaceId: 1,
+      connectionId: 2,
+      driver: 'postgres',
+    })
+    const result = await source(new CompletionContext(state, state.doc.length, false))
+    expect(result).toBeNull()
+    expect(fetchMock).not.toHaveBeenCalled()
+  })
+
+  it('still answers an explicit invocation at an empty position right after a semicolon', async () => {
+    const fetchMock = vi.fn(async (input: RequestInfo | URL) => {
+      if (!String(input).includes('completion-vocabulary')) {
+        throw new Error(`unexpected semantic request: ${String(input)}`)
+      }
+      return vocabularyResponse()
+    })
+    vi.stubGlobal('fetch', fetchMock)
+    const state = EditorState.create({ doc: 'SELECT 1; ' })
+    const source = remoteSQLCompletionSource({
+      orgSlug: 'acme',
+      workspaceId: 1,
+      connectionId: 2,
+      driver: 'postgres',
+    })
+    const result = await source(new CompletionContext(state, state.doc.length, true))
+    expect(result).not.toBeNull()
+  })
+
+  it('resumes automatic completion once the next statement has real context', async () => {
+    const fetchMock = vi.fn(async (input: RequestInfo | URL) => {
+      if (!String(input).includes('completion-vocabulary')) {
+        throw new Error(`unexpected semantic request: ${String(input)}`)
+      }
+      return vocabularyResponse()
+    })
+    vi.stubGlobal('fetch', fetchMock)
+    const state = EditorState.create({ doc: 'SELECT 1; SE' })
+    const source = remoteSQLCompletionSource({
+      orgSlug: 'acme',
+      workspaceId: 1,
+      connectionId: 2,
+      driver: 'postgres',
+    })
+    const result = await source(new CompletionContext(state, state.doc.length, false))
+    expect(result?.options.map((option) => option.label)).toEqual(['SELECT'])
+  })
+
   it('avoids a connection request after a completed relation but requests after FROM', async () => {
     const fetchMock = vi.fn(async () =>
       semanticCompletionResponse([
