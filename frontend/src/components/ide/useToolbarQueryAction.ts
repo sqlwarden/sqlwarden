@@ -82,12 +82,11 @@ export function useToolbarQueryAction({
   const setActiveBottomPanel = useIde((state) => state.setActiveBottomPanel)
   const { connect, sessions } = useConnectionActions(orgSlug, workspace)
 
-  // Running a query should surface its output; if the bottom panel is
-  // closed, open it to Results rather than leaving results invisible.
-  // If some other tab (History/Favorites) is already open, leave it be.
+  // Running a query should surface its output, switching focus to Results
+  // even if another bottom tab (History/Favorites) currently has focus.
   const ensureResultsVisible = useCallback(() => {
     if (maximizedPane === 'editor') setMaximizedPane(null)
-    if (activeBottomPanelId === null) setActiveBottomPanel('results')
+    if (activeBottomPanelId !== 'results') setActiveBottomPanel('results')
   }, [maximizedPane, setMaximizedPane, activeBottomPanelId, setActiveBottomPanel])
 
   const needsConnect = useCallback(

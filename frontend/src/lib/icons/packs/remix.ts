@@ -35,6 +35,7 @@ const icons: Record<AppIcon, string> = {
   'delete-01': 'ri:delete-bin-line',
   'delete-02': 'ri:delete-bin-2-line',
   'download-01': 'ri:download-line',
+  'drag-handle': 'ri:draggable',
   'file-01': 'ri:file-line',
   'floppy-disk': 'ri:save-line',
   'flow-connection': 'ri:flow-chart',

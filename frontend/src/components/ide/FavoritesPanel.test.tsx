@@ -1,7 +1,7 @@
 import { QueryClientProvider } from '@tanstack/react-query'
 import { EditorState } from '@codemirror/state'
 import { EditorView } from '@codemirror/view'
-import { render, screen, waitFor, within } from '@testing-library/react'
+import { fireEvent, render, screen, waitFor } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { http, HttpResponse } from 'msw'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
@@ -13,13 +13,16 @@ import { FavoritesPanel } from './FavoritesPanel'
 import { createEditorViewRegistry, EditorViewRegistryContext } from './useEditorViewRegistry'
 import { createIdeStore, IdeStoreContext, type EditorTab } from './useIdeStore'
 
-const { copyWithToastMock } = vi.hoisted(() => ({
+const { copyWithToastMock, toastMock } = vi.hoisted(() => ({
   copyWithToastMock: vi.fn(),
+  toastMock: vi.fn(),
 }))
 
 vi.mock('./object-detail/ReadOnlySqlView', () => ({
   ReadOnlySqlView: ({ value }: { value: string }) => <pre>{value}</pre>,
 }))
+
+vi.mock('sonner', () => ({ toast: toastMock }))
 
 vi.mock('@tanstack/react-virtual', () => ({
   useVirtualizer: ({
@@ -40,6 +43,7 @@ vi.mock('@tanstack/react-virtual', () => ({
       getTotalSize: () => offset,
       getVirtualItems: () => items,
       scrollToIndex: vi.fn(),
+      measureElement: vi.fn(),
     }
   },
 }))
@@ -72,6 +76,13 @@ type FavoriteFixture = {
   id: number
   name: string
   sqlText: string
+}
+
+function sqlText(value: string) {
+  return (_content: string, element: Element | null) => {
+    if (!element || element.textContent !== value) return false
+    return Array.from(element.children).every((child) => child.textContent !== value)
+  }
 }
 
 function favoriteFor(fixture: FavoriteFixture) {
@@ -108,6 +119,7 @@ describe('FavoritesPanel', () => {
 
   beforeEach(() => {
     copyWithToastMock.mockClear()
+    toastMock.mockClear()
     store = createIdeStore('acme', 1, 'ephemeral')
     views = createEditorViewRegistry()
     server.use(
@@ -170,50 +182,23 @@ describe('FavoritesPanel', () => {
   })
 
   it('renders favorites from the backend', async () => {
-    server.use(
-      http.get('/api/v1/orgs/acme/workspaces/3/query-favorites', () =>
-        HttpResponse.json({
-          items: [
-            {
-              id: 1,
-              workspace_id: 3,
-              account_id: 1,
-              connection_id: 42,
-              name: 'Top customers',
-              sql_text: 'select 1',
-              created_at: new Date().toISOString(),
-              updated_at: new Date().toISOString(),
-            },
-          ],
-        }),
-      ),
-    )
+    mockFavorites([{ id: 1, name: 'Top customers', sqlText: 'select 1' }])
 
     renderPanel()
 
     expect(await screen.findByText('Top customers')).toBeInTheDocument()
-    expect(screen.getByText('select 1')).toBeInTheDocument()
+    expect(screen.getByText(sqlText('select 1'))).toBeInTheDocument()
   })
 
-  it('deletes a favorite and refetches the list', async () => {
+  it('optimistically hides a deleted favorite, then calls the API after the undo window elapses', async () => {
+    vi.useFakeTimers({ shouldAdvanceTime: true })
     let deleted = false
     server.use(
       http.get('/api/v1/orgs/acme/workspaces/3/query-favorites', () =>
         HttpResponse.json({
           items: deleted
             ? []
-            : [
-                {
-                  id: 1,
-                  workspace_id: 3,
-                  account_id: 1,
-                  connection_id: 42,
-                  name: 'Top customers',
-                  sql_text: 'select 1',
-                  created_at: new Date().toISOString(),
-                  updated_at: new Date().toISOString(),
-                },
-              ],
+            : [favoriteFor({ id: 1, name: 'Top customers', sqlText: 'select 1' })],
         }),
       ),
       http.delete('/api/v1/orgs/acme/workspaces/3/query-favorites/1', () => {
@@ -226,28 +211,61 @@ describe('FavoritesPanel', () => {
     await screen.findByText('Top customers')
     await user.click(screen.getByRole('button', { name: 'Delete favorite' }))
 
-    await waitFor(() => expect(screen.queryByText('Top customers')).not.toBeInTheDocument())
+    expect(screen.queryByText('Top customers')).not.toBeInTheDocument()
+    expect(deleted).toBe(false)
+
+    await vi.advanceTimersByTimeAsync(5000)
+    await waitFor(() => expect(deleted).toBe(true))
+    vi.useRealTimers()
   })
 
-  it('copies the favorite SQL to the clipboard', async () => {
+  it('restores a deleted favorite when Undo is clicked before the window elapses', async () => {
+    vi.useFakeTimers({ shouldAdvanceTime: true })
+    let deleted = false
     server.use(
       http.get('/api/v1/orgs/acme/workspaces/3/query-favorites', () =>
         HttpResponse.json({
-          items: [
-            {
-              id: 1,
-              workspace_id: 3,
-              account_id: 1,
-              connection_id: 42,
-              name: 'Top customers',
-              sql_text: 'select 1',
-              created_at: new Date().toISOString(),
-              updated_at: new Date().toISOString(),
-            },
-          ],
+          items: [favoriteFor({ id: 1, name: 'Top customers', sqlText: 'select 1' })],
         }),
       ),
+      http.delete('/api/v1/orgs/acme/workspaces/3/query-favorites/1', () => {
+        deleted = true
+        return new HttpResponse(null, { status: 204 })
+      }),
     )
+
+    const { user } = renderPanel()
+    await screen.findByText('Top customers')
+    await user.click(screen.getByRole('button', { name: 'Delete favorite' }))
+    expect(screen.queryByText('Top customers')).not.toBeInTheDocument()
+
+    const [, options] = toastMock.mock.calls[toastMock.mock.calls.length - 1]!
+    options.action.onClick()
+    expect(await screen.findByText('Top customers')).toBeInTheDocument()
+
+    await vi.advanceTimersByTimeAsync(5000)
+    expect(deleted).toBe(false)
+    vi.useRealTimers()
+  })
+
+  it('puts the raw query text on the drag payload when a row is dragged', async () => {
+    mockFavorites([{ id: 1, name: 'Top customers', sqlText: 'select   1\n' }])
+
+    renderPanel()
+    const row = await screen.findByTestId('favorite-row')
+
+    const dataTransfer = {
+      setData: vi.fn(),
+      effectAllowed: '',
+    } as unknown as DataTransfer
+    fireEvent.dragStart(row, { dataTransfer })
+
+    expect(dataTransfer.setData).toHaveBeenCalledWith('text/plain', 'select   1\n')
+    expect(dataTransfer.effectAllowed).toBe('copy')
+  })
+
+  it('copies the favorite SQL to the clipboard', async () => {
+    mockFavorites([{ id: 1, name: 'Top customers', sqlText: 'select 1' }])
 
     const { user } = renderPanel()
     await screen.findByText('Top customers')
@@ -258,24 +276,7 @@ describe('FavoritesPanel', () => {
 
   it('inserts the favorite SQL at the active editor cursor', async () => {
     store.getState().openTab(scratchTab)
-    server.use(
-      http.get('/api/v1/orgs/acme/workspaces/3/query-favorites', () =>
-        HttpResponse.json({
-          items: [
-            {
-              id: 1,
-              workspace_id: 3,
-              account_id: 1,
-              connection_id: 42,
-              name: 'Top customers',
-              sql_text: 'select 1',
-              created_at: new Date().toISOString(),
-              updated_at: new Date().toISOString(),
-            },
-          ],
-        }),
-      ),
-    )
+    mockFavorites([{ id: 1, name: 'Top customers', sqlText: 'select 1' }])
     const groupId = store.getState().activeGroupId[workspace.id]!
     const editor = new EditorView({
       state: EditorState.create({ doc: 'select 2 from foo;\n' }),
@@ -307,32 +308,21 @@ describe('FavoritesPanel', () => {
     expect(await screen.findByText('Top customers')).toBeInTheDocument()
   })
 
-  it('opens a dialog with the full query and actions when the query is clicked', async () => {
-    server.use(
-      http.get('/api/v1/orgs/acme/workspaces/3/query-favorites', () =>
-        HttpResponse.json({
-          items: [
-            {
-              id: 1,
-              workspace_id: 3,
-              account_id: 1,
-              connection_id: 42,
-              name: 'Top customers',
-              sql_text: 'select 1 from widgets',
-              created_at: new Date().toISOString(),
-              updated_at: new Date().toISOString(),
-            },
-          ],
-        }),
-      ),
-    )
+  it('expands a favorite row inline to show the full query', async () => {
+    mockFavorites([
+      {
+        id: 1,
+        name: 'Top customers',
+        sqlText:
+          'select * from widgets where widgets.id in (select widget_id from orders) order by widgets.name',
+      },
+    ])
 
     const { user } = renderPanel()
-    await user.click(await screen.findByRole('button', { name: 'select 1 from widgets' }))
+    await screen.findByText('Top customers')
+    await user.click(await screen.findByRole('button', { name: 'Expand query' }))
 
-    const dialog = await screen.findByRole('dialog')
-    expect(within(dialog).getByText('Top customers')).toBeInTheDocument()
-    expect(within(dialog).getByRole('button', { name: 'Copy query' })).toBeInTheDocument()
+    expect(await screen.findByRole('button', { name: 'Collapse query' })).toBeInTheDocument()
   })
 
   it('shows a no-results empty state when search matches nothing', async () => {

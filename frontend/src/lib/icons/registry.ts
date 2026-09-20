@@ -33,6 +33,7 @@ export type AppIcon =
   | 'delete-01'
   | 'delete-02'
   | 'download-01'
+  | 'drag-handle'
   | 'file-01'
   | 'floppy-disk'
   | 'flow-connection'

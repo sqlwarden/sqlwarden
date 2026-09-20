@@ -1,5 +1,5 @@
 import { useEffect, useRef } from 'react'
-import { EditorView, lineNumbers, highlightSpecialChars } from '@codemirror/view'
+import { EditorView, lineNumbers as cmLineNumbers, highlightSpecialChars } from '@codemirror/view'
 import { EditorState, Compartment, type Extension } from '@codemirror/state'
 import { syntaxHighlighting, defaultHighlightStyle } from '@codemirror/language'
 import { sql } from '@codemirror/lang-sql'
@@ -26,7 +26,17 @@ function baseTheme(fontFamily: string, fontSize: EditorFontSize): Extension {
 
 /** A read-only SQL viewer that reuses the user's editor theme/font preferences
  *  and SQL syntax highlighting, so a DDL/definition reads like the editor. */
-export function ReadOnlySqlView({ value, className }: { value: string; className?: string }) {
+export function ReadOnlySqlView({
+  value,
+  className,
+  wrap = true,
+  lineNumbers = true,
+}: {
+  value: string
+  className?: string
+  wrap?: boolean
+  lineNumbers?: boolean
+}) {
   const containerRef = useRef<HTMLDivElement>(null)
   const viewRef = useRef<EditorView | null>(null)
   const themeCompartment = useRef(new Compartment())
@@ -44,11 +54,11 @@ export function ReadOnlySqlView({ value, className }: { value: string; className
       state: EditorState.create({
         doc: value,
         extensions: [
-          lineNumbers(),
+          ...(lineNumbers ? [cmLineNumbers()] : []),
           highlightSpecialChars(),
           syntaxHighlighting(defaultHighlightStyle, { fallback: true }),
           sql(),
-          EditorView.lineWrapping,
+          ...(wrap ? [EditorView.lineWrapping] : []),
           EditorView.editable.of(false),
           EditorState.readOnly.of(true),
           fontCompartment.current.of(baseTheme(editorFont.fontFamily, editorFontSize)),
