@@ -10,9 +10,6 @@ import { FavoritesPanel } from './FavoritesPanel'
 export type BottomPanelTabProps = {
   orgSlug: string
   workspace: Workspace
-  isMaximized: boolean
-  onMaximize: () => void
-  onClose: () => void
 }
 
 /**

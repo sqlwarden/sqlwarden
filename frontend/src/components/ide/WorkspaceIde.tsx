@@ -54,7 +54,7 @@ import {
 import { SaveAsDialog } from './SaveAsDialog'
 import { IdeToolbar } from './IdeToolbar'
 import { EditorLayout } from './EditorLayout'
-import { BottomPanelBar, BottomPanelContent } from './BottomPanel'
+import { BottomPanelHeader, BottomPanelContent, BOTTOM_PANEL_HEADER_HEIGHT } from './BottomPanel'
 import { createYDocRegistry, YDocRegistryContext, useYDocRegistry } from './useYDocRegistry'
 import { createEditorViewRegistry, EditorViewRegistryContext } from './useEditorViewRegistry'
 import { createTabViewStateCache, TabViewStateCacheContext } from './tabViewStateCache'
@@ -754,13 +754,13 @@ function IdeEditorAndResults({ orgSlug, workspace }: { orgSlug: string; workspac
           defaultSize="42%"
           minSize="12%"
           collapsible
-          collapsedSize="0%"
+          collapsedSize={`${BOTTOM_PANEL_HEADER_HEIGHT}px`}
           className="flex min-h-0 flex-col overflow-hidden"
         >
+          <BottomPanelHeader orgSlug={orgSlug} />
           <BottomPanelContent orgSlug={orgSlug} workspace={workspace} />
         </ResizablePanel>
       </ResizablePanelGroup>
-      <BottomPanelBar orgSlug={orgSlug} />
     </div>
   )
 }

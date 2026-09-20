@@ -7,22 +7,10 @@ import type { Workspace } from '#/lib/api/types'
 import { organizationRuntimeSettingsFixture } from '#/test/fixtures'
 import { createTestQueryClient } from '#/test/render'
 import { server } from '#/test/server'
-import { BottomPanelBar, BottomPanelContent } from './BottomPanel'
+import { BottomPanelHeader, BottomPanelContent } from './BottomPanel'
 import { createIdeStore, IdeStoreContext } from './useIdeStore'
 
-vi.mock('./ResultsArea', () => ({
-  ResultsArea: ({ onMaximize, onClose }: { onMaximize: () => void; onClose: () => void }) => (
-    <div>
-      Results content
-      <button type="button" onClick={onMaximize}>
-        Toggle bottom panel maximize
-      </button>
-      <button type="button" onClick={onClose}>
-        Close panel
-      </button>
-    </div>
-  ),
-}))
+vi.mock('./ResultsArea', () => ({ ResultsArea: () => <div>Results content</div> }))
 vi.mock('./HistoryPanel', () => ({ HistoryPanel: () => <div>History content</div> }))
 vi.mock('./FavoritesPanel', () => ({ FavoritesPanel: () => <div>Favorites content</div> }))
 
@@ -55,7 +43,7 @@ describe('BottomPanel', () => {
     return render(
       <QueryClientProvider client={queryClient}>
         <IdeStoreContext.Provider value={store}>
-          <BottomPanelBar orgSlug="acme" />
+          <BottomPanelHeader orgSlug="acme" />
           <BottomPanelContent orgSlug="acme" workspace={workspace} />
         </IdeStoreContext.Provider>
       </QueryClientProvider>,
@@ -68,11 +56,15 @@ describe('BottomPanel', () => {
     expect(screen.getByRole('button', { name: 'Results' })).toHaveAttribute('aria-pressed', 'true')
   })
 
-  it('renders the bar even when no panel is open', () => {
+  it('renders the header without maximize/close when no panel is open', () => {
     store.getState().setActiveBottomPanel(null)
     renderBottomPanel()
     expect(screen.getByRole('button', { name: 'Results' })).toBeInTheDocument()
     expect(screen.queryByText('Results content')).not.toBeInTheDocument()
+    expect(
+      screen.queryByRole('button', { name: 'Toggle bottom panel maximize' }),
+    ).not.toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: 'Close panel' })).not.toBeInTheDocument()
   })
 
   it('switches tabs on click and persists the selection to the store', async () => {
@@ -88,7 +80,7 @@ describe('BottomPanel', () => {
     expect(store.getState().activeBottomPanelId).toBe('favorites')
   })
 
-  it('closes the panel when clicking its already-open tab, keeping the bar', async () => {
+  it('closes the panel when clicking its already-open tab, keeping the header', async () => {
     const user = userEvent.setup()
     renderBottomPanel()
 
@@ -98,13 +90,15 @@ describe('BottomPanel', () => {
     expect(screen.getByRole('button', { name: 'Results' })).toBeInTheDocument()
   })
 
-  it('closes the panel via its own close button', async () => {
+  it('closes the panel via the header close button and clears maximize', async () => {
     const user = userEvent.setup()
+    store.getState().setMaximizedPane('results')
     renderBottomPanel()
 
     await user.click(screen.getByRole('button', { name: 'Close panel' }))
     expect(screen.queryByText('Results content')).not.toBeInTheDocument()
     expect(store.getState().activeBottomPanelId).toBeNull()
+    expect(store.getState().maximizedPane).toBeNull()
   })
 
   it('hides History and Favorites tabs when their runtime mode is off', async () => {
