@@ -438,6 +438,7 @@ describe('SchemaTree', () => {
   })
 
   it('automatically reloads a directory while its snapshot is being prepared', async () => {
+    store.getState().setSession(7, 'session-7')
     let directoryRequests = 0
     server.use(
       http.get('/api/v1/orgs/acme/workspaces/3/connections/7/schema/directory', () => {
@@ -487,6 +488,23 @@ describe('SchemaTree', () => {
     expect(await screen.findByText('Preparing schema snapshot…')).toBeInTheDocument()
     expect(await screen.findByText('Tables', {}, { timeout: 2_500 })).toBeInTheDocument()
     expect(directoryRequests).toBe(2)
+  })
+
+  it('shows a not-connected state instead of a snapshot spinner for a disconnected connection with no cached schema', async () => {
+    server.use(
+      http.get('/api/v1/orgs/acme/workspaces/3/connections/7/schema/directory', () =>
+        HttpResponse.json({ status: 'pending' }, { status: 202 }),
+      ),
+      http.get('/api/v1/orgs/acme/workspaces/3/connections/7/schema/spec', () =>
+        HttpResponse.json({ spec: { dialect: 'postgres', kinds: [] } }),
+      ),
+    )
+
+    renderTree()
+
+    expect(await screen.findByText('Not connected.')).toBeInTheDocument()
+    expect(screen.queryByText('Preparing schema snapshot…')).not.toBeInTheDocument()
+    expect(screen.queryByText('Loading schema...')).not.toBeInTheDocument()
   })
 
   it('distinguishes unsupported inspection from a generic failure', async () => {

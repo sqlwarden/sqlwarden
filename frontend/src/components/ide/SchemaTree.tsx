@@ -310,6 +310,34 @@ export function SchemaTree({
   // of erroring forever against a dead session id.
   useEvictGoneSession(connectionId, [directoryQuery.error, specQuery.error])
 
+  const raw = normalizedDirectory
+  // Without a live session there's nothing "loading" or "preparing" from a
+  // connection standpoint — a first-time connect that hasn't produced a
+  // cached snapshot yet should read as disconnected, not as busy work.
+  if (!raw && !sessionId) {
+    if (connStatus === 'connecting') {
+      return (
+        <SchemaMessage>
+          <SchemaSpinner />
+          Connecting…
+        </SchemaMessage>
+      )
+    }
+    return (
+      <SchemaMessage>
+        <span>Not connected.</span>
+        {onConnect && (
+          <button
+            type="button"
+            className="font-medium text-primary hover:underline"
+            onClick={onConnect}
+          >
+            Connect
+          </button>
+        )}
+      </SchemaMessage>
+    )
+  }
   if (directoryQuery.isLoading) {
     return (
       <SchemaMessage>
@@ -319,30 +347,6 @@ export function SchemaTree({
     )
   }
   if (directoryQuery.isError) {
-    if (!sessionId) {
-      if (connStatus === 'connecting') {
-        return (
-          <SchemaMessage>
-            <SchemaSpinner />
-            Connecting…
-          </SchemaMessage>
-        )
-      }
-      return (
-        <SchemaMessage>
-          <span>Not connected.</span>
-          {onConnect && (
-            <button
-              type="button"
-              className="font-medium text-primary hover:underline"
-              onClick={onConnect}
-            >
-              Connect
-            </button>
-          )}
-        </SchemaMessage>
-      )
-    }
     if (isApiError(directoryQuery.error) && directoryQuery.error.status === 501) {
       return <SchemaMessage>This driver doesn&apos;t support schema inspection.</SchemaMessage>
     }
@@ -360,7 +364,6 @@ export function SchemaTree({
     )
   }
 
-  const raw = normalizedDirectory
   if (!raw) {
     if (directoryQuery.data?.status === 'pending') {
       return (
