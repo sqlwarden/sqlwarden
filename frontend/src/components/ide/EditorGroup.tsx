@@ -14,6 +14,7 @@ import { useIde } from './useIdeStore'
 import { ExplainAnalyzeConfirmDialog } from './ExplainAnalyzeConfirmDialog'
 import type { GroupNode } from './ideLayout'
 import { IdeTabBar } from './IdeTabBar'
+import { IdeToolbar } from './IdeToolbar'
 import { SqlEditor } from './SqlEditor'
 import { useYDocRegistry } from './useYDocRegistry'
 import { useEditorViewRegistry } from './useEditorViewRegistry'
@@ -57,6 +58,7 @@ export function EditorGroup({
   const focusGroup = useIde((s) => s.focusGroup)
   const updateTabEtag = useIde((s) => s.updateTabEtag)
   const [downloadingFileId, setDownloadingFileId] = useState<number | null>(null)
+  const [selectedText, setSelectedText] = useState('')
   const [saveFavoriteOpen, setSaveFavoriteOpen] = useState(false)
   const [saveFavoriteSql, setSaveFavoriteSql] = useState('')
 
@@ -167,7 +169,13 @@ export function EditorGroup({
         focused={focused}
         onFocus={() => focusGroup(workspace.id, group.id)}
       />
-      <div className="min-h-0 flex-1 border-t border-border bg-card">
+      <IdeToolbar
+        orgSlug={orgSlug}
+        workspace={workspace}
+        groupId={group.id}
+        selection={selectedText}
+      />
+      <div className="min-h-0 flex-1 bg-editor">
         {activeTab && isDiagram ? (
           <Suspense
             fallback={
@@ -226,7 +234,10 @@ export function EditorGroup({
               groupId={group.id}
               doc={doc}
               className="h-full"
-              onCursorChange={focused ? onCursorChange : undefined}
+              onCursorChange={(line, col, sel, text) => {
+                setSelectedText(text)
+                if (focused) onCursorChange?.(line, col, sel, text)
+              }}
               driver={activeTab.driver}
               completion={{
                 orgSlug,
@@ -327,7 +338,7 @@ function CsvTooLargeState({
 /** Mirrors CsvViewer's toolbar/grid chrome while content is loading. */
 function CsvViewerSkeleton() {
   return (
-    <div className="flex h-full min-h-0 flex-col bg-card">
+    <div className="flex h-full min-h-0 flex-col bg-editor">
       <div className="flex h-9 shrink-0 items-center gap-2 border-b border-border bg-background px-2">
         <Skeleton className="h-6 w-56 max-w-[55%]" />
       </div>

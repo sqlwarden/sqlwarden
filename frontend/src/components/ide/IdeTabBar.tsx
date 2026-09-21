@@ -239,7 +239,7 @@ export function IdeTabBar({ orgSlug, workspace, group, focused, onFocus }: IdeTa
           <button
             type="button"
             onClick={handleNewConsole}
-            className="flex h-9 w-8 shrink-0 items-center justify-center border-l border-border text-muted-foreground transition-colors hover:bg-card/50 hover:text-foreground"
+            className="flex h-9 w-8 shrink-0 items-center justify-center border-l border-border text-muted-foreground transition-colors hover:bg-editor/50 hover:text-foreground"
             aria-label="New SQL console"
           >
             <Icon name="plus-sign" size={13} />
@@ -346,7 +346,7 @@ function ScrollChevron({
       aria-label={direction === 'left' ? 'Scroll tabs left' : 'Scroll tabs right'}
       className={cn(
         'flex h-9 w-7 shrink-0 items-center justify-center text-muted-foreground transition-colors',
-        disabled ? 'opacity-35' : 'hover:bg-card/50 hover:text-foreground',
+        disabled ? 'opacity-35' : 'hover:bg-editor/50 hover:text-foreground',
       )}
     >
       <Icon
@@ -427,10 +427,10 @@ function TabItem({
           'group relative flex h-9 max-w-52 shrink-0 cursor-pointer select-none items-center gap-1 border-r border-border pl-2.5 pr-1',
           active
             ? cn(
-                'bg-card text-foreground after:absolute after:left-0 after:right-0 after:top-0 after:h-[2px]',
+                'bg-editor text-foreground after:absolute after:left-0 after:right-0 after:top-0 after:h-[2px]',
                 focused ? 'after:bg-primary' : 'after:bg-border',
               )
-            : 'text-muted-foreground hover:bg-card/50 hover:text-foreground',
+            : 'text-muted-foreground hover:bg-editor/50 hover:text-foreground',
         )}
       >
         {isRunning ? (

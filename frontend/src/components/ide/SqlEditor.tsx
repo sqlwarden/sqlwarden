@@ -448,7 +448,7 @@ export function SqlEditor({
         {showHoverActions && (
           <div
             className={cn(
-              'absolute z-10 flex items-center gap-2 rounded-sm bg-card px-1 text-[11px] leading-none whitespace-nowrap',
+              'absolute z-10 flex items-center gap-2 rounded-sm bg-editor px-1 text-[11px] leading-none whitespace-nowrap',
               selectionHint.placement === 'above' && '-translate-y-full',
             )}
             style={{ top: selectionHint.top, left: selectionHint.left }}

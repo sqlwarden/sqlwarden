@@ -54,6 +54,19 @@ describe('DataGrid', () => {
     expect(screen.getByText('Grace')).toBeInTheDocument()
   })
 
+  it('paints sticky cells on the editor surface by default and the panel surface on request', () => {
+    const { unmount } = renderGrid()
+    expect(screen.getByRole('grid').parentElement).toHaveStyle({
+      '--data-grid-surface': 'var(--color-editor)',
+    })
+    unmount()
+
+    renderGrid({ surface: 'panel' })
+    expect(screen.getByRole('grid').parentElement).toHaveStyle({
+      '--data-grid-surface': 'var(--color-panel)',
+    })
+  })
+
   it('shows a custom empty message when there are no rows', () => {
     renderGrid({ rows: [], emptyMessage: 'Nothing here yet' })
     expect(screen.getByText('Nothing here yet')).toBeInTheDocument()

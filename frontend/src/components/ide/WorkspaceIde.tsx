@@ -52,7 +52,7 @@ import {
   DEFAULT_CONSOLE_CONTENT,
 } from './useIdeStore'
 import { SaveAsDialog } from './SaveAsDialog'
-import { IdeToolbar } from './IdeToolbar'
+import { TransactionStatus } from './TransactionStatus'
 import { EditorLayout } from './EditorLayout'
 import { BottomPanelHeader, BottomPanelContent, BOTTOM_PANEL_HEADER_HEIGHT } from './BottomPanel'
 import { createYDocRegistry, YDocRegistryContext, useYDocRegistry } from './useYDocRegistry'
@@ -755,7 +755,7 @@ function IdeEditorAndResults({ orgSlug, workspace }: { orgSlug: string; workspac
           minSize="12%"
           collapsible
           collapsedSize={`${BOTTOM_PANEL_HEADER_HEIGHT}px`}
-          className="flex min-h-0 flex-col overflow-hidden"
+          className="flex min-h-0 flex-col overflow-hidden bg-panel"
         >
           <BottomPanelHeader orgSlug={orgSlug} />
           <BottomPanelContent orgSlug={orgSlug} workspace={workspace} />
@@ -765,7 +765,7 @@ function IdeEditorAndResults({ orgSlug, workspace }: { orgSlug: string; workspac
   )
 }
 
-type CursorInfo = { line: number; col: number; sel: number; selectedText: string }
+type CursorInfo = { line: number; col: number; sel: number }
 
 function EditorSection({ orgSlug, workspace }: { orgSlug: string; workspace: Workspace }) {
   const registry = useYDocRegistry()
@@ -825,19 +825,16 @@ function EditorSection({ orgSlug, workspace }: { orgSlug: string; workspace: Wor
   return (
     <>
       <section className="flex h-full min-h-0 flex-col bg-background">
-        <IdeToolbar orgSlug={orgSlug} workspace={workspace} selection={cursorInfo?.selectedText} />
         <div className="relative min-h-0 flex-1">
           {hasAnyTab && layout ? (
             <EditorLayout
               orgSlug={orgSlug}
               workspace={workspace}
               node={layout}
-              onCursorChange={(line, col, sel, selectedText) =>
-                setCursorInfo({ line, col, sel, selectedText })
-              }
+              onCursorChange={(line, col, sel) => setCursorInfo({ line, col, sel })}
             />
           ) : (
-            <div className="h-full border-t border-border bg-card">
+            <div className="h-full border-t border-border bg-editor">
               <EmptyEditorState
                 onNewConsole={createConsole}
                 onNewFile={() => setCreateFileOpen(true)}
@@ -858,7 +855,9 @@ function EditorSection({ orgSlug, workspace }: { orgSlug: string; workspace: Wor
             </>
           )}
         </div>
-        {isCodeEditorTab && <EditorStatusBar cursorInfo={cursorInfo} />}
+        {isCodeEditorTab && (
+          <EditorStatusBar cursorInfo={cursorInfo} connectionId={activeTab?.connectionId} />
+        )}
       </section>
 
       <SaveAsDialog
@@ -895,9 +894,15 @@ function EditorSection({ orgSlug, workspace }: { orgSlug: string; workspace: Wor
 
 // ─── Editor status bar ─────────────────────────────────────────────────────────
 
-function EditorStatusBar({ cursorInfo }: { cursorInfo: CursorInfo | null }) {
+function EditorStatusBar({
+  cursorInfo,
+  connectionId,
+}: {
+  cursorInfo: CursorInfo | null
+  connectionId: number | undefined
+}) {
   return (
-    <div className="flex h-6 shrink-0 items-center gap-3 border-t border-border bg-card pl-3 pr-1 text-[11px] text-muted-foreground">
+    <div className="flex h-6 shrink-0 items-center gap-3 border-t border-border bg-editor pl-3 pr-1 text-[11px] text-muted-foreground">
       {cursorInfo && (
         <>
           <span className="tabular-nums">
@@ -907,6 +912,7 @@ function EditorStatusBar({ cursorInfo }: { cursorInfo: CursorInfo | null }) {
         </>
       )}
       <div className="flex-1" />
+      <TransactionStatus connectionId={connectionId} />
       <span className="font-medium">SQL</span>
     </div>
   )

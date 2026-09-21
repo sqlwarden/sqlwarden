@@ -82,7 +82,7 @@ export function CsvViewer({ doc, className }: CsvViewerProps) {
     parsed.doc.rows.length > 0
 
   return (
-    <div className={cn('flex h-full min-h-0 flex-col bg-card', className)}>
+    <div className={cn('flex h-full min-h-0 flex-col bg-editor', className)}>
       <div className="flex h-9 shrink-0 items-center gap-2 border-b border-border bg-background px-2">
         <ToggleGroup
           aria-label="CSV view"
@@ -155,7 +155,7 @@ export function CsvViewer({ doc, className }: CsvViewerProps) {
             readOnly
             wrap="off"
             spellCheck={false}
-            className="field-sizing-fixed h-full min-h-0 resize-none rounded-none border-0 bg-card p-3 font-mono text-xs leading-5 whitespace-pre focus-visible:border-transparent focus-visible:ring-0"
+            className="field-sizing-fixed h-full min-h-0 resize-none rounded-none border-0 bg-editor p-3 font-mono text-xs leading-5 whitespace-pre focus-visible:border-transparent focus-visible:ring-0"
           />
         ) : parsed?.error ? (
           <CsvErrorState error={parsed.error} />

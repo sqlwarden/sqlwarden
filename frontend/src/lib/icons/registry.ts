@@ -45,6 +45,7 @@ export type AppIcon =
   | 'information-circle'
   | 'key-01'
   | 'layout-bottom'
+  | 'list-view'
   | 'loading-03'
   | 'logout-03'
   | 'logout'

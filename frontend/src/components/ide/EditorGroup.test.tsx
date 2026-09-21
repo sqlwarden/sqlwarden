@@ -52,6 +52,7 @@ vi.mock('./useYDocRegistry', () => ({
   useYDocRegistry: () => ({ getOrCreate: mocks.getOrCreate }),
 }))
 vi.mock('./IdeTabBar', () => ({ IdeTabBar: () => <div data-testid="tab-bar" /> }))
+vi.mock('./IdeToolbar', () => ({ IdeToolbar: () => <div data-testid="toolbar" /> }))
 vi.mock('./SqlEditor', () => ({
   SqlEditor: (props: {
     tabId: string

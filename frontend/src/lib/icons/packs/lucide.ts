@@ -47,6 +47,7 @@ const icons: Record<AppIcon, string> = {
   'information-circle': 'lucide:info',
   'key-01': 'lucide:key',
   'layout-bottom': 'lucide:panel-bottom',
+  'list-view': 'lucide:list',
   'loading-03': 'lucide:loader-circle',
   'logout-03': 'lucide:log-out',
   logout: 'lucide:log-out',

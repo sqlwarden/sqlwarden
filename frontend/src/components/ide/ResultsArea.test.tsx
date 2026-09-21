@@ -327,8 +327,7 @@ describe('ResultsArea', () => {
     expect(screen.queryByText(/\(\+\d+ms\)/)).not.toBeInTheDocument()
   })
 
-  it('opens the full query in a dialog when the sql caption is clicked', async () => {
-    const user = userEvent.setup()
+  it('shows a short query inline without an expand control', async () => {
     renderResult({
       status: 'ok',
       durationMs: 3,
@@ -345,18 +344,47 @@ describe('ResultsArea', () => {
       },
     })
 
-    await user.click(await screen.findByTitle('select id from users where false'))
-
-    const dialog = await screen.findByRole('dialog')
-    expect(within(dialog).getByText('select id from users where false')).toBeInTheDocument()
+    expect(await screen.findByTitle('select id from users where false')).toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: 'Expand query' })).not.toBeInTheDocument()
   })
 
-  it('does not open the query dialog when copying from the caption bar', async () => {
+  it('expands and collapses a multi-line query inline from the sql caption', async () => {
+    const user = userEvent.setup()
+    const sql = 'select id\nfrom users\nwhere false'
+    renderResult({
+      status: 'ok',
+      durationMs: 3,
+      sql,
+      connectionId: 7,
+      data: {
+        columns: [{ name: 'id', type: 'integer', raw_type: 'int4', nullable: false }],
+        rows: [],
+        duration_ms: 3,
+        truncated: false,
+        rows_returned: 0,
+        bytes_returned: 0,
+        transaction: { mode: 'auto', open: false, pending_statements: 0, statements: [] },
+      },
+    })
+
+    const expand = await screen.findByRole('button', { name: 'Expand query' })
+    expect(expand).toHaveAttribute('title', sql)
+    await user.click(expand)
+
+    const collapse = await screen.findByRole('button', { name: 'Collapse query' })
+    expect(collapse).toHaveAttribute('aria-expanded', 'true')
+    expect(screen.queryByRole('dialog')).not.toBeInTheDocument()
+
+    await user.click(collapse)
+    expect(await screen.findByRole('button', { name: 'Expand query' })).toBeInTheDocument()
+  })
+
+  it('does not toggle the caption when copying the query', async () => {
     const user = userEvent.setup()
     renderResult({
       status: 'ok',
       durationMs: 3,
-      sql: 'select id from users where false',
+      sql: 'select id\nfrom users\nwhere false',
       connectionId: 7,
       data: {
         columns: [{ name: 'id', type: 'integer', raw_type: 'int4', nullable: false }],
@@ -370,7 +398,8 @@ describe('ResultsArea', () => {
     })
 
     await user.click(await screen.findByLabelText('Copy query'))
-    expect(screen.queryByRole('dialog')).not.toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Expand query' })).toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: 'Collapse query' })).not.toBeInTheDocument()
   })
 
   function populatedResult(): QueryResult {

@@ -119,7 +119,7 @@ type DarkSurfaceRamp = {
   accent: number
   accentForeground: number
   border: number
-  sidebar: number
+  editor: number
   /** Border alpha as a 0-1 fraction over `background`. Every preset but
    *  "High Contrast" relies on the 12%/15% default baked into
    *  `surfaceTokens` — low-chroma dark borders need real opacity to clear
@@ -135,7 +135,7 @@ type LightSurfaceRamp = {
   mutedForeground: number
   accent: number
   border: number
-  sidebar: number
+  editor: number
   sidebarAccent: number
 }
 
@@ -165,7 +165,7 @@ const FLUSH_DARK_RAMP: DarkSurfaceRamp = {
   accent: 0.23,
   accentForeground: 0.86,
   border: 0.65,
-  sidebar: 0.16,
+  editor: 0.175,
 }
 
 const FLUSH_LIGHT_RAMP: LightSurfaceRamp = {
@@ -179,7 +179,7 @@ const FLUSH_LIGHT_RAMP: LightSurfaceRamp = {
   mutedForeground: 0.52,
   accent: 0.97,
   border: 0.94,
-  sidebar: 0.985,
+  editor: 0.99,
   sidebarAccent: 0.97,
 }
 
@@ -198,7 +198,7 @@ const HIGH_CONTRAST_DARK_RAMP: DarkSurfaceRamp = {
   accentForeground: 0.98,
   border: 0.7,
   borderAlpha: 0.7,
-  sidebar: 0.02,
+  editor: 0.03,
 }
 
 /** Light: mirrors the dark ramp's AAA target. Border stays fully opaque
@@ -212,7 +212,7 @@ const HIGH_CONTRAST_LIGHT_RAMP: LightSurfaceRamp = {
   mutedForeground: 0.32,
   accent: 0.92,
   border: 0.55,
-  sidebar: 0.97,
+  editor: 0.975,
   sidebarAccent: 0.92,
 }
 
@@ -222,7 +222,11 @@ export type SurfacePreset = {
   hue: number
   /** Multiplier on the base neutral chroma ramp (0 = pure gray). */
   tint: number
-  /** Lightness ramp (background/card/sidebar/... steps) for this preset. */
+  /** Dark-mode overrides. Dark surfaces carry more base chroma than light
+   *  ones, and low-lightness warm hues drift brown/red at the same tint, so a
+   *  preset can pull its hue and chroma back for dark mode only. */
+  dark?: { hue?: number; tint?: number }
+  /** Lightness ramp (background/card/editor/... steps) for this preset. */
   ramp: { dark: DarkSurfaceRamp; light: LightSurfaceRamp }
 }
 
@@ -242,15 +246,18 @@ export const SURFACE_PRESETS: SurfacePreset[] = [
     ramp: { dark: HIGH_CONTRAST_DARK_RAMP, light: HIGH_CONTRAST_LIGHT_RAMP },
   },
   // Warm/Cool reuse the Default ramp's lightness steps and only add hue/chroma
-  // (tint 2, capped at 0.045 chroma by surfaceTokens) — contrast ratios verified
+  // (tint capped at 0.045 chroma by surfaceTokens) — contrast ratios verified
   // to sit within ~0.05 of the Default preset's (still comfortably AA/AAA):
   // dark bg/fg ~12.1:1, dark bg/mutedFg ~5.9:1, light bg/fg ~14.4:1,
-  // light bg/mutedFg ~5.3:1.
+  // light bg/mutedFg ~5.3:1. Warm sits at a yellow hue with a lighter tint
+  // than Cool, and pulls further back in dark mode, where an orange hue at
+  // the same chroma reads reddish/earthy on the large dark surfaces.
   {
     id: 'warm',
     label: 'Warm',
-    hue: 65,
-    tint: 2,
+    hue: 85,
+    tint: 1.4,
+    dark: { hue: 95, tint: 0.8 },
     ramp: { dark: FLUSH_DARK_RAMP, light: FLUSH_LIGHT_RAMP },
   },
   {
@@ -269,7 +276,8 @@ export const DEFAULT_SURFACE = 'default'
  *  Exported so tests can compute contrast ratios against the real generated
  *  tokens instead of duplicating the ramp constants. */
 export function surfaceTokens(preset: SurfacePreset, isDark: boolean): Record<string, string> {
-  const { hue: h, tint } = preset
+  const h = (isDark ? preset.dark?.hue : undefined) ?? preset.hue
+  const tint = (isDark ? preset.dark?.tint : undefined) ?? preset.tint
   const c = (base: number) => Math.min(base * tint, 0.045)
   const t = (l: number, base: number) => `oklch(${l} ${c(base)} ${h})`
 
@@ -292,7 +300,9 @@ export function surfaceTokens(preset: SurfacePreset, isDark: boolean): Record<st
       '--accent-foreground': t(r.accentForeground, 0.008),
       '--border': `oklch(${r.border} ${c(0.015)} ${h} / ${borderAlpha * 100}%)`,
       '--input': `oklch(${r.border} ${c(0.015)} ${h} / ${inputAlpha * 100}%)`,
-      '--sidebar': t(r.sidebar, 0.008),
+      '--sidebar': t(r.card, 0.01),
+      '--panel': t(r.card, 0.01),
+      '--editor': t(r.editor, 0.008),
       '--sidebar-foreground': t(r.foreground, 0.006),
       '--sidebar-accent': t(r.accent, 0.018),
       '--sidebar-accent-foreground': t(r.accentForeground, 0.008),
@@ -315,7 +325,9 @@ export function surfaceTokens(preset: SurfacePreset, isDark: boolean): Record<st
     '--accent-foreground': t(r.secondaryForeground, 0.016),
     '--border': t(r.border, 0.006),
     '--input': t(r.border, 0.006),
-    '--sidebar': t(r.sidebar, 0.004),
+    '--sidebar': 'oklch(1 0 0)',
+    '--panel': 'oklch(1 0 0)',
+    '--editor': t(r.editor, 0.004),
     '--sidebar-foreground': t(r.foreground, 0.012),
     '--sidebar-accent': t(r.sidebarAccent, 0.009),
     '--sidebar-accent-foreground': t(r.secondaryForeground, 0.016),

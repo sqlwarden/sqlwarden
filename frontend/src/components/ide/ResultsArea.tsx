@@ -30,7 +30,9 @@ import { RUN_SHORTCUT } from './IdeToolbar'
 import { Tip } from './schema-diagram/Tip'
 import { DriverBadge } from './DriverBadge'
 import { ExportButton } from './exports/ExportButton'
-import { ViewQueryDialog } from './ViewQueryDialog'
+import { ReadOnlySqlView } from './object-detail/ReadOnlySqlView'
+import { highlightSqlStatic } from './object-detail/staticSqlHighlight'
+import { isExpandableSql, flattenSql } from './sqlPreview'
 import { allOrgWorkspaceConnectionsQueryOptions } from '#/lib/api/query'
 import { useResultCursorPaging } from './useResultCursorPaging'
 import { IdeEmptyState } from './IdeEmptyState'
@@ -116,12 +118,7 @@ export function ResultsArea({ orgSlug, workspace }: ResultsAreaProps) {
 
   return (
     <div className="flex min-h-0 flex-1 flex-col gap-0">
-      <div
-        className={cn(
-          'flex h-8 shrink-0 items-center',
-          runs.length > 0 ? 'bg-sidebar' : 'bg-background',
-        )}
-      >
+      <div className="flex h-8 shrink-0 items-center bg-panel">
         <RunTabStrip
           runs={runs}
           connections={connections}
@@ -482,7 +479,7 @@ function ResultsSidebar({
     <div
       role="listbox"
       aria-label="Statement results"
-      className="flex w-52 shrink-0 flex-col overflow-y-auto border-r border-border bg-sidebar"
+      className="flex w-52 shrink-0 flex-col overflow-y-auto border-r border-border bg-panel"
     >
       {results.map((result, index) => {
         const icon = STATUS_ICON[result.status]
@@ -597,7 +594,7 @@ function CancelledState({
   connection: Connection | undefined
 }) {
   return (
-    <div className="flex h-full min-h-0 flex-col bg-background">
+    <div className="flex h-full min-h-0 flex-col bg-panel">
       <ResultSqlCaption
         sql={sql}
         orgSlug={orgSlug}
@@ -623,7 +620,7 @@ function CancelledState({
 
 function EmptyState() {
   return (
-    <div className="flex h-full min-h-0 flex-col bg-background">
+    <div className="flex h-full min-h-0 flex-col bg-panel">
       <IdeEmptyState
         icon="table"
         title="Nothing to show yet"
@@ -642,7 +639,7 @@ function EmptyState() {
 
 function RunningState() {
   return (
-    <div className="flex h-full min-h-0 flex-col bg-background">
+    <div className="flex h-full min-h-0 flex-col bg-panel">
       <div className="flex min-h-0 flex-1 items-center justify-center gap-2 text-xs text-muted-foreground">
         <Icon name="loading-03" size={14} className="animate-spin text-primary" />
         Running query…
@@ -665,7 +662,7 @@ function ErrorState({
   connection: Connection | undefined
 }) {
   return (
-    <div className="flex h-full min-h-0 flex-col bg-background">
+    <div className="flex h-full min-h-0 flex-col bg-panel">
       <ResultSqlCaption
         sql={sql}
         orgSlug={orgSlug}
@@ -691,7 +688,7 @@ function ErrorState({
 
 function PendingState() {
   return (
-    <div className="flex h-full min-h-0 flex-col items-center justify-center gap-1 bg-background p-6 text-center text-sm text-muted-foreground">
+    <div className="flex h-full min-h-0 flex-col items-center justify-center gap-1 bg-panel p-6 text-center text-sm text-muted-foreground">
       Queued
     </div>
   )
@@ -709,7 +706,7 @@ function SkippedState({
   connection: Connection | undefined
 }) {
   return (
-    <div className="flex h-full min-h-0 flex-col bg-background">
+    <div className="flex h-full min-h-0 flex-col bg-panel">
       <ResultSqlCaption
         sql={sql}
         orgSlug={orgSlug}
@@ -761,7 +758,7 @@ function ResultSetView({
 
   if (!hasColumns) {
     return (
-      <div className="flex h-full min-h-0 flex-col bg-background">
+      <div className="flex h-full min-h-0 flex-col bg-panel">
         <ResultSqlCaption
           sql={result.sql}
           orgSlug={orgSlug}
@@ -787,7 +784,7 @@ function ResultSetView({
   }
 
   return (
-    <div className="flex h-full min-h-0 flex-col bg-background">
+    <div className="flex h-full min-h-0 flex-col bg-panel">
       <ResultSqlCaption
         sql={result.sql}
         orgSlug={orgSlug}
@@ -796,6 +793,7 @@ function ResultSetView({
         showConnection={false}
       />
       <DataGrid
+        surface="panel"
         columns={columns}
         rows={rows}
         onScrollNearEnd={canFetchMore ? fetchNextPage : undefined}
@@ -804,7 +802,7 @@ function ResultSetView({
         buildRowMenu={buildRowMenu}
         buildColumnHeaderMenu={buildColumnHeaderMenu}
       />
-      <div className="flex h-6 shrink-0 items-center border-t border-border bg-sidebar px-3 text-[11px] text-muted-foreground">
+      <div className="flex h-6 shrink-0 items-center border-t border-border bg-panel px-3 text-[11px] text-muted-foreground">
         {connection && (
           <>
             <span
@@ -859,7 +857,9 @@ function ResultSetView({
 
 // ─── SQL caption ──────────────────────────────────────────────────────────────
 
-/** Slim strip above each result set naming the query it came from. */
+/** Strip above each result set naming the query it came from, styled like
+ *  the History/Favorites query column: highlighted single-line preview that
+ *  expands inline for multi-line or long statements. */
 function ResultSqlCaption({
   sql,
   orgSlug,
@@ -873,57 +873,86 @@ function ResultSqlCaption({
   connection: Connection | undefined
   showConnection?: boolean
 }) {
-  const [viewQueryOpen, setViewQueryOpen] = useState(false)
+  const [expanded, setExpanded] = useState(false)
 
   if (!sql) return null
+  const expandable = isExpandableSql(sql)
+  const isExpanded = expandable && expanded
+  const preview = highlightSqlStatic(flattenSql(sql))
+
   return (
-    <>
-      <div
-        role="button"
-        tabIndex={0}
-        onClick={() => setViewQueryOpen(true)}
-        onKeyDown={(e) => {
-          if (e.key === 'Enter' || e.key === ' ') {
-            e.preventDefault()
-            setViewQueryOpen(true)
-          }
-        }}
-        className="flex h-7 shrink-0 cursor-pointer items-center gap-2 border-b border-border bg-muted/30 pl-3 pr-1.5 hover:bg-muted/50"
-      >
-        <Icon name="terminal" size={11} className="shrink-0 text-muted-foreground" />
-        <span className="min-w-0 flex-1 truncate text-[11px] text-muted-foreground" title={sql}>
-          {sql.replace(/\s+/g, ' ').trim()}
-        </span>
-        {showConnection && connection && (
-          <span
-            className="flex min-w-0 max-w-32 shrink-0 items-center gap-1 text-[11px] text-muted-foreground"
-            title={connection.name}
+    <div
+      className={cn(
+        'flex shrink-0 gap-2 pl-3 pr-1.5',
+        isExpanded ? 'items-start py-1.5' : 'h-7 items-center',
+      )}
+    >
+      {isExpanded ? (
+        <div className="flex min-w-0 flex-1 items-start gap-1">
+          <button
+            type="button"
+            onClick={() => setExpanded(false)}
+            aria-expanded
+            aria-label="Collapse query"
+            className="mt-1 shrink-0 text-muted-foreground hover:text-foreground"
           >
-            <DriverBadge driver={connection.driver} size="sm" className="size-3 shrink-0" />
-            <span className="min-w-0 truncate">{connection.name}</span>
-          </span>
-        )}
-        <span onClick={(e) => e.stopPropagation()} className="flex shrink-0 items-center">
-          <ExportButton
-            orgSlug={orgSlug}
-            workspaceId={workspaceId}
-            connectionId={connection?.id}
-            getSql={() => sql}
-            className="scale-90"
-          />
-          <Tip label="Copy query">
-            <button
-              type="button"
-              aria-label="Copy query"
-              onClick={() => copyWithToast(sql)}
-              className="flex size-5 shrink-0 items-center justify-center rounded text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
-            >
-              <Icon name="copy-01" size={11} />
-            </button>
-          </Tip>
+            <Icon name="chevron-down" size={10} />
+          </button>
+          <div className="min-w-0 flex-1 overflow-hidden rounded-sm border border-border bg-muted/30">
+            <ReadOnlySqlView value={sql} wrap={false} className="max-h-64 overflow-auto" />
+          </div>
+        </div>
+      ) : expandable ? (
+        <button
+          type="button"
+          onClick={() => setExpanded(true)}
+          aria-expanded={false}
+          aria-label="Expand query"
+          title={sql}
+          className="flex min-w-0 flex-1 items-center gap-1 rounded-sm text-left font-mono text-xs leading-snug text-foreground hover:text-foreground/80"
+        >
+          <Icon name="chevron-right" size={10} className="shrink-0 text-muted-foreground" />
+          <span className="truncate">{preview}</span>
+        </button>
+      ) : (
+        <span
+          className="block min-w-0 flex-1 truncate font-mono text-xs leading-snug text-foreground"
+          title={sql}
+        >
+          {preview}
         </span>
-      </div>
-      <ViewQueryDialog open={viewQueryOpen} onOpenChange={setViewQueryOpen} sql={sql} />
-    </>
+      )}
+      {showConnection && connection && (
+        <span
+          className={cn(
+            'flex min-w-0 max-w-32 shrink-0 items-center gap-1 text-[11px] text-muted-foreground',
+            isExpanded && 'mt-1',
+          )}
+          title={connection.name}
+        >
+          <DriverBadge driver={connection.driver} size="sm" className="size-3 shrink-0" />
+          <span className="min-w-0 truncate">{connection.name}</span>
+        </span>
+      )}
+      <span className={cn('flex shrink-0 items-center', isExpanded && 'mt-0.5')}>
+        <ExportButton
+          orgSlug={orgSlug}
+          workspaceId={workspaceId}
+          connectionId={connection?.id}
+          getSql={() => sql}
+          className="scale-90"
+        />
+        <Tip label="Copy query">
+          <button
+            type="button"
+            aria-label="Copy query"
+            onClick={() => copyWithToast(sql)}
+            className="flex size-5 shrink-0 items-center justify-center rounded text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
+          >
+            <Icon name="copy-01" size={11} />
+          </button>
+        </Tip>
+      </span>
+    </div>
   )
 }

@@ -1,17 +1,10 @@
 import { useState } from 'react'
 import { Icon } from '#/lib/icons'
 import { Button } from '#/components/ui/button'
-import { Dialog, DialogContent, DialogHeader, DialogTitle } from '#/components/ui/dialog'
-import {
-  DropdownMenu,
-  DropdownMenuContent,
-  DropdownMenuItem,
-  DropdownMenuTrigger,
-} from '#/components/ui/dropdown-menu'
 import type { TransactionMode } from '#/lib/api/types'
 import { cn } from '#/lib/utils'
 import { getFrontendEngine } from './engines/registry'
-import { ReadOnlySqlView } from './object-detail/ReadOnlySqlView'
+import { PendingStatementsDialog } from './PendingStatementsDialog'
 import { Tip } from './schema-diagram/Tip'
 import type { TransactionState } from './useIdeStore'
 
@@ -27,6 +20,11 @@ export type TransactionControlsProps = {
   onSwitchToAutoBlocked: () => void
 }
 
+const SEGMENTS: { mode: TransactionMode; label: string }[] = [
+  { mode: 'auto', label: 'Auto' },
+  { mode: 'manual', label: 'Manual' },
+]
+
 export function TransactionControls({
   state,
   driver,
@@ -38,12 +36,7 @@ export function TransactionControls({
 }: TransactionControlsProps) {
   const manualTransactionWarning = getFrontendEngine(driver).manualTransactionWarning
   const [detailsOpen, setDetailsOpen] = useState(false)
-  const [selectedStatement, setSelectedStatement] = useState(0)
-
-  function openDetails() {
-    setSelectedStatement(0)
-    setDetailsOpen(true)
-  }
+  const txOpen = state.mode === 'manual' && state.open
 
   async function selectMode(mode: TransactionMode) {
     if (mode === state.mode) return
@@ -56,125 +49,103 @@ export function TransactionControls({
   }
 
   return (
-    <div className="flex items-center gap-2">
-      <DropdownMenu>
-        <DropdownMenuTrigger
-          render={
+    <div className="flex items-center gap-1">
+      <div
+        role="group"
+        aria-label="Transaction mode"
+        className="flex h-7 items-center rounded-md border border-input p-0.5"
+      >
+        {SEGMENTS.map(({ mode, label }) => {
+          const active = state.mode === mode
+          const warning = mode === 'manual' ? manualTransactionWarning : undefined
+          const showBadge = mode === 'manual' && txOpen
+          const button = (
+            <button
+              key={mode}
+              type="button"
+              aria-pressed={active}
+              onClick={() => void selectMode(mode)}
+              className={cn(
+                'relative flex h-full items-center gap-1 rounded-[calc(var(--radius-md)-2px)] px-2 text-xs transition-colors outline-none focus-visible:ring-[3px] focus-visible:ring-ring/50',
+                active
+                  ? mode === 'manual'
+                    ? 'bg-warning/15 font-medium text-warning'
+                    : 'bg-muted font-medium text-foreground'
+                  : 'text-muted-foreground hover:text-foreground',
+              )}
+            >
+              {label}
+              {(showBadge || (active && warning)) && (
+                <span
+                  data-testid={
+                    showBadge ? 'pending-statements-badge' : 'manual-transaction-warning'
+                  }
+                  className="ml-0.5 flex h-4 min-w-4 items-center justify-center rounded-full bg-warning px-1 text-[10px] leading-none font-semibold tabular-nums text-white"
+                >
+                  {showBadge ? state.pendingStatements : <Icon name="alert-triangle" size={10} />}
+                </span>
+              )}
+            </button>
+          )
+          const tip = showBadge
+            ? `${state.pendingStatements} pending statement${state.pendingStatements === 1 ? '' : 's'} in the open transaction`
+            : warning
+          return tip ? (
+            <Tip key={mode} label={tip}>
+              {button}
+            </Tip>
+          ) : (
+            button
+          )
+        })}
+      </div>
+
+      {txOpen && (
+        <>
+          <Tip label="View pending statements">
             <Button
               type="button"
-              variant="outline"
-              size="sm"
-              className="h-7 gap-1.5 px-2 text-xs font-normal"
-            />
-          }
-        >
-          <span
-            className={cn(
-              'size-1.5 shrink-0 rounded-full',
-              state.mode === 'manual' ? 'bg-warning' : 'bg-muted-foreground/40',
-            )}
-          />
-          {state.mode === 'manual' ? 'Manual' : 'Auto-commit'}
-          <Icon name="arrow-down-01" size={10} className="ml-0.5 shrink-0 text-muted-foreground" />
-        </DropdownMenuTrigger>
-        {state.mode === 'manual' && manualTransactionWarning && (
-          <Tip label={manualTransactionWarning}>
-            <span className="shrink-0" data-testid="manual-transaction-warning">
-              <Icon name="alert-triangle" size={13} className="text-warning" />
-            </span>
+              variant="ghost"
+              size="icon-sm"
+              aria-label="View pending statements"
+              disabled={state.statements.length === 0}
+              onClick={() => setDetailsOpen(true)}
+            >
+              <Icon name="list-view" size={13} />
+            </Button>
           </Tip>
-        )}
-        <DropdownMenuContent align="start">
-          <DropdownMenuItem onClick={() => void selectMode('auto')}>
-            <Icon name="refresh" size={13} data-icon="inline-start" />
-            Auto-commit
-          </DropdownMenuItem>
-          <DropdownMenuItem onClick={() => void selectMode('manual')}>
-            <Icon name="pencil-edit-02" size={13} data-icon="inline-start" />
-            Manual transaction
-          </DropdownMenuItem>
-        </DropdownMenuContent>
-      </DropdownMenu>
-
-      {state.mode === 'manual' && state.open && (
-        <>
-          <Button
-            type="button"
-            variant="ghost"
-            size="sm"
-            disabled={state.statements.length === 0}
-            className="h-7 px-2 text-xs font-normal text-muted-foreground"
-            onClick={openDetails}
-          >
-            {state.pendingStatements} pending
-          </Button>
-          <Button
-            type="button"
-            variant="outline"
-            size="sm"
-            className="h-7 px-2 text-xs font-normal"
-            onClick={() => void commit()}
-          >
-            <Icon name="checkmark-circle-02" size={12} data-icon="inline-start" />
-            Commit
-          </Button>
-          <Button
-            type="button"
-            variant="outline"
-            size="sm"
-            className="h-7 px-2 text-xs font-normal text-destructive hover:text-destructive"
-            onClick={() => void rollback()}
-          >
-            <Icon name="arrow-turn-backward" size={12} data-icon="inline-start" />
-            Rollback
-          </Button>
+          <Tip label="Commit transaction">
+            <Button
+              type="button"
+              variant="ghost"
+              size="icon-sm"
+              aria-label="Commit"
+              className="bg-success/10 text-success hover:bg-success/20 hover:text-success"
+              onClick={() => void commit()}
+            >
+              <Icon name="checkmark-circle-02" size={14} />
+            </Button>
+          </Tip>
+          <Tip label="Rollback transaction">
+            <Button
+              type="button"
+              variant="ghost"
+              size="icon-sm"
+              aria-label="Rollback"
+              className="bg-destructive/10 text-destructive hover:bg-destructive/20 hover:text-destructive"
+              onClick={() => void rollback()}
+            >
+              <Icon name="arrow-turn-backward" size={14} />
+            </Button>
+          </Tip>
         </>
       )}
 
-      <Dialog open={detailsOpen} onOpenChange={setDetailsOpen}>
-        <DialogContent className="flex flex-col sm:max-w-3xl">
-          <DialogHeader>
-            <DialogTitle>
-              Pending statement{state.statements.length === 1 ? '' : 's'} ({state.statements.length}
-              )
-            </DialogTitle>
-          </DialogHeader>
-          <div className="flex max-h-[60vh] min-h-40 overflow-hidden rounded-md border border-border">
-            <div
-              role="listbox"
-              aria-label="Pending statements"
-              className="flex w-52 shrink-0 flex-col overflow-y-auto border-r border-border bg-sidebar"
-            >
-              {state.statements.map((statement, index) => {
-                const selected = index === selectedStatement
-                return (
-                  <button
-                    key={index}
-                    type="button"
-                    role="option"
-                    aria-selected={selected}
-                    onClick={() => setSelectedStatement(index)}
-                    className={cn(
-                      'flex flex-col gap-0.5 border-b border-border px-2.5 py-2 text-left transition-colors hover:bg-accent/40',
-                      selected && 'bg-accent',
-                    )}
-                  >
-                    <span className="shrink-0 text-[11px] tabular-nums text-muted-foreground">
-                      #{index + 1}
-                    </span>
-                    <span className="min-w-0 truncate font-mono text-[11px] text-foreground">
-                      {statement.replace(/\s+/g, ' ').trim()}
-                    </span>
-                  </button>
-                )
-              })}
-            </div>
-            <div className="min-w-0 flex-1 overflow-hidden bg-card">
-              <ReadOnlySqlView value={state.statements[selectedStatement] ?? ''} />
-            </div>
-          </div>
-        </DialogContent>
-      </Dialog>
+      <PendingStatementsDialog
+        open={detailsOpen}
+        onOpenChange={setDetailsOpen}
+        statements={state.statements}
+      />
     </div>
   )
 }
