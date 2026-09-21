@@ -1,5 +1,24 @@
 # Changelog
 
+## [0.9.4](https://github.com/sqlwarden/sqlwarden/compare/v0.9.3...v0.9.4) (2026-09-21)
+
+
+### Features
+
+* **ide:** editor-owned toolbar, shell/editor surface tokens, transaction control redesign (SQLW-177) ([0915188](https://github.com/sqlwarden/sqlwarden/commit/09151885d7f7b2ec8c96c5ec175c59d810949448))
+* **ide:** implement a persistent bottom toolbar, move history and favorites to bottom toolbar (SQLW-175) ([4850224](https://github.com/sqlwarden/sqlwarden/commit/4850224b758bc2c19727920966a4d1ea62187ff5))
+* **ide:** move results/history/favorites switcher to header of bottom panel as middle divider (SQLW-177) ([e9603a6](https://github.com/sqlwarden/sqlwarden/commit/e9603a6fe980d98b1ef7940d80b991e1418619ec))
+* **ide:** redesign history/favorites as tables with drag-to-editor (SQLW-177) ([02519ed](https://github.com/sqlwarden/sqlwarden/commit/02519ed61b0fed65425e2977ad9baaaa7713fbce))
+* **ide:** third user feedback round UI changes implementation (SQLW-180) ([3f1ad84](https://github.com/sqlwarden/sqlwarden/commit/3f1ad840a755bf27bd273b35b1854f611ed5c7cb))
+* **ui:** polish empty states and standardize typography across the app (SQLW-176) ([c896aa3](https://github.com/sqlwarden/sqlwarden/commit/c896aa3b76f6ee5b7d13eb97a15859f8ecf9324a))
+
+
+### Bug Fixes
+
+* **ide:** show not-connected state instead of snapshot spinner when disconnected (SQLW-179) ([ac2b78c](https://github.com/sqlwarden/sqlwarden/commit/ac2b78c8d300498b53b0507352356055c281c2cd))
+* **ide:** stop per-keystroke sequence fetches and debounce schema filter (SQLW-174) ([77f636a](https://github.com/sqlwarden/sqlwarden/commit/77f636a6de375eead7c6231cc0371b995ac6c972))
+* **release:** align prerelease notes with stable releases (SQLW-178) ([3a433e8](https://github.com/sqlwarden/sqlwarden/commit/3a433e8c53887aba4aecd1b84c878dc007b703cb))
+
 ## [0.9.3](https://github.com/sqlwarden/sqlwarden/compare/v0.9.2...v0.9.3) (2026-09-16)
 
 
