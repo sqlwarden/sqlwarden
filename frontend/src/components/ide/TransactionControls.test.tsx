@@ -39,14 +39,31 @@ describe('TransactionControls', () => {
     )
   }
 
-  async function openModeMenu(user: ReturnType<typeof userEvent.setup>) {
-    await user.click(screen.getByRole('button', { name: /auto-commit|manual/i }))
+  function segment(name: 'Auto' | 'Manual') {
+    return screen.getByRole('button', { name: new RegExp(`^${name}`) })
   }
+
+  it('renders the mode segments with the current mode pressed', () => {
+    renderControls({ mode: 'manual', open: false, pendingStatements: 0, statements: [] })
+
+    expect(segment('Auto')).toHaveAttribute('aria-pressed', 'false')
+    expect(segment('Manual')).toHaveAttribute('aria-pressed', 'true')
+  })
+
+  it('clicking the already active segment does not switch modes', async () => {
+    renderControls({ mode: 'auto', open: false, pendingStatements: 0, statements: [] })
+
+    await userEvent.setup().click(segment('Auto'))
+
+    expect(switchToAuto).not.toHaveBeenCalled()
+    expect(switchToManual).not.toHaveBeenCalled()
+  })
 
   it('shows the pending badge and Commit/Rollback buttons only when mode is manual and open', () => {
     renderControls({ mode: 'manual', open: true, pendingStatements: 4, statements: [] })
 
-    expect(screen.getByText('4 pending')).toBeInTheDocument()
+    expect(screen.getByTestId('pending-statements-badge')).toHaveTextContent('4')
+    expect(screen.getByRole('button', { name: 'View pending statements' })).toBeInTheDocument()
     expect(screen.getByRole('button', { name: 'Commit' })).toBeInTheDocument()
     expect(screen.getByRole('button', { name: 'Rollback' })).toBeInTheDocument()
   })
@@ -54,7 +71,10 @@ describe('TransactionControls', () => {
   it('hides the pending badge and Commit/Rollback buttons in auto mode', () => {
     renderControls({ mode: 'auto', open: false, pendingStatements: 0, statements: [] })
 
-    expect(screen.queryByText(/pending/)).not.toBeInTheDocument()
+    expect(screen.queryByTestId('pending-statements-badge')).not.toBeInTheDocument()
+    expect(
+      screen.queryByRole('button', { name: 'View pending statements' }),
+    ).not.toBeInTheDocument()
     expect(screen.queryByRole('button', { name: 'Commit' })).not.toBeInTheDocument()
     expect(screen.queryByRole('button', { name: 'Rollback' })).not.toBeInTheDocument()
   })
@@ -68,7 +88,7 @@ describe('TransactionControls', () => {
     })
 
     const user = userEvent.setup()
-    await user.click(screen.getByText('2 pending'))
+    await user.click(screen.getByRole('button', { name: 'View pending statements' }))
 
     const dialog = await screen.findByRole('dialog')
     expect(within(dialog).getByText('Pending statements (2)')).toBeInTheDocument()
@@ -92,7 +112,7 @@ describe('TransactionControls', () => {
     })
 
     const user = userEvent.setup()
-    await user.click(screen.getByText('2 pending'))
+    await user.click(screen.getByRole('button', { name: 'View pending statements' }))
 
     const dialog = await screen.findByRole('dialog')
     await user.click(within(dialog).getByRole('option', { name: /#2/ }))
@@ -103,7 +123,7 @@ describe('TransactionControls', () => {
   it('disables the pending badge when there are no statements to show', () => {
     renderControls({ mode: 'manual', open: true, pendingStatements: 0, statements: [] })
 
-    expect(screen.getByText('0 pending')).toBeDisabled()
+    expect(screen.getByRole('button', { name: 'View pending statements' })).toBeDisabled()
   })
 
   it('shows a persistent warning in manual mode for drivers with implicit-commit DDL', () => {
@@ -131,8 +151,7 @@ describe('TransactionControls', () => {
     renderControls({ mode: 'auto', open: false, pendingStatements: 0, statements: [] })
 
     const user = userEvent.setup()
-    await openModeMenu(user)
-    await user.click(await screen.findByRole('menuitem', { name: 'Manual transaction' }))
+    await user.click(segment('Manual'))
 
     expect(switchToManual).toHaveBeenCalledTimes(1)
   })
@@ -141,8 +160,7 @@ describe('TransactionControls', () => {
     renderControls({ mode: 'manual', open: false, pendingStatements: 0, statements: [] })
 
     const user = userEvent.setup()
-    await openModeMenu(user)
-    await user.click(await screen.findByRole('menuitem', { name: 'Auto-commit' }))
+    await user.click(segment('Auto'))
 
     await waitFor(() => expect(switchToAuto).toHaveBeenCalledTimes(1))
     expect(onSwitchToAutoBlocked).not.toHaveBeenCalled()
@@ -153,8 +171,7 @@ describe('TransactionControls', () => {
     renderControls({ mode: 'manual', open: true, pendingStatements: 1, statements: [] })
 
     const user = userEvent.setup()
-    await openModeMenu(user)
-    await user.click(await screen.findByRole('menuitem', { name: 'Auto-commit' }))
+    await user.click(segment('Auto'))
 
     await waitFor(() => expect(onSwitchToAutoBlocked).toHaveBeenCalledTimes(1))
   })

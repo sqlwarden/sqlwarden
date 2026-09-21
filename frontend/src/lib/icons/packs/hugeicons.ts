@@ -47,6 +47,7 @@ const icons: Record<AppIcon, string> = {
   'information-circle': 'hugeicons:information-circle',
   'key-01': 'hugeicons:key-01',
   'layout-bottom': 'hugeicons:layout-bottom',
+  'list-view': 'hugeicons:left-to-right-list-bullet',
   'loading-03': 'hugeicons:loading-03',
   'logout-03': 'hugeicons:logout-03',
   logout: 'hugeicons:logout-01',

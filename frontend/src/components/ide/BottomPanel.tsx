@@ -42,7 +42,7 @@ export function BottomPanelHeader({ orgSlug }: Pick<BottomPanelProps, 'orgSlug'>
 
   return (
     <div
-      className="flex shrink-0 items-center border-b border-border bg-sidebar px-1"
+      className="flex shrink-0 items-center bg-panel px-1"
       style={{ height: BOTTOM_PANEL_HEADER_HEIGHT }}
     >
       <div className="flex min-w-0 flex-1 items-center gap-0.5">
@@ -65,7 +65,7 @@ export function BottomPanelHeader({ orgSlug }: Pick<BottomPanelProps, 'orgSlug'>
               className={cn(
                 'flex h-6 shrink-0 items-center gap-1.5 rounded-sm px-2 text-xs transition-colors',
                 isActive
-                  ? 'bg-sidebar-accent font-medium text-sidebar-accent-foreground'
+                  ? 'bg-primary/10 font-medium text-primary'
                   : 'text-muted-foreground hover:bg-sidebar-accent/60 hover:text-foreground',
               )}
             >
@@ -121,7 +121,7 @@ export function BottomPanelContent({ orgSlug, workspace }: BottomPanelProps) {
   const Content = activePanel.component
 
   return (
-    <div className="flex min-h-0 flex-1 flex-col overflow-hidden">
+    <div className="flex min-h-0 flex-1 flex-col overflow-hidden bg-panel">
       <Content orgSlug={orgSlug} workspace={workspace} />
     </div>
   )

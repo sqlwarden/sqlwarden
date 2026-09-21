@@ -47,6 +47,7 @@ const icons: Record<AppIcon, string> = {
   'information-circle': 'ri:information-line',
   'key-01': 'ri:key-line',
   'layout-bottom': 'ri:layout-bottom-line',
+  'list-view': 'ri:list-unordered',
   'loading-03': 'ri:loader-line',
   'logout-03': 'ri:logout-box-r-line',
   logout: 'ri:logout-circle-r-line',

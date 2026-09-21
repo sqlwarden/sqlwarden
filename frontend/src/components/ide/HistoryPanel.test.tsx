@@ -591,5 +591,6 @@ describe('HistoryPanel', () => {
     await user.click(await screen.findByRole('button', { name: 'Clear all' }))
 
     await waitFor(() => expect(cleared).toBe(true))
+    await waitFor(() => expect(screen.queryByRole('alertdialog')).not.toBeInTheDocument())
   })
 })

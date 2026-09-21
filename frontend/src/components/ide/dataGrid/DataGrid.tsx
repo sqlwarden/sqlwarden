@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState, type UIEvent } from 'react'
+import { useEffect, useRef, useState, type CSSProperties, type UIEvent } from 'react'
 import { useVirtualizer } from '@tanstack/react-virtual'
 import type { PanelImperativeHandle } from 'react-resizable-panels'
 import { Icon } from '#/lib/icons'
@@ -43,6 +43,16 @@ export type DataGridProps = {
   buildCellMenu?: (ctx: CellMenuCtx) => ContextMenuItem[]
   buildRowMenu?: (ctx: RowMenuCtx) => ContextMenuItem[]
   buildColumnHeaderMenu?: (ctx: ColumnHeaderMenuCtx) => ContextMenuItem[]
+  /** Surface the grid sits on; sticky cells paint it so they stay opaque
+   *  while scrolling. `editor` for editor-hosted grids, `panel` for the dock. */
+  surface?: DataGridSurface
+}
+
+export type DataGridSurface = 'editor' | 'panel'
+
+const SURFACE_VAR: Record<DataGridSurface, string> = {
+  editor: 'var(--color-editor)',
+  panel: 'var(--color-panel)',
 }
 
 /** Virtualized, selectable, keyboard-navigable data table shared by the query
@@ -58,6 +68,7 @@ export function DataGrid({
   buildCellMenu = defaultCellMenu,
   buildRowMenu = defaultRowMenu,
   buildColumnHeaderMenu = defaultColumnHeaderMenu,
+  surface = 'editor',
 }: DataGridProps) {
   const columnNames = columns.map((c) => c.name)
   const cellText = (v: ResultValue) => formatValue(v).display
@@ -321,7 +332,12 @@ export function DataGrid({
   const panelCol = selection ? columns[selection.anchor.colIdx] : undefined
 
   const tableEl = (
-    <div ref={tableContainerRef} onKeyDown={handleTableKeyDown} className="select-none">
+    <div
+      ref={tableContainerRef}
+      onKeyDown={handleTableKeyDown}
+      className="select-none"
+      style={{ '--data-grid-surface': SURFACE_VAR[surface] } as CSSProperties}
+    >
       <table
         role="grid"
         aria-label={ariaLabel}
@@ -466,7 +482,7 @@ function RowHeaderCell({
       onContextMenu={onContextMenu}
       className={cn(
         'sticky left-0 z-[5] cursor-pointer border-b border-r border-border px-2 py-1 text-right text-muted-foreground tabular-nums',
-        selected ? 'bg-primary/15' : 'bg-card',
+        selected ? 'bg-primary/15' : 'bg-(--data-grid-surface)',
       )}
     >
       {label}

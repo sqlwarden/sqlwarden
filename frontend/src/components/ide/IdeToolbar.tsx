@@ -15,7 +15,8 @@ import {
 } from '#/lib/api/query'
 import type { Connection, Workspace, WorkspaceFile } from '#/lib/api/types'
 import { cn } from '#/lib/utils'
-import { useIde, activeTabId as selectActiveTabId, type EditorTab } from './useIdeStore'
+import { useIde, type EditorTab } from './useIdeStore'
+import { findGroup } from './ideLayout'
 import { ExplainAnalyzeConfirmDialog } from './ExplainAnalyzeConfirmDialog'
 import { SaveAsDialog } from './SaveAsDialog'
 import { SaveFavoriteDialog } from './SaveFavoriteDialog'
@@ -26,6 +27,7 @@ import { useDownloadNow } from './exports/useDownloadNow'
 import { Tip } from './schema-diagram/Tip'
 import { useSaveEditorTab } from './useSaveEditorTab'
 import { ConnectionSelector } from './ConnectionSelector'
+import { useConnectionActions } from './useConnectionActions'
 import { TransactionControls } from './TransactionControls'
 import { TransactionGuardDialog } from './TransactionGuardDialog'
 import { useTransactionHydration } from './transactionState'
@@ -39,6 +41,8 @@ import { isSqlEditorTab, splitSqlStatements } from './sqlStatements'
 type IdeToolbarProps = {
   orgSlug: string
   workspace: Workspace
+  /** Editor group this toolbar belongs to; actions target its active tab. */
+  groupId: string
   selection?: string
 }
 
@@ -47,7 +51,7 @@ export const RUN_SHORTCUT =
 export const FORMAT_SHORTCUT =
   typeof navigator !== 'undefined' && /mac/i.test(navigator.platform) ? '⇧⌥F' : 'Shift Alt F'
 
-export function IdeToolbar({ orgSlug, workspace, selection }: IdeToolbarProps) {
+export function IdeToolbar({ orgSlug, workspace, groupId, selection }: IdeToolbarProps) {
   const [saveAsTab, setSaveAsTab] = useState<EditorTab | null>(null)
   const [confirmExportSql, setConfirmExportSql] = useState<string | null>(null)
   const [exportToWorkspaceOpen, setExportToWorkspaceOpen] = useState(false)
@@ -56,8 +60,11 @@ export function IdeToolbar({ orgSlug, workspace, selection }: IdeToolbarProps) {
   const [switchToAutoGuardOpen, setSwitchToAutoGuardOpen] = useState(false)
   const viewRegistry = useEditorViewRegistry()
 
-  const activeTabId = useIde((s) => selectActiveTabId(s, workspace.id))
-  const activeGroupId = useIde((s) => s.activeGroupId[workspace.id])
+  const activeTabId = useIde((s) => {
+    const layout = s.layout[workspace.id]
+    return layout ? findGroup(layout, groupId)?.activeTabId : undefined
+  })
+  const activeGroupId = groupId
   const tabs = useIde((s) => s.tabs)
   const openTab = useIde((s) => s.openTab)
   const closeTab = useIde((s) => s.closeTab)
@@ -141,6 +148,10 @@ export function IdeToolbar({ orgSlug, workspace, selection }: IdeToolbarProps) {
     activeConnectionSessionId,
   )
   useTransactionHydration(orgSlug, workspace.id, activeConnection?.id, activeConnectionSessionId)
+  const connectionActions = useConnectionActions(orgSlug, workspace)
+  const isConnecting = useIde((s) =>
+    activeConnection ? s.connectionStatus[activeConnection.id] === 'connecting' : false,
+  )
   useEffect(() => {
     if (activeTab && activeConnection && activeTab.driver !== activeConnection.driver) {
       // Console tabs created before driver-aware completion retained only the
@@ -199,7 +210,7 @@ export function IdeToolbar({ orgSlug, workspace, selection }: IdeToolbarProps) {
   const runDisabled = !activeTab || !activeConnection || queryAction.isRunning
   return (
     <>
-      <div className="flex h-10 shrink-0 items-center gap-2 border-b border-border bg-background px-2.5">
+      <div className="flex h-10 shrink-0 items-center gap-2 border-b border-border bg-editor px-2.5">
         <ConnectionSelector
           activeConnection={activeConnection}
           activeConnectionId={activeTab?.connectionId}
@@ -209,6 +220,27 @@ export function IdeToolbar({ orgSlug, workspace, selection }: IdeToolbarProps) {
           tabAvailable={Boolean(activeTab)}
           onSelect={selectConnection}
         />
+
+        {activeConnection && !activeConnectionSessionId && (
+          <Tip label={`Connect to ${activeConnection.name} without running`}>
+            <Button
+              type="button"
+              variant="outline"
+              size="sm"
+              className="h-7 px-2.5"
+              disabled={isConnecting}
+              onClick={() => connectionActions.connect(activeConnection, { openConsole: false })}
+            >
+              <Icon
+                name={isConnecting ? 'loading-03' : 'flow-connection'}
+                size={13}
+                data-icon="inline-start"
+                className={isConnecting ? 'animate-spin' : undefined}
+              />
+              {isConnecting ? 'Connecting…' : 'Connect'}
+            </Button>
+          </Tip>
+        )}
 
         {/* Run button — combined with quick-export options via the split arrow, when the active tab is a runnable query */}
         <div className="flex items-stretch">

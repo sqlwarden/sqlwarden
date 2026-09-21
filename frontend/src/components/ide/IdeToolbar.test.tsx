@@ -155,6 +155,10 @@ describe('IdeToolbar', () => {
     )
   })
 
+  function groupId() {
+    return store.getState().activeGroupId[workspace.id] ?? 'none'
+  }
+
   function renderToolbar() {
     return {
       user: userEvent.setup(),
@@ -162,7 +166,7 @@ describe('IdeToolbar', () => {
         <QueryClientProvider client={createTestQueryClient()}>
           <IdeStoreContext.Provider value={store}>
             <EditorViewRegistryContext.Provider value={views}>
-              <IdeToolbar orgSlug="acme" workspace={workspace} />
+              <IdeToolbar orgSlug="acme" workspace={workspace} groupId={groupId()} />
             </EditorViewRegistryContext.Provider>
           </IdeStoreContext.Provider>
         </QueryClientProvider>,
@@ -191,6 +195,41 @@ describe('IdeToolbar', () => {
     expect(mocks.save).toHaveBeenCalledWith(scratchTab)
     expect(screen.getByRole('button', { name: 'More run options' })).toBeEnabled()
     expect(screen.getByRole('button', { name: 'Format SQL' })).toBeEnabled()
+  })
+
+  it('offers a Connect button for a selected but disconnected connection', async () => {
+    let connectCalls = 0
+    server.use(
+      http.post('/api/v1/orgs/acme/workspaces/3/connections/7/connect', () => {
+        connectCalls += 1
+        return HttpResponse.json({ session_id: 'sess-7', reused: false })
+      }),
+      http.get('/api/v1/orgs/acme/workspaces/3/connections/7/transaction', () =>
+        HttpResponse.json({ mode: 'auto', open: false, pending_statements: 0, statements: [] }),
+      ),
+    )
+    store.getState().openTab(scratchTab)
+    const { user } = renderToolbar()
+
+    await user.click(await screen.findByRole('button', { name: 'Connect' }))
+
+    await waitFor(() => expect(store.getState().sessions[7]).toBe('sess-7'))
+    expect(connectCalls).toBe(1)
+    expect(screen.queryByRole('button', { name: 'Connect' })).not.toBeInTheDocument()
+  })
+
+  it('hides the Connect button when the connection already has a session', async () => {
+    server.use(
+      http.get('/api/v1/orgs/acme/workspaces/3/connections/7/transaction', () =>
+        HttpResponse.json({ mode: 'auto', open: false, pending_statements: 0, statements: [] }),
+      ),
+    )
+    store.getState().openTab(scratchTab)
+    store.getState().setSession(7, 'sess-7')
+    renderToolbar()
+
+    await screen.findByRole('combobox', { name: 'Select connection' })
+    expect(screen.queryByRole('button', { name: 'Connect' })).not.toBeInTheDocument()
   })
 
   it('formats the active editor using its connection dialect', async () => {
@@ -239,7 +278,12 @@ describe('IdeToolbar', () => {
       <QueryClientProvider client={createTestQueryClient()}>
         <IdeStoreContext.Provider value={store}>
           <EditorViewRegistryContext.Provider value={views}>
-            <IdeToolbar orgSlug="acme" workspace={workspace} selection="select 1; select 2;" />
+            <IdeToolbar
+              orgSlug="acme"
+              workspace={workspace}
+              groupId={groupId()}
+              selection="select 1; select 2;"
+            />
           </EditorViewRegistryContext.Provider>
         </IdeStoreContext.Provider>
       </QueryClientProvider>,
@@ -255,7 +299,12 @@ describe('IdeToolbar', () => {
       <QueryClientProvider client={createTestQueryClient()}>
         <IdeStoreContext.Provider value={store}>
           <EditorViewRegistryContext.Provider value={views}>
-            <IdeToolbar orgSlug="acme" workspace={workspace} selection="select 1;" />
+            <IdeToolbar
+              orgSlug="acme"
+              workspace={workspace}
+              groupId={groupId()}
+              selection="select 1;"
+            />
           </EditorViewRegistryContext.Provider>
         </IdeStoreContext.Provider>
       </QueryClientProvider>,
