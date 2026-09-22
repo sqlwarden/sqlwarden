@@ -115,7 +115,7 @@ gate.
 | desktop/local composition | yes, the same `app.Build` graph with desktop bootstrap values | SQLite/local filesystem defaults; no distributed dependency |
 | application database | SQLite for desktop/single replica; PostgreSQL for server deployments | SQLite is not a distributed control-plane store |
 | workspace file storage | filesystem adapter in file or object semantics | S3/object-store adapter is not implemented |
-| split `api` / `connector` | configuration names reserved, not yet selectable | SQLW-160/161 provide the execution boundary and transport |
+| split `api` / `connector` | selectable; API uses WorkerRuntime over authenticated internal HTTP when connector is separate | one connector replica with a static destination |
 | connector replicas | exactly one with the static session directory | more than one fails validation until the Redis directory work lands |
 | Redis session directory | named but rejected as unimplemented | SQLW-165 follow-up |
 | jobs/realtime/edge-gateway process kinds | named but not implemented | later tickets; Edge Agent and collaboration remain outside SQLW-151 |

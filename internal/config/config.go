@@ -22,6 +22,10 @@ const (
 	defaultDesktopActiveBackend = "local"
 	defaultAllowUserBackends    = true
 	defaultConnectorReplicas    = 1
+	defaultConnectorAddress     = "127.0.0.1:6021"
+	defaultConnectorListen      = ":6021"
+	defaultConnectorTransport   = ConnectorTransportInsecure
+	defaultConnectorGrantKey    = "dev-execution-grant-key-32bytes!!"
 	defaultSessionDirectory     = SessionDirectoryStatic
 	defaultEdition              = EditionCommunity
 	defaultSecretsDir           = ""
@@ -72,10 +76,9 @@ const (
 	FilesStorageBackendS3         = "s3"
 )
 
-// Process kinds name the runtime responsibilities a process may take on. Only
-// [ProcessKindAll] is produced in production today; the remaining names are
-// reserved so configuration and validation can be written against the final
-// topology before the processes are split apart.
+// Process kinds name the runtime responsibilities a process may take on. API
+// and connector may run separately; the remaining specialized kinds are
+// reserved until their implementations land.
 const (
 	ProcessKindAll         = "all"
 	ProcessKindAPI         = "api"
@@ -86,11 +89,18 @@ const (
 )
 
 // Session directory backends resolve which process owns a live target-database
-// session. The static directory only knows about the local process, so it
+// session. The static directory knows one configured connector address, so it
 // cannot route between replicas.
 const (
 	SessionDirectoryStatic = "static"
 	SessionDirectoryRedis  = "redis"
+)
+
+// Connector transport modes select credentials for the internal execution
+// protocol independently from the public HTTP listener.
+const (
+	ConnectorTransportInsecure = "insecure"
+	ConnectorTransportTLS      = "tls"
 )
 
 // Editions select which feature modules are compiled into and licensed for the
@@ -152,7 +162,17 @@ type Config struct {
 	Connector struct {
 		// Replicas is the number of processes serving the connector process
 		// kind. Values above 1 require a shared session directory.
-		Replicas int
+		Replicas        int
+		Address         string
+		ListenAddress   string
+		Transport       string
+		GrantSigningKey string
+		TLS             struct {
+			CAFile     string
+			CertFile   string
+			KeyFile    string
+			ServerName string
+		}
 	}
 	Edition struct {
 		Name        string
@@ -208,6 +228,10 @@ func Default() Config {
 	cfg.Desktop.AllowUserBackends = defaultAllowUserBackends
 	cfg.Desktop.Backends = defaultDesktopBackends()
 	cfg.Connector.Replicas = defaultConnectorReplicas
+	cfg.Connector.Address = defaultConnectorAddress
+	cfg.Connector.ListenAddress = defaultConnectorListen
+	cfg.Connector.Transport = defaultConnectorTransport
+	cfg.Connector.GrantSigningKey = defaultConnectorGrantKey
 	cfg.Edition.Name = defaultEdition
 	cfg.SecretsDir = defaultSecretsDir
 	return cfg

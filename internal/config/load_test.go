@@ -38,6 +38,9 @@ func TestLoadDefaults(t *testing.T) {
 	if cfg.Connector.Replicas != defaultConnectorReplicas {
 		t.Fatalf("connector.replicas = %d, want %d", cfg.Connector.Replicas, defaultConnectorReplicas)
 	}
+	if cfg.Connector.Address != defaultConnectorAddress || cfg.Connector.ListenAddress != defaultConnectorListen || cfg.Connector.Transport != ConnectorTransportInsecure {
+		t.Fatalf("unexpected connector defaults: %+v", cfg.Connector)
+	}
 	if cfg.Edition.Name != EditionCommunity || cfg.Edition.LicenseFile != "" {
 		t.Fatalf("unexpected edition config: %+v", cfg.Edition)
 	}
@@ -168,6 +171,9 @@ func TestLoadEnvOverridesFile(t *testing.T) {
 	t.Setenv("TLS_ENABLED", "true")
 	t.Setenv("TLS_CERT_FILE", "/env/tls.crt")
 	t.Setenv("TLS_KEY_FILE", "/env/tls.key")
+	t.Setenv("CONNECTOR_ADDRESS", "connector.internal:7443")
+	t.Setenv("CONNECTOR_LISTEN_ADDRESS", ":7443")
+	t.Setenv("CONNECTOR_GRANT_SIGNING_KEY", "environment-execution-key-32bytes")
 
 	dir := t.TempDir()
 	path := filepath.Join(dir, "config.yaml")
@@ -200,6 +206,9 @@ db:
 	}
 	if !cfg.TLS.Enabled || cfg.TLS.CertFile != "/env/tls.crt" || cfg.TLS.KeyFile != "/env/tls.key" {
 		t.Fatalf("unexpected tls config: %+v", cfg.TLS)
+	}
+	if cfg.Connector.Address != "connector.internal:7443" || cfg.Connector.ListenAddress != ":7443" || cfg.Connector.GrantSigningKey != "environment-execution-key-32bytes" {
+		t.Fatalf("unexpected connector config: %+v", cfg.Connector)
 	}
 }
 

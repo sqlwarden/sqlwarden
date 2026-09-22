@@ -2,6 +2,8 @@ package app
 
 import (
 	"context"
+	"crypto/tls"
+	"crypto/x509"
 	"fmt"
 	"io"
 	"log/slog"
@@ -178,8 +180,39 @@ func Build(ctx context.Context, opts Options) (*Application, error) {
 		queryCursors.Close()
 		return nil
 	})
-	sessionDirectory := execution.NewMemorySessionDirectory()
-	executionRuntime := execution.NewLocalRuntime(connManager, queryCursors, sessionDirectory, sessionIdleTimeout)
+	var sessionDirectory execution.SessionDirectory = execution.NewMemorySessionDirectory()
+	localExecution := execution.NewLocalRuntime(connManager, queryCursors, sessionDirectory, sessionIdleTimeout)
+	executionRuntime := execution.SessionRuntime(localExecution)
+	var executionServer *execution.RuntimeServer
+	var serverCredentials execution.ServerTransportCredentials
+	apiSelected := explicitlySelectsProcessKind(cfg, config.ProcessKindAPI)
+	connectorSelected := explicitlySelectsProcessKind(cfg, config.ProcessKindConnector)
+	if apiSelected || connectorSelected {
+		grantAuthority, grantErr := execution.NewGrantAuthority([]byte(cfg.Connector.GrantSigningKey), "sqlwarden-api", "sqlwarden-connector", 0)
+		if grantErr != nil {
+			return fail(fmt.Errorf("execution grants: %w", grantErr))
+		}
+		clientCredentials, configuredServerCredentials, credentialsErr := connectorTransportCredentials(cfg)
+		if credentialsErr != nil {
+			return fail(credentialsErr)
+		}
+		if connectorSelected {
+			serverCredentials = configuredServerCredentials
+			executionServer, err = execution.NewRuntimeServer(localExecution, grantAuthority)
+			if err != nil {
+				return fail(fmt.Errorf("execution server: %w", err))
+			}
+		}
+		if apiSelected && !connectorSelected {
+			staticDirectory := execution.NewStaticSessionDirectory(cfg.Connector.Address)
+			workerRuntime, workerErr := execution.NewWorkerRuntime(staticDirectory, grantAuthority, clientCredentials)
+			if workerErr != nil {
+				return fail(fmt.Errorf("worker execution runtime: %w", workerErr))
+			}
+			executionRuntime = workerRuntime
+			sessionDirectory = staticDirectory
+		}
+	}
 
 	schemaService := schema.NewServiceWithLogger(cache.NewMemCache(schemaCacheCapacity), schemaCacheTTL, logger)
 	completionService := completion.NewService()
@@ -211,21 +244,24 @@ func Build(ctx context.Context, opts Options) (*Application, error) {
 			catalog.NewTargetPolicy(settingsService),
 			auditWriter,
 		),
-		Access:            access.NewService(access.NewSQLStore(db.DB), enforcer, policyEvaluator, auditWriter),
-		Identity:          identity.NewService(identity.NewDatabaseStore(db), identityProvider, auditWriter),
-		Audit:             auditWriter,
-		Keyring:           keyring,
-		ConnManager:       connManager,
-		QueryCursors:      queryCursors,
-		Execution:         executionRuntime,
-		SessionDirectory:  sessionDirectory,
-		SchemaService:     schemaService,
-		SchemaSnapshots:   schema.NewSnapshotStore(db),
-		CompletionService: completionService,
-		FileStores:        fileStores,
-		JobStore:          jobs.NewStore(db),
-		Settings:          settingsService,
-		Edition:           selectedEdition,
+		Access:                     access.NewService(access.NewSQLStore(db.DB), enforcer, policyEvaluator, auditWriter),
+		Identity:                   identity.NewService(identity.NewDatabaseStore(db), identityProvider, auditWriter),
+		Audit:                      auditWriter,
+		Keyring:                    keyring,
+		ConnManager:                connManager,
+		QueryCursors:               queryCursors,
+		Execution:                  executionRuntime,
+		LocalExecution:             localExecution,
+		ExecutionServer:            executionServer,
+		ConnectorServerCredentials: serverCredentials,
+		SessionDirectory:           sessionDirectory,
+		SchemaService:              schemaService,
+		SchemaSnapshots:            schema.NewSnapshotStore(db),
+		CompletionService:          completionService,
+		FileStores:                 fileStores,
+		JobStore:                   jobs.NewStore(db),
+		Settings:                   settingsService,
+		Edition:                    selectedEdition,
 	}
 
 	var kinds []ProcessKind
@@ -251,6 +287,45 @@ func Build(ctx context.Context, opts Options) (*Application, error) {
 		resources:        acquired,
 		shutdownDeadline: shutdownDeadline,
 	}, nil
+}
+
+func connectorTransportCredentials(cfg config.Config) (execution.ClientTransportCredentials, execution.ServerTransportCredentials, error) {
+	if cfg.Connector.Transport == config.ConnectorTransportInsecure {
+		credentials := execution.InsecureTransportCredentials{}
+		return credentials, credentials, nil
+	}
+
+	clientConfig := &tls.Config{MinVersion: tls.VersionTLS12, ServerName: cfg.Connector.TLS.ServerName}
+	if cfg.Connector.TLS.CAFile != "" {
+		contents, readErr := os.ReadFile(cfg.Connector.TLS.CAFile)
+		if readErr != nil {
+			return nil, nil, fmt.Errorf("read connector TLS CA file: %w", readErr)
+		}
+		roots := x509.NewCertPool()
+		if !roots.AppendCertsFromPEM(contents) {
+			return nil, nil, fmt.Errorf("connector.tls.ca_file contains no certificates")
+		}
+		clientConfig.RootCAs = roots
+	}
+	var serverCredentials execution.ServerTransportCredentials = execution.InsecureTransportCredentials{}
+	if explicitlySelectsProcessKind(cfg, config.ProcessKindConnector) {
+		certificate, loadErr := tls.LoadX509KeyPair(cfg.Connector.TLS.CertFile, cfg.Connector.TLS.KeyFile)
+		if loadErr != nil {
+			return nil, nil, fmt.Errorf("load connector TLS certificate: %w", loadErr)
+		}
+		serverConfig := &tls.Config{MinVersion: tls.VersionTLS12, Certificates: []tls.Certificate{certificate}}
+		serverCredentials = execution.TLSServerTransportCredentials{Config: serverConfig}
+	}
+	return execution.TLSClientTransportCredentials{Config: clientConfig}, serverCredentials, nil
+}
+
+func explicitlySelectsProcessKind(cfg config.Config, kind string) bool {
+	for _, selected := range cfg.ProcessKinds {
+		if selected == kind {
+			return true
+		}
+	}
+	return false
 }
 
 // WireCacheInvalidation drops cached schema and completion data for a

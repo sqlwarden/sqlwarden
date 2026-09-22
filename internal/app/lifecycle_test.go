@@ -14,6 +14,7 @@ import (
 
 	"github.com/sqlwarden/internal/config"
 	"github.com/sqlwarden/internal/database"
+	"github.com/sqlwarden/internal/execution"
 )
 
 func testConfig(t *testing.T) config.Config {
@@ -121,6 +122,57 @@ func TestBuildProducesCompleteServices(t *testing.T) {
 		services.SchemaSnapshots == nil || services.CompletionService == nil ||
 		services.FileStores == nil || services.JobStore == nil || services.Logger == nil || services.Edition == nil {
 		t.Fatalf("Build left part of the service graph nil: %+v", services)
+	}
+}
+
+func TestBuildSelectsExecutionRuntimeForProcessTopology(t *testing.T) {
+	tests := []struct {
+		name       string
+		kinds      []string
+		wantWorker bool
+	}{
+		{name: "all remains local", kinds: []string{config.ProcessKindAll}},
+		{name: "api delegates to connector", kinds: []string{config.ProcessKindAPI}, wantWorker: true},
+		{name: "co-located api and connector remains local", kinds: []string{config.ProcessKindAPI, config.ProcessKindConnector}},
+		{name: "connector remains local", kinds: []string{config.ProcessKindConnector}},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			services := buildTestApp(t, test.kinds, nil).Services
+			_, isWorker := services.Execution.(*execution.WorkerRuntime)
+			if isWorker != test.wantWorker {
+				t.Fatalf("Execution is WorkerRuntime = %t, want %t", isWorker, test.wantWorker)
+			}
+			if services.LocalExecution == nil {
+				t.Fatal("local execution runtime is missing")
+			}
+			wantServer := false
+			for _, kind := range test.kinds {
+				wantServer = wantServer || kind == config.ProcessKindConnector
+			}
+			if (services.ExecutionServer != nil) != wantServer {
+				t.Fatalf("ExecutionServer present = %t, want %t", services.ExecutionServer != nil, wantServer)
+			}
+		})
+	}
+}
+
+func TestBuildAllModeDoesNotRequireConnectorRPCConfiguration(t *testing.T) {
+	cfg := testConfig(t)
+	cfg.Connector.Address = ""
+	cfg.Connector.ListenAddress = ""
+	cfg.Connector.GrantSigningKey = ""
+	cfg.Connector.Transport = ""
+	built, err := Build(context.Background(), Options{Config: cfg, Logger: testLogger()})
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = built.Close(context.Background()) })
+	if _, ok := built.Services.Execution.(*execution.LocalRuntime); !ok {
+		t.Fatalf("all mode Execution = %T, want LocalRuntime", built.Services.Execution)
+	}
+	if built.Services.ExecutionServer != nil || built.Services.ConnectorServerCredentials != nil {
+		t.Fatal("all mode unexpectedly constructed connector RPC transport")
 	}
 }
 

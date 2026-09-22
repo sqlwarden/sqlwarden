@@ -70,6 +70,14 @@ type Services struct {
 	// Execution is the process-independent target-database runtime. HTTP and
 	// future RPC adapters use this port rather than concrete session managers.
 	Execution execution.SessionRuntime
+	// LocalExecution owns target sessions in all-in-one and connector processes.
+	// Execution may instead be a WorkerRuntime in an API-only process.
+	LocalExecution execution.SessionRuntime
+	// ExecutionServer and ConnectorServerCredentials are non-nil only when the
+	// connector process kind is explicitly selected. All-in-one mode creates no
+	// internal RPC transport.
+	ExecutionServer            *execution.RuntimeServer
+	ConnectorServerCredentials execution.ServerTransportCredentials
 	// SessionDirectory owns opaque-handle routing leases.
 	SessionDirectory execution.SessionDirectory
 

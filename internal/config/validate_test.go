@@ -49,6 +49,55 @@ func TestValidateSessionDirectory(t *testing.T) {
 	}
 }
 
+func TestValidateConnectorTransport(t *testing.T) {
+	cfg := Default()
+	cfg.ProcessKinds = []string{ProcessKindAPI}
+	cfg.Connector.Transport = ConnectorTransportTLS
+	if err := Validate(cfg); err != nil {
+		t.Fatalf("API-only TLS config should not require a server certificate: %v", err)
+	}
+
+	cfg.ProcessKinds = []string{ProcessKindConnector}
+	if err := Validate(cfg); err == nil {
+		t.Fatal("connector TLS listener must require its certificate and key")
+	}
+
+	cfg = Default()
+	cfg.ProcessKinds = []string{ProcessKindAPI}
+	cfg.Connector.GrantSigningKey = "too-short"
+	if err := Validate(cfg); err == nil {
+		t.Fatal("expected a short connector grant signing key to fail")
+	}
+
+	cfg = Default()
+	cfg.Connector.Address = ""
+	cfg.Connector.ListenAddress = ""
+	cfg.Connector.GrantSigningKey = ""
+	if err := Validate(cfg); err != nil {
+		t.Fatalf("all mode must not require connector RPC configuration: %v", err)
+	}
+}
+
+func TestValidateConnectorAddressRequiresPlainHostPort(t *testing.T) {
+	for _, address := range []string{"https://connector.internal:6021", "connector.internal", ":6021", "connector.internal:0", "connector.internal:70000"} {
+		t.Run(address, func(t *testing.T) {
+			cfg := Default()
+			cfg.ProcessKinds = []string{ProcessKindAPI}
+			cfg.Connector.Address = address
+			if err := Validate(cfg); err == nil {
+				t.Fatalf("Validate() accepted connector.address %q", address)
+			}
+		})
+	}
+
+	cfg := Default()
+	cfg.ProcessKinds = []string{ProcessKindConnector}
+	cfg.Connector.ListenAddress = ":0"
+	if err := Validate(cfg); err == nil {
+		t.Fatal("Validate() accepted connector.listen_address with port zero")
+	}
+}
+
 func TestValidateProcessKinds(t *testing.T) {
 	tests := []struct {
 		name    string

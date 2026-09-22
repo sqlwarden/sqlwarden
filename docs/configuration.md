@@ -141,6 +141,26 @@ Server logs include request-aware operational events for authentication, authori
 
 Server logs do not include request bodies, authorization headers, DSNs, SQL text, bind parameters, raw query strings, or row values by default.
 
+## Process Topology
+
+The default `all` process remains self-contained and does not create an internal execution transport. A split deployment runs one `api` process and exactly one `connector` process with the same grant-signing key.
+
+| Config key | Environment | CLI flag | Default | Notes |
+| --- | --- | --- | --- | --- |
+| `process_kinds` | `PROCESS_KINDS` | `--process-kinds` | `all` | Runtime responsibilities. Implemented values are `all`, `api`, and `connector`. |
+| `session_directory` | `SESSION_DIRECTORY` | `--session-directory` | `static` | Connector routing backend. Only the single-destination `static` backend is currently implemented. |
+| `connector.replicas` | `CONNECTOR_REPLICAS` | `--connector-replicas` | `1` | Must remain `1` while the static directory is selected. |
+| `connector.address` | `CONNECTOR_ADDRESS` | `--connector-address` | `127.0.0.1:6021` | Connector host and port used by an API process. |
+| `connector.listen_address` | `CONNECTOR_LISTEN_ADDRESS` | `--connector-listen-address` | `:6021` | Internal execution listener used by a connector process. |
+| `connector.transport` | `CONNECTOR_TRANSPORT` | `--connector-transport` | `insecure` | Internal transport mode: `insecure` or `tls`. |
+| `connector.grant_signing_key` | `CONNECTOR_GRANT_SIGNING_KEY` | `--connector-grant-signing-key` | Development-only secret | Shared HMAC key for short-lived execution grants; minimum 32 bytes. |
+| `connector.tls.ca_file` | `CONNECTOR_TLS_CA_FILE` | `--connector-tls-ca-file` | Empty | Optional PEM CA bundle used by API clients. |
+| `connector.tls.cert_file` | `CONNECTOR_TLS_CERT_FILE` | `--connector-tls-cert-file` | Empty | PEM certificate required by a TLS connector listener. |
+| `connector.tls.key_file` | `CONNECTOR_TLS_KEY_FILE` | `--connector-tls-key-file` | Empty | PEM private key required by a TLS connector listener. |
+| `connector.tls.server_name` | `CONNECTOR_TLS_SERVER_NAME` | `--connector-tls-server-name` | Empty | Optional connector certificate server name. |
+
+Plaintext transport is intended only for a trusted internal network. Workload identity and mutual TLS enforcement are deferred; the transport credential boundary permits adding them without changing the execution protocol.
+
 ## Database
 
 | Config key | Environment | CLI flag | Default | Notes |
@@ -173,6 +193,7 @@ Use PostgreSQL for larger deployments, environments with multiple server replica
 | `jwt.secret_key` | `JWT_SECRET_KEY` | `--jwt-secret-key` | Development-only secret | JWT signing secret. Replace in every real deployment. |
 | `encryption.key` | `ENCRYPTION_KEY` | `--encryption-key` | Development-only secret | Application encryption key for encrypted values such as DSNs and SMTP credentials. Replace in every real deployment. |
 | `encryption.previous_keys` | `ENCRYPTION_PREVIOUS_KEYS` | `--encryption-previous-keys` | Empty | Comma-separated retired encryption keys retained for decrypting old ciphertext during rotation. |
+| `connector.grant_signing_key` | `CONNECTOR_GRANT_SIGNING_KEY` | `--connector-grant-signing-key` | Development-only secret | Shared execution-grant signing secret for split API/connector deployments. |
 
 Do not use the default secrets outside local development.
 

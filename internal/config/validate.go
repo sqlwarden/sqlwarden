@@ -2,6 +2,8 @@ package config
 
 import (
 	"fmt"
+	"net"
+	"strconv"
 	"strings"
 
 	"github.com/sqlwarden/internal/validator"
@@ -72,10 +74,9 @@ func validateProcessKinds(cfg Config) error {
 }
 
 // validateSessionDirectory enforces the scaling invariant for live target
-// database sessions. The static directory only knows about the process it runs
-// in, so a second connector replica would answer requests for sessions it
-// cannot see. Running more than one connector replica therefore requires a
-// shared directory backend.
+// database sessions. The static directory always returns one configured
+// connector, so running more than one connector replica requires a shared
+// directory backend.
 func validateSessionDirectory(cfg Config) error {
 	switch cfg.SessionDirectory {
 	case SessionDirectoryStatic, SessionDirectoryRedis:
@@ -87,14 +88,66 @@ func validateSessionDirectory(cfg Config) error {
 	}
 	if cfg.SessionDirectory == SessionDirectoryStatic && cfg.Connector.Replicas > 1 {
 		return fmt.Errorf(
-			"connector.replicas=%d requires session_directory=%q; the %q session directory is process-local and pins the connector process kind to exactly 1 replica",
+			"connector.replicas=%d requires session_directory=%q; the %q session directory has one fixed destination and pins the connector process kind to exactly 1 replica",
 			cfg.Connector.Replicas, SessionDirectoryRedis, SessionDirectoryStatic,
 		)
 	}
 	if cfg.SessionDirectory == SessionDirectoryRedis {
 		return fmt.Errorf("session_directory %q is not implemented yet", SessionDirectoryRedis)
 	}
+	apiSelected := explicitlySelectsProcessKind(cfg, ProcessKindAPI)
+	connectorSelected := explicitlySelectsProcessKind(cfg, ProcessKindConnector)
+	if apiSelected || connectorSelected {
+		if err := validateConnectorAddress("connector.address", cfg.Connector.Address, false); err != nil {
+			return err
+		}
+		if connectorSelected {
+			if err := validateConnectorAddress("connector.listen_address", cfg.Connector.ListenAddress, true); err != nil {
+				return err
+			}
+		}
+		if len(cfg.Connector.GrantSigningKey) < 32 {
+			return fmt.Errorf("connector.grant_signing_key must be at least 32 bytes")
+		}
+		switch cfg.Connector.Transport {
+		case ConnectorTransportInsecure:
+		case ConnectorTransportTLS:
+			if connectorSelected && (strings.TrimSpace(cfg.Connector.TLS.CertFile) == "" || strings.TrimSpace(cfg.Connector.TLS.KeyFile) == "") {
+				return fmt.Errorf("connector.tls.cert_file and connector.tls.key_file are required when connector.transport=%q", ConnectorTransportTLS)
+			}
+		default:
+			return fmt.Errorf("connector.transport must be %q or %q", ConnectorTransportInsecure, ConnectorTransportTLS)
+		}
+	}
 	return nil
+}
+
+func validateConnectorAddress(name, value string, allowEmptyHost bool) error {
+	value = strings.TrimSpace(value)
+	if value == "" {
+		return fmt.Errorf("%s is required", name)
+	}
+	host, portText, err := net.SplitHostPort(value)
+	if err != nil {
+		return fmt.Errorf("%s must be a plain host:port: %w", name, err)
+	}
+	if !allowEmptyHost && strings.TrimSpace(host) == "" {
+		return fmt.Errorf("%s host is required", name)
+	}
+	port, err := strconv.Atoi(portText)
+	if err != nil || port < 1 || port > 65535 {
+		return fmt.Errorf("%s port must be between 1 and 65535", name)
+	}
+	return nil
+}
+
+func explicitlySelectsProcessKind(cfg Config, kind string) bool {
+	for _, selected := range cfg.ProcessKinds {
+		if selected == kind {
+			return true
+		}
+	}
+	return false
 }
 
 func validateEdition(cfg Config) error {

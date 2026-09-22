@@ -15,7 +15,7 @@ func TestDiagnosticRedactsSensitiveValues(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	secrets := []string{"super-secret-jwt", "retired-secret-key", "hunter2", defaultCookieSecretKey, defaultEncryptionKey}
+	secrets := []string{"super-secret-jwt", "retired-secret-key", "hunter2", defaultCookieSecretKey, defaultEncryptionKey, defaultConnectorGrantKey}
 	rendered := loaded.Diagnostic.String()
 	encoded, err := json.Marshal(loaded.Diagnostic)
 	if err != nil {
