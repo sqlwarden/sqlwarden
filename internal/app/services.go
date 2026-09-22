@@ -6,6 +6,7 @@ import (
 
 	"github.com/sqlwarden/internal/access"
 	"github.com/sqlwarden/internal/audit"
+	"github.com/sqlwarden/internal/catalog"
 	"github.com/sqlwarden/internal/completion"
 	"github.com/sqlwarden/internal/config"
 	"github.com/sqlwarden/internal/connection"
@@ -42,6 +43,12 @@ type Services struct {
 	// for effective-permission reads. Transports map its errors to their own
 	// protocol; they do not reimplement its rules.
 	Access *access.Service
+	// Catalog is the application service for the resource catalog:
+	// organizations, workspaces, environments, and connections. It owns the
+	// resource invariants — hierarchy and policy seeding, workspace ownership
+	// of environments and connections, ancestry cache invalidation, credential
+	// sealing, and connection lifecycle rules.
+	Catalog *catalog.Service
 	// Identity is the application service for registration, authentication,
 	// profile, and credential changes. Session and token issuance remain a
 	// transport concern.

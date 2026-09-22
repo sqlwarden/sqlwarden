@@ -2,14 +2,15 @@ package web
 
 import (
 	"context"
+	"errors"
 	"log/slog"
 	"net/http"
 	"strconv"
 	"strings"
-	"time"
 
 	"github.com/go-chi/chi/v5"
 	"github.com/sqlwarden/internal/access"
+	"github.com/sqlwarden/internal/catalog"
 	"github.com/sqlwarden/internal/database"
 	"github.com/sqlwarden/internal/request"
 	"github.com/sqlwarden/internal/response"
@@ -18,26 +19,16 @@ import (
 )
 
 const (
-	singleUserDefaultOrgName  = "Local"
-	singleUserDefaultOrgSlug  = "local"
-	maxOrganizationSlugLength = 64
+	singleUserDefaultOrgName = "Local"
+	singleUserDefaultOrgSlug = "local"
+
+	maxOrganizationSlugLength = catalog.MaxOrgSlugLength
 )
 
-func (app *application) createOwnedOrganization(ctx context.Context, slug, name string, ownerAccountID int64) (database.Organization, error) {
-	var org database.Organization
-	err := app.db.RunInTx(ctx, nil, func(ctx context.Context, tx bun.Tx) error {
-		var err error
-		org, err = app.createOwnedOrganizationWithExecutor(ctx, tx, slug, name, ownerAccountID)
-		return err
-	})
-	if err != nil {
-		return database.Organization{}, err
-	}
-
-	app.enforcer.InvalidateOrgPolicy(org.ID)
-	return org, nil
-}
-
+// createOwnedOrganizationWithExecutor seeds an organization inside a caller's
+// transaction. Instance setup composes organization creation with account and
+// instance-admin creation in one unit of work, which is why it does not go
+// through the catalog's own transactional create.
 func (app *application) createOwnedOrganizationWithExecutor(ctx context.Context, tx bun.Tx, slug, name string, ownerAccountID int64) (database.Organization, error) {
 	org, err := app.db.InsertOrgWithExecutor(ctx, tx, slug, name)
 	if err != nil {
@@ -64,39 +55,26 @@ func (app *application) updateOrg(w http.ResponseWriter, r *http.Request) {
 	org := contextGetOrg(r)
 
 	var input struct {
-		Name                            *string             `json:"name"`
-		SchemaSnapshotsEnabled          *bool               `json:"schema_snapshots_enabled"`
-		MaskConnectionCredentialsOnEdit *bool               `json:"mask_connection_credentials_on_edit"`
-		V                               validator.Validator `json:"-"`
+		Name                            *string `json:"name"`
+		SchemaSnapshotsEnabled          *bool   `json:"schema_snapshots_enabled"`
+		MaskConnectionCredentialsOnEdit *bool   `json:"mask_connection_credentials_on_edit"`
 	}
 
-	err := request.DecodeJSON(w, r, &input)
-	if err != nil {
+	if err := request.DecodeJSON(w, r, &input); err != nil {
 		app.badRequest(w, r, err)
 		return
 	}
 
-	if input.Name != nil {
-		name := strings.TrimSpace(*input.Name)
-		input.Name = &name
-		input.V.CheckField(name != "", "name", "Name must not be empty.")
-	}
-	input.V.CheckField(
-		input.Name != nil || input.SchemaSnapshotsEnabled != nil || input.MaskConnectionCredentialsOnEdit != nil,
-		"request", "At least one setting is required.")
-
-	if input.V.HasErrors() {
-		app.failedValidation(w, r, input.V)
-		return
-	}
-
-	wasEnabled := org.SchemaSnapshotsEnabled
-	err = app.db.UpdateOrgSettings(r.Context(), org.ID, input.Name, input.SchemaSnapshotsEnabled, input.MaskConnectionCredentialsOnEdit)
+	result, err := app.catalogService().UpdateOrganization(r.Context(), catalogActor(r), org, catalog.UpdateOrganizationInput{
+		Name:                            input.Name,
+		SchemaSnapshotsEnabled:          input.SchemaSnapshotsEnabled,
+		MaskConnectionCredentialsOnEdit: input.MaskConnectionCredentialsOnEdit,
+	})
 	if err != nil {
-		app.serverError(w, r, err)
+		app.catalogError(w, r, err)
 		return
 	}
-	if wasEnabled && input.SchemaSnapshotsEnabled != nil && !*input.SchemaSnapshotsEnabled {
+	if result.SnapshotsDisabled {
 		if err := app.disableOrganizationSnapshots(r.Context(), org.ID); err != nil {
 			app.serverError(w, r, err)
 			return
@@ -104,18 +82,7 @@ func (app *application) updateOrg(w http.ResponseWriter, r *http.Request) {
 	}
 	app.logInfo(r, "organization updated", slog.Int64("org_id", org.ID), slog.String("org_slug", org.Slug))
 
-	updated, found, err := app.db.GetOrg(r.Context(), org.ID)
-	if err != nil {
-		app.serverError(w, r, err)
-		return
-	}
-	if !found {
-		app.notFound(w, r)
-		return
-	}
-
-	err = response.JSON(w, http.StatusOK, updated)
-	if err != nil {
+	if err := response.JSON(w, http.StatusOK, result.Organization); err != nil {
 		app.serverError(w, r, err)
 	}
 }
@@ -123,69 +90,46 @@ func (app *application) updateOrg(w http.ResponseWriter, r *http.Request) {
 func (app *application) deleteOrg(w http.ResponseWriter, r *http.Request) {
 	org := contextGetOrg(r)
 
-	err := app.db.DeleteOrg(r.Context(), org.ID)
-	if err != nil {
-		app.serverError(w, r, err)
+	if err := app.catalogService().DeleteOrganization(r.Context(), catalogActor(r), org); err != nil {
+		app.catalogError(w, r, err)
 		return
 	}
 
-	app.enforcer.InvalidateOrgPolicy(org.ID)
 	app.logInfo(r, "organization deleted", slog.Int64("org_id", org.ID), slog.String("org_slug", org.Slug))
 	w.WriteHeader(http.StatusNoContent)
 }
 
 func (app *application) createOrg(w http.ResponseWriter, r *http.Request) {
 	var input struct {
-		Name string              `json:"name"`
-		Slug string              `json:"slug"`
-		V    validator.Validator `json:"-"`
+		Name string `json:"name"`
+		Slug string `json:"slug"`
 	}
 
-	err := request.DecodeJSON(w, r, &input)
-	if err != nil {
+	if err := request.DecodeJSON(w, r, &input); err != nil {
 		app.badRequest(w, r, err)
 		return
 	}
 
-	input.Name = strings.TrimSpace(input.Name)
-	input.Slug = strings.TrimSpace(input.Slug)
-
-	input.V.CheckField(input.Name != "", "name", "Name is required.")
-
-	slug := input.Slug
-	if slug == "" {
-		slug = slugify(input.Name)
-	}
-
-	input.V.CheckField(slug != "", "slug", "Slug is required.")
-	if slug != "" {
-		input.V.CheckField(isValidSlug(slug), "slug", "Slug may only contain lowercase letters, numbers, and hyphens.")
-		input.V.CheckField(len(slug) <= maxOrganizationSlugLength, "slug", "Slug must be 64 characters or fewer.")
-	}
-
-	if input.V.HasErrors() {
-		app.failedValidation(w, r, input.V)
-		return
-	}
-
 	account := contextGetAccount(r)
-	org, err := app.createOwnedOrganization(r.Context(), slug, input.Name, account.ID)
-	if err != nil {
-		if isUniqueViolation(err) {
-			if input.Slug != "" {
-				app.failedDuplicateField(w, r, "slug", "An organization with this slug already exists.")
-				return
-			}
-			app.failedDuplicateField(w, r, "name", "An organization with this name already exists.")
-			return
-		}
-		app.serverError(w, r, err)
+	org, err := app.catalogService().CreateOrganization(r.Context(), catalog.CreateOrganizationInput{
+		Name:           input.Name,
+		Slug:           input.Slug,
+		OwnerAccountID: account.ID,
+	})
+	switch {
+	case errors.Is(err, catalog.ErrSlugTaken):
+		app.failedDuplicateField(w, r, "slug", "An organization with this slug already exists.")
+		return
+	case errors.Is(err, catalog.ErrNameTaken):
+		app.failedDuplicateField(w, r, "name", "An organization with this name already exists.")
+		return
+	case err != nil:
+		app.catalogError(w, r, err)
 		return
 	}
 
 	app.logInfo(r, "organization created", slog.Int64("org_id", org.ID), slog.String("org_slug", org.Slug), slog.Int64("owner_account_id", account.ID))
-	err = response.JSON(w, http.StatusCreated, org)
-	if err != nil {
+	if err := response.JSON(w, http.StatusCreated, org); err != nil {
 		app.serverError(w, r, err)
 	}
 }
@@ -206,7 +150,7 @@ func (app *application) listOrgMembers(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	members, err := app.db.ListOrgMembersPage(r.Context(), database.ListOrgMembersParams{
+	members, err := app.catalogService().OrganizationMembers(r.Context(), database.ListOrgMembersParams{
 		OrgID:    org.ID,
 		Search:   q.Search,
 		Role:     role,
@@ -233,13 +177,9 @@ func (app *application) getOrgMember(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	member, found, err := app.db.GetOrgMember(r.Context(), org.ID, accountID)
+	member, err := app.catalogService().OrganizationMember(r.Context(), org.ID, accountID)
 	if err != nil {
-		app.serverError(w, r, err)
-		return
-	}
-	if !found {
-		app.notFound(w, r)
+		app.catalogError(w, r, err)
 		return
 	}
 	err = response.JSON(w, http.StatusOK, member)
@@ -297,34 +237,20 @@ func (app *application) listOrgMemberTeams(w http.ResponseWriter, r *http.Reques
 
 func (app *application) removeOrgMember(w http.ResponseWriter, r *http.Request) {
 	org := contextGetOrg(r)
-	accountIDStr := chi.URLParam(r, "account_id")
-	accountID, err := strconv.ParseInt(accountIDStr, 10, 64)
+	accountID, err := strconv.ParseInt(chi.URLParam(r, "account_id"), 10, 64)
 	if err != nil {
 		app.notFound(w, r)
 		return
 	}
 
-	// Prevent removing the last owner.
-	if isLastOwner, checkErr := app.isLastOrgOwner(r, org.ID, accountID); checkErr != nil {
-		app.serverError(w, r, checkErr)
-		return
-	} else if isLastOwner {
-		app.logWarn(r, "last organization owner removal blocked", slog.Int64("target_account_id", accountID), slog.Int64("org_id", org.ID), slog.String("org_slug", org.Slug))
-		v := validator.Validator{}
-		v.AddError("Cannot remove the last owner of an organization.")
-		app.failedValidation(w, r, v)
+	if err := app.catalogService().RemoveOrgMember(r.Context(), catalogActor(r), org.ID, accountID); err != nil {
+		if errors.Is(err, catalog.ErrLastOwner) {
+			app.logWarn(r, "last organization owner removal blocked", slog.Int64("target_account_id", accountID), slog.Int64("org_id", org.ID), slog.String("org_slug", org.Slug))
+		}
+		app.catalogError(w, r, err)
 		return
 	}
 
-	admin := contextGetAccount(r)
-	err = app.db.RemoveOrgMemberAccess(r.Context(), org.ID, accountID, &admin.ID, "org_membership_removed")
-	if err != nil {
-		app.serverError(w, r, err)
-		return
-	}
-	app.connManager.RemoveForOrgAccount(strconv.FormatInt(org.ID, 10), strconv.FormatInt(accountID, 10))
-
-	app.enforcer.InvalidatePrincipals(org.ID, accountID)
 	app.logInfo(r, "organization member removed", slog.Int64("target_account_id", accountID), slog.Int64("org_id", org.ID), slog.String("org_slug", org.Slug))
 	w.WriteHeader(http.StatusNoContent)
 }
@@ -335,178 +261,44 @@ func (app *application) updateOrgMemberRole(w http.ResponseWriter, r *http.Reque
 		V    validator.Validator `json:"-"`
 	}
 
-	err := request.DecodeJSON(w, r, &input)
-	if err != nil {
+	if err := request.DecodeJSON(w, r, &input); err != nil {
 		app.badRequest(w, r, err)
 		return
 	}
 
 	input.V.CheckField(input.Role != "", "role", "Role is required.")
-	input.V.CheckField(input.Role == access.BuiltinOrgOwnerRole || input.Role == access.BuiltinOrgAdminRole || input.Role == access.BuiltinOrgMemberRole, "role", "Role must be Owner, Administrator, or Baseline Access.")
+	input.V.CheckField(catalog.IsBuiltinOrgRole(input.Role), "role", "Role must be Owner, Administrator, or Baseline Access.")
 	if input.V.HasErrors() {
 		app.failedValidation(w, r, input.V)
 		return
 	}
 
 	org := contextGetOrg(r)
-	accountIDStr := chi.URLParam(r, "account_id")
-	accountID, err := strconv.ParseInt(accountIDStr, 10, 64)
+	accountID, err := strconv.ParseInt(chi.URLParam(r, "account_id"), 10, 64)
 	if err != nil {
 		app.notFound(w, r)
 		return
 	}
 
-	// Prevent demoting the last owner.
-	if input.Role != access.BuiltinOrgOwnerRole {
-		if isLastOwner, checkErr := app.isLastOrgOwner(r, org.ID, accountID); checkErr != nil {
-			app.serverError(w, r, checkErr)
-			return
-		} else if isLastOwner {
+	if err := app.catalogService().SetOrgMemberRole(r.Context(), catalogActor(r), org.ID, accountID, input.Role); err != nil {
+		if errors.Is(err, catalog.ErrLastOwner) {
 			app.logWarn(r, "last organization owner demotion blocked", slog.Int64("target_account_id", accountID), slog.Int64("org_id", org.ID), slog.String("org_slug", org.Slug), slog.String("requested_role", input.Role))
 			v := validator.Validator{}
 			v.AddError("Cannot demote the last owner of an organization.")
 			app.failedValidation(w, r, v)
 			return
 		}
-	}
-
-	roles, err := app.db.ListOrgRoles(r.Context(), org.ID)
-	if err != nil {
-		app.serverError(w, r, err)
-		return
-	}
-	var roleID int64
-	for _, role := range roles {
-		if role.Name == input.Role && role.IsBuiltin {
-			roleID = role.ID
-			break
-		}
-	}
-	if roleID == 0 {
-		app.notFound(w, r)
+		app.catalogError(w, r, err)
 		return
 	}
 
-	isMember, err := app.db.IsOrgMember(r.Context(), org.ID, accountID)
-	if err != nil {
-		app.serverError(w, r, err)
-		return
-	}
-	if !isMember {
-		app.notFound(w, r)
-		return
-	}
-
-	var builtinRoleIDs []int64
-	for _, role := range roles {
-		if role.IsBuiltin && (role.Name == access.BuiltinOrgOwnerRole || role.Name == access.BuiltinOrgAdminRole || role.Name == access.BuiltinOrgMemberRole) {
-			builtinRoleIDs = append(builtinRoleIDs, role.ID)
-		}
-	}
-
-	grantor := contextGetAccount(r)
-	err = app.replaceOrgMemberBuiltinRole(r.Context(), org.ID, accountID, roleID, builtinRoleIDs, grantor.ID)
-	if err != nil {
-		app.serverError(w, r, err)
-		return
-	}
-
-	app.enforcer.InvalidatePrincipals(org.ID, accountID)
-	app.logInfo(r, "organization member builtin role updated", slog.Int64("target_account_id", accountID), slog.Int64("role_id", roleID), slog.String("role", input.Role))
+	app.logInfo(r, "organization member builtin role updated", slog.Int64("target_account_id", accountID), slog.Int64("org_id", org.ID), slog.String("role", input.Role))
 	w.WriteHeader(http.StatusNoContent)
 }
 
-func (app *application) replaceOrgMemberBuiltinRole(ctx context.Context, orgID, accountID, roleID int64, replacedRoleIDs []int64, grantorID int64) error {
-	err := app.db.RunInTx(ctx, nil, func(ctx context.Context, tx bun.Tx) error {
-		if len(replacedRoleIDs) > 0 {
-			if _, err := tx.NewDelete().
-				Model((*database.RoleBinding)(nil)).
-				Where("org_id = ? AND subject_type = ? AND subject_id = ? AND resource_type = ? AND resource_id = ? AND role_id IN (?)",
-					orgID, "account", accountID, "org", orgID, bun.List(replacedRoleIDs)).
-				Exec(ctx); err != nil {
-				return err
-			}
-		}
-		binding := database.RoleBinding{
-			OrgID:        orgID,
-			RoleID:       roleID,
-			SubjectType:  "account",
-			SubjectID:    accountID,
-			ResourceType: "org",
-			ResourceID:   orgID,
-			CreatedBy:    &grantorID,
-			CreatedAt:    time.Now(),
-		}
-		_, err := tx.NewInsert().Model(&binding).Ignore().Exec(ctx)
-		return err
-	})
-	if err != nil {
-		return err
-	}
+// slugify converts a name to a URL-safe slug using the catalog's rule, so
+// setup, teams, and organization creation cannot drift apart.
+func slugify(name string) string { return catalog.Slugify(name) }
 
-	app.enforcer.InvalidateOrgPolicy(orgID)
-	return nil
-}
-
-// isLastOrgOwner returns true if accountID is the only owner of the org.
-func (app *application) isLastOrgOwner(r *http.Request, orgID, accountID int64) (bool, error) {
-	roles, err := app.db.ListOrgRoles(r.Context(), orgID)
-	if err != nil {
-		return false, err
-	}
-	var ownerRoleID int64
-	for _, role := range roles {
-		if role.Name == access.BuiltinOrgOwnerRole && role.IsBuiltin {
-			ownerRoleID = role.ID
-			break
-		}
-	}
-	if ownerRoleID == 0 {
-		return false, nil
-	}
-	n, err := app.db.CountRoleBinding(r.Context(), orgID, ownerRoleID, "org", orgID)
-	if err != nil {
-		return false, err
-	}
-	if n <= 1 {
-		// Check that the target account actually holds the owner role.
-		holds, err := app.db.AccountHasRoleBinding(r.Context(), orgID, ownerRoleID, accountID, "org", orgID)
-		if err != nil {
-			return false, err
-		}
-		return holds, nil
-	}
-	return false, nil
-}
-
-// slugify converts a name to a URL-safe slug.
-func slugify(name string) string {
-	s := strings.ToLower(name)
-	s = strings.Map(func(r rune) rune {
-		if (r >= 'a' && r <= 'z') || (r >= '0' && r <= '9') {
-			return r
-		}
-		if r == ' ' || r == '-' || r == '_' {
-			return '-'
-		}
-		return -1
-	}, s)
-	s = strings.Trim(s, "-")
-	if len(s) > maxOrganizationSlugLength {
-		s = s[:maxOrganizationSlugLength]
-	}
-	return s
-}
-
-// isValidSlug returns true if s contains only lowercase letters, digits, and hyphens.
-func isValidSlug(s string) bool {
-	if s == "" {
-		return false
-	}
-	for _, r := range s {
-		if !((r >= 'a' && r <= 'z') || (r >= '0' && r <= '9') || r == '-') {
-			return false
-		}
-	}
-	return true
-}
+// isValidSlug reports whether s is a valid slug under the catalog's rule.
+func isValidSlug(s string) bool { return catalog.IsValidSlug(s) }

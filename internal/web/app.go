@@ -11,6 +11,7 @@ import (
 
 	"github.com/sqlwarden/internal/access"
 	coreapp "github.com/sqlwarden/internal/app"
+	"github.com/sqlwarden/internal/catalog"
 	completionapp "github.com/sqlwarden/internal/completion"
 	"github.com/sqlwarden/internal/config"
 	"github.com/sqlwarden/internal/connection"
@@ -50,6 +51,7 @@ type application struct {
 	enforcer          *access.Enforcer
 	policyEvaluator   access.PolicyEvaluator
 	accessService     *access.Service
+	catalog           *catalog.Service
 	identityService   *identityapp.Service
 	edition           edition.Edition
 	fileStores        *coreapp.FileStores
@@ -81,6 +83,7 @@ func NewApplication(services *coreapp.Services) *App {
 		enforcer:          services.Enforcer,
 		policyEvaluator:   services.PolicyEvaluator,
 		accessService:     services.Access,
+		catalog:           services.Catalog,
 		identityService:   services.Identity,
 		edition:           services.Edition,
 		fileStores:        services.FileStores,

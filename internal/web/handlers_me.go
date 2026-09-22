@@ -1,13 +1,13 @@
 package web
 
 import (
-	"context"
+	"errors"
 	"log/slog"
 	"net/http"
 	"strconv"
 	"strings"
 
-	"github.com/sqlwarden/internal/database"
+	"github.com/sqlwarden/internal/catalog"
 	"github.com/sqlwarden/internal/request"
 	"github.com/sqlwarden/internal/response"
 	"github.com/sqlwarden/internal/validator"
@@ -26,18 +26,11 @@ func (app *application) listMyWorkspaces(w http.ResponseWriter, r *http.Request)
 		return
 	}
 
-	wss, err := app.db.ListWorkspacesPage(r.Context(), database.ListWorkspacesParams{
-		OwnerType: "space",
-		OwnerID:   account.ID,
-		Search:    q.Search,
-		Name:      name,
-		Sort:      q.Sort,
-		Order:     q.Order,
-		Page:      q.Page,
-		PageSize:  q.PageSize,
+	wss, err := app.catalogService().ListPersonalWorkspaces(r.Context(), account.ID, catalog.ListQuery{
+		Search: q.Search, Name: name, Sort: q.Sort, Order: q.Order, Page: q.Page, PageSize: q.PageSize,
 	})
 	if err != nil {
-		app.serverError(w, r, err)
+		app.catalogError(w, r, err)
 		return
 	}
 
@@ -50,9 +43,8 @@ func (app *application) listMyWorkspaces(w http.ResponseWriter, r *http.Request)
 // createMyWorkspace creates a new personal-space workspace for the authenticated account.
 func (app *application) createMyWorkspace(w http.ResponseWriter, r *http.Request) {
 	var input struct {
-		Name        string              `json:"name"`
-		Description string              `json:"description"`
-		V           validator.Validator `json:"-"`
+		Name        string `json:"name"`
+		Description string `json:"description"`
 	}
 
 	err := request.DecodeJSON(w, r, &input)
@@ -61,21 +53,16 @@ func (app *application) createMyWorkspace(w http.ResponseWriter, r *http.Request
 		return
 	}
 
-	input.V.CheckField(input.Name != "", "name", "Name is required.")
-	if input.V.HasErrors() {
-		app.failedValidation(w, r, input.V)
-		return
-	}
-
 	account := contextGetAccount(r)
-	ws, err := app.db.InsertWorkspace(r.Context(), nil, "space", account.ID, input.Name, input.Description)
+	ws, err := app.catalogService().CreatePersonalWorkspace(r.Context(), catalog.Actor{AccountID: account.ID}, catalog.CreateWorkspaceInput{
+		Name: input.Name, Description: input.Description,
+	})
 	if err != nil {
-		if isUniqueViolation(err) {
-			input.V.AddFieldError("name", "A workspace with this name already exists.")
-			app.failedValidation(w, r, input.V)
+		if errors.Is(err, catalog.ErrNameTaken) {
+			app.failedDuplicateField(w, r, "name", "A workspace with this name already exists.")
 			return
 		}
-		app.serverError(w, r, err)
+		app.catalogError(w, r, err)
 		return
 	}
 
@@ -100,17 +87,11 @@ func (app *application) listMyEnvironments(w http.ResponseWriter, r *http.Reques
 		return
 	}
 
-	envs, err := app.db.ListEnvironmentsPage(r.Context(), database.ListEnvironmentsParams{
-		WorkspaceID: ws.ID,
-		Search:      q.Search,
-		Name:        name,
-		Sort:        q.Sort,
-		Order:       q.Order,
-		Page:        q.Page,
-		PageSize:    q.PageSize,
+	envs, err := app.catalogService().ListWorkspaceEnvironments(r.Context(), ws.ID, catalog.ListQuery{
+		Search: q.Search, Name: name, Sort: q.Sort, Order: q.Order, Page: q.Page, PageSize: q.PageSize,
 	})
 	if err != nil {
-		app.serverError(w, r, err)
+		app.catalogError(w, r, err)
 		return
 	}
 	err = response.JSON(w, http.StatusOK, envs)
@@ -123,9 +104,8 @@ func (app *application) listMyEnvironments(w http.ResponseWriter, r *http.Reques
 // Passes nil orgID (no org for personal spaces).
 func (app *application) createMyEnvironment(w http.ResponseWriter, r *http.Request) {
 	var input struct {
-		Name        string              `json:"name"`
-		Description string              `json:"description"`
-		V           validator.Validator `json:"-"`
+		Name        string `json:"name"`
+		Description string `json:"description"`
 	}
 
 	err := request.DecodeJSON(w, r, &input)
@@ -134,21 +114,16 @@ func (app *application) createMyEnvironment(w http.ResponseWriter, r *http.Reque
 		return
 	}
 
-	input.V.CheckField(input.Name != "", "name", "Name is required.")
-	if input.V.HasErrors() {
-		app.failedValidation(w, r, input.V)
-		return
-	}
-
 	ws := contextGetWorkspace(r)
-	env, err := app.db.InsertEnvironment(r.Context(), ws.ID, input.Name, input.Description)
+	env, err := app.catalogService().CreateEnvironment(r.Context(), catalogActor(r), ws.ID, catalog.CreateEnvironmentInput{
+		Name: input.Name, Description: input.Description,
+	})
 	if err != nil {
-		if isUniqueViolation(err) {
-			input.V.AddFieldError("name", "An environment with this name already exists in this workspace.")
-			app.failedValidation(w, r, input.V)
+		if errors.Is(err, catalog.ErrNameTaken) {
+			app.failedDuplicateField(w, r, "name", "An environment with this name already exists in this workspace.")
 			return
 		}
-		app.serverError(w, r, err)
+		app.catalogError(w, r, err)
 		return
 	}
 
@@ -173,18 +148,13 @@ func (app *application) listMyConnections(w http.ResponseWriter, r *http.Request
 		return
 	}
 
-	params := database.ListConnectionsParams{
-		WorkspaceID:   ws.ID,
+	query := catalog.ListConnectionsQuery{
+		ListQuery:     catalog.ListQuery{Search: q.Search, Sort: q.Sort, Order: q.Order, Page: q.Page, PageSize: q.PageSize},
 		EnvironmentID: &env.ID,
-		Search:        q.Search,
 		Driver:        strings.TrimSpace(r.URL.Query().Get("driver")),
 		AccessMode:    strings.TrimSpace(r.URL.Query().Get("access_mode")),
-		Sort:          q.Sort,
-		Order:         q.Order,
-		Page:          q.Page,
-		PageSize:      q.PageSize,
 	}
-	if params.AccessMode != "" && params.AccessMode != "open" && params.AccessMode != "restricted" {
+	if query.AccessMode != "" && query.AccessMode != catalog.AccessModeOpen && query.AccessMode != catalog.AccessModeRestricted {
 		app.failedValidation(w, r, fieldErrors(map[string]string{"access_mode": "Access mode must be open or restricted."}))
 		return
 	}
@@ -195,13 +165,13 @@ func (app *application) listMyConnections(w http.ResponseWriter, r *http.Request
 				app.failedValidation(w, r, fieldErrors(map[string]string{"environment_id": "Environment must be a positive integer."}))
 				return
 			}
-			params.EnvironmentID = &parsedEnvID
+			query.EnvironmentID = &parsedEnvID
 		}
 	}
 
-	conns, err := app.db.ListConnectionsPage(context.Background(), params)
+	conns, err := app.catalogService().ListWorkspaceConnections(r.Context(), ws.ID, query)
 	if err != nil {
-		app.serverError(w, r, err)
+		app.catalogError(w, r, err)
 		return
 	}
 	err = response.JSON(w, http.StatusOK, conns)
@@ -229,10 +199,6 @@ func (app *application) createMyConnection(w http.ResponseWriter, r *http.Reques
 		return
 	}
 
-	input.V.CheckField(input.Name != "", "name", "Name is required.")
-	input.V.CheckField(input.Driver != "", "driver", "Driver is required.")
-	input.V.CheckField(input.DSN != "", "dsn", "DSN is required.")
-
 	var tlsDoc tlsConfigDocument
 	if input.TLS != nil {
 		tlsDoc = *input.TLS
@@ -243,26 +209,8 @@ func (app *application) createMyConnection(w http.ResponseWriter, r *http.Reques
 		sshDoc = *input.SSH
 		app.validateSSHDocument(input.Driver, sshDoc, &input.V)
 	}
-	if input.Driver != "" {
-		if err := app.validateTargetConnection(r.Context(), input.Driver, input.DSN); err != nil {
-			input.V.CheckField(false, "driver", targetConnectionFieldError(err))
-		}
-	}
-	if input.AccessMode == "" {
-		input.AccessMode = "open"
-	}
-	input.V.CheckField(
-		input.AccessMode == "open" || input.AccessMode == "restricted",
-		"access_mode", "Access mode must be open or restricted.",
-	)
 	if input.V.HasErrors() {
 		app.failedValidation(w, r, input.V)
-		return
-	}
-
-	dsnEncrypted, err := app.keyring.Encrypt(input.DSN)
-	if err != nil {
-		app.serverError(w, r, err)
 		return
 	}
 
@@ -283,47 +231,23 @@ func (app *application) createMyConnection(w http.ResponseWriter, r *http.Reques
 	targetEnvID := input.EnvironmentID
 	if env.ID != 0 {
 		targetEnvID = &env.ID
-	} else {
-		var ok bool
-		targetEnvID, ok, err = app.validateConnectionEnvironment(r, ws.ID, targetEnvID)
-		if err != nil {
-			app.serverError(w, r, err)
-			return
-		}
-		if !ok {
-			app.notFound(w, r)
-			return
-		}
 	}
 
-	conn, err := app.db.InsertConnection(context.Background(),
-		ws.ID, targetEnvID,
-		input.Name, input.Driver, dsnEncrypted, input.AccessMode,
-	)
+	conn, err := app.catalogService().CreateConnection(r.Context(), catalogActor(r), ws.ID, catalog.CreateConnectionInput{
+		Name: input.Name, Driver: input.Driver, DSN: input.DSN,
+		EnvironmentID: targetEnvID, AccessMode: input.AccessMode,
+		SealedTLS: tlsEncrypted, SealedSSH: sshEncrypted,
+	})
 	if err != nil {
-		if isForeignKeyViolation(err) {
-			app.notFound(w, r)
-			return
-		}
-		app.serverError(w, r, err)
+		app.catalogError(w, r, err)
 		return
 	}
 
 	if tlsEncrypted != "" {
-		if err := app.db.UpdateConnectionTLSConfig(context.Background(), conn.ID, tlsEncrypted); err != nil {
-			app.serverError(w, r, err)
-			return
-		}
-		conn.TLSConfigEncrypted = tlsEncrypted
 		app.logInfo(r, "connection tls configured", slog.Int64("connection_id", conn.ID))
 	}
 
 	if sshEncrypted != "" {
-		if err := app.db.UpdateConnectionSSHConfig(context.Background(), conn.ID, sshEncrypted); err != nil {
-			app.serverError(w, r, err)
-			return
-		}
-		conn.SSHConfigEncrypted = sshEncrypted
 		app.logInfo(r, "connection ssh configured", slog.Int64("connection_id", conn.ID))
 	}
 

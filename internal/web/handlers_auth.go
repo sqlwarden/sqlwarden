@@ -583,7 +583,7 @@ func (app *application) getAccountOrgs(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	orgs, err := app.db.ListAccountOrgsPage(r.Context(), database.ListAccountOrgsParams{
+	orgs, err := app.catalogService().AccountOrganizations(r.Context(), database.ListAccountOrgsParams{
 		AccountID: account.ID,
 		Search:    q.Search,
 		Sort:      q.Sort,

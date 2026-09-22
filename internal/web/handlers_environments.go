@@ -4,10 +4,9 @@ import (
 	"errors"
 	"log/slog"
 	"net/http"
-	"sort"
 	"strings"
 
-	"github.com/sqlwarden/internal/database"
+	"github.com/sqlwarden/internal/catalog"
 	"github.com/sqlwarden/internal/request"
 	"github.com/sqlwarden/internal/response"
 	"github.com/sqlwarden/internal/validator"
@@ -27,14 +26,11 @@ func (app *application) listEnvironments(w http.ResponseWriter, r *http.Request)
 	}
 
 	account := contextGetAccount(r)
-	envs, err := app.db.ListAccessibleEnvironments(r.Context(), account.ID, org.ID, ws.ID)
-	var result response.Paginated[database.Environment]
-	if err == nil {
-		envs = filterAndSortAccessibleEnvironments(envs, q.Search, name, q.Sort, q.Order)
-		result = response.PaginateItems(envs, q.Page, q.PageSize)
-	}
+	result, err := app.catalogService().ListEnvironments(r.Context(), account.ID, org.ID, ws.ID, catalog.ListQuery{
+		Search: q.Search, Name: name, Sort: q.Sort, Order: q.Order, Page: q.Page, PageSize: q.PageSize,
+	})
 	if err != nil {
-		app.serverError(w, r, err)
+		app.catalogError(w, r, err)
 		return
 	}
 	err = response.JSON(w, http.StatusOK, result)
@@ -43,59 +39,10 @@ func (app *application) listEnvironments(w http.ResponseWriter, r *http.Request)
 	}
 }
 
-func filterAndSortAccessibleEnvironments(envs []database.Environment, search, name, sortBy, order string) []database.Environment {
-	filtered := make([]database.Environment, 0, len(envs))
-	search = strings.ToLower(strings.TrimSpace(search))
-	name = strings.TrimSpace(name)
-
-	for _, env := range envs {
-		if search != "" && !strings.Contains(strings.ToLower(env.Name), search) {
-			continue
-		}
-		if name != "" && env.Name != name {
-			continue
-		}
-		filtered = append(filtered, env)
-	}
-
-	sort.Slice(filtered, func(i, j int) bool {
-		cmp := compareEnvironment(filtered[i], filtered[j], sortBy)
-		if order == "desc" {
-			return cmp > 0
-		}
-		return cmp < 0
-	})
-	return filtered
-}
-
-func compareEnvironment(left, right database.Environment, sortBy string) int {
-	switch sortBy {
-	case "name":
-		if left.Name != right.Name {
-			return strings.Compare(left.Name, right.Name)
-		}
-	default:
-		if !left.CreatedAt.Equal(right.CreatedAt) {
-			if left.CreatedAt.Before(right.CreatedAt) {
-				return -1
-			}
-			return 1
-		}
-	}
-	if left.ID < right.ID {
-		return -1
-	}
-	if left.ID > right.ID {
-		return 1
-	}
-	return 0
-}
-
 func (app *application) createEnvironment(w http.ResponseWriter, r *http.Request) {
 	var input struct {
-		Name        string              `json:"name"`
-		Description string              `json:"description"`
-		V           validator.Validator `json:"-"`
+		Name        string `json:"name"`
+		Description string `json:"description"`
 	}
 
 	err := request.DecodeJSON(w, r, &input)
@@ -104,20 +51,16 @@ func (app *application) createEnvironment(w http.ResponseWriter, r *http.Request
 		return
 	}
 
-	input.V.CheckField(input.Name != "", "name", "Name is required.")
-	if input.V.HasErrors() {
-		app.failedValidation(w, r, input.V)
-		return
-	}
-
 	ws := contextGetWorkspace(r)
-	env, err := app.db.InsertEnvironment(r.Context(), ws.ID, input.Name, input.Description)
+	env, err := app.catalogService().CreateEnvironment(r.Context(), catalogActor(r), ws.ID, catalog.CreateEnvironmentInput{
+		Name: input.Name, Description: input.Description,
+	})
 	if err != nil {
-		if isUniqueViolation(err) {
+		if errors.Is(err, catalog.ErrNameTaken) {
 			app.failedDuplicateField(w, r, "name", "An environment with this name already exists in this workspace.")
 			return
 		}
-		app.serverError(w, r, err)
+		app.catalogError(w, r, err)
 		return
 	}
 
@@ -131,20 +74,12 @@ func (app *application) createEnvironment(w http.ResponseWriter, r *http.Request
 func (app *application) getEnvironment(w http.ResponseWriter, r *http.Request) {
 	env := contextGetEnvironment(r)
 	ws := contextGetWorkspace(r)
-	if ws.OwnerType == "org" {
-		account := contextGetAccount(r)
-		org := contextGetOrg(r)
-		ok, err := app.db.HasAccessibleEnvironment(r.Context(), account.ID, org.ID, ws.ID, env.ID)
-		if err != nil {
-			app.serverError(w, r, err)
-			return
-		}
-		if !ok {
-			app.notFound(w, r)
-			return
-		}
+	resolved, err := app.catalogService().Environment(r.Context(), contextGetAccount(r).ID, contextGetOrg(r).ID, ws, env)
+	if err != nil {
+		app.catalogError(w, r, err)
+		return
 	}
-	err := response.JSON(w, http.StatusOK, env)
+	err = response.JSON(w, http.StatusOK, resolved)
 	if err != nil {
 		app.serverError(w, r, err)
 	}
@@ -172,13 +107,15 @@ func (app *application) updateEnvironment(w http.ResponseWriter, r *http.Request
 	}
 
 	env := contextGetEnvironment(r)
-	err = app.db.UpdateEnvironment(r.Context(), env.ID, input.Name, input.Description)
+	err = app.catalogService().UpdateEnvironment(r.Context(), catalogActor(r), env, catalog.CreateEnvironmentInput{
+		Name: input.Name, Description: input.Description,
+	})
 	if err != nil {
-		if isUniqueViolation(err) {
+		if errors.Is(err, catalog.ErrNameTaken) {
 			app.failedDuplicateField(w, r, "name", "An environment with this name already exists in this workspace.")
 			return
 		}
-		app.serverError(w, r, err)
+		app.catalogError(w, r, err)
 		return
 	}
 
@@ -189,28 +126,12 @@ func (app *application) updateEnvironment(w http.ResponseWriter, r *http.Request
 func (app *application) deleteEnvironment(w http.ResponseWriter, r *http.Request) {
 	env := contextGetEnvironment(r)
 
-	// Collect connections tagged to this environment before deletion so we can
-	// invalidate their ancestry caches (connection → environment rows will be removed).
-	connIDs, err := app.db.ListConnectionIDsByEnvironment(r.Context(), env.ID)
+	err := app.catalogService().DeleteEnvironment(r.Context(), catalogActor(r), env)
 	if err != nil {
-		app.serverError(w, r, err)
+		app.catalogError(w, r, err)
 		return
 	}
 
-	err = app.db.DeleteEnvironment(r.Context(), env.ID)
-	if err != nil {
-		if errors.Is(err, database.ErrEnvironmentHasConnections) {
-			app.errorMessage(w, r, http.StatusUnprocessableEntity, "Environment has connections.", nil)
-			return
-		}
-		app.serverError(w, r, err)
-		return
-	}
-
-	app.enforcer.InvalidateAncestry("environment", env.ID)
-	for _, cid := range connIDs {
-		app.enforcer.InvalidateAncestry("connection", cid)
-	}
-	app.logInfo(r, "environment deleted", slog.Int64("environment_id", env.ID), slog.Int64("workspace_id", env.WorkspaceID), slog.Int("affected_connections", len(connIDs)))
+	app.logInfo(r, "environment deleted", slog.Int64("environment_id", env.ID), slog.Int64("workspace_id", env.WorkspaceID))
 	w.WriteHeader(http.StatusNoContent)
 }

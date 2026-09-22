@@ -10,6 +10,7 @@ import (
 
 	"github.com/sqlwarden/internal/access"
 	"github.com/sqlwarden/internal/assert"
+	"github.com/sqlwarden/internal/catalog"
 	"github.com/sqlwarden/internal/database"
 )
 
@@ -47,7 +48,9 @@ func TestCreateOwnedOrganization_RollsBackWhenOwnerMembershipFails(t *testing.T)
 	t.Parallel()
 	app := newTestApp(t)
 
-	_, err := app.createOwnedOrganization(context.Background(), "rollback-org", "Rollback Org", 99999999)
+	_, err := app.catalogService().CreateOrganization(context.Background(), catalog.CreateOrganizationInput{
+		Name: "Rollback Org", Slug: "rollback-org", OwnerAccountID: 99999999,
+	})
 	if err == nil {
 		t.Fatal("expected owner membership failure")
 	}
@@ -99,7 +102,9 @@ func TestReplaceOrgMemberBuiltinRoleRollsBackWhenNewBindingFails(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	err = app.replaceOrgMemberBuiltinRole(context.Background(), org.ID, member.ID, 99999999, replacedRoleIDs, owner.ID)
+	err = catalog.NewDatabaseStore(app.db, app.enforcer).ReplaceOrgMemberBuiltinRole(
+		context.Background(), org.ID, member.ID, 99999999, replacedRoleIDs, owner.ID,
+	)
 	if err == nil {
 		t.Fatal("expected invalid role binding failure")
 	}

@@ -13,6 +13,7 @@ import (
 	"github.com/sqlwarden/internal/access"
 	"github.com/sqlwarden/internal/audit"
 	"github.com/sqlwarden/internal/cache"
+	"github.com/sqlwarden/internal/catalog"
 	"github.com/sqlwarden/internal/completion"
 	"github.com/sqlwarden/internal/config"
 	"github.com/sqlwarden/internal/connection"
@@ -194,11 +195,19 @@ func Build(ctx context.Context, opts Options) (*Application, error) {
 	auditWriter := selectedEdition.AuditWriter(audit.NewCoreWriter(auditStore, editionDeps.Now), editionDeps)
 
 	services := &Services{
-		Config:            cfg,
-		Logger:            logger,
-		DB:                db,
-		Enforcer:          enforcer,
-		PolicyEvaluator:   policyEvaluator,
+		Config:          cfg,
+		Logger:          logger,
+		DB:              db,
+		Enforcer:        enforcer,
+		PolicyEvaluator: policyEvaluator,
+		Catalog: catalog.NewService(
+			catalog.NewDatabaseStore(db, enforcer),
+			enforcer,
+			connManager,
+			keyring,
+			catalog.NewTargetPolicy(settingsService),
+			auditWriter,
+		),
 		Access:            access.NewService(access.NewSQLStore(db.DB), enforcer, policyEvaluator, auditWriter),
 		Identity:          identity.NewService(identity.NewDatabaseStore(db), identityProvider, auditWriter),
 		Audit:             auditWriter,

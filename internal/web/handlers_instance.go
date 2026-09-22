@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"github.com/go-chi/chi/v5"
+	"github.com/sqlwarden/internal/catalog"
 	"github.com/sqlwarden/internal/config"
 	"github.com/sqlwarden/internal/database"
 	"github.com/sqlwarden/internal/password"
@@ -175,7 +176,11 @@ func (app *application) createFirstRunSetup(ctx context.Context, email, name str
 }
 
 func (app *application) seedSingleUserOrganization(ctx context.Context, accountID int64) (database.Organization, error) {
-	org, err := app.createOwnedOrganization(ctx, singleUserDefaultOrgSlug, singleUserDefaultOrgName, accountID)
+	org, err := app.catalogService().CreateOrganization(ctx, catalog.CreateOrganizationInput{
+		Name:           singleUserDefaultOrgName,
+		Slug:           singleUserDefaultOrgSlug,
+		OwnerAccountID: accountID,
+	})
 	if err == nil {
 		return org, nil
 	}
@@ -185,7 +190,11 @@ func (app *application) seedSingleUserOrganization(ctx context.Context, accountI
 
 	// The first-run path normally owns an empty database, but avoid making
 	// "local" a hard blocker if an operator pre-seeded data before setup.
-	return app.createOwnedOrganization(ctx, fmt.Sprintf("%s-%d", singleUserDefaultOrgSlug, accountID), singleUserDefaultOrgName, accountID)
+	return app.catalogService().CreateOrganization(ctx, catalog.CreateOrganizationInput{
+		Name:           singleUserDefaultOrgName,
+		Slug:           fmt.Sprintf("%s-%d", singleUserDefaultOrgSlug, accountID),
+		OwnerAccountID: accountID,
+	})
 }
 
 // setupStatus reports whether the instance has already been bootstrapped.
@@ -251,7 +260,7 @@ func (app *application) listOrganizations(w http.ResponseWriter, r *http.Request
 		return
 	}
 
-	orgs, err := app.db.ListOrganizationsPage(r.Context(), database.ListOrganizationsParams{
+	orgs, err := app.catalogService().Organizations(r.Context(), database.ListOrganizationsParams{
 		Search:   q.Search,
 		Slug:     slug,
 		Sort:     q.Sort,

@@ -6,13 +6,13 @@ import (
 	"fmt"
 	"log/slog"
 	"net/http"
-	"sort"
 	"strconv"
 	"strings"
 	"time"
 
 	"github.com/go-chi/chi/v5"
 	"github.com/sqlwarden/internal/access"
+	"github.com/sqlwarden/internal/catalog"
 	"github.com/sqlwarden/internal/connection"
 	"github.com/sqlwarden/internal/database"
 	"github.com/sqlwarden/internal/engine"
@@ -27,21 +27,6 @@ import (
 	"github.com/sqlwarden/internal/validator"
 	"github.com/sqlwarden/pkg/result"
 )
-
-func (app *application) validateConnectionEnvironment(r *http.Request, workspaceID int64, envID *int64) (*int64, bool, error) {
-	if envID == nil {
-		return nil, true, nil
-	}
-
-	env, found, err := app.db.GetEnvironment(r.Context(), *envID)
-	if err != nil {
-		return nil, false, err
-	}
-	if !found || env.WorkspaceID != workspaceID {
-		return nil, false, nil
-	}
-	return &env.ID, true, nil
-}
 
 func (app *application) listConnections(w http.ResponseWriter, r *http.Request) {
 	org := contextGetOrg(r)
@@ -58,117 +43,38 @@ func (app *application) listConnections(w http.ResponseWriter, r *http.Request) 
 		return
 	}
 
-	params := database.ListConnectionsParams{
-		WorkspaceID: ws.ID,
-		Search:      q.Search,
-		Driver:      strings.TrimSpace(r.URL.Query().Get("driver")),
-		AccessMode:  strings.TrimSpace(r.URL.Query().Get("access_mode")),
-		Sort:        q.Sort,
-		Order:       q.Order,
-		Page:        q.Page,
-		PageSize:    q.PageSize,
+	query := catalog.ListConnectionsQuery{
+		ListQuery: catalog.ListQuery{
+			Search: q.Search, Sort: q.Sort, Order: q.Order, Page: q.Page, PageSize: q.PageSize,
+		},
+		Driver:     strings.TrimSpace(r.URL.Query().Get("driver")),
+		AccessMode: strings.TrimSpace(r.URL.Query().Get("access_mode")),
 	}
-	if params.AccessMode != "" && params.AccessMode != "open" && params.AccessMode != "restricted" {
+	if query.AccessMode != "" && query.AccessMode != catalog.AccessModeOpen && query.AccessMode != catalog.AccessModeRestricted {
 		app.failedValidation(w, r, fieldErrors(map[string]string{"access_mode": "Access mode must be open or restricted."}))
 		return
 	}
 	if env.ID != 0 {
-		params.EnvironmentID = &env.ID
+		query.EnvironmentID = &env.ID
 	} else if rawEnvID := strings.TrimSpace(r.URL.Query().Get("environment_id")); rawEnvID != "" {
 		envID, err := strconv.ParseInt(rawEnvID, 10, 64)
 		if err != nil || envID < 1 {
 			app.failedValidation(w, r, fieldErrors(map[string]string{"environment_id": "Environment must be a positive integer."}))
 			return
 		}
-		params.EnvironmentID = &envID
+		query.EnvironmentID = &envID
 	}
 	account := contextGetAccount(r)
-	conns, err := app.db.ListAccessibleConnections(r.Context(), account.ID, org.ID, ws.ID)
+	result, err := app.catalogService().ListConnections(r.Context(), account.ID, org.ID, ws.ID, query)
 	if err != nil {
-		app.serverError(w, r, err)
+		app.catalogError(w, r, err)
 		return
 	}
-	result := filterAccessibleConnections(conns, params)
 
 	err = response.JSON(w, http.StatusOK, result)
 	if err != nil {
 		app.serverError(w, r, err)
 	}
-}
-
-func filterAccessibleConnections(conns []database.Connection, params database.ListConnectionsParams) response.Paginated[database.Connection] {
-	filtered := make([]database.Connection, 0, len(conns))
-	search := strings.ToLower(strings.TrimSpace(params.Search))
-
-	for _, conn := range conns {
-		if search != "" && !strings.Contains(strings.ToLower(conn.Name), search) {
-			continue
-		}
-		if params.EnvironmentID != nil {
-			if conn.EnvironmentID != *params.EnvironmentID {
-				continue
-			}
-		}
-		if params.Driver != "" && conn.Driver != params.Driver {
-			continue
-		}
-		if params.AccessMode != "" && conn.AccessMode != params.AccessMode {
-			continue
-		}
-		filtered = append(filtered, conn)
-	}
-
-	sort.Slice(filtered, func(i, j int) bool {
-		cmp := compareConnection(filtered[i], filtered[j], params.Sort)
-		if params.Order == "asc" {
-			return cmp < 0
-		}
-		return cmp > 0
-	})
-
-	total := len(filtered)
-	start := (params.Page - 1) * params.PageSize
-	if start > total {
-		start = total
-	}
-	end := start + params.PageSize
-	if end > total {
-		end = total
-	}
-
-	return response.Paginated[database.Connection]{
-		Items:    filtered[start:end],
-		Page:     params.Page,
-		PageSize: params.PageSize,
-		Total:    total,
-	}
-}
-
-func compareConnection(left, right database.Connection, sortBy string) int {
-	switch sortBy {
-	case "name":
-		if left.Name != right.Name {
-			return strings.Compare(left.Name, right.Name)
-		}
-	case "driver":
-		if left.Driver != right.Driver {
-			return strings.Compare(left.Driver, right.Driver)
-		}
-	default:
-		if !left.CreatedAt.Equal(right.CreatedAt) {
-			if left.CreatedAt.Before(right.CreatedAt) {
-				return -1
-			}
-			return 1
-		}
-	}
-	if left.ID < right.ID {
-		return -1
-	}
-	if left.ID > right.ID {
-		return 1
-	}
-	return 0
 }
 
 func queryLogAttrs(account database.Account, org database.Organization, ws database.Workspace, conn database.Connection, classification classifier.Result) []any {
@@ -248,18 +154,6 @@ func connectionSafetyChecker(driverName string) safety.Checker {
 	return safety.NewHeuristic()
 }
 
-// driverSupportsSystemSchemas reports whether a driver's SchemaSpec flags
-// system scopes (metadata.ScopeNode.System) — the only drivers where the
-// "show system schemas" connection setting has any effect.
-func driverSupportsSystemSchemas(driverName string) bool {
-	d, err := engine.New(driverName)
-	if err != nil {
-		return false
-	}
-	si, ok := d.(metadata.SchemaInspector)
-	return ok && si.SchemaSpec().SystemSchemas
-}
-
 // registeredConnectionExplainer resolves an Explainer implemented by the
 // registered engine, mirroring registeredConnectionClassifier. There is no
 // heuristic fallback: an engine either has a real EXPLAIN form or it doesn't.
@@ -292,10 +186,6 @@ func (app *application) createConnection(w http.ResponseWriter, r *http.Request)
 		return
 	}
 
-	input.V.CheckField(input.Name != "", "name", "Name is required.")
-	input.V.CheckField(input.Driver != "", "driver", "Driver is required.")
-	input.V.CheckField(input.DSN != "", "dsn", "DSN is required.")
-
 	var tlsDoc tlsConfigDocument
 	if input.TLS != nil {
 		tlsDoc = *input.TLS
@@ -307,30 +197,8 @@ func (app *application) createConnection(w http.ResponseWriter, r *http.Request)
 		sshDoc = *input.SSH
 		app.validateSSHDocument(input.Driver, sshDoc, &input.V)
 	}
-	if input.Driver != "" {
-		if err := app.validateTargetConnection(r.Context(), input.Driver, input.DSN); err != nil {
-			if errors.Is(err, errSQLiteTargetDisabled) {
-				app.logWarn(r, "sqlite target connection blocked", slog.String("operation", "create_connection"), slog.String("driver", input.Driver))
-			}
-			input.V.CheckField(false, "driver", targetConnectionFieldError(err))
-		}
-	}
-	if input.AccessMode == "" {
-		input.AccessMode = "open"
-	}
-	input.V.CheckField(
-		input.AccessMode == "open" || input.AccessMode == "restricted",
-		"access_mode", "Access mode must be open or restricted.",
-	)
-
 	if input.V.HasErrors() {
 		app.failedValidation(w, r, input.V)
-		return
-	}
-
-	dsnEncrypted, err := app.keyring.Encrypt(input.DSN)
-	if err != nil {
-		app.serverError(w, r, err)
 		return
 	}
 
@@ -351,46 +219,24 @@ func (app *application) createConnection(w http.ResponseWriter, r *http.Request)
 	targetEnvID := input.EnvironmentID
 	if env.ID != 0 {
 		targetEnvID = &env.ID
-	} else {
-		var ok bool
-		targetEnvID, ok, err = app.validateConnectionEnvironment(r, ws.ID, targetEnvID)
-		if err != nil {
-			app.serverError(w, r, err)
-			return
-		}
-		if !ok {
-			app.notFound(w, r)
-			return
-		}
 	}
 
-	showSystemSchemas := input.ShowSystemSchemas && driverSupportsSystemSchemas(input.Driver)
-
-	conn, err := app.db.InsertConnectionWithScope(context.Background(),
-		ws.ID, targetEnvID,
-		input.Name, input.Driver, dsnEncrypted, input.AccessMode, input.DefaultScope,
-		showSystemSchemas,
-	)
+	conn, err := app.catalogService().CreateConnection(r.Context(), catalogActor(r), ws.ID, catalog.CreateConnectionInput{
+		Name: input.Name, Driver: input.Driver, DSN: input.DSN,
+		EnvironmentID: targetEnvID, AccessMode: input.AccessMode,
+		DefaultScope: input.DefaultScope, ShowSystemSchemas: input.ShowSystemSchemas,
+		SealedTLS: tlsEncrypted, SealedSSH: sshEncrypted,
+	})
 	if err != nil {
-		app.serverError(w, r, err)
+		app.catalogError(w, r, err)
 		return
 	}
 
 	if tlsEncrypted != "" {
-		if err := app.db.UpdateConnectionTLSConfig(context.Background(), conn.ID, tlsEncrypted); err != nil {
-			app.serverError(w, r, err)
-			return
-		}
-		conn.TLSConfigEncrypted = tlsEncrypted
 		app.logInfo(r, "connection tls configured", slog.Int64("connection_id", conn.ID))
 	}
 
 	if sshEncrypted != "" {
-		if err := app.db.UpdateConnectionSSHConfig(context.Background(), conn.ID, sshEncrypted); err != nil {
-			app.serverError(w, r, err)
-			return
-		}
-		conn.SSHConfigEncrypted = sshEncrypted
 		app.logInfo(r, "connection ssh configured", slog.Int64("connection_id", conn.ID))
 	}
 
@@ -404,20 +250,12 @@ func (app *application) createConnection(w http.ResponseWriter, r *http.Request)
 func (app *application) getConnection(w http.ResponseWriter, r *http.Request) {
 	conn := contextGetConnection(r)
 	ws := contextGetWorkspace(r)
-	if ws.OwnerType == "org" {
-		account := contextGetAccount(r)
-		org := contextGetOrg(r)
-		ok, err := app.db.HasAccessibleConnection(r.Context(), account.ID, org.ID, ws.ID, conn.ID)
-		if err != nil {
-			app.serverError(w, r, err)
-			return
-		}
-		if !ok {
-			app.notFound(w, r)
-			return
-		}
+	resolved, err := app.catalogService().Connection(r.Context(), contextGetAccount(r).ID, contextGetOrg(r).ID, ws, conn)
+	if err != nil {
+		app.catalogError(w, r, err)
+		return
 	}
-	err := response.JSON(w, http.StatusOK, conn)
+	err = response.JSON(w, http.StatusOK, resolved)
 	if err != nil {
 		app.serverError(w, r, err)
 	}
@@ -428,15 +266,10 @@ func (app *application) getConnection(w http.ResponseWriter, r *http.Request) {
 // re-entering the DSN unnecessary.
 func (app *application) getConnectionDSN(w http.ResponseWriter, r *http.Request) {
 	org := contextGetOrg(r)
-	if org.MaskConnectionCredentialsOnEdit {
-		app.notPermitted(w, r)
-		return
-	}
-
 	conn := contextGetConnection(r)
-	dsn, err := app.keyring.Decrypt(conn.DSNEncrypted)
+	dsn, err := app.catalogService().RevealConnectionDSN(r.Context(), catalogActor(r), org, conn)
 	if err != nil {
-		app.serverError(w, r, err)
+		app.catalogError(w, r, err)
 		return
 	}
 	app.logInfo(r, "connection dsn revealed", slog.Int64("connection_id", conn.ID))
@@ -593,94 +426,33 @@ func (app *application) updateConnection(w http.ResponseWriter, r *http.Request)
 		sshChanged = true
 	}
 
-	currentDSN, err := app.keyring.Decrypt(conn.DSNEncrypted)
+	var sealedTLS, sealedSSH *string
+	if tlsChanged {
+		sealedTLS = &tlsEncrypted
+	}
+	if sshChanged {
+		sealedSSH = &sshEncrypted
+	}
+	result, err := app.catalogService().UpdateConnection(r.Context(), catalogActor(r), conn, catalog.UpdateConnectionInput{
+		Name: input.Name, DSN: input.DSN, AccessMode: input.AccessMode,
+		SchemaSnapshotPolicy: input.SchemaSnapshotPolicy, DefaultScope: input.DefaultScope,
+		ShowSystemSchemas: input.ShowSystemSchemas, SealedTLS: sealedTLS, SealedSSH: sealedSSH,
+		Force: input.Force,
+	})
 	if err != nil {
-		app.serverError(w, r, err)
+		app.catalogError(w, r, err)
 		return
 	}
-	nextDSN := currentDSN
-	if input.DSN != nil {
-		nextDSN = *input.DSN
+	if result.DSNRotated && result.DroppedSessions > 0 {
+		app.logInfo(r, "connection sessions dropped for dsn rotation", slog.Int64("connection_id", conn.ID), slog.Int("dropped_sessions", result.DroppedSessions))
 	}
-	if err := app.validateTargetConnection(r.Context(), conn.Driver, nextDSN); err != nil {
-		if errors.Is(err, errSQLiteTargetDisabled) {
-			app.logWarn(r, "sqlite target connection blocked", slog.String("operation", "update_connection"), slog.Int64("connection_id", conn.ID), slog.String("driver", conn.Driver))
-		}
-		v := validator.Validator{}
-		v.AddFieldError("driver", targetConnectionFieldError(err))
-		app.failedValidation(w, r, v)
-		return
-	}
-
-	dsnEncrypted := conn.DSNEncrypted
-	if input.DSN != nil {
-		dsnEncrypted, err = app.keyring.Encrypt(nextDSN)
-	}
-	if err != nil {
-		app.errorMessage(w, r, http.StatusUnprocessableEntity, err.Error(), nil)
-		return
-	}
-
-	dsnChanged := currentDSN != nextDSN
-	if dsnChanged {
-		activeSessions := app.connManager.CountForConnection(strconv.FormatInt(conn.ID, 10))
-		if activeSessions > 0 && !input.Force {
-			app.errorMessage(w, r, http.StatusConflict, "Connection has active sessions. Retry with force=true to rotate the DSN and drop them.", nil)
-			return
-		}
-		if input.Force && activeSessions > 0 {
-			app.connManager.RemoveForConnection(strconv.FormatInt(conn.ID, 10))
-			app.logInfo(r, "connection sessions dropped for dsn rotation", slog.Int64("connection_id", conn.ID), slog.Int("dropped_sessions", activeSessions))
-		}
-	}
-	nextName := conn.Name
-	if input.Name != nil {
-		nextName = *input.Name
-	}
-	nextAccessMode := conn.AccessMode
-	if input.AccessMode != nil {
-		nextAccessMode = *input.AccessMode
-	}
-	nextSnapshotPolicy := conn.SchemaSnapshotPolicy
-	if nextSnapshotPolicy == "" {
-		nextSnapshotPolicy = database.SchemaSnapshotPolicyInherit
-	}
-	if input.SchemaSnapshotPolicy != nil {
-		nextSnapshotPolicy = *input.SchemaSnapshotPolicy
-	}
-	nextDefaultScope := conn.DefaultScope
-	if input.DefaultScope != nil {
-		nextDefaultScope = *input.DefaultScope
-	}
-	nextShowSystemSchemas := conn.ShowSystemSchemas
-	if input.ShowSystemSchemas != nil {
-		nextShowSystemSchemas = *input.ShowSystemSchemas
-	}
-	nextShowSystemSchemas = nextShowSystemSchemas && driverSupportsSystemSchemas(conn.Driver)
-	scopeChanged := nextDefaultScope != conn.DefaultScope
-	if scopeChanged && !dsnChanged {
-		activeSessions := app.connManager.CountForConnection(strconv.FormatInt(conn.ID, 10))
-		if activeSessions > 0 && !input.Force {
-			app.errorMessage(w, r, http.StatusConflict, "Connection has active sessions. Retry with force=true to change its default scope and drop them.", nil)
-			return
-		}
-		if input.Force && activeSessions > 0 {
-			app.connManager.RemoveForConnection(strconv.FormatInt(conn.ID, 10))
-		}
-	}
-	err = app.db.UpdateConnectionWithScopeAndPolicy(r.Context(), conn.ID, nextName, dsnEncrypted, nextAccessMode, nextSnapshotPolicy, nextDefaultScope, nextShowSystemSchemas)
-	if err != nil {
-		app.serverError(w, r, err)
-		return
-	}
-	if conn.SchemaSnapshotPolicy != database.SchemaSnapshotPolicyDisabled &&
-		nextSnapshotPolicy == database.SchemaSnapshotPolicyDisabled {
+	if result.SnapshotsDisabled {
 		if err := app.disableConnectionSnapshots(r.Context(), conn.ID); err != nil {
 			app.serverError(w, r, err)
 			return
 		}
 	}
-	if scopeChanged {
+	if result.ScopeChanged {
 		app.schemaService.RefreshConnection(strconv.FormatInt(conn.ID, 10))
 		app.completionService.InvalidateConnection(strconv.FormatInt(conn.ID, 10))
 		if snapshotsEnabled, enabledErr := app.db.SchemaSnapshotsEnabled(r.Context(), conn.ID); enabledErr != nil {
@@ -695,32 +467,23 @@ func (app *application) updateConnection(w http.ResponseWriter, r *http.Request)
 		}
 	}
 	if tlsChanged {
-		if err := app.db.UpdateConnectionTLSConfig(r.Context(), conn.ID, tlsEncrypted); err != nil {
-			app.serverError(w, r, err)
-			return
-		}
 		app.logInfo(r, "connection tls updated", slog.Int64("connection_id", conn.ID))
 	}
 	if sshChanged {
-		if err := app.db.UpdateConnectionSSHConfig(r.Context(), conn.ID, sshEncrypted); err != nil {
-			app.serverError(w, r, err)
-			return
-		}
 		app.logInfo(r, "connection ssh updated", slog.Int64("connection_id", conn.ID))
 	}
 
-	app.logInfo(r, "connection updated", slog.Int64("connection_id", conn.ID), slog.Bool("dsn_rotated", dsnChanged), slog.Bool("scope_changed", scopeChanged), slog.String("access_mode", nextAccessMode), slog.String("schema_snapshot_policy", nextSnapshotPolicy))
+	app.logInfo(r, "connection updated", slog.Int64("connection_id", conn.ID), slog.Bool("dsn_rotated", result.DSNRotated), slog.Bool("scope_changed", result.ScopeChanged), slog.String("access_mode", result.Connection.AccessMode), slog.String("schema_snapshot_policy", result.Connection.SchemaSnapshotPolicy))
 	w.WriteHeader(http.StatusNoContent)
 }
 
 func (app *application) deleteConnection(w http.ResponseWriter, r *http.Request) {
 	conn := contextGetConnection(r)
-	err := app.db.DeleteConnection(context.Background(), conn.ID)
+	err := app.catalogService().DeleteConnection(r.Context(), catalogActor(r), conn)
 	if err != nil {
-		app.serverError(w, r, err)
+		app.catalogError(w, r, err)
 		return
 	}
-	app.enforcer.InvalidateAncestry("connection", conn.ID)
 	app.logInfo(r, "connection deleted", slog.Int64("connection_id", conn.ID), slog.Int64("workspace_id", conn.WorkspaceID), slog.String("driver", conn.Driver))
 	w.WriteHeader(http.StatusNoContent)
 }

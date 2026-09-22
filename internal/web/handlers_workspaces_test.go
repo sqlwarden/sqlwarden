@@ -9,6 +9,7 @@ import (
 	"testing"
 
 	"github.com/sqlwarden/internal/assert"
+	"github.com/sqlwarden/internal/catalog"
 	"github.com/sqlwarden/internal/database"
 )
 
@@ -131,7 +132,9 @@ func TestCreateOwnedWorkspace_RollsBackWorkspaceAndSeedOnFailure(t *testing.T) {
 	owner, _, org := seedOrgOwner(t, app, uniqueEmail(t, "workspace-rollback-owner"), "Workspace Rollback Owner", "Workspace Rollback Org")
 	_ = owner
 
-	_, err := app.createOwnedWorkspace(context.Background(), org.ID, 99999999, "Rollback Workspace", "")
+	_, err := app.catalogService().CreateWorkspace(context.Background(), catalog.Actor{AccountID: 99999999, OrgID: org.ID}, org.ID, catalog.CreateWorkspaceInput{
+		Name: "Rollback Workspace",
+	})
 	if err == nil {
 		t.Fatal("expected workspace seed failure")
 	}

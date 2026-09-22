@@ -45,7 +45,7 @@ func TestForbiddenProductionImports(t *testing.T) {
 			if owner != "ee" && (strings.HasSuffix(importPath, "/ee") || strings.Contains(importPath, "/ee/")) {
 				t.Errorf("%s imports enterprise implementation %q", rel, importPath)
 			}
-			if owner == "app" || owner == "config" || owner == "settings" || owner == "identity" || owner == "access" || owner == "audit" {
+			if owner == "app" || owner == "config" || owner == "settings" || owner == "identity" || owner == "access" || owner == "audit" || owner == "catalog" {
 				for _, forbidden := range []string{"/internal/web", "/internal/rpc", "/internal/realtime"} {
 					if strings.Contains(importPath, forbidden) {
 						t.Errorf("%s imports outer adapter %q", rel, importPath)
