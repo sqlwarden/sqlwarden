@@ -16,7 +16,6 @@ import (
 	"github.com/go-chi/chi/v5"
 	coreapp "github.com/sqlwarden/internal/app"
 	"github.com/sqlwarden/internal/config"
-	"github.com/sqlwarden/internal/database"
 )
 
 // TestArchitectureRouteInventory characterizes the complete HTTP method/path
@@ -61,9 +60,6 @@ func BenchmarkArchitectureAPISetupStatus(b *testing.B) {
 	built, err := coreapp.Build(context.Background(), coreapp.Options{
 		Config: cfg,
 		Logger: slog.New(slog.NewTextHandler(io.Discard, nil)),
-		Prepare: []func(context.Context, *database.DB) error{
-			PrepareInstanceSettings(cfg),
-		},
 	})
 	if err != nil {
 		b.Fatal(err)

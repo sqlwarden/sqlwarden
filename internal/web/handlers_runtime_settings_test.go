@@ -3,7 +3,6 @@ package web
 import (
 	"context"
 	"net/http"
-	"strings"
 	"testing"
 	"time"
 
@@ -37,7 +36,7 @@ func TestInstanceRuntimeSettingsAPI(t *testing.T) {
 	assert.Equal(t, res.BodyFields["query_cursor_page_size"], any(float64(250)))
 	assert.Equal(t, res.BodyFields["error_notification_email"], "errors@example.com")
 
-	settings, err := app.runtimeSettingsService().effectiveForOrg(context.Background(), nil)
+	settings, err := app.settingsService().EffectiveForOrg(context.Background(), nil)
 	assert.Nil(t, err)
 	assert.Equal(t, settings.QueryMaxResultRows, 2000)
 	assert.Equal(t, settings.QueryCursorPageSize, 250)
@@ -205,19 +204,6 @@ func TestRuntimeSettingsReadFailureReturnsServiceUnavailable(t *testing.T) {
 	assertAPIError(t, res, apiErrorSettingsUnavailable, "Runtime settings are temporarily unavailable.")
 }
 
-func TestConfiguredInstanceWithMissingBaseURLFailsInvariantInsteadOfRebootstrapping(t *testing.T) {
-	app := newTestApp(t)
-	setupInstance(t, app, "base-url-invariant@example.com", "Base URL Invariant", "securepass99")
-	updateInstanceSettingsForTest(t, app, func(settings *database.InstanceSettings) {
-		settings.BaseURL = ""
-	})
-
-	err := initializeInstanceBaseURL(context.Background(), app.db, "https://bootstrap.example.com")
-	if err == nil || !strings.Contains(err.Error(), "base_url is invalid") {
-		t.Fatalf("initialize base URL error = %v", err)
-	}
-}
-
 func TestRuntimeSettingsMissingRowReturnsServiceUnavailable(t *testing.T) {
 	app := newTestApp(t)
 	adminToken := setupInstance(t, app, "settings-missing@example.com", "Settings Missing", "securepass99")
@@ -240,49 +226,6 @@ func TestRuntimeSettingsInvalidRowReturnsServiceUnavailable(t *testing.T) {
 	res := send(t, newAuthRequest(t, http.MethodGet, "/api/v1/instance/settings", nil, adminToken), app.routes())
 	assert.Equal(t, res.StatusCode, http.StatusServiceUnavailable)
 	assertAPIError(t, res, apiErrorSettingsUnavailable, "Runtime settings are temporarily unavailable.")
-}
-
-func TestValidateRuntimeSettingsInvariant(t *testing.T) {
-	t.Run("accepts canonical migration row", func(t *testing.T) {
-		app := newTestApp(t)
-		if err := validateRuntimeSettingsInvariant(context.Background(), app.db); err != nil {
-			t.Fatal(err)
-		}
-	})
-
-	t.Run("rejects missing singleton row", func(t *testing.T) {
-		app := newTestApp(t)
-		if _, err := app.db.ExecContext(context.Background(), "DELETE FROM instance_settings WHERE id = 1"); err != nil {
-			t.Fatal(err)
-		}
-		err := validateRuntimeSettingsInvariant(context.Background(), app.db)
-		if err == nil || !strings.Contains(err.Error(), "row id=1 is missing") {
-			t.Fatalf("unexpected invariant error: %v", err)
-		}
-	})
-
-	t.Run("rejects invalid singleton values", func(t *testing.T) {
-		app := newTestApp(t)
-		updateInstanceSettingsForTest(t, app, func(settings *database.InstanceSettings) {
-			settings.InstanceName = ""
-		})
-		err := validateRuntimeSettingsInvariant(context.Background(), app.db)
-		if err == nil || !strings.Contains(err.Error(), "instance_name must not be empty") {
-			t.Fatalf("unexpected invariant error: %v", err)
-		}
-	})
-
-	t.Run("rejects an invalid cursor page size", func(t *testing.T) {
-		app := newTestApp(t)
-		updateInstanceSettingsForTest(t, app, func(settings *database.InstanceSettings) {
-			settings.QueryCursorPageSize = 0
-		})
-		err := validateRuntimeSettingsInvariant(context.Background(), app.db)
-		if err == nil || !strings.Contains(err.Error(), "query_cursor_page_size") {
-			t.Fatalf("unexpected invariant error: %v", err)
-		}
-	})
-
 }
 
 func TestOrganizationRuntimeSettingsInheritanceAndClear(t *testing.T) {

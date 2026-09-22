@@ -16,6 +16,7 @@ import (
 	"github.com/sqlwarden/internal/password"
 	"github.com/sqlwarden/internal/request"
 	"github.com/sqlwarden/internal/response"
+	settingsapp "github.com/sqlwarden/internal/settings"
 	"github.com/sqlwarden/internal/token"
 	"github.com/sqlwarden/internal/validator"
 	"github.com/uptrace/bun"
@@ -118,7 +119,7 @@ func (app *application) setup(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	runtimeSettings, err := app.runtimeSettingsService().effectiveForOrg(r.Context(), nil)
+	runtimeSettings, err := app.settingsService().EffectiveForOrg(r.Context(), nil)
 	if err != nil {
 		app.serverError(w, r, err)
 		return
@@ -462,7 +463,7 @@ func (app *application) updateInstanceSettings(w http.ResponseWriter, r *http.Re
 		input.V.CheckField(*input.BaseURL != "" && validator.IsURL(*input.BaseURL), "base_url", "Base URL must be a valid URL.")
 	}
 	if input.JWTAccessTokenTTLSeconds != nil {
-		input.V.CheckField(*input.JWTAccessTokenTTLSeconds > 0 && *input.JWTAccessTokenTTLSeconds <= maxRuntimeDurationSeconds, "jwt_access_token_ttl_seconds", "Access token lifetime is outside the supported range.")
+		input.V.CheckField(*input.JWTAccessTokenTTLSeconds > 0 && *input.JWTAccessTokenTTLSeconds <= settingsapp.MaxDurationSeconds, "jwt_access_token_ttl_seconds", "Access token lifetime is outside the supported range.")
 	}
 	if input.QueryMaxResultRows != nil {
 		input.V.CheckField(*input.QueryMaxResultRows > 0, "query_max_result_rows", "Query row limit must be greater than 0.")
@@ -480,7 +481,7 @@ func (app *application) updateInstanceSettings(w http.ResponseWriter, r *http.Re
 		input.V.CheckField(*input.ExportsBackgroundMaxBytes >= 0, "exports_background_max_bytes", "Background export limit must be 0 or greater.")
 	}
 	if input.SchemaSnapshotFreshnessSeconds != nil {
-		input.V.CheckField(*input.SchemaSnapshotFreshnessSeconds > 0 && *input.SchemaSnapshotFreshnessSeconds <= maxRuntimeDurationSeconds, "schema_snapshot_freshness_seconds", "Schema snapshot freshness is outside the supported range.")
+		input.V.CheckField(*input.SchemaSnapshotFreshnessSeconds > 0 && *input.SchemaSnapshotFreshnessSeconds <= settingsapp.MaxDurationSeconds, "schema_snapshot_freshness_seconds", "Schema snapshot freshness is outside the supported range.")
 	}
 	if input.SchemaLazyThreshold != nil {
 		input.V.CheckField(*input.SchemaLazyThreshold > 0, "schema_lazy_threshold", "Schema lazy threshold must be greater than 0.")
@@ -527,7 +528,7 @@ func (app *application) updateInstanceSettings(w http.ResponseWriter, r *http.Re
 		input.V.CheckField(validator.MaxRunes(*input.SMTPFrom, 500), "smtp_from", "SMTP sender must be 500 characters or fewer.")
 	}
 	if input.QueryHistoryMode != nil {
-		input.V.CheckField(isSupportedQueryHistoryMode(*input.QueryHistoryMode), "query_history_mode", "Query history mode must be backend, local, or off.")
+		input.V.CheckField(settingsapp.IsSupportedHistoryMode(*input.QueryHistoryMode), "query_history_mode", "Query history mode must be backend, local, or off.")
 	}
 	if input.QueryHistoryRetentionCount != nil {
 		input.V.CheckField(*input.QueryHistoryRetentionCount >= 1, "query_history_retention_count", "Retention count must be at least 1.")
@@ -536,7 +537,7 @@ func (app *application) updateInstanceSettings(w http.ResponseWriter, r *http.Re
 		input.V.CheckField(*input.QueryHistoryRetentionCountMax >= 1, "query_history_retention_count_max", "Retention count maximum must be at least 1.")
 	}
 	if input.QueryFavoritesMode != nil {
-		input.V.CheckField(isSupportedQueryHistoryMode(*input.QueryFavoritesMode), "query_favorites_mode", "Query favorites mode must be backend, local, or off.")
+		input.V.CheckField(settingsapp.IsSupportedHistoryMode(*input.QueryFavoritesMode), "query_favorites_mode", "Query favorites mode must be backend, local, or off.")
 	}
 	if input.V.HasErrors() {
 		app.failedValidation(w, r, input.V)
@@ -665,7 +666,7 @@ func (app *application) updateInstanceSettings(w http.ResponseWriter, r *http.Re
 	if input.SQLiteInMemoryTargetsEnabled != nil {
 		nextSettings.SQLiteInMemoryTargetsEnabled = *input.SQLiteInMemoryTargetsEnabled
 	}
-	if err := validateInstanceSettings(nextSettings); err != nil {
+	if err := settingsapp.Validate(nextSettings); err != nil {
 		input.V.AddError(err.Error())
 	}
 	if app.config.Files.StorageMode == config.FilesStorageModeFile && nextSettings.FileRevisionsEnabled {

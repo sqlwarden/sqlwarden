@@ -46,7 +46,7 @@ func (app *application) createQueryHistoryEntry(w http.ResponseWriter, r *http.R
 		return
 	}
 
-	effective, err := app.runtimeSettingsService().effectiveForOrg(r.Context(), ws.OrgID)
+	effective, err := app.settingsService().EffectiveForOrg(r.Context(), ws.OrgID)
 	if err != nil {
 		app.serverError(w, r, err)
 		return

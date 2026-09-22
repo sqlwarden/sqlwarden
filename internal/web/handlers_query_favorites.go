@@ -50,7 +50,7 @@ func (app *application) createQueryFavorite(w http.ResponseWriter, r *http.Reque
 		return
 	}
 
-	effective, err := app.runtimeSettingsService().effectiveForOrg(r.Context(), ws.OrgID)
+	effective, err := app.settingsService().EffectiveForOrg(r.Context(), ws.OrgID)
 	if err != nil {
 		app.serverError(w, r, err)
 		return

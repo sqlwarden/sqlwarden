@@ -33,7 +33,7 @@ func (app *application) authenticateV1(next http.Handler) http.Handler {
 			app.invalidAuthenticationToken(w, r)
 			return
 		}
-		runtimeSettings, err := app.runtimeSettingsService().effectiveForOrg(r.Context(), nil)
+		runtimeSettings, err := app.settingsService().EffectiveForOrg(r.Context(), nil)
 		if err != nil {
 			app.serverError(w, r, err)
 			return
@@ -130,7 +130,7 @@ func (app *application) orgCtx(next http.Handler) http.Handler {
 
 		runtimeSettings, ok := contextGetRuntimeSettings(r)
 		if !ok {
-			runtimeSettings, err = app.runtimeSettingsService().effectiveForOrg(r.Context(), nil)
+			runtimeSettings, err = app.settingsService().EffectiveForOrg(r.Context(), nil)
 			if err != nil {
 				app.serverError(w, r, err)
 				return

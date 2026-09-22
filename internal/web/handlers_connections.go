@@ -23,6 +23,7 @@ import (
 	"github.com/sqlwarden/internal/jobs"
 	"github.com/sqlwarden/internal/request"
 	"github.com/sqlwarden/internal/response"
+	settingsapp "github.com/sqlwarden/internal/settings"
 	"github.com/sqlwarden/internal/validator"
 	"github.com/sqlwarden/pkg/result"
 )
@@ -784,7 +785,7 @@ func (app *application) testConnection(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	settings, err := app.runtimeSettingsService().effectiveForOrg(ctx, nil)
+	settings, err := app.settingsService().EffectiveForOrg(ctx, nil)
 	if err != nil {
 		app.serverError(w, r, err)
 		return
@@ -883,7 +884,7 @@ func (app *application) connectToDatabase(w http.ResponseWriter, r *http.Request
 
 	connID := strconv.FormatInt(conn.ID, 10)
 	accountID := strconv.FormatInt(account.ID, 10)
-	settings, err := app.effectiveRuntimeSettingsForWorkspace(r.Context(), ws)
+	settings, err := app.settingsService().EffectiveForWorkspace(r.Context(), ws)
 	if err != nil {
 		app.serverError(w, r, err)
 		return
@@ -1089,7 +1090,7 @@ func (app *application) revokeWorkspaceDatabaseSession(w http.ResponseWriter, r 
 	w.WriteHeader(http.StatusNoContent)
 }
 
-func (app *application) driverConnectionConfig(driverName, dsn string, settings effectiveRuntimeSettings, tls *engine.TLSConfig, defaultScopes ...metadata.ScopePath) engine.ConnectionConfig {
+func (app *application) driverConnectionConfig(driverName, dsn string, settings settingsapp.Effective, tls *engine.TLSConfig, defaultScopes ...metadata.ScopePath) engine.ConnectionConfig {
 	config := engine.ConnectionConfig{
 		DSN:            dsn,
 		Driver:         driverName,
@@ -1131,7 +1132,7 @@ func (app *application) executeQuery(w http.ResponseWriter, r *http.Request) {
 		app.failedValidation(w, r, input.V)
 		return
 	}
-	runtimeSettings, err := app.effectiveRuntimeSettingsForWorkspace(r.Context(), contextGetWorkspace(r))
+	runtimeSettings, err := app.settingsService().EffectiveForWorkspace(r.Context(), contextGetWorkspace(r))
 	if err != nil {
 		app.serverError(w, r, err)
 		return
@@ -1358,7 +1359,7 @@ func (app *application) executeQuery(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
-func (app *application) executeDQLQuery(r *http.Request, session *connection.Session, sql string, useCursor *bool, pageSize *int, start time.Time, runtimeSettings effectiveRuntimeSettings) (*result.ResultSet, error) {
+func (app *application) executeDQLQuery(r *http.Request, session *connection.Session, sql string, useCursor *bool, pageSize *int, start time.Time, runtimeSettings settingsapp.Effective) (*result.ResultSet, error) {
 	if useCursor == nil || *useCursor {
 		rs, err := app.executeQueryWithCursor(r, session, sql, queryCursorPageSize(pageSize, runtimeSettings), start, runtimeSettings)
 		if err == nil && rs != nil {
@@ -1376,7 +1377,7 @@ func (app *application) executeDQLQuery(r *http.Request, session *connection.Ses
 	return session.QueryWithOptions(r.Context(), sql, queryCursorScanOptions(runtimeSettings.QueryMaxResultRows, runtimeSettings))
 }
 
-func (app *application) executeQueryWithCursor(r *http.Request, session *connection.Session, sql string, pageSize int, start time.Time, runtimeSettings effectiveRuntimeSettings) (*result.ResultSet, error) {
+func (app *application) executeQueryWithCursor(r *http.Request, session *connection.Session, sql string, pageSize int, start time.Time, runtimeSettings settingsapp.Effective) (*result.ResultSet, error) {
 	app.logInfo(r, "query cursor opening",
 		slog.String("session_id", session.ID),
 		slog.Int("page_size", pageSize),

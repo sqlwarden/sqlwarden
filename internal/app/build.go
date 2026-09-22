@@ -20,6 +20,7 @@ import (
 	"github.com/sqlwarden/internal/encrypt"
 	"github.com/sqlwarden/internal/jobs"
 	"github.com/sqlwarden/internal/schema"
+	"github.com/sqlwarden/internal/settings"
 )
 
 const (
@@ -42,10 +43,10 @@ type Options struct {
 	// the Community edition.
 	Edition edition.Edition
 
-	// Prepare runs after the application database is open and migrated but
-	// before any service is constructed. It is the seam for startup seeding and
-	// invariants owned by a domain package rather than by the composition root.
-	// Production wiring passes web.PrepareInstanceSettings here.
+	// Prepare runs after the application database is open, migrated, and
+	// seeded with valid runtime settings, but before any service is
+	// constructed. It is the seam for additional startup seeding and invariants
+	// owned by a domain package rather than by the composition root.
 	Prepare []func(ctx context.Context, db *database.DB) error
 
 	// ProcessKinds builds the process kinds for this process from the finished
@@ -61,7 +62,8 @@ type Options struct {
 // an application that has not started any background work yet.
 //
 // The construction order is: bootstrap validation, application database,
-// migrations, database-backed startup invariants, encryption and authorization,
+// migrations, runtime settings seeding, database-backed startup invariants,
+// encryption and authorization,
 // file storage, live-session and query runtime, then process kinds. If any step
 // fails, everything already acquired is closed in reverse order before the
 // error is returned.
@@ -132,6 +134,11 @@ func Build(ctx context.Context, opts Options) (*Application, error) {
 		}
 		logger.Info("database migrations complete")
 	}
+	if err := settings.Prepare(ctx, db, cfg.BootstrapBaseURL); err != nil {
+		return fail(err)
+	}
+	settingsService := settings.New(db)
+
 	for _, prepare := range opts.Prepare {
 		if err := prepare(ctx, db); err != nil {
 			return fail(err)
@@ -186,6 +193,7 @@ func Build(ctx context.Context, opts Options) (*Application, error) {
 		CompletionService: completionService,
 		FileStores:        fileStores,
 		JobStore:          jobs.NewStore(db),
+		Settings:          settingsService,
 		Edition:           selectedEdition,
 	}
 

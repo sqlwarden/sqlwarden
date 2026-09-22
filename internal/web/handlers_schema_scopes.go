@@ -128,7 +128,7 @@ func (app *application) knownLazyScope(ctx context.Context, r *http.Request, con
 	if err != nil {
 		return false, err
 	}
-	settings, err := app.effectiveRuntimeSettingsForWorkspace(ctx, contextGetWorkspace(r))
+	settings, err := app.settingsService().EffectiveForWorkspace(ctx, contextGetWorkspace(r))
 	if err != nil {
 		return false, err
 	}

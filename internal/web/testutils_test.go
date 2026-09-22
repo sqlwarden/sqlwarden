@@ -22,6 +22,7 @@ import (
 	"github.com/sqlwarden/internal/database"
 	"github.com/sqlwarden/internal/edition"
 	"github.com/sqlwarden/internal/encrypt"
+	settingsapp "github.com/sqlwarden/internal/settings"
 	"github.com/sqlwarden/internal/smtp"
 	"github.com/sqlwarden/internal/token"
 
@@ -70,6 +71,7 @@ func newTestApplication(t *testing.T) *application {
 	}
 	app.logger = slog.New(slog.NewTextHandler(io.Discard, nil))
 	app.db = newTestDB(t)
+	app.settings = settingsapp.New(app.db)
 	settings, found, err := app.db.GetInstanceSettings(context.Background())
 	if err != nil || !found {
 		t.Fatalf("get instance settings: found=%v err=%v", found, err)

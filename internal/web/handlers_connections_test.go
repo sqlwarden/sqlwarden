@@ -23,6 +23,7 @@ import (
 	"github.com/sqlwarden/internal/engine"
 	"github.com/sqlwarden/internal/engine/classifier"
 	"github.com/sqlwarden/internal/engine/cursor"
+	settingsapp "github.com/sqlwarden/internal/settings"
 	"github.com/sqlwarden/internal/token"
 	"github.com/sqlwarden/pkg/result"
 )
@@ -1541,7 +1542,7 @@ func TestExecuteDQLQueryFallsBackToSessionQueryWhenCursorUnsupported(t *testing.
 	useCursor := true
 	req := httptest.NewRequest(http.MethodPost, "/query", nil)
 
-	rs, err := app.executeDQLQuery(req, session, "SELECT 1", &useCursor, nil, time.Now(), effectiveRuntimeSettings{
+	rs, err := app.executeDQLQuery(req, session, "SELECT 1", &useCursor, nil, time.Now(), settingsapp.Effective{
 		QueryMaxResultRows:  database.DefaultQueryMaxResultRows,
 		QueryMaxResultBytes: database.DefaultQueryMaxResultBytes,
 	})

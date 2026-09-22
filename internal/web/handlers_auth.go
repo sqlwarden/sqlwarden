@@ -151,7 +151,7 @@ func (app *application) issueAccountSession(w http.ResponseWriter, r *http.Reque
 	if err != nil {
 		return "", "", err
 	}
-	settings, err := app.runtimeSettingsService().effectiveForOrg(r.Context(), nil)
+	settings, err := app.settingsService().EffectiveForOrg(r.Context(), nil)
 	if err != nil {
 		return "", "", err
 	}
@@ -230,7 +230,7 @@ func (app *application) refreshToken(w http.ResponseWriter, r *http.Request) {
 	}
 
 	accountIDStr := strconv.FormatInt(account.ID, 10)
-	settings, err := app.runtimeSettingsService().effectiveForOrg(r.Context(), nil)
+	settings, err := app.settingsService().EffectiveForOrg(r.Context(), nil)
 	if err != nil {
 		app.serverError(w, r, err)
 		return
@@ -666,7 +666,7 @@ func (app *application) getSession(w http.ResponseWriter, r *http.Request) {
 		orgs = []database.Organization{}
 	}
 
-	personalSpacesEnabled, err := app.personalSpacesEnabled(r.Context())
+	personalSpacesEnabled, err := app.settingsService().PersonalSpacesEnabled(r.Context())
 	if err != nil {
 		app.serverError(w, r, err)
 		return

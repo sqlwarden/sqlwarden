@@ -127,7 +127,7 @@ func (app *application) downloadConnectionExport(w http.ResponseWriter, r *http.
 		app.notPermitted(w, r)
 		return
 	}
-	runtimeSettings, err := app.effectiveRuntimeSettingsForWorkspace(r.Context(), ws)
+	runtimeSettings, err := app.settingsService().EffectiveForWorkspace(r.Context(), ws)
 	if err != nil {
 		app.serverError(w, r, err)
 		return
@@ -269,7 +269,7 @@ func (app *application) handleExportJob(ctx context.Context, runtime jobs.Runtim
 	}
 	defer driver.Close()
 	runtime.Events.Info(ctx, "target_connected", "Connected to database.", nil)
-	runtimeSettings, err := app.effectiveRuntimeSettingsForWorkspace(ctx, ws)
+	runtimeSettings, err := app.settingsService().EffectiveForWorkspace(ctx, ws)
 	if err != nil {
 		return nil, err
 	}

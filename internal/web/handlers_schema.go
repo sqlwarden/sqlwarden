@@ -523,7 +523,7 @@ func (app *application) getConnectionSchemaDirectory(w http.ResponseWriter, r *h
 		app.serverError(w, r, err)
 		return
 	}
-	settings, err := app.effectiveRuntimeSettingsForWorkspace(r.Context(), contextGetWorkspace(r))
+	settings, err := app.settingsService().EffectiveForWorkspace(r.Context(), contextGetWorkspace(r))
 	if err != nil {
 		app.serverError(w, r, err)
 		return
@@ -920,7 +920,7 @@ func (app *application) getConnectionSchemaSnapshot(w http.ResponseWriter, r *ht
 		app.writeSnapshotPending(w, r)
 		return
 	}
-	runtimeSettings, err := app.effectiveRuntimeSettingsForWorkspace(r.Context(), contextGetWorkspace(r))
+	runtimeSettings, err := app.settingsService().EffectiveForWorkspace(r.Context(), contextGetWorkspace(r))
 	if err != nil {
 		app.serverError(w, r, err)
 		return

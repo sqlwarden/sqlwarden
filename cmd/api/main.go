@@ -12,7 +12,6 @@ import (
 	"github.com/sqlwarden/internal/app"
 	"github.com/sqlwarden/internal/community"
 	"github.com/sqlwarden/internal/config"
-	"github.com/sqlwarden/internal/database"
 	"github.com/sqlwarden/internal/version"
 	"github.com/sqlwarden/internal/web"
 )
@@ -57,7 +56,6 @@ func run(args []string) error {
 	built, err := community.Build(ctx, app.Options{
 		Config:       loaded.Config,
 		Logger:       logger,
-		Prepare:      []func(context.Context, *database.DB) error{web.PrepareInstanceSettings(loaded.Config)},
 		ProcessKinds: web.ProcessKinds,
 	})
 	if err != nil {
@@ -91,9 +89,8 @@ func runRotateKeys(args []string) error {
 
 	ctx := context.Background()
 	built, err := community.Build(ctx, app.Options{
-		Config:  loaded.Config,
-		Logger:  logger,
-		Prepare: []func(context.Context, *database.DB) error{web.PrepareInstanceSettings(loaded.Config)},
+		Config: loaded.Config,
+		Logger: logger,
 	})
 	if err != nil {
 		return err

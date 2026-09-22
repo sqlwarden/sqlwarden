@@ -19,6 +19,7 @@ import (
 	"github.com/sqlwarden/internal/encrypt"
 	"github.com/sqlwarden/internal/jobs"
 	schemaapp "github.com/sqlwarden/internal/schema"
+	settingsapp "github.com/sqlwarden/internal/settings"
 	"github.com/sqlwarden/internal/smtp"
 )
 
@@ -55,7 +56,7 @@ type application struct {
 	jobRegistry       *jobs.Registry
 	runtimeCancel     context.CancelFunc
 	runtimeUpdates    chan database.InstanceSettings
-	runtimeSettings   *runtimeSettingsService
+	settings          *settingsapp.Service
 	accessLogsEnabled atomic.Bool
 }
 
@@ -79,7 +80,7 @@ func NewApplication(services *coreapp.Services) *App {
 		edition:           services.Edition,
 		fileStores:        services.FileStores,
 		jobStore:          services.JobStore,
-		runtimeSettings:   newRuntimeSettingsService(services.DB),
+		settings:          services.Settings,
 		runtimeUpdates:    make(chan database.InstanceSettings, 1),
 	}
 }

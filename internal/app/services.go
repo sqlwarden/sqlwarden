@@ -13,6 +13,7 @@ import (
 	"github.com/sqlwarden/internal/encrypt"
 	"github.com/sqlwarden/internal/jobs"
 	"github.com/sqlwarden/internal/schema"
+	"github.com/sqlwarden/internal/settings"
 )
 
 // Services is the constructed dependency graph shared by every process kind.
@@ -52,6 +53,11 @@ type Services struct {
 	// JobStore is the durable job queue. Job handlers are registered by the
 	// process kind that runs the worker.
 	JobStore *jobs.Store
+
+	// Settings reads validated instance settings and resolves the effective
+	// settings for an organization or workspace. Config holds bootstrap
+	// configuration only; operational settings are read through this service.
+	Settings *settings.Service
 
 	// Edition exposes capability decorators and modules selected by the
 	// composition root. Services consume only its narrow contracts.

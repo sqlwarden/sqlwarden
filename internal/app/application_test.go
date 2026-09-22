@@ -31,9 +31,6 @@ func externalTestOptions(cfg config.Config) app.Options {
 	return app.Options{
 		Config: cfg,
 		Logger: slog.New(slog.NewTextHandler(io.Discard, nil)),
-		Prepare: []func(context.Context, *database.DB) error{
-			web.PrepareInstanceSettings(cfg),
-		},
 	}
 }
 

@@ -13,6 +13,7 @@ import (
 	"github.com/sqlwarden/internal/files"
 	"github.com/sqlwarden/internal/request"
 	"github.com/sqlwarden/internal/response"
+	settingsapp "github.com/sqlwarden/internal/settings"
 	"github.com/sqlwarden/internal/validator"
 )
 
@@ -366,11 +367,11 @@ func (app *application) updateWorkspaceFileContent(w http.ResponseWriter, r *htt
 
 // workspaceFileService builds the file domain service from current app state.
 func (app *application) workspaceFileService() *files.Service {
-	settings := effectiveSettingsFromInstance(database.DefaultInstanceSettings())
+	settings := settingsapp.EffectiveFromInstance(database.DefaultInstanceSettings())
 	return app.workspaceFileServiceWithSettings(settings)
 }
 
-func (app *application) workspaceFileServiceWithSettings(settings effectiveRuntimeSettings) *files.Service {
+func (app *application) workspaceFileServiceWithSettings(settings settingsapp.Effective) *files.Service {
 	revisionPolicy := files.RevisionPolicyDisabled
 	if settings.FileRevisionsEnabled {
 		revisionPolicy = files.RevisionPolicyVersioned
@@ -384,7 +385,7 @@ func (app *application) workspaceFileServiceWithSettings(settings effectiveRunti
 }
 
 func (app *application) workspaceFileServiceForRequest(r *http.Request) (*files.Service, error) {
-	settings, err := app.effectiveRuntimeSettingsForWorkspace(r.Context(), contextGetWorkspace(r))
+	settings, err := app.settingsService().EffectiveForWorkspace(r.Context(), contextGetWorkspace(r))
 	if err != nil {
 		return nil, err
 	}

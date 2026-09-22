@@ -8,6 +8,7 @@ import (
 	"github.com/sqlwarden/internal/database"
 	"github.com/sqlwarden/internal/request"
 	"github.com/sqlwarden/internal/response"
+	settingsapp "github.com/sqlwarden/internal/settings"
 	"github.com/sqlwarden/internal/validator"
 )
 
@@ -72,7 +73,7 @@ func (app *application) getOrganizationRuntimeSettings(w http.ResponseWriter, r 
 		app.serverError(w, r, err)
 		return
 	}
-	effective, err := app.runtimeSettingsService().effectiveForOrg(r.Context(), &org.ID)
+	effective, err := app.settingsService().EffectiveForOrg(r.Context(), &org.ID)
 	if err != nil {
 		app.serverError(w, r, err)
 		return
@@ -82,7 +83,7 @@ func (app *application) getOrganizationRuntimeSettings(w http.ResponseWriter, r 
 	}
 }
 
-func organizationRuntimeSettingsResponse(overrides database.OrganizationRuntimeSettings, effective effectiveRuntimeSettings, instance database.InstanceSettings) map[string]any {
+func organizationRuntimeSettingsResponse(overrides database.OrganizationRuntimeSettings, effective settingsapp.Effective, instance database.InstanceSettings) map[string]any {
 	return map[string]any{
 		"overrides": map[string]any{
 			"query_max_result_rows":             overrides.QueryMaxResultRows,
@@ -193,12 +194,14 @@ func (app *application) updateOrganizationRuntimeSettings(w http.ResponseWriter,
 		app.serverError(w, r, err)
 		return
 	}
-	validateOrganizationRuntimeSettings(&input.V, settings, instance)
+	for _, violation := range settingsapp.ValidateOrganizationOverrides(settings, instance) {
+		input.V.CheckField(false, violation.Field, violation.Message)
+	}
 	if input.V.HasErrors() {
 		app.failedValidation(w, r, input.V)
 		return
 	}
-	previousEffective, err := app.runtimeSettingsService().effectiveForOrg(r.Context(), &org.ID)
+	previousEffective, err := app.settingsService().EffectiveForOrg(r.Context(), &org.ID)
 	if err != nil {
 		app.serverError(w, r, err)
 		return
@@ -208,7 +211,7 @@ func (app *application) updateOrganizationRuntimeSettings(w http.ResponseWriter,
 		app.serverError(w, r, err)
 		return
 	}
-	effective, err := app.runtimeSettingsService().effectiveForOrg(r.Context(), &org.ID)
+	effective, err := app.settingsService().EffectiveForOrg(r.Context(), &org.ID)
 	if err != nil {
 		app.serverError(w, r, err)
 		return
@@ -236,56 +239,6 @@ func (app *application) updateOrganizationRuntimeSettings(w http.ResponseWriter,
 	}
 	if err := response.JSON(w, http.StatusOK, resp); err != nil {
 		app.serverError(w, r, err)
-	}
-}
-
-func validateOrganizationRuntimeSettings(v *validator.Validator, settings database.OrganizationRuntimeSettings, instance database.InstanceSettings) {
-	if settings.QueryMaxResultRows != nil {
-		v.CheckField(*settings.QueryMaxResultRows > 0 && *settings.QueryMaxResultRows <= instance.QueryMaxResultRows,
-			"query_max_result_rows", "Query row limit must be greater than 0 and no greater than the instance limit.")
-	}
-	if settings.QueryMaxResultBytes != nil {
-		v.CheckField(*settings.QueryMaxResultBytes > 0 && *settings.QueryMaxResultBytes <= instance.QueryMaxResultBytes,
-			"query_max_result_bytes", "Query byte limit must be greater than 0 and no greater than the instance limit.")
-	}
-	if settings.ExportsSyncMaxBytes != nil {
-		v.CheckField(*settings.ExportsSyncMaxBytes > 0 && *settings.ExportsSyncMaxBytes <= instance.ExportsSyncMaxBytes,
-			"exports_sync_max_bytes", "Synchronous export limit must be greater than 0 and no greater than the instance limit.")
-	}
-	if settings.ExportsBackgroundMaxBytes != nil {
-		valid := *settings.ExportsBackgroundMaxBytes >= 0
-		if instance.ExportsBackgroundMaxBytes > 0 {
-			valid = valid && *settings.ExportsBackgroundMaxBytes > 0 && *settings.ExportsBackgroundMaxBytes <= instance.ExportsBackgroundMaxBytes
-		}
-		v.CheckField(valid, "exports_background_max_bytes", "Background export limit must not exceed the instance limit; 0 is allowed only when the instance is unlimited.")
-	}
-	if settings.SchemaSnapshotFreshnessSeconds != nil {
-		v.CheckField(*settings.SchemaSnapshotFreshnessSeconds >= instance.SchemaSnapshotFreshnessSeconds && *settings.SchemaSnapshotFreshnessSeconds <= maxRuntimeDurationSeconds,
-			"schema_snapshot_freshness_seconds", "Schema snapshot freshness must be at least the instance interval.")
-	}
-	if settings.FileRevisionsEnabled != nil {
-		v.CheckField(!*settings.FileRevisionsEnabled || instance.FileRevisionsEnabled,
-			"file_revisions_enabled", "File revisions cannot be enabled when disabled for the instance.")
-	}
-	if settings.FileRevisionsKeepLatest != nil {
-		v.CheckField(*settings.FileRevisionsKeepLatest >= 0 && *settings.FileRevisionsKeepLatest <= instance.FileRevisionsKeepLatest,
-			"file_revisions_keep_latest", "Revision retention must be 0 or greater and no greater than the instance limit.")
-	}
-	if settings.QueryHistoryMode != nil {
-		v.CheckField(isSupportedQueryHistoryMode(*settings.QueryHistoryMode),
-			"query_history_mode", "Query history mode must be backend, local, or off.")
-		v.CheckField(instance.QueryHistoryMode != "off" || *settings.QueryHistoryMode == "off",
-			"query_history_mode", "Query history cannot be enabled when disabled for the instance.")
-	}
-	if settings.QueryHistoryRetentionCount != nil {
-		v.CheckField(*settings.QueryHistoryRetentionCount >= 1 && *settings.QueryHistoryRetentionCount <= instance.QueryHistoryRetentionCount,
-			"query_history_retention_count", "Retention count must be at least 1 and no greater than the instance limit.")
-	}
-	if settings.QueryFavoritesMode != nil {
-		v.CheckField(isSupportedQueryHistoryMode(*settings.QueryFavoritesMode),
-			"query_favorites_mode", "Query favorites mode must be backend, local, or off.")
-		v.CheckField(instance.QueryFavoritesMode != "off" || *settings.QueryFavoritesMode == "off",
-			"query_favorites_mode", "Query favorites cannot be enabled when disabled for the instance.")
 	}
 }
 

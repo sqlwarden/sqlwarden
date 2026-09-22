@@ -55,7 +55,7 @@ func (app *application) maybeEnqueueSchemaSync(ctx context.Context, conn databas
 	if err != nil || !enabled {
 		return
 	}
-	runtimeSettings, err := app.runtimeSettingsService().effectiveForOrg(ctx, orgID)
+	runtimeSettings, err := app.settingsService().EffectiveForOrg(ctx, orgID)
 	if err != nil {
 		app.logger.WarnContext(ctx, "runtime settings lookup failed", "connection_id", conn.ID, "error", err)
 		return
@@ -129,7 +129,7 @@ func (app *application) syncSchemaSnapshot(ctx context.Context, connectionID int
 	// from replacing a newer generation that finishes first.
 	directory.GeneratedAt = startedAt
 
-	settings, err := app.effectiveRuntimeSettingsForWorkspace(ctx, ws)
+	settings, err := app.settingsService().EffectiveForWorkspace(ctx, ws)
 	if err != nil {
 		return schemaSyncOutput{}, err
 	}
@@ -276,7 +276,7 @@ func (app *application) openTargetDriver(ctx context.Context, conn database.Conn
 	if err != nil {
 		return nil, jobs.Permanent("schema_sync_driver_unavailable", "The target driver is unavailable.")
 	}
-	settings, err := app.effectiveRuntimeSettingsForWorkspace(ctx, ws)
+	settings, err := app.settingsService().EffectiveForWorkspace(ctx, ws)
 	if err != nil {
 		return nil, err
 	}

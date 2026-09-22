@@ -28,7 +28,7 @@ func (app *application) newAuthenticationToken(userID int64) (string, time.Time,
 	var claims jwt.Claims
 	claims.Subject = strconv.FormatInt(userID, 10)
 
-	settings, err := app.runtimeSettingsService().effectiveForOrg(context.Background(), nil)
+	settings, err := app.settingsService().EffectiveForOrg(context.Background(), nil)
 	if err != nil {
 		return "", time.Time{}, err
 	}

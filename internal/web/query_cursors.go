@@ -16,6 +16,7 @@ import (
 	"github.com/sqlwarden/internal/engine/cursor"
 	"github.com/sqlwarden/internal/request"
 	"github.com/sqlwarden/internal/response"
+	settingsapp "github.com/sqlwarden/internal/settings"
 	"github.com/sqlwarden/internal/validator"
 	"github.com/sqlwarden/pkg/result"
 )
@@ -68,7 +69,7 @@ func (app *application) startQueryCursor(w http.ResponseWriter, r *http.Request)
 		return
 	}
 
-	runtimeSettings, err := app.effectiveRuntimeSettingsForWorkspace(r.Context(), contextGetWorkspace(r))
+	runtimeSettings, err := app.settingsService().EffectiveForWorkspace(r.Context(), contextGetWorkspace(r))
 	if err != nil {
 		app.serverError(w, r, err)
 		return
@@ -168,7 +169,7 @@ func (app *application) fetchQueryCursor(w http.ResponseWriter, r *http.Request)
 		return
 	}
 
-	runtimeSettings, err := app.effectiveRuntimeSettingsForWorkspace(r.Context(), contextGetWorkspace(r))
+	runtimeSettings, err := app.settingsService().EffectiveForWorkspace(r.Context(), contextGetWorkspace(r))
 	if err != nil {
 		app.serverError(w, r, err)
 		return
@@ -316,7 +317,7 @@ func queryCursorRecordAttrs(qc *connection.QueryCursorRecord, attrs ...slog.Attr
 	return append(out, attrs...)
 }
 
-func queryCursorPageSize(requested *int, settings effectiveRuntimeSettings) int {
+func queryCursorPageSize(requested *int, settings settingsapp.Effective) int {
 	pageSize := settings.QueryCursorPageSize
 	if requested != nil {
 		pageSize = *requested
@@ -327,7 +328,7 @@ func queryCursorPageSize(requested *int, settings effectiveRuntimeSettings) int 
 	return pageSize
 }
 
-func queryCursorScanOptions(pageSize int, settings effectiveRuntimeSettings) cursor.ScanOptions {
+func queryCursorScanOptions(pageSize int, settings settingsapp.Effective) cursor.ScanOptions {
 	return cursor.ScanOptions{
 		MaxRows:  pageSize,
 		MaxBytes: settings.QueryMaxResultBytes,

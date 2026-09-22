@@ -5,6 +5,7 @@ import (
 	"net/http"
 
 	"github.com/sqlwarden/internal/database"
+	settingsapp "github.com/sqlwarden/internal/settings"
 )
 
 type contextKey string
@@ -20,12 +21,12 @@ const (
 	runtimeSettingsKey      contextKey = "runtimeSettings"
 )
 
-func contextSetRuntimeSettings(r *http.Request, settings effectiveRuntimeSettings) *http.Request {
+func contextSetRuntimeSettings(r *http.Request, settings settingsapp.Effective) *http.Request {
 	return r.WithContext(context.WithValue(r.Context(), runtimeSettingsKey, settings))
 }
 
-func contextGetRuntimeSettings(r *http.Request) (effectiveRuntimeSettings, bool) {
-	settings, ok := r.Context().Value(runtimeSettingsKey).(effectiveRuntimeSettings)
+func contextGetRuntimeSettings(r *http.Request) (settingsapp.Effective, bool) {
+	settings, ok := r.Context().Value(runtimeSettingsKey).(settingsapp.Effective)
 	return settings, ok
 }
 

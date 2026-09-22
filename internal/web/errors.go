@@ -9,6 +9,7 @@ import (
 	"strings"
 
 	"github.com/sqlwarden/internal/response"
+	settingsapp "github.com/sqlwarden/internal/settings"
 	"github.com/sqlwarden/internal/smtp"
 	"github.com/sqlwarden/internal/validator"
 	"github.com/uptrace/bun/driver/pgdriver"
@@ -46,7 +47,7 @@ func (app *application) reportServerError(r *http.Request, err error) {
 
 	notificationEmail := ""
 	baseURL := ""
-	if settings, settingsErr := app.runtimeSettingsService().effectiveForOrg(r.Context(), nil); settingsErr == nil {
+	if settings, settingsErr := app.settingsService().EffectiveForOrg(r.Context(), nil); settingsErr == nil {
 		notificationEmail = settings.ErrorNotificationEmail
 		baseURL = settings.BaseURL
 	} else {
@@ -90,7 +91,7 @@ func (app *application) apiError(w http.ResponseWriter, r *http.Request, status 
 
 func (app *application) serverError(w http.ResponseWriter, r *http.Request, err error) {
 	app.reportServerError(r, err)
-	if errors.Is(err, errRuntimeSettingsUnavailable) {
+	if errors.Is(err, settingsapp.ErrUnavailable) {
 		app.apiError(w, r, http.StatusServiceUnavailable, apiErrorSettingsUnavailable, "Runtime settings are temporarily unavailable.", response.APIError{}, nil)
 		return
 	}
