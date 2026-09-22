@@ -55,6 +55,9 @@ func TestForbiddenProductionImports(t *testing.T) {
 			if owner == "app" && (strings.Contains(importPath, "k8s.io/") || strings.Contains(importPath, "sigs.k8s.io/")) {
 				t.Errorf("%s imports Kubernetes API %q", rel, importPath)
 			}
+			if owner == "web" && strings.Contains(importPath, "/internal/connection") {
+				t.Errorf("%s bypasses execution runtime with connection import %q", rel, importPath)
+			}
 		}
 		return nil
 	})

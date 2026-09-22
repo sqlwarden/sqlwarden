@@ -124,7 +124,7 @@ func (app *application) removeWorkspaceMember(w http.ResponseWriter, r *http.Req
 		app.serverError(w, r, err)
 		return
 	}
-	app.connManager.RemoveForWorkspaceAccount(strconv.FormatInt(ws.ID, 10), strconv.FormatInt(accountID, 10))
+	app.executionRuntime.RemoveForWorkspaceAccount(strconv.FormatInt(ws.ID, 10), strconv.FormatInt(accountID, 10))
 
 	app.enforcer.InvalidatePrincipals(org.ID, accountID)
 	app.logInfo(r, "workspace member removed", slog.Int64("workspace_id", ws.ID), slog.Int64("target_account_id", accountID))
@@ -201,7 +201,7 @@ func (app *application) addWorkspaceTeam(w http.ResponseWriter, r *http.Request)
 		return
 	}
 	for _, accountID := range accountIDs {
-		app.connManager.RemoveForWorkspaceAccount(strconv.FormatInt(ws.ID, 10), strconv.FormatInt(accountID, 10))
+		app.executionRuntime.RemoveForWorkspaceAccount(strconv.FormatInt(ws.ID, 10), strconv.FormatInt(accountID, 10))
 		app.enforcer.InvalidatePrincipals(org.ID, accountID)
 	}
 	app.logInfo(r, "workspace team added", slog.Int64("workspace_id", ws.ID), slog.Int64("team_id", input.TeamID), slog.Int("affected_accounts", len(accountIDs)))
@@ -227,7 +227,7 @@ func (app *application) removeWorkspaceTeam(w http.ResponseWriter, r *http.Reque
 		return
 	}
 	for _, accountID := range accountIDs {
-		app.connManager.RemoveForWorkspaceAccount(strconv.FormatInt(ws.ID, 10), strconv.FormatInt(accountID, 10))
+		app.executionRuntime.RemoveForWorkspaceAccount(strconv.FormatInt(ws.ID, 10), strconv.FormatInt(accountID, 10))
 		app.enforcer.InvalidatePrincipals(org.ID, accountID)
 	}
 	app.logInfo(r, "workspace team removed", slog.Int64("workspace_id", ws.ID), slog.Int64("team_id", teamID), slog.Int("affected_accounts", len(accountIDs)))

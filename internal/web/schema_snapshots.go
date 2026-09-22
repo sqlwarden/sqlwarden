@@ -11,6 +11,7 @@ import (
 	"github.com/sqlwarden/internal/database"
 	"github.com/sqlwarden/internal/engine"
 	metadata "github.com/sqlwarden/internal/engine/metadata"
+	"github.com/sqlwarden/internal/execution"
 	"github.com/sqlwarden/internal/jobs"
 	schemaapp "github.com/sqlwarden/internal/schema"
 )
@@ -108,16 +109,11 @@ func (app *application) syncSchemaSnapshot(ctx context.Context, connectionID int
 		return schemaSyncOutput{}, jobs.Permanent("workspace_not_found", "Workspace was not found.")
 	}
 
-	driver, err := app.openTargetDriver(ctx, conn, ws)
+	inspector, capabilities, closeSession, err := app.openTargetSchemaInspector(ctx, conn, ws)
 	if err != nil {
 		return schemaSyncOutput{}, err
 	}
-	defer driver.Close()
-
-	inspector, ok := driver.(metadata.SchemaInspector)
-	if !ok {
-		return schemaSyncOutput{}, jobs.Permanent("schema_sync_unsupported", "Schema inspection is not supported for this driver.")
-	}
+	defer closeSession()
 	directoryStartedAt := time.Now()
 	directory, err := inspector.InspectDirectory(ctx, metadata.DirectoryOptions{Root: conn.DefaultScope})
 	if err != nil {
@@ -155,7 +151,8 @@ func (app *application) syncSchemaSnapshot(ctx context.Context, connectionID int
 	objectsElapsed := time.Since(objectsStartedAt)
 
 	relationshipsStartedAt := time.Now()
-	if relationshipInspector, ok := driver.(metadata.RelationshipInspector); ok {
+	if capabilities.Relationships {
+		relationshipInspector := inspector.(metadata.RelationshipInspector)
 		for _, scope := range directoryObjectScopes(directory) {
 			graph, inspectErr := relationshipInspector.InspectRelationshipsInScope(ctx, scope)
 			if inspectErr != nil {
@@ -259,35 +256,61 @@ func (app *application) inspectAndUpsertObjects(ctx context.Context, inspector m
 	return app.inspectAndStoreObjectsWith(ctx, inspector, snapshotID, refs, app.schemaSnapshots.UpsertObjects)
 }
 
-// openTargetDriver connects a fresh engine driver to conn's target database for a
-// one-off inspection outside the pooled live-session path (schema sync, lazy
-// definition fetch). The caller owns the returned driver and must Close it. Error
-// results are jobs.CodedError values so both the job runner and HTTP callers can
-// classify them.
-func (app *application) openTargetDriver(ctx context.Context, conn database.Connection, ws database.Workspace) (engine.Driver, error) {
+// openTargetSchemaInspector opens an isolated runtime session for one-off
+// schema work. The caller must invoke closeSession. Errors remain coded so both
+// the job runner and HTTP callers can classify them consistently.
+func (app *application) openTargetSchemaInspector(ctx context.Context, conn database.Connection, ws database.Workspace) (metadata.SchemaInspector, execution.SessionCapabilities, func(), error) {
 	plainDSN, err := app.keyring.Decrypt(conn.DSNEncrypted)
 	if err != nil {
-		return nil, err
+		return nil, execution.SessionCapabilities{}, nil, err
 	}
 	if err := app.validateTargetConnection(ctx, conn.Driver, plainDSN); err != nil {
-		return nil, jobs.Permanent("schema_sync_target_blocked", "The target database is blocked by policy.")
+		return nil, execution.SessionCapabilities{}, nil, jobs.Permanent("schema_sync_target_blocked", "The target database is blocked by policy.")
 	}
-	driver, err := engine.New(conn.Driver)
-	if err != nil {
-		return nil, jobs.Permanent("schema_sync_driver_unavailable", "The target driver is unavailable.")
+	if _, ok := engine.Describe(conn.Driver); !ok {
+		return nil, execution.SessionCapabilities{}, nil, jobs.Permanent("schema_sync_driver_unavailable", "The target driver is unavailable.")
 	}
 	settings, err := app.settingsService().EffectiveForWorkspace(ctx, ws)
 	if err != nil {
-		return nil, err
+		return nil, execution.SessionCapabilities{}, nil, err
 	}
 	tlsCfg, err := app.openTLSConfig(conn)
 	if err != nil {
-		return nil, err
+		return nil, execution.SessionCapabilities{}, nil, err
 	}
-	if err := driver.Connect(ctx, app.driverConnectionConfig(conn.Driver, plainDSN, settings, tlsCfg, conn.DefaultScope)); err != nil {
-		return nil, jobs.Retryable("schema_sync_connect_failed", "Could not connect to the target database.")
+	sshCfg, err := app.openSSHConfig(conn)
+	if err != nil {
+		return nil, execution.SessionCapabilities{}, nil, err
 	}
-	return driver, nil
+	tenantID := ""
+	if ws.OrgID != nil {
+		tenantID = strconv.FormatInt(*ws.OrgID, 10)
+	}
+	opened, err := app.executionRuntime.Open(ctx, execution.OpenRequest{
+		Scope: execution.Scope{TenantID: tenantID, WorkspaceID: strconv.FormatInt(ws.ID, 10), ConnectionID: strconv.FormatInt(conn.ID, 10)},
+		Target: execution.Target{
+			Driver: conn.Driver, DSN: plainDSN, DefaultScope: conn.DefaultScope, TLS: tlsCfg, SSH: sshCfg,
+			Limits: execution.Limits{MaxRows: settings.QueryMaxResultRows, MaxBytes: settings.QueryMaxResultBytes},
+		},
+		Ephemeral: true,
+	})
+	if err != nil {
+		return nil, execution.SessionCapabilities{}, nil, jobs.Retryable("schema_sync_connect_failed", "Could not connect to the target database.")
+	}
+	closeSession := func() {
+		_ = app.executionRuntime.Close(context.WithoutCancel(ctx), execution.CloseRequest{Handle: opened.Handle})
+	}
+	capabilities, err := app.executionRuntime.Capabilities(ctx, execution.SessionRequest{Handle: opened.Handle})
+	if err != nil {
+		closeSession()
+		return nil, execution.SessionCapabilities{}, nil, err
+	}
+	if capabilities.Schema == nil {
+		closeSession()
+		return nil, execution.SessionCapabilities{}, nil, jobs.Permanent("schema_sync_unsupported", "Schema inspection is not supported for this driver.")
+	}
+	inspector := runtimeSchemaInspector{runtime: app.executionRuntime, handle: opened.Handle, spec: *capabilities.Schema}
+	return inspector, capabilities, closeSession, nil
 }
 
 // markLazyScopes flags scope nodes whose object count exceeds threshold as

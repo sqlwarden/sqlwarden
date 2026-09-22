@@ -595,7 +595,7 @@ func schemaScopeParam(scope metadata.ScopePath) string {
 func openSchemaSession(t *testing.T, app *application, accountID, connectionID int64, drv engine.Driver) *connection.Session {
 	t.Helper()
 	disableSchemaSnapshots(t, app, connectionID)
-	sess, _, err := app.connManager.GetOrCreate(
+	sess, _, err := testConnectionManager(t, app).GetOrCreate(
 		strconv.FormatInt(accountID, 10),
 		strconv.FormatInt(connectionID, 10),
 		func() (engine.Driver, func(), error) { return drv, nil, nil },

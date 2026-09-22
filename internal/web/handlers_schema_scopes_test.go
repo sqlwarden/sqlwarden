@@ -182,7 +182,7 @@ func TestLiveSchemaObjectsWriteThroughPersistsIntoActiveSnapshot(t *testing.T) {
 	// A live session is required to open the temporary target connection this
 	// fetch needs; the caller isn't the one that had the DB connection, the
 	// session just proves they're actively connected in the IDE.
-	sess, _, err := app.connManager.GetOrCreate(
+	sess, _, err := testConnectionManager(t, app).GetOrCreate(
 		strconv.FormatInt(owner.ID, 10),
 		strconv.FormatInt(connectionID, 10),
 		func() (engine.Driver, func(), error) { return schemaFakeDriver{}, nil, nil },

@@ -7,9 +7,9 @@ import (
 	"net/http"
 	"strings"
 
-	"github.com/sqlwarden/internal/connection"
 	"github.com/sqlwarden/internal/database"
 	"github.com/sqlwarden/internal/engine"
+	"github.com/sqlwarden/internal/execution"
 	"github.com/sqlwarden/internal/response"
 	"github.com/sqlwarden/internal/validator"
 	"golang.org/x/crypto/ssh"
@@ -46,15 +46,15 @@ func (d sshConfigDocument) isEmpty() bool {
 		d.KnownHostsEntry == "" && d.Fingerprint == "" && !d.InsecureSkipHostKey
 }
 
-func (d sshConfigDocument) toConnection() *connection.SSHConfig {
+func (d sshConfigDocument) toConnection() *execution.SSHConfig {
 	if !d.Enabled {
 		return nil
 	}
-	return &connection.SSHConfig{
+	return &execution.SSHConfig{
 		Host:                d.Host,
 		Port:                d.Port,
 		User:                d.User,
-		AuthMethod:          connection.SSHAuthMethod(d.AuthMethod),
+		AuthMethod:          d.AuthMethod,
 		Password:            d.Password,
 		PrivateKeyPEM:       d.PrivateKeyPEM,
 		Passphrase:          d.Passphrase,
@@ -90,7 +90,7 @@ func (app *application) decodeSSHDocument(encrypted string) (sshConfigDocument, 
 	return d, true, nil
 }
 
-func (app *application) openSSHConfig(conn database.Connection) (*connection.SSHConfig, error) {
+func (app *application) openSSHConfig(conn database.Connection) (*execution.SSHConfig, error) {
 	doc, has, err := app.decodeSSHDocument(conn.SSHConfigEncrypted)
 	if err != nil {
 		return nil, err
@@ -129,12 +129,12 @@ func (app *application) validateSSHDocument(driver string, doc sshConfigDocument
 	if doc.Port != 0 && (doc.Port < 1 || doc.Port > 65535) {
 		v.AddFieldError("ssh", "SSH port must be between 1 and 65535.")
 	}
-	switch connection.SSHAuthMethod(doc.AuthMethod) {
-	case connection.SSHAuthPassword:
+	switch execution.SSHAuthMethod(doc.AuthMethod) {
+	case execution.SSHAuthPassword:
 		if doc.Password == "" {
 			v.AddFieldError("ssh", "SSH password is required for password authentication.")
 		}
-	case connection.SSHAuthPrivateKey:
+	case execution.SSHAuthPrivateKey:
 		if doc.PrivateKeyPEM == "" {
 			v.AddFieldError("ssh", "SSH private key is required for key authentication.")
 		} else if _, err := parseSSHPrivateKey(doc.PrivateKeyPEM, doc.Passphrase); err != nil {

@@ -23,6 +23,7 @@ import (
 	"github.com/sqlwarden/internal/engine"
 	"github.com/sqlwarden/internal/engine/classifier"
 	"github.com/sqlwarden/internal/engine/cursor"
+	"github.com/sqlwarden/internal/execution"
 	settingsapp "github.com/sqlwarden/internal/settings"
 	"github.com/sqlwarden/internal/token"
 	"github.com/sqlwarden/pkg/result"
@@ -1383,13 +1384,13 @@ func TestQueryCursorFetchCancellationDoesNotExpireCursor(t *testing.T) {
 	connectRes := send(t, newAuthRequest(t, http.MethodPost, connectionURL+"/connect", nil, tok), app.routes())
 	assert.Equal(t, connectRes.StatusCode, http.StatusOK)
 	sessionID := connectRes.BodyFields["session_id"].(string)
-	parentSession, ok := app.connManager.Get(sessionID)
+	parentSession, ok := testConnectionManager(t, app).Get(sessionID)
 	if !ok {
 		t.Fatal("expected parent session")
 	}
 
 	fakeCursor := &cancelOnceQueryCursor{}
-	qc := app.queryCursorManager().Create(connection.QueryCursorCreateParams{
+	qc := testQueryCursorManager(t, app).Create(connection.QueryCursorCreateParams{
 		ParentSession: parentSession,
 		Cursor:        &connection.QueryCursorHandle{ID: "test-cursor", Cursor: fakeCursor},
 	})
@@ -1536,13 +1537,21 @@ func TestExecuteQueryDoesNotReturnCursorWhenDQLFitsFirstPage(t *testing.T) {
 func TestExecuteDQLQueryFallsBackToSessionQueryWhenCursorUnsupported(t *testing.T) {
 	t.Parallel()
 
-	app := &application{}
 	driver := &cursorUnsupportedQueryDriver{}
-	session := &connection.Session{Conn: driver}
+	sessions := connection.New(time.Minute)
+	cursors := connection.NewQueryCursorManager(time.Minute)
+	t.Cleanup(func() { cursors.Close(); sessions.Close() })
+	session, _, err := sessions.GetOrCreate("account", "connection", func() (engine.Driver, func(), error) {
+		return driver, nil, nil
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	app := &application{executionRuntime: execution.NewLocalRuntime(sessions, cursors, execution.NewMemorySessionDirectory(), time.Minute)}
 	useCursor := true
 	req := httptest.NewRequest(http.MethodPost, "/query", nil)
 
-	rs, err := app.executeDQLQuery(req, session, "SELECT 1", &useCursor, nil, time.Now(), settingsapp.Effective{
+	rs, err := app.executeDQLQuery(req, execution.SessionHandle(session.ID), "SELECT 1", &useCursor, nil, time.Now(), settingsapp.Effective{
 		QueryMaxResultRows:  database.DefaultQueryMaxResultRows,
 		QueryMaxResultBytes: database.DefaultQueryMaxResultBytes,
 	})
@@ -1638,7 +1647,7 @@ func TestQueryCursorFetchHandlesParentSessionRemoval(t *testing.T) {
 	assert.Equal(t, startRes.StatusCode, http.StatusOK)
 	queryCursorID := startRes.BodyFields["query_cursor_id"].(string)
 
-	app.connManager.Remove(sessionID)
+	testConnectionManager(t, app).Remove(sessionID)
 
 	fetchReq := newAuthRequest(t, http.MethodPost, connectionURL+"/query-cursors/"+queryCursorID+"/fetch", map[string]any{"page_size": 1}, tok)
 	fetchReq.Header.Set("X-Warden-Session", sessionID)
@@ -2104,7 +2113,7 @@ func TestRevokeWorkspaceDatabaseSession_OwnerCanRevokeOwnSession(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	session, _, err := app.connManager.GetOrCreateWithMetadata(
+	session, _, err := testConnectionManager(t, app).GetOrCreateWithMetadata(
 		claims.AccountID,
 		strconv.FormatInt(conn.ID, 10),
 		connection.SessionMetadata{
@@ -2122,7 +2131,7 @@ func TestRevokeWorkspaceDatabaseSession_OwnerCanRevokeOwnSession(t *testing.T) {
 		app.routes())
 	assert.Equal(t, revokeRes.StatusCode, http.StatusNoContent)
 
-	_, found := app.connManager.Get(session.ID)
+	_, found := testConnectionManager(t, app).Get(session.ID)
 	assert.False(t, found)
 }
 
@@ -2136,7 +2145,7 @@ func TestRevokeWorkspaceDatabaseSession_AdminCanRevokeWorkspaceSession(t *testin
 		t.Fatal(err)
 	}
 
-	session, _, err := app.connManager.GetOrCreateWithMetadata(
+	session, _, err := testConnectionManager(t, app).GetOrCreateWithMetadata(
 		strconv.FormatInt(member.ID, 10),
 		strconv.FormatInt(conn.ID, 10),
 		connection.SessionMetadata{
@@ -2154,7 +2163,7 @@ func TestRevokeWorkspaceDatabaseSession_AdminCanRevokeWorkspaceSession(t *testin
 		app.routes())
 	assert.Equal(t, revokeRes.StatusCode, http.StatusNoContent)
 
-	_, found := app.connManager.Get(session.ID)
+	_, found := testConnectionManager(t, app).Get(session.ID)
 	assert.False(t, found)
 }
 
@@ -2166,7 +2175,7 @@ func TestRevokeWorkspaceDatabaseSession_CrossWorkspaceHidden(t *testing.T) {
 	envID := defaultEnvironmentID(t, app, wsB.ID)
 	conn := seedConnection(t, app, wsB.ID, &envID, org.ID, "sqlite", "Cross WS Session", "open")
 
-	session, _, err := app.connManager.GetOrCreateWithMetadata(
+	session, _, err := testConnectionManager(t, app).GetOrCreateWithMetadata(
 		strconv.FormatInt(owner.ID, 10),
 		strconv.FormatInt(conn.ID, 10),
 		connection.SessionMetadata{
@@ -2184,7 +2193,7 @@ func TestRevokeWorkspaceDatabaseSession_CrossWorkspaceHidden(t *testing.T) {
 		app.routes())
 	assert.Equal(t, revokeRes.StatusCode, http.StatusNotFound)
 
-	_, found := app.connManager.Get(session.ID)
+	_, found := testConnectionManager(t, app).Get(session.ID)
 	assert.True(t, found)
 }
 
@@ -2257,7 +2266,7 @@ func TestExecuteQueryCancellationRemovesOnlyCancelledSession(t *testing.T) {
 	connB := seedConnection(t, app, ws.ID, &envID, org.ID, "sqlite", "Unrelated Conn", "open")
 
 	blockingDriver := newBlockingQueryDriver()
-	cancelledSession, _, err := app.connManager.GetOrCreate(
+	cancelledSession, _, err := testConnectionManager(t, app).GetOrCreate(
 		strconv.FormatInt(owner.ID, 10),
 		strconv.FormatInt(connA.ID, 10),
 		func() (engine.Driver, func(), error) { return blockingDriver, nil, nil },
@@ -2266,7 +2275,7 @@ func TestExecuteQueryCancellationRemovesOnlyCancelledSession(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	unrelatedSession, _, err := app.connManager.GetOrCreate(
+	unrelatedSession, _, err := testConnectionManager(t, app).GetOrCreate(
 		strconv.FormatInt(owner.ID, 10),
 		strconv.FormatInt(connB.ID, 10),
 		func() (engine.Driver, func(), error) { return newIdleQueryDriver(), nil, nil },
@@ -2311,10 +2320,10 @@ func TestExecuteQueryCancellationRemovesOnlyCancelledSession(t *testing.T) {
 	}
 	assert.Equal(t, payload["error"].(map[string]any)["message"], "Query was cancelled.")
 
-	if _, ok := app.connManager.Get(cancelledSession.ID); ok {
+	if _, ok := testConnectionManager(t, app).Get(cancelledSession.ID); ok {
 		t.Fatal("expected cancelled session to be removed")
 	}
-	if _, ok := app.connManager.Get(unrelatedSession.ID); !ok {
+	if _, ok := testConnectionManager(t, app).Get(unrelatedSession.ID); !ok {
 		t.Fatal("expected unrelated session to remain active")
 	}
 }

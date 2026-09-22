@@ -69,7 +69,7 @@ func (app *application) dropPersonalSpaceSessions(ctx context.Context) error {
 		return err
 	}
 	for _, connID := range connIDs {
-		app.connManager.RemoveForConnection(strconv.FormatInt(connID, 10))
+		app.executionRuntime.RemoveForConnection(strconv.FormatInt(connID, 10))
 	}
 	return nil
 }

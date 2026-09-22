@@ -569,6 +569,32 @@ func (m *Manager) GetOrCreateWithMetadata(accountID, connID string, metadata Ses
 	return sess, true, nil
 }
 
+// CreateWithMetadata always creates an unpooled session. It is used for
+// short-lived runtime operations such as schema synchronization that must not
+// reuse or displace an interactive account session.
+func (m *Manager) CreateWithMetadata(accountID, connID string, metadata SessionMetadata, open func() (engine.Driver, func(), error)) (*Session, error) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	d, teardown, err := open()
+	if err != nil {
+		return nil, err
+	}
+	sess := &Session{
+		ID: newULID(), AccountID: accountID, ConnectionID: connID,
+		OrgID: metadata.OrgID, WorkspaceID: metadata.WorkspaceID,
+		Conn: d, teardown: teardown, lastUsed: time.Now(), txMode: TxModeAuto,
+	}
+	m.byID[sess.ID] = sess
+	return sess, nil
+}
+
+func (m *Manager) deletePooledKeyLocked(sess *Session) {
+	key := sess.AccountID + ":" + sess.ConnectionID
+	if m.byKey[key] == sess {
+		delete(m.byKey, key)
+	}
+}
+
 // SessionRef is a lightweight summary of an active session returned by AllForAccount.
 type SessionRef struct {
 	SessionID    string
@@ -601,6 +627,19 @@ func (m *Manager) AllForAccount(accountID string) []SessionRef {
 		if sess.AccountID == accountID {
 			refs = append(refs, sess.ref())
 		}
+	}
+	return refs
+}
+
+// All returns a metadata snapshot of every active session. It does not update
+// idle timestamps. Runtime adapters use it to apply compound scope filters
+// without exposing live Session pointers.
+func (m *Manager) All() []SessionRef {
+	m.mu.RLock()
+	defer m.mu.RUnlock()
+	refs := make([]SessionRef, 0, len(m.byID))
+	for _, sess := range m.byID {
+		refs = append(refs, sess.ref())
 	}
 	return refs
 }
@@ -660,8 +699,7 @@ func (m *Manager) Remove(sessionID string) {
 	}
 
 	sess.close()
-	key := sess.AccountID + ":" + sess.ConnectionID
-	delete(m.byKey, key)
+	m.deletePooledKeyLocked(sess)
 	delete(m.byID, sessionID)
 	connectionID := sess.ConnectionID
 	m.mu.Unlock()
@@ -692,8 +730,7 @@ func (m *Manager) RemoveForConnection(connID string) int {
 			continue
 		}
 		sess.close()
-		key := sess.AccountID + ":" + sess.ConnectionID
-		delete(m.byKey, key)
+		m.deletePooledKeyLocked(sess)
 		delete(m.byID, id)
 		removed++
 	}
@@ -714,8 +751,7 @@ func (m *Manager) RemoveForAccount(accountID string) int {
 			continue
 		}
 		sess.close()
-		key := sess.AccountID + ":" + sess.ConnectionID
-		delete(m.byKey, key)
+		m.deletePooledKeyLocked(sess)
 		delete(m.byID, id)
 		removed++
 		connectionIDs[sess.ConnectionID] = struct{}{}
@@ -736,8 +772,7 @@ func (m *Manager) RemoveForWorkspaceAccount(workspaceID, accountID string) int {
 			continue
 		}
 		sess.close()
-		key := sess.AccountID + ":" + sess.ConnectionID
-		delete(m.byKey, key)
+		m.deletePooledKeyLocked(sess)
 		delete(m.byID, id)
 		removed++
 		connectionIDs[sess.ConnectionID] = struct{}{}
@@ -758,8 +793,7 @@ func (m *Manager) RemoveForOrgAccount(orgID, accountID string) int {
 			continue
 		}
 		sess.close()
-		key := sess.AccountID + ":" + sess.ConnectionID
-		delete(m.byKey, key)
+		m.deletePooledKeyLocked(sess)
 		delete(m.byID, id)
 		removed++
 		connectionIDs[sess.ConnectionID] = struct{}{}
@@ -785,8 +819,7 @@ func (m *Manager) Close() {
 	connectionIDs := make(map[string]struct{})
 	for id, sess := range m.byID {
 		sess.close()
-		key := sess.AccountID + ":" + sess.ConnectionID
-		delete(m.byKey, key)
+		m.deletePooledKeyLocked(sess)
 		delete(m.byID, id)
 		connectionIDs[sess.ConnectionID] = struct{}{}
 	}
@@ -815,8 +848,7 @@ func (m *Manager) reapIdle() {
 	for id, sess := range m.byID {
 		if now.Sub(sess.lastUsed) > m.idleTimeout {
 			sess.close()
-			key := sess.AccountID + ":" + sess.ConnectionID
-			delete(m.byKey, key)
+			m.deletePooledKeyLocked(sess)
 			delete(m.byID, id)
 			connectionIDs[sess.ConnectionID] = struct{}{}
 		}

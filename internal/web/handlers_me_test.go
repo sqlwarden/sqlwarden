@@ -784,12 +784,12 @@ func TestDisablingPersonalSpacesDropsSessionsAndGatesRoutes(t *testing.T) {
 	if sessionID == "" {
 		t.Fatal("expected session id")
 	}
-	assert.Equal(t, app.connManager.CountForConnection(connID), 1)
+	assert.Equal(t, testConnectionManager(t, app).CountForConnection(connID), 1)
 
 	disableRes := send(t, newAuthRequest(t, http.MethodPatch, "/api/v1/instance/settings",
 		map[string]any{"personal_spaces_enabled": false}, adminTok), app.routes())
 	assert.Equal(t, disableRes.StatusCode, http.StatusOK)
-	assert.Equal(t, app.connManager.CountForConnection(connID), 0)
+	assert.Equal(t, testConnectionManager(t, app).CountForConnection(connID), 0)
 
 	listRes := send(t, newAuthRequest(t, http.MethodGet, "/api/v1/me/workspaces", nil, tok), app.routes())
 	assert.Equal(t, listRes.StatusCode, http.StatusNotFound)

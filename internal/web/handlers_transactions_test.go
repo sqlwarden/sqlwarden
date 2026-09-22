@@ -141,7 +141,7 @@ func TestTransactionEndpoints_AfterSessionReaped(t *testing.T) {
 
 	// Simulate the session going away out from under the client — the same
 	// path idle-reap and connection-drop cleanup both take.
-	app.connManager.Remove(sessionID)
+	testConnectionManager(t, app).Remove(sessionID)
 
 	commitReq := newAuthRequest(t, http.MethodPost, connURL+"/transaction/commit", nil, tok)
 	commitReq.Header.Set("X-Warden-Session", sessionID)

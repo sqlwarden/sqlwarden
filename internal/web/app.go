@@ -14,10 +14,10 @@ import (
 	"github.com/sqlwarden/internal/catalog"
 	completionapp "github.com/sqlwarden/internal/completion"
 	"github.com/sqlwarden/internal/config"
-	"github.com/sqlwarden/internal/connection"
 	"github.com/sqlwarden/internal/database"
 	"github.com/sqlwarden/internal/edition"
 	"github.com/sqlwarden/internal/encrypt"
+	"github.com/sqlwarden/internal/execution"
 	identityapp "github.com/sqlwarden/internal/identity"
 	"github.com/sqlwarden/internal/jobs"
 	schemaapp "github.com/sqlwarden/internal/schema"
@@ -42,8 +42,7 @@ type application struct {
 	mailer            *smtp.Mailer
 	mailerMu          sync.RWMutex
 	wg                sync.WaitGroup
-	connManager       *connection.Manager
-	queryCursors      *connection.QueryCursorManager
+	executionRuntime  execution.SessionRuntime
 	schemaService     *schemaapp.Service
 	schemaSnapshots   *schemaapp.SnapshotStore
 	completionService *completionapp.Service
@@ -74,8 +73,7 @@ func NewApplication(services *coreapp.Services) *App {
 		db:                services.DB,
 		logger:            services.Logger,
 		mailer:            smtp.NewDisabledMailer(""),
-		connManager:       services.ConnManager,
-		queryCursors:      services.QueryCursors,
+		executionRuntime:  services.Execution,
 		schemaService:     services.SchemaService,
 		schemaSnapshots:   services.SchemaSnapshots,
 		completionService: services.CompletionService,

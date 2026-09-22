@@ -13,6 +13,7 @@ import (
 	"github.com/sqlwarden/internal/database"
 	"github.com/sqlwarden/internal/edition"
 	"github.com/sqlwarden/internal/encrypt"
+	"github.com/sqlwarden/internal/execution"
 	"github.com/sqlwarden/internal/identity"
 	"github.com/sqlwarden/internal/jobs"
 	"github.com/sqlwarden/internal/schema"
@@ -66,6 +67,11 @@ type Services struct {
 	// first during shutdown.
 	ConnManager  *connection.Manager
 	QueryCursors *connection.QueryCursorManager
+	// Execution is the process-independent target-database runtime. HTTP and
+	// future RPC adapters use this port rather than concrete session managers.
+	Execution execution.SessionRuntime
+	// SessionDirectory owns opaque-handle routing leases.
+	SessionDirectory execution.SessionDirectory
 
 	SchemaService     *schema.Service
 	SchemaSnapshots   *schema.SnapshotStore

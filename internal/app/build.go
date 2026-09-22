@@ -20,6 +20,7 @@ import (
 	"github.com/sqlwarden/internal/database"
 	"github.com/sqlwarden/internal/edition"
 	"github.com/sqlwarden/internal/encrypt"
+	"github.com/sqlwarden/internal/execution"
 	"github.com/sqlwarden/internal/identity"
 	"github.com/sqlwarden/internal/jobs"
 	"github.com/sqlwarden/internal/schema"
@@ -177,6 +178,8 @@ func Build(ctx context.Context, opts Options) (*Application, error) {
 		queryCursors.Close()
 		return nil
 	})
+	sessionDirectory := execution.NewMemorySessionDirectory()
+	executionRuntime := execution.NewLocalRuntime(connManager, queryCursors, sessionDirectory, sessionIdleTimeout)
 
 	schemaService := schema.NewServiceWithLogger(cache.NewMemCache(schemaCacheCapacity), schemaCacheTTL, logger)
 	completionService := completion.NewService()
@@ -203,7 +206,7 @@ func Build(ctx context.Context, opts Options) (*Application, error) {
 		Catalog: catalog.NewService(
 			catalog.NewDatabaseStore(db, enforcer),
 			enforcer,
-			connManager,
+			executionRuntime,
 			keyring,
 			catalog.NewTargetPolicy(settingsService),
 			auditWriter,
@@ -214,6 +217,8 @@ func Build(ctx context.Context, opts Options) (*Application, error) {
 		Keyring:           keyring,
 		ConnManager:       connManager,
 		QueryCursors:      queryCursors,
+		Execution:         executionRuntime,
+		SessionDirectory:  sessionDirectory,
 		SchemaService:     schemaService,
 		SchemaSnapshots:   schema.NewSnapshotStore(db),
 		CompletionService: completionService,

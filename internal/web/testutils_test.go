@@ -20,7 +20,6 @@ import (
 	coreapp "github.com/sqlwarden/internal/app"
 	"github.com/sqlwarden/internal/audit"
 	"github.com/sqlwarden/internal/config"
-	"github.com/sqlwarden/internal/connection"
 	"github.com/sqlwarden/internal/database"
 	"github.com/sqlwarden/internal/edition"
 	"github.com/sqlwarden/internal/encrypt"
@@ -91,8 +90,6 @@ func newTestApplication(t *testing.T) *application {
 		t.Fatal(err)
 	}
 	app.mailer = smtp.NewMockMailer("test@example.com")
-	app.queryCursors = connection.NewQueryCursorManager(30 * time.Minute)
-	t.Cleanup(func() { app.queryCursors.Close() })
 	keyring, err := encrypt.NewKeyring("test-encryption-key-32bytes!!!!!")
 	if err != nil {
 		t.Fatal(err)

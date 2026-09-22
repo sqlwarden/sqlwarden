@@ -10,6 +10,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
@@ -22,6 +23,7 @@ import (
 	completionapp "github.com/sqlwarden/internal/completion"
 	"github.com/sqlwarden/internal/connection"
 	"github.com/sqlwarden/internal/database"
+	"github.com/sqlwarden/internal/execution"
 	schemaapp "github.com/sqlwarden/internal/schema"
 	"github.com/sqlwarden/internal/token"
 )
@@ -30,6 +32,37 @@ const (
 	testSchemaCacheCapacity = 32
 	testSchemaCacheTTL      = time.Minute
 )
+
+type testRuntimeManagers struct {
+	sessions *connection.Manager
+	cursors  *connection.QueryCursorManager
+}
+
+var testRuntimeManagerRegistry sync.Map
+
+func registerTestRuntimeManagers(t testing.TB, app *application, sessions *connection.Manager, cursors *connection.QueryCursorManager) {
+	t.Helper()
+	testRuntimeManagerRegistry.Store(app, testRuntimeManagers{sessions: sessions, cursors: cursors})
+	t.Cleanup(func() { testRuntimeManagerRegistry.Delete(app) })
+}
+
+func testConnectionManager(t testing.TB, app *application) *connection.Manager {
+	t.Helper()
+	value, ok := testRuntimeManagerRegistry.Load(app)
+	if !ok {
+		t.Fatal("test runtime session manager is not registered")
+	}
+	return value.(testRuntimeManagers).sessions
+}
+
+func testQueryCursorManager(t testing.TB, app *application) *connection.QueryCursorManager {
+	t.Helper()
+	value, ok := testRuntimeManagerRegistry.Load(app)
+	if !ok {
+		t.Fatal("test runtime cursor manager is not registered")
+	}
+	return value.(testRuntimeManagers).cursors
+}
 
 func newTestApp(t *testing.T) *application {
 	t.Helper()
@@ -41,11 +74,16 @@ func newTestApp(t *testing.T) *application {
 	app.enforcer = enforcer
 	app.policyEvaluator = enforcer
 	app.accessService = access.NewService(access.NewSQLStore(app.db.DB), enforcer, enforcer, audit.Discard)
-	app.connManager = connection.New(30 * time.Minute)
+	connManager := connection.New(30 * time.Minute)
+	queryCursors := connection.NewQueryCursorManager(30 * time.Minute)
+	app.executionRuntime = execution.NewLocalRuntime(
+		connManager, queryCursors, execution.NewMemorySessionDirectory(), 30*time.Minute,
+	)
+	registerTestRuntimeManagers(t, app, connManager, queryCursors)
 	app.catalog = catalog.NewService(
 		catalog.NewDatabaseStore(app.db, enforcer),
 		enforcer,
-		app.connManager,
+		app.executionRuntime,
 		app.keyring,
 		catalog.NewTargetPolicy(app.settings),
 		audit.Discard,
@@ -53,8 +91,11 @@ func newTestApp(t *testing.T) *application {
 	app.schemaService = schemaapp.NewService(cache.NewMemCache(testSchemaCacheCapacity), testSchemaCacheTTL)
 	app.schemaSnapshots = schemaapp.NewSnapshotStore(app.db)
 	app.completionService = completionapp.NewService()
-	coreapp.WireCacheInvalidation(app.connManager, app.schemaService, app.completionService)
-	t.Cleanup(func() { app.connManager.Close() })
+	coreapp.WireCacheInvalidation(connManager, app.schemaService, app.completionService)
+	t.Cleanup(func() {
+		queryCursors.Close()
+		connManager.Close()
+	})
 	return app
 }
 

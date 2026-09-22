@@ -8,6 +8,7 @@ import (
 	"strconv"
 
 	"github.com/sqlwarden/internal/engine/metadata"
+	"github.com/sqlwarden/internal/execution"
 	"github.com/sqlwarden/internal/response"
 )
 
@@ -24,8 +25,8 @@ func lazySchemaScope(directory *metadata.Directory, scope metadata.ScopePath) bo
 }
 
 // withLiveSchemaInspector runs an inspection with the caller's existing session
-// in ephemeral mode, or an authorized, short-lived target connection in persistent
-// mode. It owns the temporary connection and timeout, and writes resolution and
+// in ephemeral mode, or an authorized, isolated runtime session in persistent
+// mode. It owns the temporary session and timeout, and writes resolution and
 // callback errors to the response. The callback must return response-write errors
 // and must not retain the inspector after returning.
 func (app *application) withLiveSchemaInspector(w http.ResponseWriter, r *http.Request, persistent bool, run func(context.Context, string, metadata.SchemaInspector) error) {
@@ -34,7 +35,7 @@ func (app *application) withLiveSchemaInspector(w http.ResponseWriter, r *http.R
 		if !ok {
 			return
 		}
-		if err := run(r.Context(), session.ConnectionID, inspector); err != nil {
+		if err := run(r.Context(), session.Scope.ConnectionID, inspector); err != nil {
 			app.serverError(w, r, err)
 		}
 		return
@@ -44,17 +45,12 @@ func (app *application) withLiveSchemaInspector(w http.ResponseWriter, r *http.R
 	}
 	ctx, cancel := context.WithTimeout(r.Context(), lazyDefinitionTimeout)
 	defer cancel()
-	driver, err := app.openTargetDriver(ctx, contextGetConnection(r), contextGetWorkspace(r))
+	inspector, _, closeSession, err := app.openTargetSchemaInspector(ctx, contextGetConnection(r), contextGetWorkspace(r))
 	if err != nil {
 		app.schemaSyncHTTPError(w, r, err)
 		return
 	}
-	defer driver.Close()
-	inspector, ok := driver.(metadata.SchemaInspector)
-	if !ok {
-		app.errorMessage(w, r, http.StatusNotImplemented, "This driver does not support schema inspection.", nil)
-		return
-	}
+	defer closeSession()
 	if err := run(ctx, strconv.FormatInt(contextGetConnection(r).ID, 10), inspector); err != nil {
 		app.serverError(w, r, err)
 	}
@@ -137,12 +133,12 @@ func (app *application) knownLazyScope(ctx context.Context, r *http.Request, con
 }
 
 // liveSchemaObjects resolves persistent-mode object details from the cache,
-// inspecting cache misses through a temporary target connection and writing
+// inspecting cache misses through an isolated runtime session and writing
 // them into the connection's active snapshot so later requests read the same
 // fetched detail without re-inspecting the driver. Callers must authorize
 // schema access before calling because a full cache hit opens no connection.
 //
-// A cache miss only opens that temporary connection when the caller already
+// A cache miss only opens that temporary session when the caller already
 // has a live session on this connection — otherwise the user would get a
 // database connection they never asked for just by expanding a tree node.
 // Without a session, uncached refs come back in the second return value so
@@ -186,13 +182,13 @@ func (app *application) liveSchemaSessionAvailable(r *http.Request) bool {
 	if sessionID == "" {
 		return false
 	}
-	session, ok := app.connManager.Get(sessionID)
-	if !ok {
+	session, ok, err := app.executionRuntime.Session(r.Context(), execution.SessionHandle(sessionID))
+	if err != nil || !ok {
 		return false
 	}
 	conn := contextGetConnection(r)
-	return session.AccountID == strconv.FormatInt(contextGetAccount(r).ID, 10) &&
-		session.ConnectionID == strconv.FormatInt(conn.ID, 10)
+	return session.Scope.AccountID == strconv.FormatInt(contextGetAccount(r).ID, 10) &&
+		session.Scope.ConnectionID == strconv.FormatInt(conn.ID, 10)
 }
 
 // missingObjectRefs returns the requested refs not present in found, by ref
@@ -213,18 +209,29 @@ func missingObjectRefs(refs []metadata.ObjectRef, found []metadata.Object) []met
 
 // getLiveSchemaRelationships serves relationships for a persistent-mode scope
 // omitted from the saved snapshot, using the driver's relationship capability
-// and the shared schema cache through an authorized temporary connection.
+// and the shared schema cache through an authorized isolated runtime session.
 func (app *application) getLiveSchemaRelationships(w http.ResponseWriter, r *http.Request, scope metadata.ScopePath) {
-	app.withLiveSchemaInspector(w, r, true, func(ctx context.Context, connID string, inspector metadata.SchemaInspector) error {
-		relationships, ok := inspector.(metadata.RelationshipInspector)
-		if !ok {
-			app.errorMessage(w, r, http.StatusNotImplemented, "This driver does not support schema relationships.", nil)
-			return nil
-		}
-		graph, err := app.schemaService.Relationships(ctx, connID, scope, relationships)
-		if err != nil {
-			return err
-		}
-		return response.JSON(w, http.StatusOK, relationshipsResponse{Graph: graph})
-	})
+	if !app.authorizeSchemaAccess(w, r) {
+		return
+	}
+	ctx, cancel := context.WithTimeout(r.Context(), lazyDefinitionTimeout)
+	defer cancel()
+	inspector, capabilities, closeSession, err := app.openTargetSchemaInspector(ctx, contextGetConnection(r), contextGetWorkspace(r))
+	if err != nil {
+		app.schemaSyncHTTPError(w, r, err)
+		return
+	}
+	defer closeSession()
+	if !capabilities.Relationships {
+		app.errorMessage(w, r, http.StatusNotImplemented, "This driver does not support schema relationships.", nil)
+		return
+	}
+	graph, err := app.schemaService.Relationships(ctx, strconv.FormatInt(contextGetConnection(r).ID, 10), scope, inspector.(metadata.RelationshipInspector))
+	if err != nil {
+		app.serverError(w, r, err)
+		return
+	}
+	if err := response.JSON(w, http.StatusOK, relationshipsResponse{Graph: graph}); err != nil {
+		app.serverError(w, r, err)
+	}
 }

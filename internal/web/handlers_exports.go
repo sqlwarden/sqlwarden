@@ -18,6 +18,7 @@ import (
 	"github.com/sqlwarden/internal/database"
 	"github.com/sqlwarden/internal/engine"
 	"github.com/sqlwarden/internal/engine/classifier"
+	"github.com/sqlwarden/internal/execution"
 	"github.com/sqlwarden/internal/exports"
 	"github.com/sqlwarden/internal/files"
 	"github.com/sqlwarden/internal/jobs"
@@ -118,12 +119,17 @@ func (app *application) downloadConnectionExport(w http.ResponseWriter, r *http.
 		app.errorMessage(w, r, http.StatusBadRequest, "X-Warden-Session header is required.", nil)
 		return
 	}
-	session, found := app.connManager.Get(sessionID)
+	handle := execution.SessionHandle(sessionID)
+	session, found, err := app.executionRuntime.Session(r.Context(), handle)
+	if err != nil {
+		app.serverError(w, r, err)
+		return
+	}
 	if !found {
 		app.errorMessage(w, r, http.StatusGone, "Session has expired or does not exist.", nil)
 		return
 	}
-	if session.AccountID != strconv.FormatInt(account.ID, 10) || session.ConnectionID != strconv.FormatInt(conn.ID, 10) {
+	if session.Scope.AccountID != strconv.FormatInt(account.ID, 10) || session.Scope.ConnectionID != strconv.FormatInt(conn.ID, 10) {
 		app.notPermitted(w, r)
 		return
 	}
@@ -137,7 +143,7 @@ func (app *application) downloadConnectionExport(w http.ResponseWriter, r *http.
 	w.Header().Set("Content-Type", "text/csv; charset=utf-8")
 	w.Header().Set("Content-Disposition", mime.FormatMediaType("attachment", map[string]string{"filename": filename}))
 	w.WriteHeader(http.StatusOK)
-	result, err := exports.NewService().Stream(r.Context(), session.Conn, w, exports.StreamOptions{
+	result, err := app.executionRuntime.Stream(r.Context(), execution.SessionRequest{Handle: handle}, w, exports.StreamOptions{
 		Format:   normalizedExportFormat(input.Format),
 		SQL:      input.SQL,
 		MaxBytes: runtimeSettings.ExportsSyncMaxBytes,

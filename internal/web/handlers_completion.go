@@ -14,6 +14,7 @@ import (
 	completionapp "github.com/sqlwarden/internal/completion"
 	"github.com/sqlwarden/internal/engine/completer"
 	metadata "github.com/sqlwarden/internal/engine/metadata"
+	"github.com/sqlwarden/internal/execution"
 	"github.com/sqlwarden/internal/request"
 	"github.com/sqlwarden/internal/response"
 )
@@ -203,18 +204,19 @@ func (app *application) addEphemeralCompletionMetadata(r *http.Request, connID s
 	if sessionID == "" {
 		return false
 	}
-	session, found := app.connManager.Get(sessionID)
-	if !found {
+	session, found, err := app.executionRuntime.Session(r.Context(), execution.SessionHandle(sessionID))
+	if err != nil || !found {
 		return false
 	}
 	account := contextGetAccount(r)
-	if session.AccountID != strconv.FormatInt(account.ID, 10) || session.ConnectionID != connID {
+	if session.Scope.AccountID != strconv.FormatInt(account.ID, 10) || session.Scope.ConnectionID != connID {
 		return true
 	}
-	inspector, ok := session.Conn.(metadata.SchemaInspector)
-	if !ok {
+	capabilities, err := app.executionRuntime.Capabilities(r.Context(), execution.SessionRequest{Handle: session.Handle})
+	if err != nil || capabilities.Schema == nil {
 		return false
 	}
+	inspector := runtimeSchemaInspector{runtime: app.executionRuntime, handle: session.Handle, spec: *capabilities.Schema}
 	directory, err := app.schemaService.Directory(r.Context(), connID, inspector)
 	if err != nil {
 		app.logWarn(r, "completion directory inspection failed", slog.String("connection_id", connID), slog.String("error", err.Error()))
