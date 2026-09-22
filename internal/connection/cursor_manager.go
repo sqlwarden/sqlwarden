@@ -42,11 +42,11 @@ type QueryCursorManager struct {
 	closeOnce   sync.Once
 }
 
-// NewQueryCursorManager creates a cursor manager and starts its idle reaper.
+// NewQueryCursorManager creates a cursor manager. Call
+// [QueryCursorManager.StartReaper] during the owning application's explicit
+// start phase.
 func NewQueryCursorManager(idleTimeout time.Duration) *QueryCursorManager {
-	m := NewUnstartedQueryCursorManager(idleTimeout)
-	m.StartReaper()
-	return m
+	return NewUnstartedQueryCursorManager(idleTimeout)
 }
 
 // NewUnstartedQueryCursorManager creates a cursor manager that runs no

@@ -493,11 +493,10 @@ func (m *Manager) SetOnConnectionEmpty(hook func(connectionID string)) {
 	m.mu.Unlock()
 }
 
-// New creates a new Manager with the given idle timeout and starts the background reaper.
+// New creates a new Manager with the given idle timeout. Call [Manager.StartReaper]
+// during the owning application's explicit start phase.
 func New(idleTimeout time.Duration) *Manager {
-	m := NewUnstarted(idleTimeout)
-	m.StartReaper()
-	return m
+	return NewUnstarted(idleTimeout)
 }
 
 // NewUnstarted creates a Manager that runs no background work until

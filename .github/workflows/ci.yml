@@ -39,6 +39,7 @@ jobs:
               - 'go.mod'
               - 'go.sum'
               - 'Makefile'
+              - '.github/workflows/ci.yml'
 
       - name: No Go test changes
         if: steps.changes.outputs.go != 'true'
@@ -51,17 +52,35 @@ jobs:
           go-version-file: go.mod
           cache: true
 
-      - name: Verify core without Enterprise source
+      - name: Run Go tests
         if: steps.changes.outputs.go == 'true'
+        run: go test -race -buildvcs ./...
+
+  core-without-enterprise:
+    name: Core Without Enterprise
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+          cache: true
+
+      - name: Remove Enterprise source and build core
         run: |
           ee_backup="$RUNNER_TEMP/sqlwarden-ee"
           mv ee "$ee_backup"
           trap 'mv "$ee_backup" ee' EXIT
-          go test ./cmd/api ./internal/app ./internal/community ./internal/edition/...
-
-      - name: Run Go tests
-        if: steps.changes.outputs.go == 'true'
-        run: go test -race -buildvcs ./...
+          go clean -cache -testcache
+          go list ./cmd/... ./internal/... ./pkg/...
+          go build ./cmd/... ./internal/... ./pkg/...
+          go test ./internal/architecture
 
   oracle-integration:
     name: Oracle Integration Tests
@@ -122,6 +141,7 @@ jobs:
               - 'assets/migrations_sqlite/**'
               - 'ee/**'
               - 'Makefile'
+              - '.github/workflows/ci.yml'
 
       - name: No Go quality changes
         if: steps.changes.outputs.go != 'true'
