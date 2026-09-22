@@ -12,3 +12,12 @@ the PostgreSQL Community Association of Canada, and used with their permission.
 
 Vendor logos are reproduced unmodified from each project's official assets. See
 `frontend/src/assets/drivers/NOTICE.md` for the per-asset source list.
+
+# Third-party software and assets
+
+SQLWarden includes third-party software and assets that are not relicensed under
+the project license. License and source notices distributed with those components
+are stored beside the relevant source or asset. In particular,
+completion-engine attribution is in
+`internal/engine/completioncore/LICENSE.bytebase`, and included font notices are
+under `frontend/public/fonts`.
