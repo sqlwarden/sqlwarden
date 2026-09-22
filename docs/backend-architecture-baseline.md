@@ -10,8 +10,8 @@ evolution plan differ.
 
 ## HTTP surface and characterization coverage
 
-`internal/web/routes.go` is the public HTTP inventory. It contains 228 explicit
-route registrations. Chi expands those registrations to 305 method/path pairs,
+`internal/web/routes.go` is the public HTTP inventory. It contains 229 explicit
+route registrations. Chi expands those registrations to 306 method/path pairs,
 including generated method handling. `TestArchitectureRouteInventory` stores a
 sorted SHA-256 snapshot of the expanded surface so a handler move cannot
 silently drop or remap an endpoint.

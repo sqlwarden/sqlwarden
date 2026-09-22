@@ -445,6 +445,13 @@ export interface InstanceConfiguration {
   tls_enabled: boolean
   file_storage_mode: 'file' | 'object'
   file_storage_backend: string
+  edition: 'community' | 'enterprise'
+  capabilities: Record<string, boolean>
+}
+
+export interface EditionCapabilities {
+  edition: 'community' | 'enterprise'
+  capabilities: Record<string, boolean>
 }
 
 export interface OrganizationRuntimeOverrideValues {

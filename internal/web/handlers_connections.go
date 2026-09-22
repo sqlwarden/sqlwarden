@@ -191,7 +191,7 @@ func (app *application) hasAnyConnectionRuntimePermission(r *http.Request, orgID
 
 func (app *application) hasConnectionPermission(r *http.Request, orgID int64, ownerType string, connectionID int64, permission string) bool {
 	account := contextGetAccount(r)
-	return app.enforcer.Can(r.Context(), account.ID, orgID, ownerType, "connection", connectionID, permission)
+	return app.policyEvaluator.Can(r.Context(), account.ID, orgID, ownerType, "connection", connectionID, permission)
 }
 
 func (app *application) classifyConnectionSQL(r *http.Request, conn database.Connection, sql string) (classifier.Result, error) {
@@ -985,7 +985,7 @@ func (app *application) listActiveSessions(w http.ResponseWriter, r *http.Reques
 	result := make([]sessionInfo, 0)
 
 	refs := app.connManager.AllForAccount(accountID)
-	if org.ID != 0 && app.enforcer.Can(r.Context(), account.ID, org.ID, ws.OwnerType, "workspace", ws.ID, access.PermPolicyRead) {
+	if org.ID != 0 && app.policyEvaluator.Can(r.Context(), account.ID, org.ID, ws.OwnerType, "workspace", ws.ID, access.PermPolicyRead) {
 		refs = app.connManager.AllForWorkspace(workspaceID)
 	}
 
@@ -1078,7 +1078,7 @@ func (app *application) revokeWorkspaceDatabaseSession(w http.ResponseWriter, r 
 
 	accountID := strconv.FormatInt(account.ID, 10)
 	if session.AccountID != accountID {
-		if org.ID == 0 || !app.enforcer.Can(r.Context(), account.ID, org.ID, ws.OwnerType, "workspace", ws.ID, access.PermPolicyModify) {
+		if org.ID == 0 || !app.policyEvaluator.Can(r.Context(), account.ID, org.ID, ws.OwnerType, "workspace", ws.ID, access.PermPolicyModify) {
 			app.notPermitted(w, r)
 			return
 		}
@@ -1238,7 +1238,7 @@ func (app *application) executeQuery(w http.ResponseWriter, r *http.Request) {
 
 	switch classification.Kind {
 	case classifier.KindDQL:
-		if !hasBroadExecute && !app.enforcer.Can(r.Context(),
+		if !hasBroadExecute && !app.policyEvaluator.Can(r.Context(),
 			account.ID, org.ID,
 			ws.OwnerType, "connection", conn.ID,
 			access.PermConnDQL,
@@ -1253,7 +1253,7 @@ func (app *application) executeQuery(w http.ResponseWriter, r *http.Request) {
 			rs, execErr = app.executeDQLQuery(r, session, execSQL, input.UseCursor, input.PageSize, start, runtimeSettings)
 		}
 	case classifier.KindDML:
-		if !hasBroadExecute && !app.enforcer.Can(r.Context(),
+		if !hasBroadExecute && !app.policyEvaluator.Can(r.Context(),
 			account.ID, org.ID,
 			ws.OwnerType, "connection", conn.ID,
 			access.PermConnDML,
@@ -1288,7 +1288,7 @@ func (app *application) executeQuery(w http.ResponseWriter, r *http.Request) {
 			rs, execErr = execStatement()
 		}
 	case classifier.KindDDL:
-		if !hasBroadExecute && !app.enforcer.Can(r.Context(),
+		if !hasBroadExecute && !app.policyEvaluator.Can(r.Context(),
 			account.ID, org.ID,
 			ws.OwnerType, "connection", conn.ID,
 			access.PermConnDDL,

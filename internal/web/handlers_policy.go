@@ -488,7 +488,7 @@ func (app *application) listPermissions(w http.ResponseWriter, r *http.Request) 
 
 func (app *application) canManageProtectedOrgPolicy(r *http.Request, orgID, grantorID int64, role database.Role) bool {
 	for _, permission := range protectedOrgPolicyPermissions(role) {
-		if !app.enforcer.Can(r.Context(), grantorID, orgID, "org", "org", orgID, permission) {
+		if !app.policyEvaluator.Can(r.Context(), grantorID, orgID, "org", "org", orgID, permission) {
 			return false
 		}
 	}

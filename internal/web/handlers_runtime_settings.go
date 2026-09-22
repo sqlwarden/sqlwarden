@@ -30,6 +30,15 @@ func (p *nullablePatch[T]) UnmarshalJSON(data []byte) error {
 	return nil
 }
 
+func (app *application) getCapabilities(w http.ResponseWriter, r *http.Request) {
+	if err := response.JSON(w, http.StatusOK, map[string]any{
+		"edition":      app.edition.Name(),
+		"capabilities": app.edition.Entitlements().Clone(),
+	}); err != nil {
+		app.serverError(w, r, err)
+	}
+}
+
 func (app *application) getInstanceConfiguration(w http.ResponseWriter, r *http.Request) {
 	err := response.JSON(w, http.StatusOK, map[string]any{
 		"deployment_managed":   true,
@@ -43,6 +52,8 @@ func (app *application) getInstanceConfiguration(w http.ResponseWriter, r *http.
 		"tls_enabled":          app.config.TLS.Enabled,
 		"file_storage_mode":    app.config.Files.StorageMode,
 		"file_storage_backend": app.config.Files.ActiveStorageBackend,
+		"edition":              app.edition.Name(),
+		"capabilities":         app.edition.Entitlements().Clone(),
 	})
 	if err != nil {
 		app.serverError(w, r, err)

@@ -161,6 +161,11 @@ func TestInstanceBootstrapConfigurationIsSanitized(t *testing.T) {
 	assert.Equal(t, res.StatusCode, http.StatusOK)
 	assert.Equal(t, res.BodyFields["deployment_managed"], true)
 	assert.Equal(t, res.BodyFields["restart_required"], true)
+	assert.Equal(t, res.BodyFields["edition"], "community")
+	capabilities, ok := res.BodyFields["capabilities"].(map[string]any)
+	if !ok || len(capabilities) != 0 {
+		t.Fatalf("capabilities = %#v, want an empty community capability map", res.BodyFields["capabilities"])
+	}
 	if _, exists := res.BodyFields["base_url"]; exists {
 		t.Fatal("bootstrap response exposed base_url")
 	}
@@ -168,6 +173,23 @@ func TestInstanceBootstrapConfigurationIsSanitized(t *testing.T) {
 		if _, exists := res.BodyFields[forbidden]; exists {
 			t.Fatalf("bootstrap response exposed %q", forbidden)
 		}
+	}
+}
+
+func TestCapabilitiesRequireAuthenticationAndReturnEditionEntitlements(t *testing.T) {
+	t.Parallel()
+	app := newTestApp(t)
+
+	unauthenticated := send(t, newTestRequest(t, http.MethodGet, "/api/v1/capabilities", nil), app.routes())
+	assert.Equal(t, unauthenticated.StatusCode, http.StatusUnauthorized)
+
+	token := setupInstance(t, app, "capabilities@example.com", "Capabilities", "securepass99")
+	res := send(t, newAuthRequest(t, http.MethodGet, "/api/v1/capabilities", nil, token), app.routes())
+	assert.Equal(t, res.StatusCode, http.StatusOK)
+	assert.Equal(t, res.BodyFields["edition"], "community")
+	capabilities, ok := res.BodyFields["capabilities"].(map[string]any)
+	if !ok || len(capabilities) != 0 {
+		t.Fatalf("capabilities = %#v, want an empty community capability map", res.BodyFields["capabilities"])
 	}
 }
 

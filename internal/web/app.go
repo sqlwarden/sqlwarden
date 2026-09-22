@@ -15,6 +15,7 @@ import (
 	"github.com/sqlwarden/internal/config"
 	"github.com/sqlwarden/internal/connection"
 	"github.com/sqlwarden/internal/database"
+	"github.com/sqlwarden/internal/edition"
 	"github.com/sqlwarden/internal/encrypt"
 	"github.com/sqlwarden/internal/jobs"
 	schemaapp "github.com/sqlwarden/internal/schema"
@@ -45,6 +46,8 @@ type application struct {
 	completionService *completionapp.Service
 	keyring           *encrypt.Keyring
 	enforcer          *access.Enforcer
+	policyEvaluator   access.PolicyEvaluator
+	edition           edition.Edition
 	fileStores        *coreapp.FileStores
 	fileLocks         sync.Map
 	fileReaperCancel  context.CancelFunc
@@ -72,6 +75,8 @@ func NewApplication(services *coreapp.Services) *App {
 		completionService: services.CompletionService,
 		keyring:           services.Keyring,
 		enforcer:          services.Enforcer,
+		policyEvaluator:   services.PolicyEvaluator,
+		edition:           services.Edition,
 		fileStores:        services.FileStores,
 		jobStore:          services.JobStore,
 		runtimeSettings:   newRuntimeSettingsService(services.DB),

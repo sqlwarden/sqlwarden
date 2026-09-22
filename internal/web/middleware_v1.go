@@ -411,7 +411,7 @@ func (app *application) requireResourcePermission(permission string, resource fu
 				app.notFound(w, r)
 				return
 			}
-			allowed := app.enforcer.Can(r.Context(),
+			allowed := app.policyEvaluator.Can(r.Context(),
 				account.ID, org.ID,
 				ownerType, resourceType, resourceID,
 				permission,
@@ -461,7 +461,7 @@ func (app *application) requireOrgRole(roleName string) func(http.Handler) http.
 				return
 			}
 
-			allowed := app.enforcer.Can(r.Context(),
+			allowed := app.policyEvaluator.Can(r.Context(),
 				account.ID, org.ID,
 				"org", "org", org.ID,
 				permission,

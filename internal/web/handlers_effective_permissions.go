@@ -29,7 +29,7 @@ func (app *application) getEffectivePermissions(w http.ResponseWriter, r *http.R
 		return
 	}
 
-	permissions, err := app.enforcer.EffectivePermissions(r.Context(),
+	permissions, err := app.policyEvaluator.EffectivePermissions(r.Context(),
 		account.ID, org.ID,
 		"org", resourceType, resourceID,
 	)

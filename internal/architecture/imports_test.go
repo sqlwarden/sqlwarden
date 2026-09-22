@@ -42,7 +42,7 @@ func TestForbiddenProductionImports(t *testing.T) {
 			if err != nil {
 				return err
 			}
-			if owner != "ee" && strings.Contains(importPath, "/ee/") {
+			if owner != "ee" && (strings.HasSuffix(importPath, "/ee") || strings.Contains(importPath, "/ee/")) {
 				t.Errorf("%s imports enterprise implementation %q", rel, importPath)
 			}
 			if owner == "app" || owner == "config" {

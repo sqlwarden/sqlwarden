@@ -16,6 +16,7 @@ import (
 	"github.com/sqlwarden/internal/config"
 	"github.com/sqlwarden/internal/connection"
 	"github.com/sqlwarden/internal/database"
+	"github.com/sqlwarden/internal/edition"
 	"github.com/sqlwarden/internal/encrypt"
 	"github.com/sqlwarden/internal/jobs"
 	"github.com/sqlwarden/internal/schema"
@@ -37,6 +38,9 @@ type Options struct {
 	Config config.Config
 	// Logger receives lifecycle events. A nil logger discards them.
 	Logger *slog.Logger
+	// Edition supplies capability decorators and modules. A nil value selects
+	// the Community edition.
+	Edition edition.Edition
 
 	// Prepare runs after the application database is open and migrated but
 	// before any service is constructed. It is the seam for startup seeding and
@@ -72,6 +76,13 @@ func Build(ctx context.Context, opts Options) (*Application, error) {
 		return nil, err
 	}
 	if err := config.Validate(cfg); err != nil {
+		return nil, err
+	}
+	selectedEdition := opts.Edition
+	if selectedEdition == nil {
+		selectedEdition = edition.NewCommunity()
+	}
+	if err := edition.Validate(selectedEdition, cfg); err != nil {
 		return nil, err
 	}
 	if err := ensureSQLiteParentDir(cfg); err != nil {
@@ -114,6 +125,9 @@ func Build(ctx context.Context, opts Options) (*Application, error) {
 	if cfg.DB.Automigrate {
 		logger.Info("running database migrations")
 		if err := db.MigrateUp(); err != nil {
+			return fail(err)
+		}
+		if err := edition.Migrate(ctx, selectedEdition, db); err != nil {
 			return fail(err)
 		}
 		logger.Info("database migrations complete")
@@ -163,6 +177,7 @@ func Build(ctx context.Context, opts Options) (*Application, error) {
 		Logger:            logger,
 		DB:                db,
 		Enforcer:          enforcer,
+		PolicyEvaluator:   selectedEdition.PolicyEvaluator(enforcer),
 		Keyring:           keyring,
 		ConnManager:       connManager,
 		QueryCursors:      queryCursors,
@@ -171,6 +186,7 @@ func Build(ctx context.Context, opts Options) (*Application, error) {
 		CompletionService: completionService,
 		FileStores:        fileStores,
 		JobStore:          jobs.NewStore(db),
+		Edition:           selectedEdition,
 	}
 
 	var kinds []ProcessKind

@@ -9,6 +9,7 @@ import (
 	"github.com/sqlwarden/internal/config"
 	"github.com/sqlwarden/internal/connection"
 	"github.com/sqlwarden/internal/database"
+	"github.com/sqlwarden/internal/edition"
 	"github.com/sqlwarden/internal/encrypt"
 	"github.com/sqlwarden/internal/jobs"
 	"github.com/sqlwarden/internal/schema"
@@ -30,7 +31,10 @@ type Services struct {
 	// DB is the SQLWarden metadata database, not a target database.
 	DB       *database.DB
 	Enforcer *access.Enforcer
-	Keyring  *encrypt.Keyring
+	// PolicyEvaluator is the edition-decorated authorization decision path.
+	// Enforcer remains available for core role and policy administration.
+	PolicyEvaluator access.PolicyEvaluator
+	Keyring         *encrypt.Keyring
 
 	// ConnManager owns live target-database sessions and QueryCursors owns the
 	// cursors opened on them. Cursors reference sessions, so cursors close
@@ -48,6 +52,10 @@ type Services struct {
 	// JobStore is the durable job queue. Job handlers are registered by the
 	// process kind that runs the worker.
 	JobStore *jobs.Store
+
+	// Edition exposes capability decorators and modules selected by the
+	// composition root. Services consume only its narrow contracts.
+	Edition edition.Edition
 }
 
 // ProcessKind is one runtime responsibility of a process: an HTTP transport, a

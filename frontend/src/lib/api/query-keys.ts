@@ -8,6 +8,7 @@ export const queryKeys = {
   setupStatus: () => ['setup-status'] as const,
   engine: (engineID: string) => ['engine', engineID] as const,
   session: () => ['session'] as const,
+  editionCapabilities: () => ['edition-capabilities'] as const,
   accountOrganizationsScope: () => ['account-organizations'] as const,
   accountOrganizations: (query?: ListQuery) =>
     [...queryKeys.accountOrganizationsScope(), query ?? {}] as const,

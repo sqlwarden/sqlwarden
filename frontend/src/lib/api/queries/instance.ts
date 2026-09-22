@@ -2,6 +2,7 @@ import { keepPreviousData, queryOptions } from '@tanstack/react-query'
 import { api } from '#/lib/api/client'
 import type {
   Account,
+  EditionCapabilities,
   InstanceAdmin,
   InstanceConfiguration,
   InstanceSettings,
@@ -47,6 +48,14 @@ export function instanceConfigurationQueryOptions() {
   return queryOptions({
     queryKey: queryKeys.instanceConfiguration(),
     queryFn: () => api.get<InstanceConfiguration>('/api/v1/instance/configuration'),
+    staleTime: 60_000,
+  })
+}
+
+export function editionCapabilitiesQueryOptions() {
+  return queryOptions({
+    queryKey: queryKeys.editionCapabilities(),
+    queryFn: () => api.get<EditionCapabilities>('/api/v1/capabilities'),
     staleTime: 60_000,
   })
 }

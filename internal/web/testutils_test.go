@@ -20,6 +20,7 @@ import (
 	"github.com/sqlwarden/internal/config"
 	"github.com/sqlwarden/internal/connection"
 	"github.com/sqlwarden/internal/database"
+	"github.com/sqlwarden/internal/edition"
 	"github.com/sqlwarden/internal/encrypt"
 	"github.com/sqlwarden/internal/smtp"
 	"github.com/sqlwarden/internal/token"
@@ -53,6 +54,7 @@ func newTestClaims() jwt.Claims {
 func newTestApplication(t *testing.T) *application {
 	app := new(application)
 	app.config = config.Default()
+	app.edition = edition.NewCommunity()
 
 	app.config.JWT.SecretKey = "k7mp29rf4qxhwn8vbtaj6pgucmve53y9"
 	app.config.BootstrapBaseURL = "https://www.example.com"

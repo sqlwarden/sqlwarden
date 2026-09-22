@@ -234,8 +234,8 @@ func (app *application) handleExportJob(ctx context.Context, runtime jobs.Runtim
 	if !found || conn.WorkspaceID != ws.ID {
 		return nil, jobs.Permanent("connection_not_found", "Connection was not found.")
 	}
-	if !app.enforcer.Can(ctx, input.AccountID, org.ID, ws.OwnerType, "connection", conn.ID, access.PermConnDQL) &&
-		!app.enforcer.Can(ctx, input.AccountID, org.ID, ws.OwnerType, "connection", conn.ID, access.PermConnExecute) {
+	if !app.policyEvaluator.Can(ctx, input.AccountID, org.ID, ws.OwnerType, "connection", conn.ID, access.PermConnDQL) &&
+		!app.policyEvaluator.Can(ctx, input.AccountID, org.ID, ws.OwnerType, "connection", conn.ID, access.PermConnExecute) {
 		return nil, jobs.Permanent("export_not_permitted", "You no longer have permission to export this query.")
 	}
 	c, ok := registeredConnectionClassifier(conn.Driver)

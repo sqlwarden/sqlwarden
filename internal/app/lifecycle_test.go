@@ -116,10 +116,10 @@ func TestBuildAcquiresResourcesInDependencyOrder(t *testing.T) {
 func TestBuildProducesCompleteServices(t *testing.T) {
 	services := buildTestApp(t, nil, nil).Services
 
-	if services.DB == nil || services.Enforcer == nil || services.Keyring == nil ||
+	if services.DB == nil || services.Enforcer == nil || services.PolicyEvaluator == nil || services.Keyring == nil ||
 		services.ConnManager == nil || services.QueryCursors == nil || services.SchemaService == nil ||
 		services.SchemaSnapshots == nil || services.CompletionService == nil ||
-		services.FileStores == nil || services.JobStore == nil || services.Logger == nil {
+		services.FileStores == nil || services.JobStore == nil || services.Logger == nil || services.Edition == nil {
 		t.Fatalf("Build left part of the service graph nil: %+v", services)
 	}
 }

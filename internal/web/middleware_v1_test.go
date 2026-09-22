@@ -22,6 +22,7 @@ func newTestApplicationWithEnforcer(t *testing.T) *application {
 		t.Fatal(err)
 	}
 	app.enforcer = enforcer
+	app.policyEvaluator = enforcer
 	return app
 }
 

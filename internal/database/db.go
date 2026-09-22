@@ -5,7 +5,9 @@ import (
 	"database/sql"
 	"errors"
 	"fmt"
+	"io/fs"
 	"log/slog"
+	"net/url"
 	"strings"
 	"sync/atomic"
 	"time"
@@ -24,6 +26,11 @@ import (
 )
 
 const defaultTimeout = 3 * time.Second
+
+// CoreMigrationVersion is the latest ordered migration shipped by core. An
+// edition migration stream declares the inclusive range of core versions it
+// supports before it is allowed to run.
+const CoreMigrationVersion uint = 39
 
 type DB struct {
 	logger       *slog.Logger
@@ -101,12 +108,22 @@ func (db *DB) SetQueryTracing(enabled bool) {
 }
 
 func (db *DB) MigrateUp() error {
-	migrationPath := "migrations_postgres"
+	return db.MigrateStream(assets.EmbeddedFiles, "migrations_postgres", "migrations_sqlite", "schema_migrations")
+}
+
+// MigrateStream applies one independently versioned migration stream. The
+// stream uses its own history table, allowing core and edition migrations to
+// advance without sharing sequence numbers.
+func (db *DB) MigrateStream(files fs.FS, postgresPath, sqlitePath, historyTable string) error {
+	if !validMigrationTable(historyTable) {
+		return fmt.Errorf("invalid migration history table %q", historyTable)
+	}
+	migrationPath := postgresPath
 	if db.driver == "sqlite" {
-		migrationPath = "migrations_sqlite"
+		migrationPath = sqlitePath
 	}
 
-	iofsDriver, err := iofs.New(assets.EmbeddedFiles, migrationPath)
+	iofsDriver, err := iofs.New(files, migrationPath)
 	if err != nil {
 		return err
 	}
@@ -120,6 +137,11 @@ func (db *DB) MigrateUp() error {
 	default:
 		return fmt.Errorf("unsupported database driver for migrations: %s", db.driver)
 	}
+	separator := "?"
+	if strings.Contains(databaseURL, "?") {
+		separator = "&"
+	}
+	databaseURL += separator + "x-migrations-table=" + url.QueryEscape(historyTable)
 
 	migrator, err := migrate.NewWithSourceInstance("iofs", iofsDriver, databaseURL)
 	if err != nil {
@@ -141,6 +163,18 @@ func (db *DB) MigrateUp() error {
 	default:
 		return err
 	}
+}
+
+func validMigrationTable(table string) bool {
+	if table == "" {
+		return false
+	}
+	for _, character := range table {
+		if (character < 'a' || character > 'z') && (character < '0' || character > '9') && character != '_' {
+			return false
+		}
+	}
+	return true
 }
 
 // sqlSortDirection converts an API sort direction into one of the only two SQL

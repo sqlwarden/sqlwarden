@@ -35,6 +35,7 @@ jobs:
               - 'assets/emails/**'
               - 'assets/migrations_postgres/**'
               - 'assets/migrations_sqlite/**'
+              - 'ee/**'
               - 'go.mod'
               - 'go.sum'
               - 'Makefile'
@@ -49,6 +50,14 @@ jobs:
         with:
           go-version-file: go.mod
           cache: true
+
+      - name: Verify core without Enterprise source
+        if: steps.changes.outputs.go == 'true'
+        run: |
+          ee_backup="$RUNNER_TEMP/sqlwarden-ee"
+          mv ee "$ee_backup"
+          trap 'mv "$ee_backup" ee' EXIT
+          go test ./cmd/api ./internal/app ./internal/community ./internal/edition/...
 
       - name: Run Go tests
         if: steps.changes.outputs.go == 'true'
@@ -111,6 +120,7 @@ jobs:
               - 'go.sum'
               - 'assets/migrations_postgres/**'
               - 'assets/migrations_sqlite/**'
+              - 'ee/**'
               - 'Makefile'
 
       - name: No Go quality changes
