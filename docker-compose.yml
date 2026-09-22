@@ -37,6 +37,7 @@ services:
       FILES_ROOT_DIR: ${FILES_ROOT_DIR:-/var/lib/sqlwarden/files}
       COOKIE_SECRET_KEY: ${COOKIE_SECRET_KEY:-cpcgzjcote6h5hakeglpbzixhbuog2zc}
       JWT_SECRET_KEY: ${JWT_SECRET_KEY:-fb57i5hiud5mzmykaquqsln5gcmolbac}
+      ENCRYPTION_KEY: ${ENCRYPTION_KEY:-dev-insecure-key-32byteslong!!}
     ports:
       - "6020:6020"
     volumes:

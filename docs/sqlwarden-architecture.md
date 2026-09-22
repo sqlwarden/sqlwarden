@@ -1,6 +1,6 @@
 # SQLWarden Architecture
 
-Updated: 2026-08-06
+Updated: 2026-09-22
 
 SQLWarden is a self-hosted database access platform and SQL editor. The current repository contains a Go backend, embedded React SPA, custom RBAC engine, database connection/session manager, and workspace file storage foundation. Future product direction includes Wails desktop packaging, SSO/SCIM, stronger audit/compliance features, connector agents, and broader file/storage backends.
 
@@ -24,8 +24,8 @@ Implemented today:
 - Workspace direct/team membership model and `workspace_members` policy principal.
 - Live target database sessions through `internal/connection`.
 - Foreground query cancellation through request cancellation.
-- Target database drivers for PostgreSQL, MySQL, and SQLite.
-- Server-side SQLite target connection gating through `drivers.sqlite.allowed_sources`.
+- Target database drivers for PostgreSQL, MySQL, SQLite, SQL Server, Oracle, MariaDB, TiDB, CockroachDB, YugabyteDB, Neon, and Supabase.
+- Server-side SQLite target connection gating through database-backed instance settings for local-file and in-memory sources.
 - Workspace file metadata/content APIs for private and shared files.
 - Filesystem-backed file content storage under `~/.sqlwarden/files` by default.
 - Workspace file content retention reaper.
@@ -35,14 +35,15 @@ Implemented today:
 - Database engine registry and capability abstractions for schema inspection, query classification, parsing, rewriting, completion, and cursor-backed result paging.
 - Schema introspection abstraction, cache, and API.
 - React 19 frontend with TanStack Router, TanStack Query, Tailwind CSS 4, shadcn/ui, Base UI primitives, CodeMirror 6, Zustand, IndexedDB, Y.js, and BroadcastChannel.
-- Editor workspace tabs, explorer, file tabs, console tabs, query execution, results pane, editor theme preferences, and same-browser cross-window sync.
+- Editor workspace tabs, split layouts, explorer, file and console tabs, schema filtering, object details and diagrams, query execution and explain plans, transactions, results, history, favorites, editor theme preferences, and same-browser cross-window sync.
+- Organization invitation creation, delivery, inspection, revocation, and acceptance.
 - Config through spf13/viper with config file, environment variables, and CLI flags.
 - SQLite app database by default at `~/.sqlwarden/sqlwarden.db`; PostgreSQL app database support exists.
 
 Explicitly future or incomplete:
 
 - Wails desktop binary.
-- SSO, SCIM, invitations, and enterprise identity lifecycle.
+- SSO, SCIM, and enterprise identity lifecycle.
 - Multi-backend desktop/server selector UX.
 - Connector agent and WebSocket routing for databases behind firewalls.
 - Background query runs and query-run observability.
@@ -109,11 +110,11 @@ Important concepts:
 - `personal_spaces_enabled` gates `/api/v1/me/workspaces...`.
 - Session revocation can be enabled/disabled for deployments that do not need account session management overhead.
 - File storage currently supports local filesystem storage. Config names are designed around active backend plus future backend registry.
-- Target SQLite connections are explicitly gated through `drivers.sqlite.allowed_sources`; REST clients cannot rely on the frontend driver list as the security control.
+- Target SQLite connections are explicitly gated through database-backed instance settings; REST clients cannot rely on the frontend driver list as the security control.
 
 Configuration ownership is split deliberately:
 
-- Bootstrap configuration is deployment-managed and must be available before the application database opens. It covers listeners, deployment/access mode, application database connectivity, secrets, TLS, storage topology, desktop topology, log format, and host-local SQLite access.
+- Bootstrap configuration is deployment-managed and must be available before the application database opens. It covers listeners, deployment/access mode, application database connectivity, secrets, TLS, storage topology, desktop topology, and log format.
 - Runtime instance settings are typed columns in the singleton `instance_settings` row. They cover product policy, limits, log level, database query tracing, job-runner tuning, and SMTP delivery without restarting.
 - Organizations store typed nullable overrides for the small set of policies they may tighten. Effective settings are the instance values plus valid organization overrides. Personal spaces use instance settings.
 The current consistency model intentionally performs a database read when an operation resolves policy settings. Live operational adapters additionally reconcile the singleton row every two seconds so all replicas converge after an update. A request uses one immutable resolved value set; background jobs capture policy settings when execution begins. Running jobs finish or cancel through the normal runner shutdown path when worker tuning changes.
@@ -914,7 +915,7 @@ Future desktop may support multiple remote SQLWarden backends, such as separate 
 
 ## Open-Core / Enterprise Direction
 
-The current repository has no `enterprise/` tree. If SQLWarden later adopts an open-core model, keep the core platform in Apache-licensed packages and isolate proprietary add-ons.
+The current repository is licensed under `AGPL-3.0-only` and has no enterprise product or `ee/` tree. A future source-available enterprise edition may live in an isolated `ee/` directory in this monorepo, but its composition boundary and custom license are intentionally deferred until that product exists. Community code must not depend on enterprise code.
 
 Likely enterprise-only features:
 

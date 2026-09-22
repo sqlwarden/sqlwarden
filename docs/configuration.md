@@ -18,13 +18,13 @@ The following settings remain bootstrap-only:
 - TLS certificate configuration.
 - File-storage mode, active backend, backend definitions, and filesystem roots.
 - Desktop backend topology.
-- Allowed host-local SQLite sources.
 
 Changing a bootstrap setting requires a restart. Changing the application DSN selects another SQLWarden instance database; changing storage configuration does not move stored files. Secret rotation must use the documented key/session rotation behavior. SQLWarden does not perform these migrations automatically.
 
 The following settings are database-backed at runtime:
 
 - Instance identity, public URL, support email, and personal spaces.
+- SQLite target connection policy (local file and in-memory sources).
 - JWT access-token lifetime and session revocation.
 - Interactive query and export limits.
 - Schema snapshot freshness.
@@ -71,7 +71,6 @@ sqlwarden --help
 base_url: http://localhost:6020
 http_port: 6020
 log:
-  level: info
   format: json
 
 db:
@@ -90,21 +89,16 @@ encryption:
 
 files:
   root_dir: ~/.sqlwarden/files
-
-jobs:
-  worker_count: 16
-  poll_interval: 1s
-  claim_lease: 5m
-  completed_retention: 168h
-
 ```
+
+Log level and job worker settings are instance runtime settings managed through the administration API, not the config file — see [Configuration Lifecycle](#configuration-lifecycle).
 
 ## Docker Example
 
 Released images are published to GitHub Container Registry.
 
 ```sh
-docker run --rm \
+docker run -d \
   --name sqlwarden \
   -p 6020:6020 \
   -v sqlwarden-data:/var/lib/sqlwarden \
@@ -123,7 +117,7 @@ The default image runs as the `sqlwarden` user. The volume path above persists t
 
 | Config key | Environment | CLI flag | Default | Notes |
 | --- | --- | --- | --- | --- |
-| `base_url` | `BASE_URL` | `--base-url` | `http://localhost:6020` | Public base URL used for generated links and JWT claims. |
+| `base_url` | `BASE_URL` | `--base-url` | `http://localhost:6020` | Initial public URL used when bootstrapping database-backed instance settings. |
 | `http_port` | `HTTP_PORT` | `--http-port` | `6020` | HTTP server port. |
 
 ## Logging
@@ -182,6 +176,8 @@ Interactive query limits are runtime settings managed at instance or organizatio
 
 The same limits apply to HTTP query cursors. Direct `/query` responses are capped once per response. Query-cursor start and fetch responses are capped per page; clients can continue fetching while the response has `exhausted=false`.
 
+For DQL/select-style queries, the editor can request cursor-backed results through `/query`. When the selected target engine supports cursor-backed results, the first response includes the first page plus cursor metadata. Engines that do not support cursor-backed results fall back to the bounded direct query path. Cursor state is process-local and tied to the authenticated live database session; it is not durable query history.
+
 ## Schema Snapshots
 
 Persistent schema snapshots are enabled by default per organization and can be
@@ -190,8 +186,6 @@ tighten it to `disabled`; a connection cannot override a disabled organization.
 Disabling snapshots immediately deletes stored schema metadata. In that mode,
 schema inspection uses only the process-local cache associated with a live
 database session.
-
-For DQL/select-style queries, the editor can request cursor-backed results through `/query`. When the selected target engine supports cursor-backed results, the first response includes the first page plus cursor metadata. Engines that do not support cursor-backed results fall back to the bounded direct query path. Cursor state is process-local and tied to the authenticated live database session; it is not durable query history.
 
 ## Exports
 
@@ -224,23 +218,23 @@ Many deployments should terminate TLS at a reverse proxy. Built-in TLS is availa
 | Config key | Environment | CLI flag | Default | Notes |
 | --- | --- | --- | --- | --- |
 | `files.root_dir` | `FILES_ROOT_DIR` | `--files-root-dir` | `~/.sqlwarden/files` | Filesystem root directory for file content. `~` is expanded. |
+
 The server stores workspace file content on the local filesystem by default. Revision policy is a database-backed runtime setting. The storage implementation has internal backend plumbing for future expansion.
 
 ## Target SQLite Connections
 
-| Config key | Environment | CLI flag | Default | Notes |
-| --- | --- | --- | --- | --- |
-| `drivers.sqlite.allowed_sources` | `DRIVERS_SQLITE_ALLOWED_SOURCES` | `--drivers-sqlite-allowed-sources` | Empty | Comma-separated SQLite target sources to allow. Currently supports only `local`. |
+SQLite target connections (as opposed to the SQLite application database) are gated by instance runtime settings, not bootstrap configuration:
 
-PostgreSQL and MySQL target connections are available through the normal connection flow.
+| Setting | Default | Notes |
+| --- | --- | --- |
+| `sqlite_local_targets_enabled` | `true` | Allows connections to local SQLite files. |
+| `sqlite_memory_targets_enabled` | `false` | Allows connections to in-memory SQLite sources (`:memory:`, `file::memory:`). |
 
-SQLite target connections are explicitly gated because local SQLite paths can expose host-local files. Server deployments should leave this empty unless they intentionally allow local SQLite access.
+These are managed through the administration API, not a config file, environment variable, or CLI flag.
 
-To enable local SQLite target connections:
+SQLite target connections are explicitly gated because local SQLite paths can expose host-local files. Disable local targets for deployments that should not allow access to files on the server's filesystem.
 
-```sh
-DRIVERS_SQLITE_ALLOWED_SOURCES=local
-```
+All other registered engines — PostgreSQL, MySQL, SQL Server, Oracle, and their wire-compatible variants — are available through the normal connection flow without a gating setting.
 
 ## Email
 
@@ -254,5 +248,5 @@ SMTP is optional and configured in instance runtime settings. The password is wr
 - Persist `~/.sqlwarden` or explicitly configure database and file storage paths.
 - Keep `LOG_FORMAT=json` for production log collection.
 - Leave database query tracing disabled unless actively debugging.
-- Leave `DRIVERS_SQLITE_ALLOWED_SOURCES` empty unless local SQLite target access is intentional.
+- Review `sqlite_local_targets_enabled` and `sqlite_memory_targets_enabled` before allowing SQLite target connections.
 - Use HTTPS through a reverse proxy or SQLWarden built-in TLS.
