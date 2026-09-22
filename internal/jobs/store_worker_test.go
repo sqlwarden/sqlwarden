@@ -13,7 +13,7 @@ import (
 	"github.com/sqlwarden/internal/database"
 )
 
-func newTestStore(t *testing.T) (*Store, *database.DB) {
+func newTestStore(t testing.TB) (*Store, *database.DB) {
 	t.Helper()
 	db, err := database.New("sqlite", filepath.Join(t.TempDir(), "jobs.db"), slog.New(slog.NewTextHandler(io.Discard, nil)))
 	if err != nil {
