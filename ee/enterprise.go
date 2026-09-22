@@ -56,14 +56,18 @@ func (*Enterprise) Name() string { return config.EditionEnterprise }
 
 // IdentityProvider implements [edition.Edition]. The SCIM proof module is a
 // transparent decorator; later federation modules are composed inside it.
-func (e *Enterprise) IdentityProvider(core identity.Provider) identity.Provider {
-	return scimIdentityProvider{core: core}
+func (e *Enterprise) IdentityProvider(core identity.Provider, deps edition.Dependencies) identity.Provider {
+	return federationIdentityProvider{
+		core:     core,
+		verifier: deps.Federation,
+		store:    newStore(deps.DB),
+	}
 }
 
 // PolicyEvaluator implements [edition.Edition]. License denial is outermost so
 // no inner policy decorator can grant access while the edition is unlicensed.
-func (e *Enterprise) PolicyEvaluator(core access.PolicyEvaluator) access.PolicyEvaluator {
-	return licensedPolicyEvaluator{core: core, licensed: e.licensed}
+func (e *Enterprise) PolicyEvaluator(core access.PolicyEvaluator, deps edition.Dependencies) access.PolicyEvaluator {
+	return newPolicyChain(core, e.licensed, deps)
 }
 
 // AuditWriter implements [edition.Edition].
@@ -75,32 +79,7 @@ func (e *Enterprise) Entitlements() edition.Entitlements { return e.entitlements
 // Modules implements [edition.Edition].
 func (e *Enterprise) Modules() []edition.Module { return append([]edition.Module(nil), e.modules...) }
 
-type scimIdentityProvider struct {
-	core identity.Provider
-}
-
-func (p scimIdentityProvider) Authenticate(ctx context.Context, request identity.AuthenticationRequest) (identity.Subject, error) {
-	return p.core.Authenticate(ctx, request)
-}
-
-type licensedPolicyEvaluator struct {
-	core     access.PolicyEvaluator
-	licensed bool
-}
-
-func (p licensedPolicyEvaluator) Can(ctx context.Context, accountID, orgID int64, ownerType, resourceType string, resourceID int64, permission string) bool {
-	return p.licensed && p.core.Can(ctx, accountID, orgID, ownerType, resourceType, resourceID, permission)
-}
-
-func (p licensedPolicyEvaluator) EffectivePermissions(ctx context.Context, accountID, orgID int64, ownerType, resourceType string, resourceID int64) ([]string, error) {
-	if !p.licensed {
-		return nil, nil
-	}
-	return p.core.EffectivePermissions(ctx, accountID, orgID, ownerType, resourceType, resourceID)
-}
-
 var (
 	_ edition.Edition        = (*Enterprise)(nil)
-	_ identity.Provider      = scimIdentityProvider{}
 	_ access.PolicyEvaluator = licensedPolicyEvaluator{}
 )

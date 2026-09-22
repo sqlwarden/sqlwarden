@@ -37,6 +37,23 @@ func TestIssueVerifyRoundTrip(t *testing.T) {
 	if claims.Name != "Test User" {
 		t.Errorf("Name = %q; want %q", claims.Name, "Test User")
 	}
+	if claims.AuthMethod != "password" {
+		t.Errorf("AuthMethod = %q; want password", claims.AuthMethod)
+	}
+}
+
+func TestIssueWithSessionMethodTTLPreservesAuthenticationMethod(t *testing.T) {
+	tokenString, _, err := IssueWithSessionMethodTTL("acc-sso", "session-1", "oidc", "sso@example.com", "SSO User", testSecret, time.Hour)
+	if err != nil {
+		t.Fatal(err)
+	}
+	claims, err := Verify(tokenString, testSecret)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if claims.AuthMethod != "oidc" {
+		t.Fatalf("AuthMethod = %q, want oidc", claims.AuthMethod)
+	}
 }
 
 func TestIssueWithTTLUsesCustomLifetime(t *testing.T) {

@@ -86,6 +86,9 @@ func (app *application) authenticateV1(next http.Handler) http.Handler {
 
 		r = contextSetRuntimeSettings(r, runtimeSettings)
 		r = contextSetAccount(r, account)
+		r = r.WithContext(access.WithAttributes(r.Context(), access.Attributes{
+			access.AttributeAuthMethod: claims.AuthMethod,
+		}))
 		next.ServeHTTP(w, r)
 	})
 }

@@ -13,8 +13,10 @@ import (
 )
 
 // Run verifies delegation, denial preservation, module validation, and
-// entitlement isolation for an Edition implementation.
-func Run(t *testing.T, candidate edition.Edition, cfg config.Config) {
+// entitlement isolation for an Edition implementation. Decorators are composed
+// with deps, so an edition under test receives the same dependencies the
+// composition root supplies.
+func Run(t *testing.T, candidate edition.Edition, cfg config.Config, deps edition.Dependencies) {
 	t.Helper()
 	if err := edition.Validate(candidate, cfg); err != nil {
 		t.Fatalf("Validate: %v", err)
@@ -28,7 +30,7 @@ func Run(t *testing.T, candidate edition.Edition, cfg config.Config) {
 		identityCalled = true
 		return identity.Subject{AccountID: 42}, nil
 	})
-	subject, err := candidate.IdentityProvider(coreIdentity).Authenticate(context.Background(), identity.AuthenticationRequest{
+	subject, err := candidate.IdentityProvider(coreIdentity, deps).Authenticate(context.Background(), identity.AuthenticationRequest{
 		Method: identity.AuthenticationPassword, Identifier: "contract@example.com", Secret: "not-logged",
 	})
 	if err != nil || !identityCalled || subject.AccountID != 42 {
@@ -36,7 +38,7 @@ func Run(t *testing.T, candidate edition.Edition, cfg config.Config) {
 	}
 
 	corePolicy := &policyEvaluator{allow: false}
-	if candidate.PolicyEvaluator(corePolicy).Can(context.Background(), 1, 2, "org", "workspace", 3, "workspace:read") {
+	if candidate.PolicyEvaluator(corePolicy, deps).Can(context.Background(), 1, 2, "org", "workspace", 3, "workspace:read") {
 		t.Fatal("edition policy granted a permission denied by core")
 	}
 	if corePolicy.calls != 1 {

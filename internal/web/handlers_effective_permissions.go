@@ -1,11 +1,13 @@
 package web
 
 import (
+	"errors"
 	"log/slog"
 	"net/http"
 	"strconv"
 	"strings"
 
+	"github.com/sqlwarden/internal/access"
 	"github.com/sqlwarden/internal/response"
 )
 
@@ -24,15 +26,29 @@ func (app *application) getEffectivePermissions(w http.ResponseWriter, r *http.R
 		resourceType = "org"
 	}
 
-	resourceID, ok := app.resolveEffectivePermissionResource(w, r, resourceType)
-	if !ok {
-		return
+	resourceID := int64(0)
+	rawResourceID := strings.TrimSpace(r.URL.Query().Get("resource_id"))
+	if resourceType != "org" || rawResourceID != "" {
+		var ok bool
+		resourceID, ok = app.parseEffectivePermissionResourceID(w, r, rawResourceID)
+		if !ok {
+			return
+		}
 	}
 
-	permissions, err := app.policyEvaluator.EffectivePermissions(r.Context(),
-		account.ID, org.ID,
-		"org", resourceType, resourceID,
-	)
+	resourceID, permissions, err := app.accessService.EffectivePermissions(r.Context(), access.EffectivePermissionsInput{
+		AccountID: account.ID, OrgID: org.ID, ResourceType: resourceType, ResourceID: resourceID,
+	})
+	if errors.Is(err, access.ErrResourceNotFound) || errors.Is(err, access.ErrSubjectNotFound) {
+		app.notFound(w, r)
+		return
+	}
+	if errors.Is(err, access.ErrInvalidResourceType) {
+		app.failedValidation(w, r, fieldErrors(map[string]string{
+			"resource_type": "Resource type must be org, workspace, environment, or connection.",
+		}))
+		return
+	}
 	if err != nil {
 		app.serverError(w, r, err)
 		return
@@ -51,144 +67,6 @@ func (app *application) getEffectivePermissions(w http.ResponseWriter, r *http.R
 	if err != nil {
 		app.serverError(w, r, err)
 	}
-}
-
-func (app *application) resolveEffectivePermissionResource(w http.ResponseWriter, r *http.Request, resourceType string) (int64, bool) {
-	org := contextGetOrg(r)
-
-	switch resourceType {
-	case "org":
-		rawID := strings.TrimSpace(r.URL.Query().Get("resource_id"))
-		if rawID == "" {
-			return org.ID, true
-		}
-		resourceID, ok := app.parseEffectivePermissionResourceID(w, r, rawID)
-		if !ok {
-			return 0, false
-		}
-		if resourceID != org.ID {
-			app.logWarn(r, "effective permissions resource rejected",
-				slog.String("resource_type", resourceType),
-				slog.Int64("resource_id", resourceID),
-				slog.Int64("org_id", org.ID),
-				slog.String("reason", "org_mismatch"),
-			)
-			app.notFound(w, r)
-			return 0, false
-		}
-		return resourceID, true
-
-	case "workspace":
-		resourceID, ok := app.requiredEffectivePermissionResourceID(w, r)
-		if !ok {
-			return 0, false
-		}
-		ws, found, err := app.db.GetWorkspace(r.Context(), resourceID)
-		if err != nil {
-			app.serverError(w, r, err)
-			return 0, false
-		}
-		if !found || ws.OrgID == nil || *ws.OrgID != org.ID {
-			app.logWarn(r, "effective permissions resource rejected",
-				slog.String("resource_type", resourceType),
-				slog.Int64("resource_id", resourceID),
-				slog.Int64("org_id", org.ID),
-				slog.String("reason", "workspace_not_in_org"),
-			)
-			app.notFound(w, r)
-			return 0, false
-		}
-		return resourceID, true
-
-	case "environment":
-		resourceID, ok := app.requiredEffectivePermissionResourceID(w, r)
-		if !ok {
-			return 0, false
-		}
-		env, found, err := app.db.GetEnvironment(r.Context(), resourceID)
-		if err != nil {
-			app.serverError(w, r, err)
-			return 0, false
-		}
-		if !found {
-			app.logWarn(r, "effective permissions resource rejected",
-				slog.String("resource_type", resourceType),
-				slog.Int64("resource_id", resourceID),
-				slog.String("reason", "environment_not_found"),
-			)
-			app.notFound(w, r)
-			return 0, false
-		}
-		ws, found, err := app.db.GetWorkspace(r.Context(), env.WorkspaceID)
-		if err != nil {
-			app.serverError(w, r, err)
-			return 0, false
-		}
-		if !found || ws.OrgID == nil || *ws.OrgID != org.ID {
-			app.logWarn(r, "effective permissions resource rejected",
-				slog.String("resource_type", resourceType),
-				slog.Int64("resource_id", resourceID),
-				slog.Int64("org_id", org.ID),
-				slog.String("reason", "environment_workspace_not_in_org"),
-			)
-			app.notFound(w, r)
-			return 0, false
-		}
-		return resourceID, true
-
-	case "connection":
-		resourceID, ok := app.requiredEffectivePermissionResourceID(w, r)
-		if !ok {
-			return 0, false
-		}
-		conn, found, err := app.db.GetConnection(r.Context(), resourceID)
-		if err != nil {
-			app.serverError(w, r, err)
-			return 0, false
-		}
-		if !found {
-			app.logWarn(r, "effective permissions resource rejected",
-				slog.String("resource_type", resourceType),
-				slog.Int64("resource_id", resourceID),
-				slog.String("reason", "connection_not_found"),
-			)
-			app.notFound(w, r)
-			return 0, false
-		}
-		ws, found, err := app.db.GetWorkspace(r.Context(), conn.WorkspaceID)
-		if err != nil {
-			app.serverError(w, r, err)
-			return 0, false
-		}
-		if !found || ws.OrgID == nil || *ws.OrgID != org.ID {
-			app.logWarn(r, "effective permissions resource rejected",
-				slog.String("resource_type", resourceType),
-				slog.Int64("resource_id", resourceID),
-				slog.Int64("org_id", org.ID),
-				slog.String("reason", "connection_workspace_not_in_org"),
-			)
-			app.notFound(w, r)
-			return 0, false
-		}
-		return resourceID, true
-
-	default:
-		app.failedValidation(w, r, fieldErrors(map[string]string{
-			"resource_type": "Resource type must be org, workspace, environment, or connection.",
-		}))
-		return 0, false
-	}
-}
-
-func (app *application) requiredEffectivePermissionResourceID(w http.ResponseWriter, r *http.Request) (int64, bool) {
-	rawID := strings.TrimSpace(r.URL.Query().Get("resource_id"))
-	if rawID == "" {
-		app.failedValidation(w, r, fieldErrors(map[string]string{
-			"resource_id": "Resource is required.",
-		}))
-		return 0, false
-	}
-	return app.parseEffectivePermissionResourceID(w, r, rawID)
 }
 
 func (app *application) parseEffectivePermissionResourceID(w http.ResponseWriter, r *http.Request, rawID string) (int64, bool) {

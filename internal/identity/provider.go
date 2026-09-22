@@ -1,5 +1,5 @@
-// Package identity defines authentication contracts shared by core and
-// edition-specific identity implementations.
+// Package identity owns account identity use cases and authentication
+// contracts shared by core and edition-specific providers.
 package identity
 
 import "context"
@@ -29,6 +29,30 @@ type Subject struct {
 	Email      string
 	Name       string
 	Attributes map[string]string
+}
+
+// DirectorySubject is the verified identity returned by an external SAML or
+// OIDC implementation before it is mapped to a SQLWarden account.
+type DirectorySubject struct {
+	Provider   string
+	ExternalID string
+	Email      string
+	Name       string
+	Attributes map[string]string
+}
+
+// FederationVerifier verifies SAML or OIDC credentials. Enterprise wiring can
+// supply a protocol implementation without exposing it to core identity code.
+type FederationVerifier interface {
+	Verify(ctx context.Context, request AuthenticationRequest) (DirectorySubject, error)
+}
+
+// FederationVerifierFunc adapts a function to [FederationVerifier].
+type FederationVerifierFunc func(context.Context, AuthenticationRequest) (DirectorySubject, error)
+
+// Verify implements [FederationVerifier].
+func (f FederationVerifierFunc) Verify(ctx context.Context, request AuthenticationRequest) (DirectorySubject, error) {
+	return f(ctx, request)
 }
 
 // Provider authenticates one request and returns its stable subject. Account

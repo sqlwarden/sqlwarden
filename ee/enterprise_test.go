@@ -27,12 +27,12 @@ func TestEditionContract(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	editiontest.Run(t, candidate, cfg)
+	editiontest.Run(t, candidate, cfg, edition.Dependencies{})
 }
 
 func TestLicenseDenialIsOutermost(t *testing.T) {
 	core := &allowingPolicy{}
-	policy := newEnterprise(false).PolicyEvaluator(core)
+	policy := newEnterprise(false).PolicyEvaluator(core, edition.Dependencies{})
 	if policy.Can(context.Background(), 1, 2, "org", "workspace", 3, "workspace:read") {
 		t.Fatal("unlicensed edition allowed a permission granted by the inner core policy")
 	}
@@ -70,7 +70,7 @@ func TestSCIMMigrationUsesSeparateOrderedStream(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	for _, table := range []string{"schema_migrations", "ee_schema_migrations", "ee_scim_state"} {
+	for _, table := range []string{"schema_migrations", "ee_schema_migrations", "ee_scim_state", "ee_access_deny_rules", "ee_directory_identities"} {
 		exists, err := db.NewSelect().TableExpr("sqlite_master").Where("type = 'table' AND name = ?", table).Exists(context.Background())
 		if err != nil {
 			t.Fatal(err)

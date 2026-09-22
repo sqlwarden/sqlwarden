@@ -30,6 +30,7 @@ type resourceKey struct {
 }
 
 type cachedRoleBinding struct {
+	bindingID   int64
 	roleID      int64
 	subjectType string
 	subjectID   int64

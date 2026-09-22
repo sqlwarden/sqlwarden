@@ -38,6 +38,7 @@ func newTestApp(t *testing.T) *application {
 	}
 	app.enforcer = enforcer
 	app.policyEvaluator = enforcer
+	app.accessService = access.NewService(access.NewSQLStore(app.db.DB), enforcer, enforcer)
 	app.connManager = connection.New(30 * time.Minute)
 	app.schemaService = schemaapp.NewService(cache.NewMemCache(testSchemaCacheCapacity), testSchemaCacheTTL)
 	app.schemaSnapshots = schemaapp.NewSnapshotStore(app.db)

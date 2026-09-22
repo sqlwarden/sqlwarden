@@ -18,6 +18,7 @@ import (
 	"github.com/sqlwarden/internal/database"
 	"github.com/sqlwarden/internal/edition"
 	"github.com/sqlwarden/internal/encrypt"
+	"github.com/sqlwarden/internal/identity"
 	"github.com/sqlwarden/internal/jobs"
 	"github.com/sqlwarden/internal/schema"
 	"github.com/sqlwarden/internal/settings"
@@ -179,12 +180,23 @@ func Build(ctx context.Context, opts Options) (*Application, error) {
 	completionService := completion.NewService()
 	WireCacheInvalidation(connManager, schemaService, completionService)
 
+	editionDeps := edition.Dependencies{
+		DB:     db,
+		Grants: enforcer,
+		Now:    time.Now,
+		Logger: logger,
+	}.Normalize()
+	identityProvider := selectedEdition.IdentityProvider(identity.NewCoreProvider(identity.NewDatabaseStore(db)), editionDeps)
+	policyEvaluator := selectedEdition.PolicyEvaluator(enforcer, editionDeps)
+
 	services := &Services{
 		Config:            cfg,
 		Logger:            logger,
 		DB:                db,
 		Enforcer:          enforcer,
-		PolicyEvaluator:   selectedEdition.PolicyEvaluator(enforcer),
+		PolicyEvaluator:   policyEvaluator,
+		Access:            access.NewService(access.NewSQLStore(db.DB), enforcer, policyEvaluator),
+		Identity:          identity.NewService(identity.NewDatabaseStore(db), identityProvider),
 		Keyring:           keyring,
 		ConnManager:       connManager,
 		QueryCursors:      queryCursors,

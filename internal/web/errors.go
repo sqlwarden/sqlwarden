@@ -8,6 +8,7 @@ import (
 	"runtime/debug"
 	"strings"
 
+	"github.com/sqlwarden/internal/database"
 	"github.com/sqlwarden/internal/response"
 	settingsapp "github.com/sqlwarden/internal/settings"
 	"github.com/sqlwarden/internal/smtp"
@@ -145,11 +146,7 @@ func isUniqueViolation(err error) bool {
 	if err == nil {
 		return false
 	}
-	var pgErr pgdriver.Error
-	if errors.As(err, &pgErr) {
-		return pgErr.Field('C') == "23505"
-	}
-	return strings.Contains(err.Error(), "UNIQUE constraint failed")
+	return database.IsUniqueViolation(err)
 }
 
 // isForeignKeyViolation returns true if err is a foreign-key constraint violation

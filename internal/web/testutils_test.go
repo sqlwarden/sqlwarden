@@ -16,12 +16,14 @@ import (
 	"testing"
 	"time"
 
+	"github.com/sqlwarden/internal/access"
 	coreapp "github.com/sqlwarden/internal/app"
 	"github.com/sqlwarden/internal/config"
 	"github.com/sqlwarden/internal/connection"
 	"github.com/sqlwarden/internal/database"
 	"github.com/sqlwarden/internal/edition"
 	"github.com/sqlwarden/internal/encrypt"
+	identityapp "github.com/sqlwarden/internal/identity"
 	settingsapp "github.com/sqlwarden/internal/settings"
 	"github.com/sqlwarden/internal/smtp"
 	"github.com/sqlwarden/internal/token"
@@ -72,6 +74,7 @@ func newTestApplication(t *testing.T) *application {
 	app.logger = slog.New(slog.NewTextHandler(io.Discard, nil))
 	app.db = newTestDB(t)
 	app.settings = settingsapp.New(app.db)
+	app.identityService = identityapp.NewService(identityapp.NewDatabaseStore(app.db), identityapp.NewCoreProvider(identityapp.NewDatabaseStore(app.db)))
 	settings, found, err := app.db.GetInstanceSettings(context.Background())
 	if err != nil || !found {
 		t.Fatalf("get instance settings: found=%v err=%v", found, err)
@@ -94,6 +97,13 @@ func newTestApplication(t *testing.T) *application {
 		t.Fatal(err)
 	}
 	app.keyring = keyring
+	enforcer, err := access.New(app.db.DB)
+	if err != nil {
+		t.Fatal(err)
+	}
+	app.enforcer = enforcer
+	app.policyEvaluator = enforcer
+	app.accessService = access.NewService(access.NewSQLStore(app.db.DB), enforcer, enforcer)
 	app.fileStores, err = coreapp.NewFileStores(app.config)
 	if err != nil {
 		t.Fatal(err)

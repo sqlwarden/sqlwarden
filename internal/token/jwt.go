@@ -13,6 +13,7 @@ const DefaultAccessTokenTTL = 24 * time.Hour
 type Claims struct {
 	AccountID     string
 	AuthSessionID string
+	AuthMethod    string
 	Email         string
 	Name          string
 }
@@ -32,6 +33,12 @@ func IssueWithTTL(accountID, email, name, secretKey string, ttl time.Duration) (
 // IssueWithSessionTTL signs an HS256 access token bound to an auth session.
 // Returns: (tokenString, expiresAt, error)
 func IssueWithSessionTTL(accountID, authSessionID, email, name, secretKey string, ttl time.Duration) (string, time.Time, error) {
+	return IssueWithSessionMethodTTL(accountID, authSessionID, "password", email, name, secretKey, ttl)
+}
+
+// IssueWithSessionMethodTTL signs an access token bound to an auth session and
+// records the authentication method for conditional-access evaluation.
+func IssueWithSessionMethodTTL(accountID, authSessionID, authMethod, email, name, secretKey string, ttl time.Duration) (string, time.Time, error) {
 	if ttl <= 0 {
 		ttl = DefaultAccessTokenTTL
 	}
@@ -44,6 +51,7 @@ func IssueWithSessionTTL(accountID, authSessionID, email, name, secretKey string
 		},
 		Set: map[string]any{
 			"auth_session_id": authSessionID,
+			"auth_method":     authMethod,
 			"email":           email,
 			"name":            name,
 		},
@@ -72,10 +80,12 @@ func Verify(tokenStr, secretKey string) (Claims, error) {
 	email, _ := claims.Set["email"].(string)
 	name, _ := claims.Set["name"].(string)
 	authSessionID, _ := claims.Set["auth_session_id"].(string)
+	authMethod, _ := claims.Set["auth_method"].(string)
 
 	return Claims{
 		AccountID:     claims.Subject,
 		AuthSessionID: authSessionID,
+		AuthMethod:    authMethod,
 		Email:         email,
 		Name:          name,
 	}, nil

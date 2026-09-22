@@ -97,7 +97,9 @@ for the first boundary is:
 | `internal/jobs` | durable queue store and worker execution | database plus registered job handlers |
 | `internal/schema` / `internal/completion` | schema snapshots, caches, inspection orchestration, and completion metadata | engine metadata/capability contracts and cache ports |
 | `internal/settings` | validated instance settings and organization/workspace-effective operational policy | never `internal/web`, RPC, or realtime transports |
-| future `identity`, `access`, `audit`, `catalog`, and `execution` | application use cases and narrow ports | never `internal/web`, RPC, or realtime transports |
+| `internal/identity` | password identity use cases plus provider-neutral authentication and federation ports | never `internal/web`, RPC, or realtime transports |
+| `internal/access` | tenant-safe role and policy administration plus authorization decisions | never `internal/web`, RPC, or realtime transports |
+| future `audit`, `catalog`, and `execution` | application use cases and narrow ports | never `internal/web`, RPC, or realtime transports |
 | future `ee` | Enterprise composition and decorators | core contracts; core never imports `ee` |
 
 `internal/architecture.TestForbiddenProductionImports` makes the currently

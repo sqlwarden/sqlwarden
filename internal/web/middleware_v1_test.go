@@ -23,6 +23,7 @@ func newTestApplicationWithEnforcer(t *testing.T) *application {
 	}
 	app.enforcer = enforcer
 	app.policyEvaluator = enforcer
+	app.accessService = access.NewService(access.NewSQLStore(app.db.DB), enforcer, enforcer)
 	return app
 }
 

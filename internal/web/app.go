@@ -17,6 +17,7 @@ import (
 	"github.com/sqlwarden/internal/database"
 	"github.com/sqlwarden/internal/edition"
 	"github.com/sqlwarden/internal/encrypt"
+	identityapp "github.com/sqlwarden/internal/identity"
 	"github.com/sqlwarden/internal/jobs"
 	schemaapp "github.com/sqlwarden/internal/schema"
 	settingsapp "github.com/sqlwarden/internal/settings"
@@ -48,6 +49,8 @@ type application struct {
 	keyring           *encrypt.Keyring
 	enforcer          *access.Enforcer
 	policyEvaluator   access.PolicyEvaluator
+	accessService     *access.Service
+	identityService   *identityapp.Service
 	edition           edition.Edition
 	fileStores        *coreapp.FileStores
 	fileLocks         sync.Map
@@ -77,6 +80,8 @@ func NewApplication(services *coreapp.Services) *App {
 		keyring:           services.Keyring,
 		enforcer:          services.Enforcer,
 		policyEvaluator:   services.PolicyEvaluator,
+		accessService:     services.Access,
+		identityService:   services.Identity,
 		edition:           services.Edition,
 		fileStores:        services.FileStores,
 		jobStore:          services.JobStore,

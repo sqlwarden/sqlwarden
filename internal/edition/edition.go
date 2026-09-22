@@ -5,6 +5,9 @@ package edition
 import (
 	"context"
 	"fmt"
+	"io"
+	"log/slog"
+	"time"
 
 	"github.com/sqlwarden/internal/access"
 	"github.com/sqlwarden/internal/audit"
@@ -62,12 +65,44 @@ type MigratingModule interface {
 	MigrationStreams() []MigrationStream
 }
 
+// Dependencies is the fixed set of core capabilities an edition decorator may
+// build on. It is deliberately a closed struct rather than a service locator:
+// every field is a named core contract, so a decorator cannot reach arbitrary
+// application state and the compiler reports any capability an edition needs
+// that core does not yet offer.
+type Dependencies struct {
+	// DB is the SQLWarden metadata database. Edition modules read and write
+	// only their own edition-owned tables through it.
+	DB *database.DB
+	// Grants explains which role bindings produced a core grant, so a decorator
+	// can restrict a decision using binding metadata core ignores.
+	Grants access.GrantExplainer
+	// Now is the clock used for time-dependent decisions. Tests substitute it.
+	Now func() time.Time
+	// Logger receives edition decision logs. It is never nil.
+	Logger *slog.Logger
+	// Federation verifies SAML and OIDC credentials before an Enterprise
+	// identity decorator maps the directory subject to a core account.
+	Federation identity.FederationVerifier
+}
+
+// Normalize fills the optional fields of d with safe defaults.
+func (d Dependencies) Normalize() Dependencies {
+	if d.Now == nil {
+		d.Now = time.Now
+	}
+	if d.Logger == nil {
+		d.Logger = slog.New(slog.NewTextHandler(io.Discard, nil))
+	}
+	return d
+}
+
 // Edition composes extension decorators without exposing the application
 // container. Decorator order is defined by each concrete edition.
 type Edition interface {
 	Name() string
-	IdentityProvider(core identity.Provider) identity.Provider
-	PolicyEvaluator(core access.PolicyEvaluator) access.PolicyEvaluator
+	IdentityProvider(core identity.Provider, deps Dependencies) identity.Provider
+	PolicyEvaluator(core access.PolicyEvaluator, deps Dependencies) access.PolicyEvaluator
 	AuditWriter(core audit.Writer) audit.Writer
 	Entitlements() Entitlements
 	Modules() []Module
@@ -84,10 +119,14 @@ func NewCommunity() Community { return Community{} }
 func (Community) Name() string { return config.EditionCommunity }
 
 // IdentityProvider implements [Edition].
-func (Community) IdentityProvider(core identity.Provider) identity.Provider { return core }
+func (Community) IdentityProvider(core identity.Provider, _ Dependencies) identity.Provider {
+	return core
+}
 
 // PolicyEvaluator implements [Edition].
-func (Community) PolicyEvaluator(core access.PolicyEvaluator) access.PolicyEvaluator { return core }
+func (Community) PolicyEvaluator(core access.PolicyEvaluator, _ Dependencies) access.PolicyEvaluator {
+	return core
+}
 
 // AuditWriter implements [Edition].
 func (Community) AuditWriter(core audit.Writer) audit.Writer { return core }

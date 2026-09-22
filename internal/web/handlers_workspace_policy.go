@@ -102,7 +102,10 @@ func (app *application) createWorkspaceRole(w http.ResponseWriter, r *http.Reque
 	org := contextGetOrg(r)
 	ws := contextGetWorkspace(r)
 
-	roleID, err := app.enforcer.CreateRole(r.Context(), org.ID, &ws.ID, input.Name, input.Description, input.ScopeType, input.Permissions)
+	roleID, err := app.accessService.CreateWorkspaceRole(r.Context(), access.WorkspaceRoleInput{
+		OrgID: org.ID, WorkspaceID: ws.ID, Name: input.Name,
+		Description: input.Description, ScopeType: input.ScopeType, Permissions: input.Permissions,
+	})
 	if err != nil {
 		if errors.Is(err, access.ErrInvalidScopePermission) || errors.Is(err, access.ErrUnknownPermission) {
 			input.V.AddFieldError("permissions", "Permissions include a permission that is not valid for this scope.")
@@ -201,7 +204,7 @@ func (app *application) updateWorkspaceRole(w http.ResponseWriter, r *http.Reque
 		return
 	}
 
-	err = app.enforcer.UpdateRole(r.Context(), roleID, org.ID, input.Name, input.Description, input.Permissions)
+	err = app.accessService.UpdateWorkspaceRole(r.Context(), org.ID, ws.ID, roleID, input.Name, input.Description, input.Permissions)
 	if err != nil {
 		if errors.Is(err, access.ErrBuiltinRole) {
 			app.notPermitted(w, r)
@@ -262,7 +265,7 @@ func (app *application) deleteWorkspaceRole(w http.ResponseWriter, r *http.Reque
 		return
 	}
 
-	err = app.enforcer.DeleteRole(r.Context(), roleID, org.ID)
+	err = app.accessService.DeleteWorkspaceRole(r.Context(), org.ID, ws.ID, roleID)
 	if err != nil {
 		if errors.Is(err, access.ErrBuiltinRole) {
 			app.notPermitted(w, r)
@@ -371,24 +374,17 @@ func (app *application) getWorkspacePolicy(w http.ResponseWriter, r *http.Reques
 	org := contextGetOrg(r)
 	ws := contextGetWorkspace(r)
 
-	rb, found, err := app.db.GetRoleBinding(r.Context(), bindingID, org.ID)
+	binding, err := app.accessService.WorkspacePolicyBinding(r.Context(), org.ID, ws.ID, bindingID)
+	if errors.Is(err, access.ErrRoleBindingNotFound) {
+		app.notFound(w, r)
+		return
+	}
 	if err != nil {
 		app.serverError(w, r, err)
 		return
 	}
-	if !found {
-		app.notFound(w, r)
-		return
-	}
-	if ok, err := app.resourceBelongsToWorkspace(r, rb.ResourceType, rb.ResourceID, ws.ID); err != nil {
-		app.serverError(w, r, err)
-		return
-	} else if !ok {
-		app.notFound(w, r)
-		return
-	}
 
-	item, err := app.db.GetPolicyBindingItem(r.Context(), org.ID, rb)
+	item, err := app.db.GetPolicyBindingItem(r.Context(), org.ID, databaseRoleBinding(binding))
 	if err != nil {
 		app.serverError(w, r, err)
 		return
@@ -439,91 +435,28 @@ func (app *application) grantWorkspacePolicy(w http.ResponseWriter, r *http.Requ
 	org := contextGetOrg(r)
 	ws := contextGetWorkspace(r)
 	grantor := contextGetAccount(r)
-
-	if ok, err := app.workspacePolicySubjectExists(r, org.ID, ws.ID, input.SubjectType, input.SubjectID); err != nil {
-		app.serverError(w, r, err)
-		return
-	} else if !ok {
+	resourceID, err := app.accessService.GrantWorkspacePolicy(r.Context(), access.GrantWorkspacePolicyInput{
+		OrgID: org.ID, WorkspaceID: ws.ID, GrantorID: grantor.ID,
+		RoleID: input.RoleID, SubjectType: input.SubjectType, SubjectID: input.SubjectID,
+		ResourceType: input.ResourceType, ResourceID: input.ResourceID,
+	})
+	if errors.Is(err, access.ErrSubjectNotFound) || errors.Is(err, access.ErrRoleNotFound) || errors.Is(err, access.ErrResourceNotFound) {
 		app.notFound(w, r)
 		return
 	}
-
-	// Resolve and validate the target resource belongs to this workspace.
-	var resourceID int64
-	switch input.ResourceType {
-	case "workspace":
-		resourceID = ws.ID
-	case "environment":
-		env, found, err := app.db.GetEnvironment(r.Context(), input.ResourceID)
-		if err != nil {
-			app.serverError(w, r, err)
-			return
-		}
-		if !found || env.WorkspaceID != ws.ID {
-			app.notFound(w, r)
-			return
-		}
-		resourceID = env.ID
-	case "connection":
-		conn, found, err := app.db.GetConnection(r.Context(), input.ResourceID)
-		if err != nil {
-			app.serverError(w, r, err)
-			return
-		}
-		if !found || conn.WorkspaceID != ws.ID {
-			app.notFound(w, r)
-			return
-		}
-		resourceID = conn.ID
+	if errors.Is(err, access.ErrRoleScopeMismatch) {
+		v := validator.Validator{}
+		v.AddFieldError("role_id", "Role scope must match resource type.")
+		app.failedValidation(w, r, v)
+		return
 	}
-
-	role, found, err := app.db.GetRole(r.Context(), input.RoleID, org.ID)
 	if err != nil {
-		app.serverError(w, r, err)
-		return
-	}
-	if !found {
-		app.notFound(w, r)
-		return
-	}
-	switch input.ResourceType {
-	case "workspace":
-		if role.ScopeType != "workspace" {
-			v := validator.Validator{}
-			v.AddFieldError("role_id", "Role scope must match resource type.")
-			app.failedValidation(w, r, v)
-			return
-		}
-		if role.WorkspaceID != nil && *role.WorkspaceID != ws.ID {
-			app.notFound(w, r)
-			return
-		}
-	default:
-		if role.ScopeType != input.ResourceType {
-			v := validator.Validator{}
-			v.AddFieldError("role_id", "Role scope must match resource type.")
-			app.failedValidation(w, r, v)
-			return
-		}
-		if role.WorkspaceID != nil && *role.WorkspaceID != ws.ID {
-			app.notFound(w, r)
-			return
-		}
-	}
-	if err := app.enforcer.BindRole(r.Context(), org.ID, input.RoleID, input.SubjectType, input.SubjectID, input.ResourceType, resourceID, grantor.ID); err != nil {
 		app.serverError(w, r, err)
 		return
 	}
 
 	app.logInfo(r, "workspace policy granted", slog.Int64("workspace_id", ws.ID), slog.Int64("role_id", input.RoleID), slog.String("subject_type", input.SubjectType), slog.Int64("subject_id", input.SubjectID), slog.String("resource_type", input.ResourceType), slog.Int64("resource_id", resourceID))
 	w.WriteHeader(http.StatusNoContent)
-}
-
-func (app *application) workspacePolicySubjectExists(r *http.Request, orgID, workspaceID int64, subjectType string, subjectID int64) (bool, error) {
-	if subjectType == access.SubjectTypeWorkspaceMembers {
-		return subjectID == workspaceID, nil
-	}
-	return app.policySubjectExists(r, orgID, subjectType, subjectID)
 }
 
 func validWorkspacePolicySubjectType(subjectType string) bool {
@@ -546,49 +479,16 @@ func (app *application) revokeWorkspacePolicy(w http.ResponseWriter, r *http.Req
 	org := contextGetOrg(r)
 	ws := contextGetWorkspace(r)
 
-	rb, found, err := app.db.GetRoleBinding(r.Context(), bindingID, org.ID)
+	rb, err := app.accessService.RevokeWorkspacePolicy(r.Context(), org.ID, ws.ID, bindingID)
+	if errors.Is(err, access.ErrRoleBindingNotFound) {
+		app.notFound(w, r)
+		return
+	}
 	if err != nil {
-		app.serverError(w, r, err)
-		return
-	}
-	if !found {
-		app.notFound(w, r)
-		return
-	}
-	if ok, err := app.resourceBelongsToWorkspace(r, rb.ResourceType, rb.ResourceID, ws.ID); err != nil {
-		app.serverError(w, r, err)
-		return
-	} else if !ok {
-		app.notFound(w, r)
-		return
-	}
-	if err = app.enforcer.UnbindRole(r.Context(), bindingID, org.ID); err != nil {
 		app.serverError(w, r, err)
 		return
 	}
 
 	app.logInfo(r, "workspace policy revoked", slog.Int64("workspace_id", ws.ID), slog.Int64("binding_id", bindingID), slog.Int64("role_id", rb.RoleID), slog.String("subject_type", rb.SubjectType), slog.Int64("subject_id", rb.SubjectID), slog.String("resource_type", rb.ResourceType), slog.Int64("resource_id", rb.ResourceID))
 	w.WriteHeader(http.StatusNoContent)
-}
-
-// resourceBelongsToWorkspace validates that the given resource is owned by wsID.
-func (app *application) resourceBelongsToWorkspace(r *http.Request, resourceType string, resourceID, wsID int64) (bool, error) {
-	switch resourceType {
-	case "workspace":
-		return resourceID == wsID, nil
-	case "environment":
-		env, found, err := app.db.GetEnvironment(r.Context(), resourceID)
-		if err != nil {
-			return false, err
-		}
-		return found && env.WorkspaceID == wsID, nil
-	case "connection":
-		conn, found, err := app.db.GetConnection(r.Context(), resourceID)
-		if err != nil {
-			return false, err
-		}
-		return found && conn.WorkspaceID == wsID, nil
-	default:
-		return false, nil
-	}
 }

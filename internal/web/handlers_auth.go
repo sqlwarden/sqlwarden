@@ -1,6 +1,7 @@
 package web
 
 import (
+	"errors"
 	"log/slog"
 	"net/http"
 	"net/url"
@@ -10,7 +11,7 @@ import (
 
 	"github.com/go-chi/chi/v5"
 	"github.com/sqlwarden/internal/database"
-	"github.com/sqlwarden/internal/password"
+	identityapp "github.com/sqlwarden/internal/identity"
 	"github.com/sqlwarden/internal/request"
 	"github.com/sqlwarden/internal/response"
 	"github.com/sqlwarden/internal/token"
@@ -41,36 +42,15 @@ func (app *application) registerAccount(w http.ResponseWriter, r *http.Request) 
 		return
 	}
 
-	configured, err := app.db.HasAnyInstanceAdmin(r.Context())
+	account, err := app.identityService.Register(r.Context(), identityapp.RegisterInput{
+		Email: input.Email, Name: input.Name, Password: input.Password,
+	})
 	if err != nil {
-		app.serverError(w, r, err)
-		return
-	}
-	if !configured {
-		app.errorMessage(w, r, http.StatusForbidden, "Instance setup is not complete.", nil)
-		return
-	}
-
-	_, exists, err := app.db.GetAccountByEmail(r.Context(), input.Email)
-	if err != nil {
-		app.serverError(w, r, err)
-		return
-	}
-	if exists {
-		input.V.AddFieldError("email", "An account with this email already exists.")
-		app.failedValidation(w, r, input.V)
-		return
-	}
-
-	hashedPW, err := password.Hash(input.Password)
-	if err != nil {
-		app.serverError(w, r, err)
-		return
-	}
-
-	account, err := app.db.InsertAccount(r.Context(), input.Email, input.Name, &hashedPW)
-	if err != nil {
-		if isUniqueViolation(err) {
+		if errors.Is(err, identityapp.ErrSetupIncomplete) {
+			app.errorMessage(w, r, http.StatusForbidden, "Instance setup is not complete.", nil)
+			return
+		}
+		if errors.Is(err, identityapp.ErrEmailTaken) {
 			input.V.AddFieldError("email", "An account with this email already exists.")
 			app.failedValidation(w, r, input.V)
 			return
@@ -107,24 +87,13 @@ func (app *application) loginAccount(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	account, found, err := app.db.GetAccountByEmail(r.Context(), input.Email)
-	if err != nil {
-		app.serverError(w, r, err)
-		return
-	}
-
-	if !found || account.Password == nil || !account.IsActive {
+	account, err := app.identityService.AuthenticateWithPassword(r.Context(), input.Email, input.Password)
+	if errors.Is(err, identityapp.ErrInvalidCredentials) {
 		app.invalidAuthenticationToken(w, r)
 		return
 	}
-
-	match, err := password.Matches(input.Password, *account.Password)
 	if err != nil {
 		app.serverError(w, r, err)
-		return
-	}
-	if !match {
-		app.invalidAuthenticationToken(w, r)
 		return
 	}
 
@@ -542,7 +511,7 @@ func (app *application) updateAccount(w http.ResponseWriter, r *http.Request) {
 	}
 
 	account := contextGetAccount(r)
-	updatedAccount, err := app.db.UpdateAccountName(r.Context(), account.ID, input.Name)
+	updatedAccount, err := app.identityService.UpdateName(r.Context(), account.ID, input.Name)
 	if err != nil {
 		app.serverError(w, r, err)
 		return
@@ -582,24 +551,17 @@ func (app *application) updateAccountPassword(w http.ResponseWriter, r *http.Req
 		return
 	}
 
-	match, err := password.Matches(input.CurrentPassword, *account.Password)
-	if err != nil {
-		app.serverError(w, r, err)
-		return
-	}
-	if !match {
+	err = app.identityService.ChangePassword(r.Context(), account.ID, input.CurrentPassword, input.NewPassword)
+	if errors.Is(err, identityapp.ErrInvalidCredentials) {
 		input.V.AddFieldError("current_password", "Current password is incorrect.")
 		app.failedValidation(w, r, input.V)
 		return
 	}
-
-	hashedPassword, err := password.Hash(input.NewPassword)
-	if err != nil {
-		app.serverError(w, r, err)
+	if errors.Is(err, identityapp.ErrPasswordUnavailable) {
+		input.V.AddFieldError("current_password", "Password changes are not available for this account.")
+		app.failedValidation(w, r, input.V)
 		return
 	}
-
-	err = app.db.UpdateAccountPassword(r.Context(), account.ID, hashedPassword)
 	if err != nil {
 		app.serverError(w, r, err)
 		return

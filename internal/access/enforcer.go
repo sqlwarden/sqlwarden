@@ -246,15 +246,17 @@ func (e *Enforcer) orgPolicy(ctx context.Context, orgID int64) (*OrgPolicy, erro
 
 	// Load role bindings.
 	var rbRows []struct {
+		ID           int64
 		RoleID       int64
 		SubjectType  string
 		SubjectID    int64
 		ResourceType string
 		ResourceID   int64
+		ExpiresAt    *time.Time
 	}
 	err = e.db.NewSelect().
 		TableExpr("role_bindings").
-		ColumnExpr("role_id, subject_type, subject_id, resource_type, resource_id").
+		ColumnExpr("id, role_id, subject_type, subject_id, resource_type, resource_id, expires_at").
 		Where("org_id = ?", orgID).
 		Scan(ctx, &rbRows)
 	if err != nil {
@@ -263,9 +265,11 @@ func (e *Enforcer) orgPolicy(ctx context.Context, orgID int64) (*OrgPolicy, erro
 	for _, r := range rbRows {
 		key := resourceKey{r.ResourceType, r.ResourceID}
 		policy.roleBindings[key] = append(policy.roleBindings[key], cachedRoleBinding{
+			bindingID:   r.ID,
 			roleID:      r.RoleID,
 			subjectType: r.SubjectType,
 			subjectID:   r.SubjectID,
+			expiresAt:   r.ExpiresAt,
 		})
 	}
 

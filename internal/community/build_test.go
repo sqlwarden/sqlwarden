@@ -9,5 +9,5 @@ import (
 )
 
 func TestEditionContract(t *testing.T) {
-	editiontest.Run(t, edition.NewCommunity(), config.Default())
+	editiontest.Run(t, edition.NewCommunity(), config.Default(), edition.Dependencies{}.Normalize())
 }

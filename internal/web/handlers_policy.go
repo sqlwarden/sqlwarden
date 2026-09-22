@@ -114,7 +114,10 @@ func (app *application) createRole(w http.ResponseWriter, r *http.Request) {
 	}
 
 	org := contextGetOrg(r)
-	roleID, err := app.enforcer.CreateRole(r.Context(), org.ID, input.WorkspaceID, input.Name, input.Description, input.ScopeType, input.Permissions)
+	roleID, err := app.accessService.CreateOrgRole(r.Context(), access.OrgRoleInput{
+		OrgID: org.ID, Name: input.Name, Description: input.Description,
+		ScopeType: input.ScopeType, Permissions: input.Permissions,
+	})
 	if err != nil {
 		if errors.Is(err, access.ErrInvalidScopePermission) || errors.Is(err, access.ErrUnknownPermission) {
 			input.V.AddFieldError("permissions", "Permissions include a permission that is not valid for this scope.")
@@ -195,7 +198,7 @@ func (app *application) updateRole(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	err = app.enforcer.UpdateRole(r.Context(), roleID, org.ID, input.Name, input.Description, input.Permissions)
+	err = app.accessService.UpdateOrgRole(r.Context(), org.ID, roleID, input.Name, input.Description, input.Permissions)
 	if err != nil {
 		if errors.Is(err, access.ErrBuiltinRole) {
 			app.notPermitted(w, r)
@@ -244,7 +247,7 @@ func (app *application) deleteRole(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	err = app.enforcer.DeleteRole(r.Context(), roleID, org.ID)
+	err = app.accessService.DeleteOrgRole(r.Context(), org.ID, roleID)
 	if err != nil {
 		if errors.Is(err, access.ErrBuiltinRole) {
 			app.notPermitted(w, r)
@@ -335,17 +338,17 @@ func (app *application) getOrgPolicy(w http.ResponseWriter, r *http.Request) {
 
 	org := contextGetOrg(r)
 
-	rb, found, err := app.db.GetRoleBinding(r.Context(), bindingID, org.ID)
+	binding, err := app.accessService.OrgPolicyBinding(r.Context(), org.ID, bindingID)
+	if errors.Is(err, access.ErrRoleBindingNotFound) {
+		app.notFound(w, r)
+		return
+	}
 	if err != nil {
 		app.serverError(w, r, err)
 		return
 	}
-	if !found || rb.ResourceType != "org" || rb.ResourceID != org.ID {
-		app.notFound(w, r)
-		return
-	}
 
-	item, err := app.db.GetPolicyBindingItem(r.Context(), org.ID, rb)
+	item, err := app.db.GetPolicyBindingItem(r.Context(), org.ID, databaseRoleBinding(binding))
 	if err != nil {
 		app.serverError(w, r, err)
 		return
@@ -354,6 +357,15 @@ func (app *application) getOrgPolicy(w http.ResponseWriter, r *http.Request) {
 	err = response.JSON(w, http.StatusOK, item)
 	if err != nil {
 		app.serverError(w, r, err)
+	}
+}
+
+func databaseRoleBinding(binding access.RoleBinding) database.RoleBinding {
+	return database.RoleBinding{
+		ID: binding.ID, OrgID: binding.OrgID, RoleID: binding.RoleID,
+		SubjectType: binding.SubjectType, SubjectID: binding.SubjectID,
+		ResourceType: binding.ResourceType, ResourceID: binding.ResourceID,
+		CreatedAt: binding.CreatedAt,
 	}
 }
 
@@ -381,36 +393,26 @@ func (app *application) grantOrgPolicy(w http.ResponseWriter, r *http.Request) {
 
 	org := contextGetOrg(r)
 	grantor := contextGetAccount(r)
-
-	if ok, err := app.policySubjectExists(r, org.ID, input.SubjectType, input.SubjectID); err != nil {
-		app.serverError(w, r, err)
-		return
-	} else if !ok {
+	err = app.accessService.GrantOrgPolicy(r.Context(), access.GrantOrgPolicyInput{
+		OrgID: org.ID, GrantorID: grantor.ID, RoleID: input.RoleID,
+		SubjectType: input.SubjectType, SubjectID: input.SubjectID,
+	})
+	if errors.Is(err, access.ErrSubjectNotFound) || errors.Is(err, access.ErrRoleNotFound) {
 		app.notFound(w, r)
 		return
 	}
-
-	role, found, err := app.db.GetRole(r.Context(), input.RoleID, org.ID)
-	if err != nil {
-		app.serverError(w, r, err)
-		return
-	}
-	if !found {
-		app.notFound(w, r)
-		return
-	}
-	if role.ScopeType != "org" || role.WorkspaceID != nil {
+	if errors.Is(err, access.ErrRoleScopeMismatch) {
 		v := validator.Validator{}
 		v.AddFieldError("role_id", "Role scope must match resource type.")
 		app.failedValidation(w, r, v)
 		return
 	}
-	if !app.canManageProtectedOrgPolicy(r, org.ID, grantor.ID, role) {
-		app.logWarn(r, "protected organization policy grant blocked", slog.Int64("role_id", role.ID), slog.String("role_name", role.Name), slog.String("subject_type", input.SubjectType), slog.Int64("subject_id", input.SubjectID))
+	if errors.Is(err, access.ErrProtectedPolicy) {
+		app.logWarn(r, "protected organization policy grant blocked", slog.Int64("role_id", input.RoleID), slog.String("subject_type", input.SubjectType), slog.Int64("subject_id", input.SubjectID))
 		app.protectedOrgPolicyNotPermitted(w, r)
 		return
 	}
-	if err := app.enforcer.BindRole(r.Context(), org.ID, input.RoleID, input.SubjectType, input.SubjectID, "org", org.ID, grantor.ID); err != nil {
+	if err != nil {
 		app.serverError(w, r, err)
 		return
 	}
@@ -430,40 +432,26 @@ func (app *application) revokeOrgPolicy(w http.ResponseWriter, r *http.Request) 
 	org := contextGetOrg(r)
 	grantor := contextGetAccount(r)
 
-	rb, found, err := app.db.GetRoleBinding(r.Context(), bindingID, org.ID)
-	if err != nil {
-		app.serverError(w, r, err)
-		return
-	}
-	if !found || rb.ResourceType != "org" || rb.ResourceID != org.ID {
+	rb, err := app.accessService.RevokeOrgPolicy(r.Context(), access.RevokeOrgPolicyInput{
+		OrgID: org.ID, GrantorID: grantor.ID, BindingID: bindingID,
+	})
+	if errors.Is(err, access.ErrRoleBindingNotFound) || errors.Is(err, access.ErrRoleNotFound) {
 		app.notFound(w, r)
 		return
 	}
-	role, found, err := app.db.GetRole(r.Context(), rb.RoleID, org.ID)
-	if err != nil {
-		app.serverError(w, r, err)
-		return
-	}
-	if !found {
-		app.notFound(w, r)
-		return
-	}
-	if !app.canManageProtectedOrgPolicy(r, org.ID, grantor.ID, role) {
-		app.logWarn(r, "protected organization policy revoke blocked", slog.Int64("binding_id", bindingID), slog.Int64("role_id", role.ID), slog.String("role_name", role.Name), slog.String("subject_type", rb.SubjectType), slog.Int64("subject_id", rb.SubjectID))
+	if errors.Is(err, access.ErrProtectedPolicy) {
+		app.logWarn(r, "protected organization policy revoke blocked", slog.Int64("binding_id", bindingID), slog.Int64("role_id", rb.RoleID))
 		app.protectedOrgPolicyNotPermitted(w, r)
 		return
 	}
-	if isLastOwnerPolicy, checkErr := app.isLastOrgOwnerPolicy(r, org.ID, rb, role); checkErr != nil {
-		app.serverError(w, r, checkErr)
-		return
-	} else if isLastOwnerPolicy {
-		app.logWarn(r, "last organization owner policy revoke blocked", slog.Int64("binding_id", bindingID), slog.Int64("role_id", role.ID), slog.String("subject_type", rb.SubjectType), slog.Int64("subject_id", rb.SubjectID))
+	if errors.Is(err, access.ErrLastOwnerPolicy) {
+		app.logWarn(r, "last organization owner policy revoke blocked", slog.Int64("binding_id", bindingID), slog.Int64("role_id", rb.RoleID))
 		v := validator.Validator{}
 		v.AddError("Cannot revoke the last owner policy of an organization.")
 		app.failedValidation(w, r, v)
 		return
 	}
-	if err = app.enforcer.UnbindRole(r.Context(), bindingID, org.ID); err != nil {
+	if err != nil {
 		app.serverError(w, r, err)
 		return
 	}
@@ -486,76 +474,8 @@ func (app *application) listPermissions(w http.ResponseWriter, r *http.Request) 
 	}
 }
 
-func (app *application) canManageProtectedOrgPolicy(r *http.Request, orgID, grantorID int64, role database.Role) bool {
-	for _, permission := range protectedOrgPolicyPermissions(role) {
-		if !app.policyEvaluator.Can(r.Context(), grantorID, orgID, "org", "org", orgID, permission) {
-			return false
-		}
-	}
-	return true
-}
-
 func (app *application) protectedOrgPolicyNotPermitted(w http.ResponseWriter, r *http.Request) {
 	app.errorMessage(w, r, http.StatusForbidden, "Only users who already have organization deletion or ownership transfer permission can manage policies that grant those permissions.", nil)
-}
-
-func protectedOrgPolicyPermissions(role database.Role) []string {
-	protected := make([]string, 0, 2)
-	seen := map[string]bool{}
-	add := func(permission string) {
-		if !seen[permission] {
-			protected = append(protected, permission)
-			seen[permission] = true
-		}
-	}
-	for _, permission := range role.Permissions {
-		switch permission {
-		case access.PermOrgDelete, access.PermOrgTransferOwnership:
-			add(permission)
-		}
-	}
-	if role.IsBuiltin && role.Name == access.BuiltinOrgOwnerRole && role.ScopeType == "org" && role.WorkspaceID == nil {
-		add(access.PermOrgDelete)
-		add(access.PermOrgTransferOwnership)
-	}
-	return protected
-}
-
-func (app *application) isLastOrgOwnerPolicy(r *http.Request, orgID int64, binding database.RoleBinding, role database.Role) (bool, error) {
-	if binding.ResourceType != "org" || binding.ResourceID != orgID {
-		return false, nil
-	}
-
-	if !role.IsBuiltin || role.Name != access.BuiltinOrgOwnerRole || role.ScopeType != "org" || role.WorkspaceID != nil {
-		return false, nil
-	}
-
-	count, err := app.db.CountRoleBindings(r.Context(), orgID, binding.RoleID, "org", orgID)
-	if err != nil {
-		return false, err
-	}
-	return count <= 1, nil
-}
-
-func (app *application) policySubjectExists(r *http.Request, orgID int64, subjectType string, subjectID int64) (bool, error) {
-	switch subjectType {
-	case access.SubjectTypeAccount:
-		_, found, err := app.db.GetAccount(r.Context(), subjectID)
-		if err != nil || !found {
-			return found, err
-		}
-		return app.db.IsOrgMember(r.Context(), orgID, subjectID)
-	case access.SubjectTypeTeam:
-		team, found, err := app.db.GetTeamByID(r.Context(), subjectID)
-		if err != nil || !found {
-			return found, err
-		}
-		return team.OrgID == orgID, nil
-	case access.SubjectTypeOrgMembers:
-		return subjectID == orgID, nil
-	default:
-		return false, nil
-	}
 }
 
 func validPolicySubjectType(subjectType string) bool {

@@ -41,9 +41,11 @@ type migrationEdition struct {
 	stream MigrationStream
 }
 
-func (migrationEdition) Name() string                                              { return config.EditionCommunity }
-func (migrationEdition) IdentityProvider(core identity.Provider) identity.Provider { return core }
-func (migrationEdition) PolicyEvaluator(core access.PolicyEvaluator) access.PolicyEvaluator {
+func (migrationEdition) Name() string { return config.EditionCommunity }
+func (migrationEdition) IdentityProvider(core identity.Provider, _ Dependencies) identity.Provider {
+	return core
+}
+func (migrationEdition) PolicyEvaluator(core access.PolicyEvaluator, _ Dependencies) access.PolicyEvaluator {
 	return core
 }
 func (migrationEdition) AuditWriter(core audit.Writer) audit.Writer { return core }

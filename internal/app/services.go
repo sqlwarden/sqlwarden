@@ -11,6 +11,7 @@ import (
 	"github.com/sqlwarden/internal/database"
 	"github.com/sqlwarden/internal/edition"
 	"github.com/sqlwarden/internal/encrypt"
+	"github.com/sqlwarden/internal/identity"
 	"github.com/sqlwarden/internal/jobs"
 	"github.com/sqlwarden/internal/schema"
 	"github.com/sqlwarden/internal/settings"
@@ -35,7 +36,17 @@ type Services struct {
 	// PolicyEvaluator is the edition-decorated authorization decision path.
 	// Enforcer remains available for core role and policy administration.
 	PolicyEvaluator access.PolicyEvaluator
-	Keyring         *encrypt.Keyring
+
+	// Access is the application service for role and policy administration and
+	// for effective-permission reads. Transports map its errors to their own
+	// protocol; they do not reimplement its rules.
+	Access *access.Service
+	// Identity is the application service for registration, authentication,
+	// profile, and credential changes. Session and token issuance remain a
+	// transport concern.
+	Identity *identity.Service
+
+	Keyring *encrypt.Keyring
 
 	// ConnManager owns live target-database sessions and QueryCursors owns the
 	// cursors opened on them. Cursors reference sessions, so cursors close
