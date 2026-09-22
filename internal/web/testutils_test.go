@@ -16,6 +16,8 @@ import (
 	"testing"
 	"time"
 
+	coreapp "github.com/sqlwarden/internal/app"
+	"github.com/sqlwarden/internal/config"
 	"github.com/sqlwarden/internal/connection"
 	"github.com/sqlwarden/internal/database"
 	"github.com/sqlwarden/internal/encrypt"
@@ -50,17 +52,17 @@ func newTestClaims() jwt.Claims {
 
 func newTestApplication(t *testing.T) *application {
 	app := new(application)
-	app.config = DefaultConfig()
+	app.config = config.Default()
 
 	app.config.JWT.SecretKey = "k7mp29rf4qxhwn8vbtaj6pgucmve53y9"
 	app.config.BootstrapBaseURL = "https://www.example.com"
-	app.config.DeploymentMode = DeploymentModeServer
-	app.config.AccessMode = AccessModeMultiUser
-	app.config.Files.StorageMode = FilesStorageModeObject
-	app.config.Files.ActiveStorageBackend = defaultFilesActiveBackend
-	app.config.Files.StorageBackends = map[string]FileStorageBackend{
-		defaultFilesActiveBackend: {
-			Type:    FilesStorageBackendFilesystem,
+	app.config.DeploymentMode = config.DeploymentModeServer
+	app.config.AccessMode = config.AccessModeMultiUser
+	app.config.Files.StorageMode = config.FilesStorageModeObject
+	app.config.Files.ActiveStorageBackend = config.DefaultFilesActiveBackend
+	app.config.Files.StorageBackends = map[string]config.FileStorageBackend{
+		config.DefaultFilesActiveBackend: {
+			Type:    config.FilesStorageBackendFilesystem,
 			RootDir: t.TempDir(),
 		},
 	}
@@ -88,7 +90,7 @@ func newTestApplication(t *testing.T) *application {
 		t.Fatal(err)
 	}
 	app.keyring = keyring
-	app.fileStores, err = newFileStoreRegistry(app.config)
+	app.fileStores, err = coreapp.NewFileStores(app.config)
 	if err != nil {
 		t.Fatal(err)
 	}

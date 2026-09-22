@@ -38,19 +38,34 @@ type QueryCursorManager struct {
 	idleTimeout time.Duration
 	stop        chan struct{}
 	stopped     chan struct{}
+	startOnce   sync.Once
 	closeOnce   sync.Once
 }
 
 // NewQueryCursorManager creates a cursor manager and starts its idle reaper.
 func NewQueryCursorManager(idleTimeout time.Duration) *QueryCursorManager {
-	m := &QueryCursorManager{
+	m := NewUnstartedQueryCursorManager(idleTimeout)
+	m.StartReaper()
+	return m
+}
+
+// NewUnstartedQueryCursorManager creates a cursor manager that runs no
+// background work until [QueryCursorManager.StartReaper] is called.
+func NewUnstartedQueryCursorManager(idleTimeout time.Duration) *QueryCursorManager {
+	return &QueryCursorManager{
 		cursors:     make(map[string]*QueryCursorRecord),
 		idleTimeout: idleTimeout,
 		stop:        make(chan struct{}),
 		stopped:     make(chan struct{}),
 	}
-	go m.reap()
-	return m
+}
+
+// StartReaper launches the idle-cursor reaper. Only the first call starts it,
+// and a call after [QueryCursorManager.Close] does nothing.
+func (m *QueryCursorManager) StartReaper() {
+	m.startOnce.Do(func() {
+		go m.reap()
+	})
 }
 
 // Create registers a live query cursor and returns its runtime record.
@@ -98,6 +113,11 @@ func (m *QueryCursorManager) Remove(id string) bool {
 
 // Close stops the idle reaper and closes all remaining cursor records.
 func (m *QueryCursorManager) Close() {
+	// Claim the reaper start slot so a manager whose reaper never ran still
+	// has a closed stopped channel.
+	m.startOnce.Do(func() {
+		close(m.stopped)
+	})
 	m.closeOnce.Do(func() {
 		close(m.stop)
 	})

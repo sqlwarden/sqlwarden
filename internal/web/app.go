@@ -3,41 +3,36 @@ package web
 import (
 	"context"
 	"errors"
-	"fmt"
-	"io"
 	"log/slog"
 	"net/http"
-	"os"
-	"path/filepath"
-	"strings"
 	"sync"
 	"sync/atomic"
 	"time"
 
 	"github.com/sqlwarden/internal/access"
-	"github.com/sqlwarden/internal/cache"
+	coreapp "github.com/sqlwarden/internal/app"
 	completionapp "github.com/sqlwarden/internal/completion"
+	"github.com/sqlwarden/internal/config"
 	"github.com/sqlwarden/internal/connection"
 	"github.com/sqlwarden/internal/database"
 	"github.com/sqlwarden/internal/encrypt"
-	"github.com/sqlwarden/internal/files"
-	"github.com/sqlwarden/internal/filestore"
 	"github.com/sqlwarden/internal/jobs"
 	schemaapp "github.com/sqlwarden/internal/schema"
 	"github.com/sqlwarden/internal/smtp"
 )
 
 const (
-	schemaCacheTTL      = 10 * time.Minute
-	schemaCacheCapacity = 256
-	fileReaperInterval  = 15 * time.Minute
-	fileReaperRetry     = time.Minute
+	fileReaperInterval = 15 * time.Minute
+	fileReaperRetry    = time.Minute
 )
 
+// App is the HTTP transport layer built on top of an already-constructed
+// service graph. It owns no infrastructure: every dependency is borrowed from
+// internal/app, which constructs and releases them.
 type App = application
 
 type application struct {
-	config            Config
+	config            config.Config
 	db                *database.DB
 	logger            *slog.Logger
 	mailer            *smtp.Mailer
@@ -50,7 +45,7 @@ type application struct {
 	completionService *completionapp.Service
 	keyring           *encrypt.Keyring
 	enforcer          *access.Enforcer
-	fileStores        *fileStoreRegistry
+	fileStores        *coreapp.FileStores
 	fileLocks         sync.Map
 	fileReaperCancel  context.CancelFunc
 	jobStore          *jobs.Store
@@ -61,186 +56,32 @@ type application struct {
 	accessLogsEnabled atomic.Bool
 }
 
-type fileStoreRegistry struct {
-	activeBackendID string
-	stores          map[string]filestore.Store
-}
-
-func (r *fileStoreRegistry) ActiveBackendID() string {
-	return r.activeBackendID
-}
-
-func (r *fileStoreRegistry) Store(_ context.Context, backendID string) (filestore.Store, error) {
-	if backendID == "" {
-		backendID = database.DefaultFileStorageBackendID
-	}
-	store, ok := r.stores[backendID]
-	if !ok {
-		return nil, files.ErrStorageBackendUnavailable
-	}
-	return store, nil
-}
-
-func New(cfg Config, logger *slog.Logger) (*App, error) {
-	if logger == nil {
-		logger = slog.New(slog.NewTextHandler(io.Discard, nil))
-	}
-	if err := normalizeConfigPaths(&cfg); err != nil {
-		return nil, err
-	}
-	if err := validateConfig(cfg); err != nil {
-		return nil, err
-	}
-	if err := ensureSQLiteParentDir(cfg); err != nil {
-		return nil, err
-	}
-
-	logger.Info("application configuration loaded",
-		slog.Group("config",
-			"log_format", cfg.Log.Format,
-			"bootstrap_base_url_configured", strings.TrimSpace(cfg.BootstrapBaseURL) != "",
-			"tls_enabled", cfg.TLS.Enabled,
-		),
-		slog.Group("database",
-			"driver", cfg.DB.Driver,
-			"automigrate", cfg.DB.Automigrate,
-		),
-		slog.Group("files",
-			"storage_mode", cfg.Files.StorageMode,
-			"active_backend", cfg.Files.ActiveStorageBackend,
-		),
-	)
-
-	logger.Info("initializing database", slog.Group("database", "driver", cfg.DB.Driver, "automigrate", cfg.DB.Automigrate))
-	db, err := database.New(cfg.DB.Driver, cfg.DB.DSN, logger)
-	if err != nil {
-		return nil, err
-	}
-
-	if cfg.DB.Automigrate {
-		logger.Info("running database migrations")
-		if err := db.MigrateUp(); err != nil {
-			db.Close()
-			return nil, err
-		}
-		logger.Info("database migrations complete")
-	}
-	if err := initializeInstanceBaseURL(context.Background(), db, cfg.BootstrapBaseURL); err != nil {
-		db.Close()
-		return nil, err
-	}
-	if err := validateRuntimeSettingsInvariant(context.Background(), db); err != nil {
-		db.Close()
-		return nil, err
-	}
-
-	enforcer, err := access.New(db.DB)
-	if err != nil {
-		db.Close()
-		return nil, fmt.Errorf("enforcer init: %w", err)
-	}
-
-	fileStores, err := newFileStoreRegistry(cfg)
-	if err != nil {
-		db.Close()
-		return nil, fmt.Errorf("file storage init: %w", err)
-	}
-	if err := validateConfiguredFileStorageBackends(context.Background(), db, fileStores); err != nil {
-		db.Close()
-		return nil, err
-	}
-	logger.Info("file storage initialized", slog.Group("files", "storage_mode", cfg.Files.StorageMode, "active_backend", fileStores.ActiveBackendID()))
-
-	keyring, err := encrypt.NewKeyring(cfg.Encryption.Key, cfg.Encryption.PreviousKeys...)
-	if err != nil {
-		db.Close()
-		return nil, fmt.Errorf("encryption keyring init: %w", err)
-	}
-
-	snapshotStore := schemaapp.NewSnapshotStore(db)
-	app := &application{
-		config:            cfg,
-		db:                db,
-		logger:            logger,
+// NewApplication adapts a built service graph to the HTTP transport layer. It
+// starts no background work; [ProcessKinds] wraps the result in the process
+// kind that does.
+func NewApplication(services *coreapp.Services) *App {
+	return &application{
+		config:            services.Config,
+		db:                services.DB,
+		logger:            services.Logger,
 		mailer:            smtp.NewDisabledMailer(""),
-		connManager:       connection.New(30 * time.Minute),
-		queryCursors:      connection.NewQueryCursorManager(30 * time.Minute),
-		schemaService:     schemaapp.NewServiceWithLogger(cache.NewMemCache(schemaCacheCapacity), schemaCacheTTL, logger),
-		schemaSnapshots:   snapshotStore,
-		completionService: completionapp.NewService(),
-		keyring:           keyring,
-		enforcer:          enforcer,
-		fileStores:        fileStores,
-		jobStore:          jobs.NewStore(db),
-		runtimeSettings:   newRuntimeSettingsService(db),
+		connManager:       services.ConnManager,
+		queryCursors:      services.QueryCursors,
+		schemaService:     services.SchemaService,
+		schemaSnapshots:   services.SchemaSnapshots,
+		completionService: services.CompletionService,
+		keyring:           services.Keyring,
+		enforcer:          services.Enforcer,
+		fileStores:        services.FileStores,
+		jobStore:          services.JobStore,
+		runtimeSettings:   newRuntimeSettingsService(services.DB),
 		runtimeUpdates:    make(chan database.InstanceSettings, 1),
 	}
-	initialSettings, err := app.instanceSettings(context.Background())
-	if err != nil {
-		db.Close()
-		return nil, err
-	}
-	if err := app.applyRuntimeOperations(initialSettings); err != nil {
-		db.Close()
-		return nil, err
-	}
-	app.configureConnectionCacheInvalidation()
-	if _, err := app.backfillConnectionTLSConfig(context.Background()); err != nil {
-		logger.Warn("connection tls backfill failed; will retry next boot", slog.Any("error", err))
-	}
-	app.jobRegistry = app.defaultJobRegistry()
-	app.startRuntimeSupervisor(initialSettings)
-	app.startFileContentDeletionReaper()
-	return app, nil
 }
 
-func (app *application) configureConnectionCacheInvalidation() {
-	if app.connManager == nil {
-		return
-	}
-	app.connManager.SetOnConnectionEmpty(func(connectionID string) {
-		if app.schemaService != nil {
-			app.schemaService.RefreshConnection(connectionID)
-		}
-		if app.completionService != nil {
-			app.completionService.InvalidateConnection(connectionID)
-		}
-	})
-}
-
+// Handler returns the HTTP handler serving the API and the embedded SPA.
 func (app *application) Handler() http.Handler {
 	return app.routes()
-}
-
-func (app *application) Close() error {
-	startedAt := time.Now()
-	app.logger.Info("stopping application")
-	if app.fileReaperCancel != nil {
-		app.fileReaperCancel()
-	}
-	if app.runtimeCancel != nil {
-		app.runtimeCancel()
-	}
-	app.wg.Wait()
-	app.logger.Info("background workers stopped", "duration_ms", time.Since(startedAt).Milliseconds())
-
-	if app.queryCursors != nil {
-		app.queryCursors.Close()
-	}
-	if app.connManager != nil {
-		connCloseStartedAt := time.Now()
-		app.connManager.Close()
-		app.logger.Info("database connection sessions closed", "duration_ms", time.Since(connCloseStartedAt).Milliseconds())
-	}
-
-	if app.db != nil {
-		dbCloseStartedAt := time.Now()
-		app.db.Close()
-		app.logger.Info("application database closed", "duration_ms", time.Since(dbCloseStartedAt).Milliseconds())
-	}
-
-	app.logger.Info("application stopped", "duration_ms", time.Since(startedAt).Milliseconds())
-	return nil
 }
 
 func (app *application) defaultJobRegistry() *jobs.Registry {
@@ -343,57 +184,4 @@ func (app *application) enqueueFileContentReapJob(ctx context.Context) error {
 		}
 	}
 	return err
-}
-
-func ensureSQLiteParentDir(cfg Config) error {
-	if cfg.DB.Driver != "sqlite" || cfg.DB.DSN == ":memory:" || strings.HasPrefix(cfg.DB.DSN, "file:") {
-		return nil
-	}
-	dir := filepath.Dir(cfg.DB.DSN)
-	if dir == "." || dir == "" {
-		return nil
-	}
-	if err := os.MkdirAll(dir, 0o750); err != nil {
-		return fmt.Errorf("create sqlite database directory: %w", err)
-	}
-	return nil
-}
-
-func newFileStoreRegistry(cfg Config) (*fileStoreRegistry, error) {
-	activeBackendID := cfg.Files.ActiveStorageBackend
-	if cfg.Files.StorageMode == FilesStorageModeFile || strings.TrimSpace(activeBackendID) == "" {
-		activeBackendID = database.DefaultFileStorageBackendID
-	}
-	registry := &fileStoreRegistry{
-		activeBackendID: activeBackendID,
-		stores:          make(map[string]filestore.Store, len(cfg.Files.StorageBackends)),
-	}
-	for id, backend := range cfg.Files.StorageBackends {
-		switch backend.Type {
-		case FilesStorageBackendFilesystem:
-			store, err := filestore.NewFilesystem(backend.RootDir)
-			if err != nil {
-				return nil, fmt.Errorf("backend %q: %w", id, err)
-			}
-			registry.stores[id] = store
-		default:
-			return nil, fmt.Errorf("backend %q type %q is not implemented", id, backend.Type)
-		}
-	}
-	return registry, nil
-}
-
-// validateConfiguredFileStorageBackends fails startup when saved file content
-// references a backend that is not configured for this process.
-func validateConfiguredFileStorageBackends(ctx context.Context, db *database.DB, stores *fileStoreRegistry) error {
-	referenced, err := db.ListWorkspaceFileStorageBackendIDs(ctx)
-	if err != nil {
-		return err
-	}
-	for _, backendID := range referenced {
-		if _, ok := stores.stores[backendID]; !ok {
-			return fmt.Errorf("file storage backend %q is referenced by saved file content but is not configured", backendID)
-		}
-	}
-	return nil
 }

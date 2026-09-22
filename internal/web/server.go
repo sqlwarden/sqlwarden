@@ -1,23 +1,24 @@
 package web
 
 import (
-	"context"
 	"errors"
 	"fmt"
 	"log/slog"
+	"net"
 	"net/http"
 	"time"
 )
 
 const (
-	defaultIdleTimeout    = time.Minute
-	defaultReadTimeout    = 5 * time.Second
-	defaultWriteTimeout   = 10 * time.Second
-	defaultShutdownPeriod = 30 * time.Second
+	defaultIdleTimeout  = time.Minute
+	defaultReadTimeout  = 5 * time.Second
+	defaultWriteTimeout = 10 * time.Second
 )
 
-func (app *application) ServeHTTP(ctx context.Context) error {
-	srv := &http.Server{
+// newHTTPServer builds the process HTTP server. Starting and shutting it down
+// belongs to the process kind that owns it.
+func (app *application) newHTTPServer() *http.Server {
+	return &http.Server{
 		Addr:         fmt.Sprintf(":%d", app.config.HTTPPort),
 		Handler:      app.Handler(),
 		ErrorLog:     slog.NewLogLogger(app.logger.Handler(), slog.LevelWarn),
@@ -25,26 +26,19 @@ func (app *application) ServeHTTP(ctx context.Context) error {
 		ReadTimeout:  defaultReadTimeout,
 		WriteTimeout: defaultWriteTimeout,
 	}
+}
 
-	shutdownErrorChan := make(chan error)
+// listen binds the configured HTTP address without accepting traffic. Process
+// kinds use it during Start so a bind failure is synchronous and readiness is
+// never reported for a listener that failed to acquire its port.
+func (app *application) listen() (net.Listener, error) {
+	return net.Listen("tcp", fmt.Sprintf(":%d", app.config.HTTPPort))
+}
 
-	go func() {
-		<-ctx.Done()
-
-		startedAt := time.Now()
-		app.logger.Info("server shutdown started", slog.Group("server", "addr", srv.Addr), "timeout_ms", defaultShutdownPeriod.Milliseconds())
-		shutdownCtx, cancel := context.WithTimeout(context.Background(), defaultShutdownPeriod)
-		defer cancel()
-
-		err := srv.Shutdown(shutdownCtx)
-		if err != nil {
-			app.logger.Warn("server shutdown failed", slog.Group("server", "addr", srv.Addr), "duration_ms", time.Since(startedAt).Milliseconds(), "error", err)
-		} else {
-			app.logger.Info("server shutdown completed", slog.Group("server", "addr", srv.Addr), "duration_ms", time.Since(startedAt).Milliseconds())
-		}
-		shutdownErrorChan <- err
-	}()
-
+// serve accepts requests on an already-bound listener until the server stops.
+// A shutdown requested by the owner is reported as success; anything else is a
+// listener failure.
+func (app *application) serve(srv *http.Server, listener net.Listener) error {
 	scheme := "http"
 	if app.config.TLS.Enabled {
 		scheme = "https"
@@ -53,24 +47,13 @@ func (app *application) ServeHTTP(ctx context.Context) error {
 
 	var err error
 	if app.config.TLS.Enabled {
-		err = srv.ListenAndServeTLS(app.config.TLS.CertFile, app.config.TLS.KeyFile)
+		err = srv.ServeTLS(listener, app.config.TLS.CertFile, app.config.TLS.KeyFile)
 	} else {
-		err = srv.ListenAndServe()
+		err = srv.Serve(listener)
 	}
-	if !errors.Is(err, http.ErrServerClosed) {
-		return err
+	if errors.Is(err, http.ErrServerClosed) {
+		app.logger.Info("stopped server", slog.Group("server", "addr", srv.Addr))
+		return nil
 	}
-
-	err = <-shutdownErrorChan
-	if err != nil {
-		return err
-	}
-
-	app.logger.Info("stopped server", slog.Group("server", "addr", srv.Addr))
-
-	return nil
-}
-
-func (app *application) serveHTTP() error {
-	return app.ServeHTTP(context.Background())
+	return err
 }

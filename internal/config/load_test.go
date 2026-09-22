@@ -1,4 +1,4 @@
-package web
+package config
 
 import (
 	"os"
@@ -6,14 +6,15 @@ import (
 	"testing"
 )
 
-func TestLoadConfigDefaults(t *testing.T) {
-	cfg, showVersion, err := loadConfig(nil)
+func TestLoadDefaults(t *testing.T) {
+	loaded, err := Load(nil)
 	if err != nil {
 		t.Fatal(err)
 	}
+	cfg := loaded.Config
 
-	if showVersion {
-		t.Fatal("expected showVersion to be false")
+	if loaded.ShowVersion {
+		t.Fatal("expected ShowVersion to be false")
 	}
 
 	if cfg.BootstrapBaseURL != defaultBaseURL {
@@ -27,6 +28,18 @@ func TestLoadConfigDefaults(t *testing.T) {
 	}
 	if cfg.AccessMode != AccessModeMultiUser {
 		t.Fatalf("accessMode = %q, want %q", cfg.AccessMode, AccessModeMultiUser)
+	}
+	if len(cfg.ProcessKinds) != 1 || cfg.ProcessKinds[0] != ProcessKindAll {
+		t.Fatalf("processKinds = %v, want [%s]", cfg.ProcessKinds, ProcessKindAll)
+	}
+	if cfg.SessionDirectory != SessionDirectoryStatic {
+		t.Fatalf("sessionDirectory = %q, want %q", cfg.SessionDirectory, SessionDirectoryStatic)
+	}
+	if cfg.Connector.Replicas != defaultConnectorReplicas {
+		t.Fatalf("connector.replicas = %d, want %d", cfg.Connector.Replicas, defaultConnectorReplicas)
+	}
+	if cfg.Edition.Name != EditionCommunity || cfg.Edition.LicenseFile != "" {
+		t.Fatalf("unexpected edition config: %+v", cfg.Edition)
 	}
 	if cfg.Log.Format != LogFormatJSON {
 		t.Fatalf("unexpected log config: %+v", cfg.Log)
@@ -62,36 +75,37 @@ func TestLoadConfigDefaults(t *testing.T) {
 	}
 }
 
-func TestLoadConfigDefaultsHaveNoPreviousEncryptionKeys(t *testing.T) {
-	cfg, _, err := loadConfig(nil)
+func TestLoadDefaultsHaveNoPreviousEncryptionKeys(t *testing.T) {
+	loaded, err := Load(nil)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(cfg.Encryption.PreviousKeys) != 0 {
-		t.Fatalf("expected no previous keys by default, got %v", cfg.Encryption.PreviousKeys)
+	if len(loaded.Config.Encryption.PreviousKeys) != 0 {
+		t.Fatalf("expected no previous keys by default, got %v", loaded.Config.Encryption.PreviousKeys)
 	}
 }
 
-func TestLoadConfigParsesPreviousEncryptionKeys(t *testing.T) {
+func TestLoadParsesPreviousEncryptionKeys(t *testing.T) {
 	t.Setenv("ENCRYPTION_PREVIOUS_KEYS", " old-key-one , old-key-two ,, ")
 
-	cfg, _, err := loadConfig(nil)
+	loaded, err := Load(nil)
 	if err != nil {
 		t.Fatal(err)
 	}
 
 	want := []string{"old-key-one", "old-key-two"}
-	if len(cfg.Encryption.PreviousKeys) != len(want) {
-		t.Fatalf("previous keys = %v, want %v", cfg.Encryption.PreviousKeys, want)
+	got := loaded.Config.Encryption.PreviousKeys
+	if len(got) != len(want) {
+		t.Fatalf("previous keys = %v, want %v", got, want)
 	}
 	for i, key := range want {
-		if cfg.Encryption.PreviousKeys[i] != key {
-			t.Errorf("previous key %d = %q, want %q", i, cfg.Encryption.PreviousKeys[i], key)
+		if got[i] != key {
+			t.Errorf("previous key %d = %q, want %q", i, got[i], key)
 		}
 	}
 }
 
-func TestLoadConfigFromExplicitFile(t *testing.T) {
+func TestLoadFromExplicitFile(t *testing.T) {
 	dir := t.TempDir()
 	path := filepath.Join(dir, "config.yaml")
 	content := []byte(`
@@ -114,13 +128,14 @@ files:
 		t.Fatal(err)
 	}
 
-	cfg, showVersion, err := loadConfig([]string{"--config", path})
+	loaded, err := Load([]string{"--config", path})
 	if err != nil {
 		t.Fatal(err)
 	}
+	cfg := loaded.Config
 
-	if showVersion {
-		t.Fatal("expected showVersion to be false")
+	if loaded.ShowVersion {
+		t.Fatal("expected ShowVersion to be false")
 	}
 	if cfg.BootstrapBaseURL != "https://cfg.example.com" {
 		t.Fatalf("bootstrapBaseURL = %q", cfg.BootstrapBaseURL)
@@ -145,7 +160,7 @@ files:
 	}
 }
 
-func TestLoadConfigEnvOverridesFile(t *testing.T) {
+func TestLoadEnvOverridesFile(t *testing.T) {
 	t.Setenv("DB_DRIVER", "sqlite")
 	t.Setenv("HTTP_PORT", "8123")
 	t.Setenv("FILES_ROOT_DIR", "/env/sqlwarden-files")
@@ -165,10 +180,11 @@ db:
 		t.Fatal(err)
 	}
 
-	cfg, _, err := loadConfig([]string{"--config", path})
+	loaded, err := Load([]string{"--config", path})
 	if err != nil {
 		t.Fatal(err)
 	}
+	cfg := loaded.Config
 
 	if cfg.HTTPPort != 8123 {
 		t.Fatalf("httpPort = %d, want 8123", cfg.HTTPPort)
@@ -187,7 +203,7 @@ db:
 	}
 }
 
-func TestLoadConfigFlagsOverrideEnvAndFile(t *testing.T) {
+func TestLoadFlagsOverrideEnvAndFile(t *testing.T) {
 	t.Setenv("DB_DRIVER", "postgres")
 	t.Setenv("HTTP_PORT", "8123")
 
@@ -202,20 +218,28 @@ db:
 		t.Fatal(err)
 	}
 
-	cfg, _, err := loadConfig([]string{
+	loaded, err := Load([]string{
 		"--config", path,
 		"--http-port", "9200",
 		"--db-driver", "sqlite",
 		"--base-url", "https://flags.example.com",
+		"--deployment-mode", DeploymentModeDesktop,
+		"--access-mode", AccessModeSingleUser,
 		"--log-format", "json",
 		"--tls-enabled",
 		"--tls-cert-file", "/flag/tls.crt",
 		"--tls-key-file", "/flag/tls.key",
 		"--files-root-dir", "/flag/sqlwarden-files",
+		"--files-storage-mode", FilesStorageModeFile,
+		"--files-active-storage-backend", "local",
+		"--desktop-app-dir", "/flag/desktop",
+		"--desktop-active-backend", "local",
+		"--desktop-allow-user-backends=false",
 	})
 	if err != nil {
 		t.Fatal(err)
 	}
+	cfg := loaded.Config
 
 	if cfg.HTTPPort != 9200 {
 		t.Fatalf("httpPort = %d, want 9200", cfg.HTTPPort)
@@ -226,6 +250,9 @@ db:
 	if cfg.BootstrapBaseURL != "https://flags.example.com" {
 		t.Fatalf("bootstrapBaseURL = %q", cfg.BootstrapBaseURL)
 	}
+	if cfg.DeploymentMode != DeploymentModeDesktop || cfg.AccessMode != AccessModeSingleUser {
+		t.Fatalf("unexpected deployment/access modes: %q/%q", cfg.DeploymentMode, cfg.AccessMode)
+	}
 	if cfg.Log.Format != LogFormatJSON {
 		t.Fatalf("unexpected log config: %+v", cfg.Log)
 	}
@@ -235,16 +262,17 @@ db:
 	if cfg.Files.StorageBackends["local"].RootDir != "/flag/sqlwarden-files" {
 		t.Fatalf("files.root_dir = %q, want /flag/sqlwarden-files", cfg.Files.StorageBackends["local"].RootDir)
 	}
+	if cfg.Files.StorageMode != FilesStorageModeFile || cfg.Files.ActiveStorageBackend != "local" {
+		t.Fatalf("unexpected file storage selection: %+v", cfg.Files)
+	}
+	if cfg.Desktop.AppDir != "/flag/desktop" || cfg.Desktop.ActiveBackend != "local" || cfg.Desktop.AllowUserBackends {
+		t.Fatalf("unexpected desktop config: %+v", cfg.Desktop)
+	}
 }
 
-func TestLoadConfigRejectsInternalRuntimeFlags(t *testing.T) {
+func TestLoadRejectsInternalRuntimeFlags(t *testing.T) {
 	for _, args := range [][]string{
-		{"--deployment-mode", DeploymentModeDesktop},
-		{"--access-mode", AccessModeSingleUser},
 		{"--desktop-mode"},
-		{"--desktop-active-backend", "local"},
-		{"--files-storage-mode", FilesStorageModeFile},
-		{"--files-active-storage-backend", "local"},
 		{"--files-storage-backends-local-type", FilesStorageBackendFilesystem},
 		{"--files-storage-backends-local-root-dir", "/tmp/sqlwarden-files"},
 		{"--log-level", "debug"},
@@ -256,13 +284,13 @@ func TestLoadConfigRejectsInternalRuntimeFlags(t *testing.T) {
 		{"--smtp-enabled"},
 		{"--smtp-host", "smtp.example.com"},
 	} {
-		if _, _, err := loadConfig(args); err == nil {
+		if _, err := Load(args); err == nil {
 			t.Fatalf("expected internal runtime flag %v to fail", args)
 		}
 	}
 }
 
-func TestLoadConfigRejectsUnsupportedFileConfiguration(t *testing.T) {
+func TestLoadRejectsUnsupportedFileConfiguration(t *testing.T) {
 	for _, args := range [][]string{
 		{"--personal-spaces-enabled=false"},
 		{"--jwt-access-token-ttl", "2h"},
@@ -275,56 +303,76 @@ func TestLoadConfigRejectsUnsupportedFileConfiguration(t *testing.T) {
 		{"--files-revisions-keep-latest", "10"},
 		{"--notifications-email", "errors@example.com"},
 	} {
-		if _, _, err := loadConfig(args); err == nil {
+		if _, err := Load(args); err == nil {
 			t.Fatalf("expected removed runtime flag %v to fail", args)
 		}
 	}
 }
 
-func TestLoadConfigRejectsUnsupportedLogConfiguration(t *testing.T) {
-	_, _, err := loadConfig([]string{"--log-level", "verbose"})
-	if err == nil {
+func TestLoadRejectsUnsupportedLogConfiguration(t *testing.T) {
+	if _, err := Load([]string{"--log-level", "verbose"}); err == nil {
 		t.Fatal("expected unsupported log level to fail")
 	}
-
-	_, _, err = loadConfig([]string{"--log-format", "xml"})
-	if err == nil {
+	if _, err := Load([]string{"--log-format", "xml"}); err == nil {
 		t.Fatal("expected unsupported log format to fail")
 	}
 }
 
-func TestLoadConfigRejectsEnabledTLSWithoutCertOrKey(t *testing.T) {
-	_, _, err := loadConfig([]string{"--tls-enabled"})
-	if err == nil {
+func TestLoadRejectsEnabledTLSWithoutCertOrKey(t *testing.T) {
+	if _, err := Load([]string{"--tls-enabled"}); err == nil {
 		t.Fatal("expected tls.enabled without cert/key to fail")
 	}
-
-	_, _, err = loadConfig([]string{"--tls-enabled", "--tls-cert-file", "/tmp/tls.crt"})
-	if err == nil {
+	if _, err := Load([]string{"--tls-enabled", "--tls-cert-file", "/tmp/tls.crt"}); err == nil {
 		t.Fatal("expected tls.enabled without key to fail")
 	}
-
-	_, _, err = loadConfig([]string{"--tls-enabled", "--tls-key-file", "/tmp/tls.key"})
-	if err == nil {
+	if _, err := Load([]string{"--tls-enabled", "--tls-key-file", "/tmp/tls.key"}); err == nil {
 		t.Fatal("expected tls.enabled without cert to fail")
 	}
 }
 
-func TestLoadConfigVersionFlag(t *testing.T) {
-	cfg, showVersion, err := loadConfig([]string{"--version"})
+func TestLoadVersionFlag(t *testing.T) {
+	loaded, err := Load([]string{"--version"})
 	if err != nil {
 		t.Fatal(err)
 	}
 
-	if !showVersion {
-		t.Fatal("expected showVersion to be true")
+	if !loaded.ShowVersion {
+		t.Fatal("expected ShowVersion to be true")
 	}
-	if cfg.BootstrapBaseURL != defaultBaseURL {
-		t.Fatalf("bootstrapBaseURL = %q, want %q", cfg.BootstrapBaseURL, defaultBaseURL)
+	if loaded.Config.BootstrapBaseURL != defaultBaseURL {
+		t.Fatalf("bootstrapBaseURL = %q, want %q", loaded.Config.BootstrapBaseURL, defaultBaseURL)
 	}
 }
 
-func TestLoadConfigConventionalFileLookup(t *testing.T) {
+func TestLoadConventionalFileLookup(t *testing.T) {
+	chdirTemp(t)
+
+	content := []byte(`
+base_url: https://discovered.example.com
+db:
+  dsn: discovered.db
+`)
+	if err := os.WriteFile("sqlwarden.yaml", content, 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	loaded, err := Load(nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	if loaded.Config.BootstrapBaseURL != "https://discovered.example.com" {
+		t.Fatalf("bootstrapBaseURL = %q", loaded.Config.BootstrapBaseURL)
+	}
+	if loaded.Config.DB.DSN != "discovered.db" {
+		t.Fatalf("db.dsn = %q", loaded.Config.DB.DSN)
+	}
+}
+
+// chdirTemp moves the test into an empty directory so conventional config file
+// discovery cannot pick up a file from the repository.
+func chdirTemp(t *testing.T) string {
+	t.Helper()
 	cwd, err := os.Getwd()
 	if err != nil {
 		t.Fatal(err)
@@ -333,26 +381,10 @@ func TestLoadConfigConventionalFileLookup(t *testing.T) {
 	if err := os.Chdir(dir); err != nil {
 		t.Fatal(err)
 	}
-	defer os.Chdir(cwd)
-
-	content := []byte(`
-base_url: https://discovered.example.com
-db:
-  dsn: discovered.db
-`)
-	if err := os.WriteFile(filepath.Join(dir, "sqlwarden.yaml"), content, 0o600); err != nil {
-		t.Fatal(err)
-	}
-
-	cfg, _, err := loadConfig(nil)
-	if err != nil {
-		t.Fatal(err)
-	}
-
-	if cfg.BootstrapBaseURL != "https://discovered.example.com" {
-		t.Fatalf("bootstrapBaseURL = %q", cfg.BootstrapBaseURL)
-	}
-	if cfg.DB.DSN != "discovered.db" {
-		t.Fatalf("db.dsn = %q", cfg.DB.DSN)
-	}
+	t.Cleanup(func() {
+		if err := os.Chdir(cwd); err != nil {
+			t.Fatal(err)
+		}
+	})
+	return dir
 }

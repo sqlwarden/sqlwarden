@@ -13,11 +13,33 @@ import (
 	"strings"
 	"testing"
 
+	coreapp "github.com/sqlwarden/internal/app"
 	"github.com/sqlwarden/internal/assert"
+	"github.com/sqlwarden/internal/config"
 	"github.com/sqlwarden/internal/database"
 	"github.com/sqlwarden/internal/files"
-	"github.com/sqlwarden/internal/filestore"
 )
+
+// useFileModeStorage switches the application to a filesystem-backed store
+// rooted at a temporary directory and returns that root so tests can assert on
+// the paths written under it.
+func useFileModeStorage(t *testing.T, app *application) string {
+	t.Helper()
+	root := t.TempDir()
+	app.config.Files.StorageMode = config.FilesStorageModeFile
+	app.config.Files.StorageBackends = map[string]config.FileStorageBackend{
+		database.DefaultFileStorageBackendID: {
+			Type:    config.FilesStorageBackendFilesystem,
+			RootDir: root,
+		},
+	}
+	stores, err := coreapp.NewFileStores(app.config)
+	if err != nil {
+		t.Fatal(err)
+	}
+	app.fileStores = stores
+	return root
+}
 
 func orgPrivateFilesURL(orgSlug string, workspaceID int64) string {
 	return fmt.Sprintf("/api/v1/orgs/%s/workspaces/%d/files/private", orgSlug, workspaceID)
@@ -388,13 +410,7 @@ func TestWorkspaceFileContentRejectsStaleExternalWrite(t *testing.T) {
 
 func TestWorkspaceDirectoryWritesVisibleFilePath(t *testing.T) {
 	app, org, ws, tok := setupWorkspaceOwner(t)
-	root := t.TempDir()
-	store, err := filestore.NewFilesystem(root)
-	if err != nil {
-		t.Fatal(err)
-	}
-	app.fileStores = &fileStoreRegistry{activeBackendID: database.DefaultFileStorageBackendID, stores: map[string]filestore.Store{database.DefaultFileStorageBackendID: store}}
-	app.config.Files.StorageMode = FilesStorageModeFile
+	root := useFileModeStorage(t, app)
 
 	create := send(t, newAuthRequest(t, http.MethodPost, orgPrivateFilesURL(org.Slug, ws.ID), map[string]any{"name": "visible.sql"}, tok), app.routes())
 	file := decodeWorkspaceFile(t, create)
@@ -544,13 +560,7 @@ func TestWorkspaceFileRenameRejectsSiblingNameConflict(t *testing.T) {
 
 func TestWorkspaceDirectoryMovesTrackedDescendantsAndRejectsExternalDestination(t *testing.T) {
 	app, org, ws, tok := setupWorkspaceOwner(t)
-	root := t.TempDir()
-	store, err := filestore.NewFilesystem(root)
-	if err != nil {
-		t.Fatal(err)
-	}
-	app.fileStores = &fileStoreRegistry{activeBackendID: database.DefaultFileStorageBackendID, stores: map[string]filestore.Store{database.DefaultFileStorageBackendID: store}}
-	app.config.Files.StorageMode = FilesStorageModeFile
+	root := useFileModeStorage(t, app)
 	filesURL := orgPrivateFilesURL(org.Slug, ws.ID)
 	folder := decodeWorkspaceFile(t, send(t, newAuthRequest(t, http.MethodPost, filesURL, map[string]any{
 		"name": "queries", "object_type": "folder",

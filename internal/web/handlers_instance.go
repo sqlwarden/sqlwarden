@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"github.com/go-chi/chi/v5"
+	"github.com/sqlwarden/internal/config"
 	"github.com/sqlwarden/internal/database"
 	"github.com/sqlwarden/internal/password"
 	"github.com/sqlwarden/internal/request"
@@ -50,7 +51,7 @@ func (app *application) setup(w http.ResponseWriter, r *http.Request) {
 
 	organizationName := input.OrganizationName
 	organizationSlug := input.OrganizationSlug
-	if app.config.AccessMode != AccessModeSingleUser {
+	if app.config.AccessMode != config.AccessModeSingleUser {
 		input.V.CheckField(input.OrganizationName != "", "organization_name", "Organization name is required.")
 		if organizationSlug == "" {
 			organizationSlug = slugify(input.OrganizationName)
@@ -76,7 +77,7 @@ func (app *application) setup(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if app.config.AccessMode != AccessModeSingleUser {
+	if app.config.AccessMode != config.AccessModeSingleUser {
 		_, found, err := app.db.GetOrgBySlug(r.Context(), organizationSlug)
 		if err != nil {
 			app.serverError(w, r, err)
@@ -493,7 +494,7 @@ func (app *application) updateInstanceSettings(w http.ResponseWriter, r *http.Re
 	}
 	if input.LogLevel != nil {
 		*input.LogLevel = strings.ToLower(strings.TrimSpace(*input.LogLevel))
-		input.V.CheckField(isSupportedLogLevel(*input.LogLevel), "log_level", "Log level must be debug, info, warn, or error.")
+		input.V.CheckField(config.IsSupportedLogLevel(*input.LogLevel), "log_level", "Log level must be debug, info, warn, or error.")
 	}
 	if input.JobsWorkerCount != nil {
 		input.V.CheckField(*input.JobsWorkerCount > 0 && *input.JobsWorkerCount <= 256, "jobs_worker_count", "Worker count must be between 1 and 256.")
@@ -667,7 +668,7 @@ func (app *application) updateInstanceSettings(w http.ResponseWriter, r *http.Re
 	if err := validateInstanceSettings(nextSettings); err != nil {
 		input.V.AddError(err.Error())
 	}
-	if app.config.Files.StorageMode == FilesStorageModeFile && nextSettings.FileRevisionsEnabled {
+	if app.config.Files.StorageMode == config.FilesStorageModeFile && nextSettings.FileRevisionsEnabled {
 		input.V.AddFieldError("file_revisions_enabled", "File revisions are not supported with file storage mode.")
 	}
 	if input.V.HasErrors() {

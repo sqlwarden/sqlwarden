@@ -9,6 +9,7 @@ import (
 
 	"github.com/pascaldekloe/jwt"
 	"github.com/sqlwarden/internal/assert"
+	"github.com/sqlwarden/internal/config"
 	"github.com/sqlwarden/internal/database"
 )
 
@@ -125,7 +126,7 @@ func TestInstanceRuntimeOperationsValidationIsAtomic(t *testing.T) {
 	assertValidationField(t, res, "smtp_port")
 	settings, err := app.instanceSettings(context.Background())
 	assert.Nil(t, err)
-	assert.Equal(t, settings.LogLevel, LogLevelInfo)
+	assert.Equal(t, settings.LogLevel, config.LogLevelInfo)
 }
 
 func TestInstanceRuntimeSettingsValidationIsAtomic(t *testing.T) {

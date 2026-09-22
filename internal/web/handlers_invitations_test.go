@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"github.com/sqlwarden/internal/assert"
+	"github.com/sqlwarden/internal/config"
 	"github.com/sqlwarden/internal/database"
 	"github.com/sqlwarden/internal/smtp"
 	"github.com/sqlwarden/internal/token"
@@ -145,7 +146,7 @@ func TestOrganizationInvitationsUnavailableInSingleUserMode(t *testing.T) {
 	t.Parallel()
 	app := newTestApp(t)
 	_, ownerToken, slug := registerAndLogin(t, app, uniqueEmail(t, "invite-single-owner"), "Invite Owner", "securepass99")
-	app.config.AccessMode = AccessModeSingleUser
+	app.config.AccessMode = config.AccessModeSingleUser
 	res := createInvitationForTest(t, app, slug, uniqueEmail(t, "invite-single"), ownerToken)
 	assert.Equal(t, res.StatusCode, http.StatusNotFound)
 }

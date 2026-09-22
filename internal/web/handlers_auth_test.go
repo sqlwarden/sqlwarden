@@ -14,6 +14,7 @@ import (
 	"time"
 
 	"github.com/sqlwarden/internal/access"
+	coreapp "github.com/sqlwarden/internal/app"
 	"github.com/sqlwarden/internal/assert"
 	"github.com/sqlwarden/internal/cache"
 	completionapp "github.com/sqlwarden/internal/completion"
@@ -21,6 +22,11 @@ import (
 	"github.com/sqlwarden/internal/database"
 	schemaapp "github.com/sqlwarden/internal/schema"
 	"github.com/sqlwarden/internal/token"
+)
+
+const (
+	testSchemaCacheCapacity = 32
+	testSchemaCacheTTL      = time.Minute
 )
 
 func newTestApp(t *testing.T) *application {
@@ -32,10 +38,10 @@ func newTestApp(t *testing.T) *application {
 	}
 	app.enforcer = enforcer
 	app.connManager = connection.New(30 * time.Minute)
-	app.schemaService = schemaapp.NewService(cache.NewMemCache(schemaCacheCapacity), schemaCacheTTL)
+	app.schemaService = schemaapp.NewService(cache.NewMemCache(testSchemaCacheCapacity), testSchemaCacheTTL)
 	app.schemaSnapshots = schemaapp.NewSnapshotStore(app.db)
 	app.completionService = completionapp.NewService()
-	app.configureConnectionCacheInvalidation()
+	coreapp.WireCacheInvalidation(app.connManager, app.schemaService, app.completionService)
 	t.Cleanup(func() { app.connManager.Close() })
 	return app
 }

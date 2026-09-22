@@ -9,6 +9,9 @@ import (
 	"runtime/debug"
 	"syscall"
 
+	"github.com/sqlwarden/internal/app"
+	"github.com/sqlwarden/internal/config"
+	"github.com/sqlwarden/internal/database"
 	"github.com/sqlwarden/internal/version"
 	"github.com/sqlwarden/internal/web"
 )
@@ -31,31 +34,36 @@ func run(args []string) error {
 		return runRotateKeys(args[1:])
 	}
 
-	cfg, showVersion, err := web.LoadConfig(args)
+	loaded, err := config.Load(args)
 	if err != nil {
 		return err
 	}
 
-	if showVersion {
+	if loaded.ShowVersion {
 		fmt.Printf("version: %s\n", version.Get())
 		return nil
 	}
 
-	logger, err := web.NewLogger(cfg, os.Stdout)
+	logger, err := web.NewLogger(loaded.Config, os.Stdout)
 	if err != nil {
 		return err
 	}
-
-	app, err := web.New(cfg, logger)
-	if err != nil {
-		return err
-	}
-	defer app.Close()
+	logger.Info("effective configuration resolved", "configuration", loaded.Diagnostic)
 
 	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
 	defer stop()
 
-	return app.ServeHTTP(ctx)
+	built, err := app.Build(ctx, app.Options{
+		Config:       loaded.Config,
+		Logger:       logger,
+		Prepare:      []func(context.Context, *database.DB) error{web.PrepareInstanceSettings(loaded.Config)},
+		ProcessKinds: web.ProcessKinds,
+	})
+	if err != nil {
+		return err
+	}
+
+	return built.Run(ctx)
 }
 
 // runRotateKeys re-encrypts all application-encrypted data (connection DSNs,
@@ -66,24 +74,32 @@ func run(args []string) error {
 // the deployment's config and database already holds the keys, so no
 // application-level authorization is applied. It is the CLI equivalent of the
 // instance-admin HTTP rotate endpoint.
+//
+// It builds the service graph without process kinds, so no listener and no
+// background worker runs while data is being rewritten.
 func runRotateKeys(args []string) error {
-	cfg, _, err := web.LoadConfig(args)
+	loaded, err := config.Load(args)
 	if err != nil {
 		return err
 	}
 
-	logger, err := web.NewLogger(cfg, os.Stdout)
+	logger, err := web.NewLogger(loaded.Config, os.Stdout)
 	if err != nil {
 		return err
 	}
 
-	app, err := web.New(cfg, logger)
+	ctx := context.Background()
+	built, err := app.Build(ctx, app.Options{
+		Config:  loaded.Config,
+		Logger:  logger,
+		Prepare: []func(context.Context, *database.DB) error{web.PrepareInstanceSettings(loaded.Config)},
+	})
 	if err != nil {
 		return err
 	}
-	defer app.Close()
+	defer built.Close(ctx)
 
-	report, err := app.RotateEncryptionKeys(context.Background())
+	report, err := web.NewApplication(built.Services).RotateEncryptionKeys(ctx)
 	if err != nil {
 		return err
 	}

@@ -1,0 +1,79 @@
+package app
+
+import (
+	"context"
+	"log/slog"
+
+	"github.com/sqlwarden/internal/access"
+	"github.com/sqlwarden/internal/completion"
+	"github.com/sqlwarden/internal/config"
+	"github.com/sqlwarden/internal/connection"
+	"github.com/sqlwarden/internal/database"
+	"github.com/sqlwarden/internal/encrypt"
+	"github.com/sqlwarden/internal/jobs"
+	"github.com/sqlwarden/internal/schema"
+)
+
+// Services is the constructed dependency graph shared by every process kind.
+// Every field is non-nil once [Build] returns, and none of them own background
+// goroutines that [Application.Close] does not stop.
+//
+// Services holds infrastructure and cross-cutting capabilities only. Domain
+// behavior that needs request context, such as the job handler registry, is
+// built by the process kind that runs it.
+type Services struct {
+	// Config is the validated bootstrap configuration this graph was built
+	// from. It is read-only; runtime settings live in the database.
+	Config config.Config
+	Logger *slog.Logger
+
+	// DB is the SQLWarden metadata database, not a target database.
+	DB       *database.DB
+	Enforcer *access.Enforcer
+	Keyring  *encrypt.Keyring
+
+	// ConnManager owns live target-database sessions and QueryCursors owns the
+	// cursors opened on them. Cursors reference sessions, so cursors close
+	// first during shutdown.
+	ConnManager  *connection.Manager
+	QueryCursors *connection.QueryCursorManager
+
+	SchemaService     *schema.Service
+	SchemaSnapshots   *schema.SnapshotStore
+	CompletionService *completion.Service
+
+	// FileStores resolves workspace-file content backends by backend ID.
+	FileStores *FileStores
+
+	// JobStore is the durable job queue. Job handlers are registered by the
+	// process kind that runs the worker.
+	JobStore *jobs.Store
+}
+
+// ProcessKind is one runtime responsibility of a process: an HTTP transport, a
+// job worker pool, a realtime backplane. Implementations receive already-built
+// [Services] and must not construct infrastructure of their own.
+//
+// Start must not block. A process kind that owns a listener also implements
+// [Serving] so the composition root can observe it stopping on its own.
+type ProcessKind interface {
+	// Name is the stable process-kind identifier, one of the config.ProcessKind
+	// constants.
+	Name() string
+	// Start begins background work. The context governs startup only, not the
+	// lifetime of the work started.
+	Start(ctx context.Context) error
+	// Ready reports whether the process kind can perform its critical work. It
+	// returns an error describing what is missing when it cannot.
+	Ready(ctx context.Context) error
+	// Close stops background work and drains in-flight work within the
+	// context deadline.
+	Close(ctx context.Context) error
+}
+
+// Serving is implemented by process kinds that run until they fail or are
+// closed, such as an HTTP listener. The composition root treats a value sent on
+// the returned channel as a reason to shut the whole process down.
+type Serving interface {
+	Done() <-chan error
+}

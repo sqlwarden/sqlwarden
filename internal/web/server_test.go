@@ -12,19 +12,15 @@ func TestServerConfiguration(t *testing.T) {
 		assert.True(t, defaultIdleTimeout > 0)
 		assert.True(t, defaultReadTimeout > 0)
 		assert.True(t, defaultWriteTimeout > defaultReadTimeout)
-
-		if defaultShutdownPeriod <= defaultWriteTimeout {
-			t.Errorf("default shutdown period %s must be greater than default write timeout %s", defaultShutdownPeriod, defaultWriteTimeout)
-		}
 	})
 }
 
-func TestServeHTTP(t *testing.T) {
+func TestListen(t *testing.T) {
 	t.Run("Invalid port configuration causes an error", func(t *testing.T) {
 		app := newTestApplication(t)
 		app.config.HTTPPort = -1
 
-		err := app.serveHTTP()
+		_, err := app.listen()
 		assert.NotNil(t, err)
 	})
 }

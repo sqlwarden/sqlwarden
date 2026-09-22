@@ -480,6 +480,7 @@ type Manager struct {
 	idleTimeout       time.Duration
 	stop              chan struct{}
 	stopped           chan struct{}
+	startOnce         sync.Once
 	closeOnce         sync.Once
 	onConnectionEmpty func(string)
 }
@@ -494,15 +495,31 @@ func (m *Manager) SetOnConnectionEmpty(hook func(connectionID string)) {
 
 // New creates a new Manager with the given idle timeout and starts the background reaper.
 func New(idleTimeout time.Duration) *Manager {
-	m := &Manager{
+	m := NewUnstarted(idleTimeout)
+	m.StartReaper()
+	return m
+}
+
+// NewUnstarted creates a Manager that runs no background work until
+// [Manager.StartReaper] is called. Composition roots that must construct the
+// process graph without starting goroutines use this and start the reaper
+// during their explicit start phase.
+func NewUnstarted(idleTimeout time.Duration) *Manager {
+	return &Manager{
 		byKey:       make(map[string]*Session),
 		byID:        make(map[string]*Session),
 		idleTimeout: idleTimeout,
 		stop:        make(chan struct{}),
 		stopped:     make(chan struct{}),
 	}
-	go m.reap()
-	return m
+}
+
+// StartReaper launches the idle-session reaper. Only the first call starts it,
+// and a call after [Manager.Close] does nothing.
+func (m *Manager) StartReaper() {
+	m.startOnce.Do(func() {
+		go m.reap()
+	})
 }
 
 // GetOrCreate returns the existing session for (accountID, connID) or creates one using open().
@@ -754,6 +771,11 @@ func (m *Manager) RemoveForOrgAccount(orgID, accountID string) int {
 
 // Close closes all sessions and stops the reaper goroutine. Safe to call multiple times.
 func (m *Manager) Close() {
+	// Claim the reaper start slot. When no reaper ever ran nothing else will
+	// close stopped, and any later StartReaper becomes a no-op.
+	m.startOnce.Do(func() {
+		close(m.stopped)
+	})
 	m.closeOnce.Do(func() {
 		close(m.stop)
 	})

@@ -125,6 +125,14 @@ func (db *DB) MigrateUp() error {
 	if err != nil {
 		return err
 	}
+	// The migrator opens its own connection pool independent of the one this DB
+	// owns, so it must be closed even when migration succeeds.
+	defer func() {
+		sourceErr, dbErr := migrator.Close()
+		if closeErr := errors.Join(sourceErr, dbErr); closeErr != nil {
+			db.logger.Warn("migrator shutdown failed", "error", closeErr)
+		}
+	}()
 
 	err = migrator.Up()
 	switch {

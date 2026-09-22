@@ -9,6 +9,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/sqlwarden/internal/config"
 	"github.com/sqlwarden/internal/database"
 	"github.com/sqlwarden/internal/validator"
 )
@@ -42,6 +43,19 @@ type runtimeSettingsService struct {
 
 func newRuntimeSettingsService(db *database.DB) *runtimeSettingsService {
 	return &runtimeSettingsService{db: db}
+}
+
+// PrepareInstanceSettings returns the startup hook that seeds and validates
+// database-backed instance settings. The composition root runs it after
+// migrations and before any service is constructed, because every service that
+// reads runtime settings assumes the row exists and is valid.
+func PrepareInstanceSettings(cfg config.Config) func(context.Context, *database.DB) error {
+	return func(ctx context.Context, db *database.DB) error {
+		if err := initializeInstanceBaseURL(ctx, db, cfg.BootstrapBaseURL); err != nil {
+			return err
+		}
+		return validateRuntimeSettingsInvariant(ctx, db)
+	}
 }
 
 func initializeInstanceBaseURL(ctx context.Context, db *database.DB, bootstrapBaseURL string) error {
@@ -118,7 +132,7 @@ func validateInstanceSettings(settings database.InstanceSettings) error {
 	if settings.FileRevisionsKeepLatest < 0 {
 		return fmt.Errorf("validate runtime settings: file_revisions_keep_latest must be 0 or greater")
 	}
-	if !isSupportedLogLevel(settings.LogLevel) {
+	if !config.IsSupportedLogLevel(settings.LogLevel) {
 		return fmt.Errorf("validate runtime settings: log_level is unsupported")
 	}
 	if settings.JobsWorkerCount <= 0 || settings.JobsWorkerCount > 256 {
