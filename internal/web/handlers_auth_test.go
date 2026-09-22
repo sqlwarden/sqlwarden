@@ -16,6 +16,7 @@ import (
 	"github.com/sqlwarden/internal/access"
 	coreapp "github.com/sqlwarden/internal/app"
 	"github.com/sqlwarden/internal/assert"
+	"github.com/sqlwarden/internal/audit"
 	"github.com/sqlwarden/internal/cache"
 	completionapp "github.com/sqlwarden/internal/completion"
 	"github.com/sqlwarden/internal/connection"
@@ -38,7 +39,7 @@ func newTestApp(t *testing.T) *application {
 	}
 	app.enforcer = enforcer
 	app.policyEvaluator = enforcer
-	app.accessService = access.NewService(access.NewSQLStore(app.db.DB), enforcer, enforcer)
+	app.accessService = access.NewService(access.NewSQLStore(app.db.DB), enforcer, enforcer, audit.Discard)
 	app.connManager = connection.New(30 * time.Minute)
 	app.schemaService = schemaapp.NewService(cache.NewMemCache(testSchemaCacheCapacity), testSchemaCacheTTL)
 	app.schemaSnapshots = schemaapp.NewSnapshotStore(app.db)

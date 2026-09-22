@@ -103,7 +103,7 @@ func (app *application) createWorkspaceRole(w http.ResponseWriter, r *http.Reque
 	ws := contextGetWorkspace(r)
 
 	roleID, err := app.accessService.CreateWorkspaceRole(r.Context(), access.WorkspaceRoleInput{
-		OrgID: org.ID, WorkspaceID: ws.ID, Name: input.Name,
+		OrgID: org.ID, WorkspaceID: ws.ID, ActorID: contextGetAccount(r).ID, Name: input.Name,
 		Description: input.Description, ScopeType: input.ScopeType, Permissions: input.Permissions,
 	})
 	if err != nil {
@@ -204,7 +204,10 @@ func (app *application) updateWorkspaceRole(w http.ResponseWriter, r *http.Reque
 		return
 	}
 
-	err = app.accessService.UpdateWorkspaceRole(r.Context(), org.ID, ws.ID, roleID, input.Name, input.Description, input.Permissions)
+	err = app.accessService.UpdateWorkspaceRole(r.Context(), access.UpdateWorkspaceRoleInput{
+		OrgID: org.ID, WorkspaceID: ws.ID, RoleID: roleID, ActorID: contextGetAccount(r).ID,
+		Name: input.Name, Description: input.Description, Permissions: input.Permissions,
+	})
 	if err != nil {
 		if errors.Is(err, access.ErrBuiltinRole) {
 			app.notPermitted(w, r)
@@ -265,7 +268,9 @@ func (app *application) deleteWorkspaceRole(w http.ResponseWriter, r *http.Reque
 		return
 	}
 
-	err = app.accessService.DeleteWorkspaceRole(r.Context(), org.ID, ws.ID, roleID)
+	err = app.accessService.DeleteWorkspaceRole(r.Context(), access.DeleteWorkspaceRoleInput{
+		OrgID: org.ID, WorkspaceID: ws.ID, RoleID: roleID, ActorID: contextGetAccount(r).ID,
+	})
 	if err != nil {
 		if errors.Is(err, access.ErrBuiltinRole) {
 			app.notPermitted(w, r)
@@ -479,7 +484,9 @@ func (app *application) revokeWorkspacePolicy(w http.ResponseWriter, r *http.Req
 	org := contextGetOrg(r)
 	ws := contextGetWorkspace(r)
 
-	rb, err := app.accessService.RevokeWorkspacePolicy(r.Context(), org.ID, ws.ID, bindingID)
+	rb, err := app.accessService.RevokeWorkspacePolicy(r.Context(), access.RevokeWorkspacePolicyInput{
+		OrgID: org.ID, WorkspaceID: ws.ID, BindingID: bindingID, ActorID: contextGetAccount(r).ID,
+	})
 	if errors.Is(err, access.ErrRoleBindingNotFound) {
 		app.notFound(w, r)
 		return

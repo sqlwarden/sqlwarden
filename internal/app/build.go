@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"github.com/sqlwarden/internal/access"
+	"github.com/sqlwarden/internal/audit"
 	"github.com/sqlwarden/internal/cache"
 	"github.com/sqlwarden/internal/completion"
 	"github.com/sqlwarden/internal/config"
@@ -180,14 +181,17 @@ func Build(ctx context.Context, opts Options) (*Application, error) {
 	completionService := completion.NewService()
 	WireCacheInvalidation(connManager, schemaService, completionService)
 
+	auditStore := audit.NewSQLStore(db.DB)
 	editionDeps := edition.Dependencies{
-		DB:     db,
-		Grants: enforcer,
-		Now:    time.Now,
-		Logger: logger,
+		DB:          db,
+		Grants:      enforcer,
+		AuditEvents: auditStore,
+		Now:         time.Now,
+		Logger:      logger,
 	}.Normalize()
 	identityProvider := selectedEdition.IdentityProvider(identity.NewCoreProvider(identity.NewDatabaseStore(db)), editionDeps)
 	policyEvaluator := selectedEdition.PolicyEvaluator(enforcer, editionDeps)
+	auditWriter := selectedEdition.AuditWriter(audit.NewCoreWriter(auditStore, editionDeps.Now), editionDeps)
 
 	services := &Services{
 		Config:            cfg,
@@ -195,8 +199,9 @@ func Build(ctx context.Context, opts Options) (*Application, error) {
 		DB:                db,
 		Enforcer:          enforcer,
 		PolicyEvaluator:   policyEvaluator,
-		Access:            access.NewService(access.NewSQLStore(db.DB), enforcer, policyEvaluator),
-		Identity:          identity.NewService(identity.NewDatabaseStore(db), identityProvider),
+		Access:            access.NewService(access.NewSQLStore(db.DB), enforcer, policyEvaluator, auditWriter),
+		Identity:          identity.NewService(identity.NewDatabaseStore(db), identityProvider, auditWriter),
+		Audit:             auditWriter,
 		Keyring:           keyring,
 		ConnManager:       connManager,
 		QueryCursors:      queryCursors,

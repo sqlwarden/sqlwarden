@@ -3,6 +3,21 @@ package access
 import (
 	"context"
 	"fmt"
+	"strconv"
+
+	"github.com/sqlwarden/internal/audit"
+)
+
+// Audited actions emitted by access administration use cases.
+const (
+	ActionRoleCreated  = "access.role.created"
+	ActionRoleUpdated  = "access.role.updated"
+	ActionRoleDeleted  = "access.role.deleted"
+	ActionPolicyGrant  = "access.policy.granted"
+	ActionPolicyRevoke = "access.policy.revoked"
+
+	auditResourceRole    = "role"
+	auditResourceBinding = "role_binding"
 )
 
 // Service is the application service for role and policy administration. It
@@ -19,6 +34,7 @@ type Service struct {
 	store  Store
 	roles  RoleManager
 	policy PolicyEvaluator
+	audit  audit.Writer
 }
 
 // RoleManager owns role and binding writes plus cache invalidation.
@@ -33,13 +49,22 @@ type RoleManager interface {
 // NewService returns the access application service. The policy evaluator is
 // the edition-decorated decision path, so an edition restriction also applies
 // to the privileged-grant checks made here.
-func NewService(store Store, roles RoleManager, policy PolicyEvaluator) *Service {
-	return &Service{store: store, roles: roles, policy: policy}
+// The writer is the edition-composed audit sink: every administrative write
+// here emits its own audit intent, so a transport cannot forget to.
+func NewService(store Store, roles RoleManager, policy PolicyEvaluator, writer audit.Writer) *Service {
+	if writer == nil {
+		writer = audit.Discard
+	}
+	return &Service{store: store, roles: roles, policy: policy, audit: writer}
 }
 
 // OrgRoleInput describes a custom organization role.
 type OrgRoleInput struct {
-	OrgID       int64
+	OrgID int64
+	// ActorID is the authenticated account performing the administration. It
+	// is carried on the input rather than read from a transport context, so
+	// the audit trail names an actor without this package knowing about HTTP.
+	ActorID     int64
 	Name        string
 	Description string
 	ScopeType   string
@@ -55,7 +80,16 @@ func (s *Service) CreateOrgRole(ctx context.Context, input OrgRoleInput) (int64,
 	if err := validatePermissionScope(input.Permissions, input.ScopeType); err != nil {
 		return 0, err
 	}
-	return s.roles.CreateRole(ctx, input.OrgID, nil, input.Name, input.Description, input.ScopeType, input.Permissions)
+	roleID, err := s.roles.CreateRole(ctx, input.OrgID, nil, input.Name, input.Description, input.ScopeType, input.Permissions)
+	if err != nil {
+		return 0, err
+	}
+	event := s.event(ActionRoleCreated, auditResourceRole, roleID, &input.OrgID, actor(input.ActorID))
+	event.Metadata = map[string]string{"scope_type": input.ScopeType}
+	if err := audit.Emit(ctx, s.audit, event); err != nil {
+		return 0, err
+	}
+	return roleID, nil
 }
 
 // WorkspaceRoleInput describes a custom workspace-owned role. The scope may be
@@ -63,6 +97,7 @@ func (s *Service) CreateOrgRole(ctx context.Context, input OrgRoleInput) (int64,
 type WorkspaceRoleInput struct {
 	OrgID       int64
 	WorkspaceID int64
+	ActorID     int64
 	Name        string
 	Description string
 	ScopeType   string
@@ -78,49 +113,113 @@ func (s *Service) CreateWorkspaceRole(ctx context.Context, input WorkspaceRoleIn
 		return 0, err
 	}
 	workspaceID := input.WorkspaceID
-	return s.roles.CreateRole(ctx, input.OrgID, &workspaceID, input.Name, input.Description, input.ScopeType, input.Permissions)
+	roleID, err := s.roles.CreateRole(ctx, input.OrgID, &workspaceID, input.Name, input.Description, input.ScopeType, input.Permissions)
+	if err != nil {
+		return 0, err
+	}
+	event := s.event(ActionRoleCreated, auditResourceRole, roleID, &input.OrgID, actor(input.ActorID))
+	event.Metadata = map[string]string{
+		"scope_type":   input.ScopeType,
+		"workspace_id": strconv.FormatInt(workspaceID, 10),
+	}
+	if err := audit.Emit(ctx, s.audit, event); err != nil {
+		return 0, err
+	}
+	return roleID, nil
+}
+
+// UpdateOrgRoleInput replaces the definition of a custom organization role.
+type UpdateOrgRoleInput struct {
+	OrgID       int64
+	RoleID      int64
+	ActorID     int64
+	Name        string
+	Description string
+	Permissions []string
 }
 
 // UpdateOrgRole replaces the name, description, and permission set of a custom
 // organization role. Builtin roles are rejected by the enforcer.
-func (s *Service) UpdateOrgRole(ctx context.Context, orgID, roleID int64, name, description string, permissions []string) error {
-	role, found, err := s.store.Role(ctx, orgID, roleID)
+func (s *Service) UpdateOrgRole(ctx context.Context, input UpdateOrgRoleInput) error {
+	role, found, err := s.store.Role(ctx, input.OrgID, input.RoleID)
 	if err != nil {
 		return err
 	}
 	if !found || role.ScopeType != scopeOrg || role.WorkspaceID != nil {
 		return ErrRoleNotFound
 	}
-	return s.roles.UpdateRole(ctx, roleID, orgID, name, description, permissions)
+	if err := s.roles.UpdateRole(ctx, input.RoleID, input.OrgID, input.Name, input.Description, input.Permissions); err != nil {
+		return err
+	}
+	return audit.Emit(ctx, s.audit, s.event(ActionRoleUpdated, auditResourceRole, input.RoleID, &input.OrgID, actor(input.ActorID)))
+}
+
+// UpdateWorkspaceRoleInput replaces the definition of a custom workspace role.
+type UpdateWorkspaceRoleInput struct {
+	OrgID       int64
+	WorkspaceID int64
+	RoleID      int64
+	ActorID     int64
+	Name        string
+	Description string
+	Permissions []string
 }
 
 // UpdateWorkspaceRole updates a custom role after confirming it belongs to the
 // workspace in the request path.
-func (s *Service) UpdateWorkspaceRole(ctx context.Context, orgID, workspaceID, roleID int64, name, description string, permissions []string) error {
-	if _, err := s.workspaceRole(ctx, orgID, workspaceID, roleID); err != nil {
+func (s *Service) UpdateWorkspaceRole(ctx context.Context, input UpdateWorkspaceRoleInput) error {
+	if _, err := s.workspaceRole(ctx, input.OrgID, input.WorkspaceID, input.RoleID); err != nil {
 		return err
 	}
-	return s.roles.UpdateRole(ctx, roleID, orgID, name, description, permissions)
+	if err := s.roles.UpdateRole(ctx, input.RoleID, input.OrgID, input.Name, input.Description, input.Permissions); err != nil {
+		return err
+	}
+	event := s.event(ActionRoleUpdated, auditResourceRole, input.RoleID, &input.OrgID, actor(input.ActorID))
+	event.Metadata = map[string]string{"workspace_id": strconv.FormatInt(input.WorkspaceID, 10)}
+	return audit.Emit(ctx, s.audit, event)
+}
+
+// DeleteOrgRoleInput removes a custom organization role.
+type DeleteOrgRoleInput struct {
+	OrgID   int64
+	RoleID  int64
+	ActorID int64
 }
 
 // DeleteOrgRole deletes an unbound custom organization role.
-func (s *Service) DeleteOrgRole(ctx context.Context, orgID, roleID int64) error {
-	role, found, err := s.store.Role(ctx, orgID, roleID)
+func (s *Service) DeleteOrgRole(ctx context.Context, input DeleteOrgRoleInput) error {
+	role, found, err := s.store.Role(ctx, input.OrgID, input.RoleID)
 	if err != nil {
 		return err
 	}
 	if !found || role.ScopeType != scopeOrg || role.WorkspaceID != nil {
 		return ErrRoleNotFound
 	}
-	return s.roles.DeleteRole(ctx, roleID, orgID)
+	if err := s.roles.DeleteRole(ctx, input.RoleID, input.OrgID); err != nil {
+		return err
+	}
+	return audit.Emit(ctx, s.audit, s.event(ActionRoleDeleted, auditResourceRole, input.RoleID, &input.OrgID, actor(input.ActorID)))
+}
+
+// DeleteWorkspaceRoleInput removes a custom workspace-owned role.
+type DeleteWorkspaceRoleInput struct {
+	OrgID       int64
+	WorkspaceID int64
+	RoleID      int64
+	ActorID     int64
 }
 
 // DeleteWorkspaceRole deletes an unbound custom role owned by the workspace.
-func (s *Service) DeleteWorkspaceRole(ctx context.Context, orgID, workspaceID, roleID int64) error {
-	if _, err := s.workspaceRole(ctx, orgID, workspaceID, roleID); err != nil {
+func (s *Service) DeleteWorkspaceRole(ctx context.Context, input DeleteWorkspaceRoleInput) error {
+	if _, err := s.workspaceRole(ctx, input.OrgID, input.WorkspaceID, input.RoleID); err != nil {
 		return err
 	}
-	return s.roles.DeleteRole(ctx, roleID, orgID)
+	if err := s.roles.DeleteRole(ctx, input.RoleID, input.OrgID); err != nil {
+		return err
+	}
+	event := s.event(ActionRoleDeleted, auditResourceRole, input.RoleID, &input.OrgID, actor(input.ActorID))
+	event.Metadata = map[string]string{"workspace_id": strconv.FormatInt(input.WorkspaceID, 10)}
+	return audit.Emit(ctx, s.audit, event)
 }
 
 // GrantOrgPolicyInput binds an organization role to a subject at the org.
@@ -153,7 +252,16 @@ func (s *Service) GrantOrgPolicy(ctx context.Context, input GrantOrgPolicyInput)
 		return err
 	}
 
-	return s.roles.BindRole(ctx, input.OrgID, input.RoleID, input.SubjectType, input.SubjectID, resourceOrg, input.OrgID, input.GrantorID)
+	if err := s.roles.BindRole(ctx, input.OrgID, input.RoleID, input.SubjectType, input.SubjectID, resourceOrg, input.OrgID, input.GrantorID); err != nil {
+		return err
+	}
+	event := s.event(ActionPolicyGrant, resourceOrg, input.OrgID, &input.OrgID, actor(input.GrantorID))
+	event.Metadata = map[string]string{
+		"role_id":      strconv.FormatInt(input.RoleID, 10),
+		"subject_type": input.SubjectType,
+		"subject_id":   strconv.FormatInt(input.SubjectID, 10),
+	}
+	return audit.Emit(ctx, s.audit, event)
 }
 
 // RevokeOrgPolicyInput removes one organization policy binding.
@@ -193,6 +301,11 @@ func (s *Service) RevokeOrgPolicy(ctx context.Context, input RevokeOrgPolicyInpu
 	}
 
 	if err := s.roles.UnbindRole(ctx, input.BindingID, input.OrgID); err != nil {
+		return RoleBinding{}, err
+	}
+	event := s.event(ActionPolicyRevoke, auditResourceBinding, input.BindingID, &input.OrgID, actor(input.GrantorID))
+	event.Metadata = map[string]string{"role_id": strconv.FormatInt(binding.RoleID, 10)}
+	if err := audit.Emit(ctx, s.audit, event); err != nil {
 		return RoleBinding{}, err
 	}
 	return binding, nil
@@ -259,17 +372,44 @@ func (s *Service) GrantWorkspacePolicy(ctx context.Context, input GrantWorkspace
 	if err != nil {
 		return 0, err
 	}
+	event := s.event(ActionPolicyGrant, input.ResourceType, resourceID, &input.OrgID, actor(input.GrantorID))
+	event.Metadata = map[string]string{
+		"role_id":      strconv.FormatInt(input.RoleID, 10),
+		"subject_type": input.SubjectType,
+		"subject_id":   strconv.FormatInt(input.SubjectID, 10),
+		"workspace_id": strconv.FormatInt(input.WorkspaceID, 10),
+	}
+	if err := audit.Emit(ctx, s.audit, event); err != nil {
+		return 0, err
+	}
 	return resourceID, nil
+}
+
+// RevokeWorkspacePolicyInput removes one workspace-scoped policy binding.
+type RevokeWorkspacePolicyInput struct {
+	OrgID       int64
+	WorkspaceID int64
+	BindingID   int64
+	ActorID     int64
 }
 
 // RevokeWorkspacePolicy removes a binding whose resource belongs to the
 // workspace in the request path.
-func (s *Service) RevokeWorkspacePolicy(ctx context.Context, orgID, workspaceID, bindingID int64) (RoleBinding, error) {
+func (s *Service) RevokeWorkspacePolicy(ctx context.Context, input RevokeWorkspacePolicyInput) (RoleBinding, error) {
+	orgID, workspaceID, bindingID := input.OrgID, input.WorkspaceID, input.BindingID
 	binding, err := s.WorkspacePolicyBinding(ctx, orgID, workspaceID, bindingID)
 	if err != nil {
 		return RoleBinding{}, err
 	}
 	if err := s.roles.UnbindRole(ctx, bindingID, orgID); err != nil {
+		return RoleBinding{}, err
+	}
+	event := s.event(ActionPolicyRevoke, auditResourceBinding, bindingID, &orgID, actor(input.ActorID))
+	event.Metadata = map[string]string{
+		"role_id":      strconv.FormatInt(binding.RoleID, 10),
+		"workspace_id": strconv.FormatInt(workspaceID, 10),
+	}
+	if err := audit.Emit(ctx, s.audit, event); err != nil {
 		return RoleBinding{}, err
 	}
 	return binding, nil
@@ -321,6 +461,30 @@ func (s *Service) EffectivePermissions(ctx context.Context, input EffectivePermi
 		return 0, nil, err
 	}
 	return resourceID, permissions, nil
+}
+
+// event builds an audit event for an administrative write. Audit emission
+// errors reach the caller: an authorization change that could not be audited
+// is not reported as applied.
+func (s *Service) event(action, resource string, resourceID int64, orgID, actorID *int64) audit.Event {
+	return audit.Event{
+		OrgID:      orgID,
+		AccountID:  actorID,
+		Action:     action,
+		Resource:   resource,
+		ResourceID: strconv.FormatInt(resourceID, 10),
+		Outcome:    audit.OutcomeSuccess,
+	}
+}
+
+// actor turns an administration input's account identifier into an audit
+// subject. Zero means no authenticated account was supplied, which is recorded
+// as an absent subject rather than as account zero.
+func actor(accountID int64) *int64 {
+	if accountID == 0 {
+		return nil
+	}
+	return &accountID
 }
 
 // requireOrgSubject enforces the org-membership-first gate: a policy subject

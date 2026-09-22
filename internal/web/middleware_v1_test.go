@@ -10,6 +10,7 @@ import (
 
 	"github.com/go-chi/chi/v5"
 	"github.com/sqlwarden/internal/access"
+	"github.com/sqlwarden/internal/audit"
 	"github.com/sqlwarden/internal/database"
 	"github.com/sqlwarden/internal/token"
 )
@@ -23,7 +24,7 @@ func newTestApplicationWithEnforcer(t *testing.T) *application {
 	}
 	app.enforcer = enforcer
 	app.policyEvaluator = enforcer
-	app.accessService = access.NewService(access.NewSQLStore(app.db.DB), enforcer, enforcer)
+	app.accessService = access.NewService(access.NewSQLStore(app.db.DB), enforcer, enforcer, audit.Discard)
 	return app
 }
 

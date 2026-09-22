@@ -27,7 +27,7 @@ func TestEditionContract(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	editiontest.Run(t, candidate, cfg, edition.Dependencies{})
+	editiontest.Run(t, candidate, cfg, edition.Dependencies{DB: newMigratedDB(t)})
 }
 
 func TestLicenseDenialIsOutermost(t *testing.T) {
@@ -48,7 +48,31 @@ func TestLicenseDenialIsOutermost(t *testing.T) {
 	}
 }
 
-func TestSCIMMigrationUsesSeparateOrderedStream(t *testing.T) {
+// TestEnterpriseOwnsOneMigrationStream covers schema ownership: every
+// Enterprise table lives in one ordered stream with one history table, so no
+// two module declarations can each believe they own ee_schema_migrations.
+func TestEnterpriseOwnsOneMigrationStream(t *testing.T) {
+	candidate, err := New(enterpriseConfig())
+	if err != nil {
+		t.Fatal(err)
+	}
+	var composed edition.Edition = candidate
+	migrating, ok := composed.(edition.MigratingEdition)
+	if !ok {
+		t.Fatal("enterprise edition declares no migration streams")
+	}
+	streams := migrating.MigrationStreams()
+	if len(streams) != 1 {
+		t.Fatalf("enterprise declares %d migration streams, want exactly one owner", len(streams))
+	}
+	for _, module := range composed.Modules() {
+		if _, declares := module.(edition.MigratingModule); declares {
+			t.Errorf("module %q declares its own migration stream", module.Name())
+		}
+	}
+}
+
+func TestEnterpriseMigrationsUseOneOrderedStream(t *testing.T) {
 	db, err := database.New(
 		"sqlite",
 		filepath.Join(t.TempDir(), "enterprise.db"),
@@ -70,7 +94,7 @@ func TestSCIMMigrationUsesSeparateOrderedStream(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	for _, table := range []string{"schema_migrations", "ee_schema_migrations", "ee_scim_state", "ee_access_deny_rules", "ee_directory_identities"} {
+	for _, table := range []string{"schema_migrations", "ee_schema_migrations", "ee_scim_state", "ee_access_deny_rules", "ee_directory_identities", "ee_audit_chain_records"} {
 		exists, err := db.NewSelect().TableExpr("sqlite_master").Where("type = 'table' AND name = ?", table).Exists(context.Background())
 		if err != nil {
 			t.Fatal(err)

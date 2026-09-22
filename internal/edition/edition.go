@@ -59,9 +59,19 @@ type MigrationStream interface {
 	Migrate(ctx context.Context, db *database.DB) error
 }
 
-// MigratingModule optionally contributes edition-owned migrations.
+// MigratingModule optionally contributes migrations owned by one module. A
+// module declares a stream only when that stream is genuinely its own: streams
+// several modules share belong to the edition through [MigratingEdition], so
+// one schema history has exactly one owner.
 type MigratingModule interface {
 	Module
+	MigrationStreams() []MigrationStream
+}
+
+// MigratingEdition optionally contributes edition-wide migration streams that
+// no single module owns.
+type MigratingEdition interface {
+	Edition
 	MigrationStreams() []MigrationStream
 }
 
@@ -77,6 +87,10 @@ type Dependencies struct {
 	// Grants explains which role bindings produced a core grant, so a decorator
 	// can restrict a decision using binding metadata core ignores.
 	Grants access.GrantExplainer
+	// AuditEvents reads back the durable core audit trail. An edition audit
+	// decorator reconciles its own evidence against these records, so evidence
+	// that could not be produced at write time is recoverable afterwards.
+	AuditEvents audit.Reader
 	// Now is the clock used for time-dependent decisions. Tests substitute it.
 	Now func() time.Time
 	// Logger receives edition decision logs. It is never nil.
@@ -103,7 +117,7 @@ type Edition interface {
 	Name() string
 	IdentityProvider(core identity.Provider, deps Dependencies) identity.Provider
 	PolicyEvaluator(core access.PolicyEvaluator, deps Dependencies) access.PolicyEvaluator
-	AuditWriter(core audit.Writer) audit.Writer
+	AuditWriter(core audit.Writer, deps Dependencies) audit.Writer
 	Entitlements() Entitlements
 	Modules() []Module
 }
@@ -129,7 +143,7 @@ func (Community) PolicyEvaluator(core access.PolicyEvaluator, _ Dependencies) ac
 }
 
 // AuditWriter implements [Edition].
-func (Community) AuditWriter(core audit.Writer) audit.Writer { return core }
+func (Community) AuditWriter(core audit.Writer, _ Dependencies) audit.Writer { return core }
 
 // Entitlements implements [Edition].
 func (Community) Entitlements() Entitlements { return Entitlements{} }
@@ -173,24 +187,45 @@ func Validate(candidate Edition, cfg config.Config) error {
 	return nil
 }
 
-// Migrate applies module migration streams after core migrations.
+// Migrate applies edition migration streams after core migrations. Streams are
+// collected from the edition first and then from its modules, and a stream
+// name may appear only once: two owners for one schema history is a
+// composition mistake, not something to resolve at runtime.
 func Migrate(ctx context.Context, candidate Edition, db *database.DB) error {
+	var streams []MigrationStream
+	if migrating, ok := candidate.(MigratingEdition); ok {
+		streams = append(streams, migrating.MigrationStreams()...)
+	}
 	for _, module := range candidate.Modules() {
 		migrating, ok := module.(MigratingModule)
 		if !ok {
 			continue
 		}
-		for _, stream := range migrating.MigrationStreams() {
-			compatibility := stream.CoreCompatibility()
-			if database.CoreMigrationVersion < compatibility.Minimum || database.CoreMigrationVersion > compatibility.Maximum {
-				return fmt.Errorf(
-					"edition migration stream %q supports core migrations %d..%d, running core version is %d",
-					stream.Name(), compatibility.Minimum, compatibility.Maximum, database.CoreMigrationVersion,
-				)
-			}
-			if err := stream.Migrate(ctx, db); err != nil {
-				return fmt.Errorf("migrate edition stream %q: %w", stream.Name(), err)
-			}
+		streams = append(streams, migrating.MigrationStreams()...)
+	}
+
+	// The whole composition is checked before any stream runs, so a rejected
+	// composition leaves the schema untouched instead of half migrated.
+	seen := make(map[string]struct{}, len(streams))
+	for _, stream := range streams {
+		name := stream.Name()
+		if _, exists := seen[name]; exists {
+			return fmt.Errorf("edition %q declares migration stream %q more than once", candidate.Name(), name)
+		}
+		seen[name] = struct{}{}
+
+		compatibility := stream.CoreCompatibility()
+		if database.CoreMigrationVersion < compatibility.Minimum || database.CoreMigrationVersion > compatibility.Maximum {
+			return fmt.Errorf(
+				"edition migration stream %q supports core migrations %d..%d, running core version is %d",
+				name, compatibility.Minimum, compatibility.Maximum, database.CoreMigrationVersion,
+			)
+		}
+	}
+
+	for _, stream := range streams {
+		if err := stream.Migrate(ctx, db); err != nil {
+			return fmt.Errorf("migrate edition stream %q: %w", stream.Name(), err)
 		}
 	}
 	return nil

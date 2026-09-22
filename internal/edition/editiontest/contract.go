@@ -50,7 +50,7 @@ func Run(t *testing.T, candidate edition.Edition, cfg config.Config, deps editio
 		auditCalled = true
 		return nil
 	})
-	if err := candidate.AuditWriter(coreAudit).Write(context.Background(), audit.Event{Action: "contract"}); err != nil {
+	if err := candidate.AuditWriter(coreAudit, deps).Write(context.Background(), audit.Event{Action: "contract", Outcome: audit.OutcomeSuccess}); err != nil {
 		t.Fatal(err)
 	}
 	if !auditCalled {

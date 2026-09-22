@@ -1,12 +1,9 @@
 package ee
 
 import (
-	"context"
 	"fmt"
 
-	eeassets "github.com/sqlwarden/ee/assets"
 	"github.com/sqlwarden/internal/config"
-	"github.com/sqlwarden/internal/database"
 	"github.com/sqlwarden/internal/edition"
 )
 
@@ -32,29 +29,4 @@ func (scimModule) Validate(cfg config.Config) error {
 	return nil
 }
 
-func (scimModule) MigrationStreams() []edition.MigrationStream {
-	return []edition.MigrationStream{scimMigrationStream{}}
-}
-
-type scimMigrationStream struct{}
-
-func (scimMigrationStream) Name() string { return "ee-scim" }
-
-func (scimMigrationStream) CoreCompatibility() edition.CoreCompatibility {
-	return edition.CoreCompatibility{Minimum: 39, Maximum: 39}
-}
-
-func (scimMigrationStream) Migrate(_ context.Context, db *database.DB) error {
-	return db.MigrateStream(
-		eeassets.EmbeddedFiles,
-		"migrations_postgres",
-		"migrations_sqlite",
-		"ee_schema_migrations",
-	)
-}
-
-var (
-	_ edition.Module          = scimModule{}
-	_ edition.MigratingModule = scimModule{}
-	_ edition.MigrationStream = scimMigrationStream{}
-)
+var _ edition.Module = scimModule{}

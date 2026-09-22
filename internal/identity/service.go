@@ -3,8 +3,10 @@ package identity
 import (
 	"context"
 	"errors"
+	"strconv"
 	"strings"
 
+	"github.com/sqlwarden/internal/audit"
 	"github.com/sqlwarden/internal/database"
 	"github.com/sqlwarden/internal/password"
 	"github.com/sqlwarden/internal/validator"
@@ -30,15 +32,30 @@ type Store interface {
 // supported methods without the service changing. The service always resolves
 // the returned subject back to a live account, so a provider cannot admit an
 // identity that has no active SQLWarden account.
+// Audited actions emitted by identity use cases.
+const (
+	ActionRegister       = "identity.account.registered"
+	ActionAuthenticate   = "identity.authentication"
+	ActionUpdateName     = "identity.account.name_updated"
+	ActionChangePassword = "identity.account.password_changed"
+
+	auditResourceAccount = "account"
+)
+
 type Service struct {
 	store    Store
 	provider Provider
+	audit    audit.Writer
 }
 
 // NewService returns the identity service. The provider is the
-// edition-decorated authentication path.
-func NewService(store Store, provider Provider) *Service {
-	return &Service{store: store, provider: provider}
+// edition-decorated authentication path, and the writer is the
+// edition-composed audit sink every identity use case emits through.
+func NewService(store Store, provider Provider, writer audit.Writer) *Service {
+	if writer == nil {
+		writer = audit.Discard
+	}
+	return &Service{store: store, provider: provider, audit: writer}
 }
 
 // RegisterInput is a self-service registration request. The password is never
@@ -58,7 +75,7 @@ func (s *Service) Register(ctx context.Context, input RegisterInput) (database.A
 		return database.Account{}, err
 	}
 	if !configured {
-		return database.Account{}, ErrSetupIncomplete
+		return database.Account{}, s.auditFailure(ctx, ActionRegister, nil, map[string]string{"reason": "setup_incomplete"}, ErrSetupIncomplete)
 	}
 
 	email := strings.TrimSpace(input.Email)
@@ -77,7 +94,7 @@ func (s *Service) Register(ctx context.Context, input RegisterInput) (database.A
 		return database.Account{}, err
 	}
 	if exists {
-		return database.Account{}, ErrEmailTaken
+		return database.Account{}, s.auditFailure(ctx, ActionRegister, nil, map[string]string{"reason": "email_taken"}, ErrEmailTaken)
 	}
 
 	hashed, err := password.Hash(input.Password)
@@ -88,8 +105,11 @@ func (s *Service) Register(ctx context.Context, input RegisterInput) (database.A
 	account, err := s.store.InsertAccount(ctx, email, name, &hashed)
 	if err != nil {
 		if database.IsUniqueViolation(err) {
-			return database.Account{}, ErrEmailTaken
+			return database.Account{}, s.auditFailure(ctx, ActionRegister, nil, map[string]string{"reason": "email_taken"}, ErrEmailTaken)
 		}
+		return database.Account{}, err
+	}
+	if err := s.auditSuccess(ctx, ActionRegister, &account.ID, nil); err != nil {
 		return database.Account{}, err
 	}
 	return account, nil
@@ -99,12 +119,18 @@ func (s *Service) Register(ctx context.Context, input RegisterInput) (database.A
 // Every failure that a caller could use to probe for account existence is
 // reported as [ErrInvalidCredentials].
 func (s *Service) Authenticate(ctx context.Context, request AuthenticationRequest) (database.Account, error) {
+	metadata := map[string]string{"method": string(request.Method)}
+	failed := func(reason string, cause error) (database.Account, error) {
+		metadata["reason"] = reason
+		return database.Account{}, s.auditFailure(ctx, ActionAuthenticate, nil, metadata, cause)
+	}
+
 	subject, err := s.provider.Authenticate(ctx, request)
 	if err != nil {
-		return database.Account{}, err
+		return failed("provider_rejected", err)
 	}
 	if subject.AccountID == 0 {
-		return database.Account{}, ErrInvalidCredentials
+		return failed("no_subject", ErrInvalidCredentials)
 	}
 
 	account, found, err := s.store.Account(ctx, subject.AccountID)
@@ -112,7 +138,10 @@ func (s *Service) Authenticate(ctx context.Context, request AuthenticationReques
 		return database.Account{}, err
 	}
 	if !found || !account.IsActive {
-		return database.Account{}, ErrInvalidCredentials
+		return failed("account_unavailable", ErrInvalidCredentials)
+	}
+	if err := s.auditSuccess(ctx, ActionAuthenticate, &account.ID, metadata); err != nil {
+		return database.Account{}, err
 	}
 	return account, nil
 }
@@ -132,7 +161,14 @@ func (s *Service) UpdateName(ctx context.Context, accountID int64, name string) 
 	if name == "" {
 		return database.Account{}, ErrInvalidName
 	}
-	return s.store.UpdateAccountName(ctx, accountID, name)
+	account, err := s.store.UpdateAccountName(ctx, accountID, name)
+	if err != nil {
+		return database.Account{}, err
+	}
+	if err := s.auditSuccess(ctx, ActionUpdateName, &accountID, nil); err != nil {
+		return database.Account{}, err
+	}
+	return account, nil
 }
 
 // ChangePassword replaces an account password after verifying the current one.
@@ -150,7 +186,7 @@ func (s *Service) ChangePassword(ctx context.Context, accountID int64, currentPa
 		return ErrAccountNotFound
 	}
 	if account.Password == nil {
-		return ErrPasswordUnavailable
+		return s.auditFailure(ctx, ActionChangePassword, &accountID, map[string]string{"reason": "password_unavailable"}, ErrPasswordUnavailable)
 	}
 
 	match, err := password.Matches(currentPassword, *account.Password)
@@ -158,14 +194,46 @@ func (s *Service) ChangePassword(ctx context.Context, accountID int64, currentPa
 		return err
 	}
 	if !match {
-		return ErrInvalidCredentials
+		return s.auditFailure(ctx, ActionChangePassword, &accountID, map[string]string{"reason": "invalid_current_password"}, ErrInvalidCredentials)
 	}
 
 	hashed, err := password.Hash(newPassword)
 	if err != nil {
 		return err
 	}
-	return s.store.UpdateAccountPassword(ctx, accountID, hashed)
+	if err := s.store.UpdateAccountPassword(ctx, accountID, hashed); err != nil {
+		return err
+	}
+	return s.auditSuccess(ctx, ActionChangePassword, &accountID, nil)
+}
+
+// auditSuccess records a completed identity use case. Its error is returned to
+// the caller: an identity change that could not be audited is not reported as
+// having succeeded.
+func (s *Service) auditSuccess(ctx context.Context, action string, accountID *int64, metadata map[string]string) error {
+	return audit.Emit(ctx, s.audit, s.event(action, audit.OutcomeSuccess, accountID, metadata))
+}
+
+// auditFailure records a refused identity use case and returns cause
+// unchanged, so an audit sink problem cannot mask the reason the use case was
+// refused.
+func (s *Service) auditFailure(ctx context.Context, action string, accountID *int64, metadata map[string]string, cause error) error {
+	_ = audit.Emit(ctx, s.audit, s.event(action, audit.OutcomeFailure, accountID, metadata))
+	return cause
+}
+
+func (s *Service) event(action, outcome string, accountID *int64, metadata map[string]string) audit.Event {
+	event := audit.Event{
+		AccountID: accountID,
+		Action:    action,
+		Resource:  auditResourceAccount,
+		Outcome:   outcome,
+		Metadata:  metadata,
+	}
+	if accountID != nil {
+		event.ResourceID = strconv.FormatInt(*accountID, 10)
+	}
+	return event
 }
 
 // IsUnsupportedMethod reports whether err came from a provider that does not

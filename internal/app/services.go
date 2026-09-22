@@ -5,6 +5,7 @@ import (
 	"log/slog"
 
 	"github.com/sqlwarden/internal/access"
+	"github.com/sqlwarden/internal/audit"
 	"github.com/sqlwarden/internal/completion"
 	"github.com/sqlwarden/internal/config"
 	"github.com/sqlwarden/internal/connection"
@@ -45,6 +46,11 @@ type Services struct {
 	// profile, and credential changes. Session and token issuance remain a
 	// transport concern.
 	Identity *identity.Service
+
+	// Audit is the edition-composed durable audit writer. Application services
+	// emit audit intent through it; transports do not write audit records of
+	// their own.
+	Audit audit.Writer
 
 	Keyring *encrypt.Keyring
 

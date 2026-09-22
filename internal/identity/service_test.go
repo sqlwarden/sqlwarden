@@ -5,6 +5,7 @@ import (
 	"errors"
 	"testing"
 
+	"github.com/sqlwarden/internal/audit"
 	"github.com/sqlwarden/internal/database"
 	"github.com/sqlwarden/internal/identity"
 	"github.com/sqlwarden/internal/password"
@@ -47,9 +48,36 @@ func (s *identityStore) UpdateAccountPassword(_ context.Context, id int64, hashe
 
 func newIdentityFixture(t *testing.T) (*identity.Service, *identityStore) {
 	t.Helper()
+	service, store, _ := newAuditedIdentityFixture(t)
+	return service, store
+}
+
+func newAuditedIdentityFixture(t *testing.T) (*identity.Service, *identityStore, *recordingAudit) {
+	t.Helper()
 	store := &identityStore{configured: true, byID: map[int64]database.Account{}, byEmail: map[string]database.Account{}}
 	provider := identity.NewCoreProvider(store)
-	return identity.NewService(store, provider), store
+	recorder := &recordingAudit{}
+	return identity.NewService(store, provider, recorder), store, recorder
+}
+
+// recordingAudit captures the audit intent a use case emitted.
+type recordingAudit struct {
+	events []audit.Event
+}
+
+func (r *recordingAudit) Write(_ context.Context, event audit.Event) error {
+	r.events = append(r.events, event)
+	return nil
+}
+
+func (r *recordingAudit) outcomes(action string) []string {
+	var outcomes []string
+	for _, event := range r.events {
+		if event.Action == action {
+			outcomes = append(outcomes, event.Outcome)
+		}
+	}
+	return outcomes
 }
 
 func TestRegisterRequiresConfiguredInstanceAndUniqueEmail(t *testing.T) {
@@ -124,5 +152,39 @@ func TestChangePasswordVerifiesCurrentCredential(t *testing.T) {
 	}
 	if _, err := service.AuthenticateWithPassword(context.Background(), account.Email, "new-password"); err != nil {
 		t.Fatalf("authenticate with new password: %v", err)
+	}
+}
+
+func TestAuthenticationAuditsBothOutcomes(t *testing.T) {
+	t.Parallel()
+	service, _, recorder := newAuditedIdentityFixture(t)
+	account, err := service.Register(context.Background(), identity.RegisterInput{
+		Email: "audited@example.com", Name: "Audited", Password: "password123",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	if _, err := service.AuthenticateWithPassword(context.Background(), account.Email, "password123"); err != nil {
+		t.Fatal(err)
+	}
+	_, err = service.AuthenticateWithPassword(context.Background(), account.Email, "wrong-password")
+	if !errors.Is(err, identity.ErrInvalidCredentials) {
+		t.Fatalf("error = %v, want %v", err, identity.ErrInvalidCredentials)
+	}
+
+	outcomes := recorder.outcomes(identity.ActionAuthenticate)
+	if len(outcomes) != 2 || outcomes[0] != audit.OutcomeSuccess || outcomes[1] != audit.OutcomeFailure {
+		t.Fatalf("authentication audit outcomes = %v, want [success failure]", outcomes)
+	}
+	if registered := recorder.outcomes(identity.ActionRegister); len(registered) != 1 {
+		t.Fatalf("registration audit outcomes = %v, want one event", registered)
+	}
+	for _, event := range recorder.events {
+		for key, value := range event.Metadata {
+			if value == "password123" || value == "wrong-password" {
+				t.Fatalf("audit metadata %q leaked a credential", key)
+			}
+		}
 	}
 }

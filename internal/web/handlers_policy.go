@@ -114,8 +114,9 @@ func (app *application) createRole(w http.ResponseWriter, r *http.Request) {
 	}
 
 	org := contextGetOrg(r)
+	actor := contextGetAccount(r)
 	roleID, err := app.accessService.CreateOrgRole(r.Context(), access.OrgRoleInput{
-		OrgID: org.ID, Name: input.Name, Description: input.Description,
+		OrgID: org.ID, ActorID: actor.ID, Name: input.Name, Description: input.Description,
 		ScopeType: input.ScopeType, Permissions: input.Permissions,
 	})
 	if err != nil {
@@ -198,7 +199,10 @@ func (app *application) updateRole(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	err = app.accessService.UpdateOrgRole(r.Context(), org.ID, roleID, input.Name, input.Description, input.Permissions)
+	err = app.accessService.UpdateOrgRole(r.Context(), access.UpdateOrgRoleInput{
+		OrgID: org.ID, RoleID: roleID, ActorID: contextGetAccount(r).ID,
+		Name: input.Name, Description: input.Description, Permissions: input.Permissions,
+	})
 	if err != nil {
 		if errors.Is(err, access.ErrBuiltinRole) {
 			app.notPermitted(w, r)
@@ -247,7 +251,9 @@ func (app *application) deleteRole(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	err = app.accessService.DeleteOrgRole(r.Context(), org.ID, roleID)
+	err = app.accessService.DeleteOrgRole(r.Context(), access.DeleteOrgRoleInput{
+		OrgID: org.ID, RoleID: roleID, ActorID: contextGetAccount(r).ID,
+	})
 	if err != nil {
 		if errors.Is(err, access.ErrBuiltinRole) {
 			app.notPermitted(w, r)
