@@ -31,6 +31,12 @@ func Validate(cfg Config) error {
 	if err := validateSessionDirectory(cfg); err != nil {
 		return err
 	}
+	if err := validateMigrationPolicy(cfg); err != nil {
+		return err
+	}
+	if cfg.ShutdownTimeout <= 0 {
+		return fmt.Errorf("shutdown_timeout must be greater than zero")
+	}
 	if err := validateEdition(cfg); err != nil {
 		return err
 	}
@@ -105,6 +111,12 @@ func validateSessionDirectory(cfg Config) error {
 			if err := validateConnectorAddress("connector.listen_address", cfg.Connector.ListenAddress, true); err != nil {
 				return err
 			}
+			if err := validateConnectorAddress("connector.health_address", cfg.Connector.HealthAddress, true); err != nil {
+				return err
+			}
+			if cfg.Connector.HealthAddress == cfg.Connector.ListenAddress {
+				return fmt.Errorf("connector.health_address must differ from connector.listen_address")
+			}
 		}
 		if len(cfg.Connector.GrantSigningKey) < 32 {
 			return fmt.Errorf("connector.grant_signing_key must be at least 32 bytes")
@@ -117,6 +129,28 @@ func validateSessionDirectory(cfg Config) error {
 			}
 		default:
 			return fmt.Errorf("connector.transport must be %q or %q", ConnectorTransportInsecure, ConnectorTransportTLS)
+		}
+	}
+	return nil
+}
+
+// validateMigrationPolicy keeps schema migrations out of serving replicas. A
+// process that explicitly serves api or connector is one of many identical
+// replicas, so migrating from it races every other replica; those topologies
+// migrate through a separate migrate run instead.
+func validateMigrationPolicy(cfg Config) error {
+	if cfg.DB.MigrationTimeout <= 0 {
+		return fmt.Errorf("db.migration_timeout must be greater than zero")
+	}
+	if !cfg.DB.Automigrate {
+		return nil
+	}
+	for _, kind := range []string{ProcessKindAPI, ProcessKindConnector} {
+		if explicitlySelectsProcessKind(cfg, kind) {
+			return fmt.Errorf(
+				"db.automigrate must be false when process_kinds selects %q; run migrations once with the %q command before starting serving replicas",
+				kind, MigrateCommand,
+			)
 		}
 	}
 	return nil

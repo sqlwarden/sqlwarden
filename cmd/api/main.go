@@ -8,10 +8,13 @@ import (
 	"os/signal"
 	"runtime/debug"
 	"syscall"
+	"time"
 
 	"github.com/sqlwarden/internal/app"
 	"github.com/sqlwarden/internal/community"
 	"github.com/sqlwarden/internal/config"
+	"github.com/sqlwarden/internal/database"
+	"github.com/sqlwarden/internal/edition"
 	"github.com/sqlwarden/internal/version"
 	"github.com/sqlwarden/internal/web"
 )
@@ -30,6 +33,9 @@ func bootstrapLogger() *slog.Logger {
 }
 
 func run(args []string) error {
+	if len(args) > 0 && args[0] == config.MigrateCommand {
+		return runMigrate(args[1:])
+	}
 	if len(args) > 0 && args[0] == "rotate-keys" {
 		return runRotateKeys(args[1:])
 	}
@@ -63,6 +69,66 @@ func run(args []string) error {
 	}
 
 	return built.Run(ctx)
+}
+
+// runMigrate applies the core and edition migration streams to the application
+// database and exits.
+//
+// It exists so topologies that run several serving replicas can migrate once,
+// before those replicas start, instead of letting every replica race to migrate
+// on boot. The run holds the migration lock and signals cancellation after
+// db.migration_timeout, so a second concurrent run waits rather than
+// interleaving. The lock remains held until the migration runner has actually
+// stopped, even if a database statement does not respond to cancellation
+// immediately.
+//
+// It opens only the application database: no listener, no background worker,
+// and no service graph.
+func runMigrate(args []string) error {
+	loaded, err := config.Load(args)
+	if err != nil {
+		return err
+	}
+	if err := config.Normalize(&loaded.Config); err != nil {
+		return err
+	}
+
+	logger, err := web.NewLogger(loaded.Config, os.Stdout)
+	if err != nil {
+		return err
+	}
+
+	selectedEdition := edition.NewCommunity()
+	if err := edition.Validate(selectedEdition, loaded.Config); err != nil {
+		return err
+	}
+
+	db, err := database.New(loaded.Config.DB.Driver, loaded.Config.DB.DSN, logger)
+	if err != nil {
+		return err
+	}
+	defer db.Close()
+
+	ctx, cancel := context.WithTimeout(context.Background(), loaded.Config.DB.MigrationTimeout)
+	defer cancel()
+
+	logger.Info("database migration started",
+		"driver", loaded.Config.DB.Driver,
+		"edition", selectedEdition.Name(),
+		"timeout_ms", loaded.Config.DB.MigrationTimeout.Milliseconds(),
+	)
+	startedAt := time.Now()
+	err = db.MigrateLocked(ctx, func(ctx context.Context) error {
+		if err := db.MigrateUp(); err != nil {
+			return err
+		}
+		return edition.Migrate(ctx, selectedEdition, db)
+	})
+	if err != nil {
+		return err
+	}
+	logger.Info("database migration complete", "duration_ms", time.Since(startedAt).Milliseconds())
+	return nil
 }
 
 // runRotateKeys re-encrypts all application-encrypted data (connection DSNs,

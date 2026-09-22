@@ -1,0 +1,164 @@
+{
+  "$schema": "https://json-schema.org/draft-07/schema#",
+  "title": "SQLWarden Helm values",
+  "type": "object",
+  "additionalProperties": true,
+  "required": ["image", "config", "database", "api", "connector", "migration"],
+  "properties": {
+    "nameOverride": { "type": "string" },
+    "fullnameOverride": { "type": "string" },
+    "image": {
+      "type": "object",
+      "required": ["repository", "pullPolicy"],
+      "properties": {
+        "repository": { "type": "string", "minLength": 1 },
+        "tag": { "type": "string" },
+        "pullPolicy": { "type": "string", "enum": ["Always", "IfNotPresent", "Never"] }
+      }
+    },
+    "imagePullSecrets": { "type": "array", "items": { "type": "object" } },
+    "config": {
+      "type": "object",
+      "required": ["baseURL", "accessMode", "logFormat", "shutdownTimeout", "terminationGracePeriodSeconds"],
+      "properties": {
+        "baseURL": { "type": "string", "minLength": 1 },
+        "accessMode": { "type": "string", "enum": ["single_user", "multi_user"] },
+        "logFormat": { "type": "string", "enum": ["json", "text"] },
+        "shutdownTimeout": { "type": "string", "pattern": "^[0-9]+(ns|us|ms|s|m|h)$" },
+        "terminationGracePeriodSeconds": { "type": "integer", "minimum": 1 },
+        "extraEnv": { "type": "array", "items": { "type": "object" } }
+      }
+    },
+    "database": {
+      "type": "object",
+      "required": ["driver", "dsnKey", "migrationTimeout"],
+      "properties": {
+        "driver": { "type": "string", "enum": ["postgres"] },
+        "dsn": { "type": "string" },
+        "existingSecret": { "type": "string" },
+        "dsnKey": { "type": "string", "minLength": 1 },
+        "migrationTimeout": { "type": "string", "pattern": "^[0-9]+(ns|us|ms|s|m|h)$" }
+      }
+    },
+    "secrets": {
+      "type": "object",
+      "properties": {
+        "create": { "type": "boolean" },
+        "existingSecret": { "type": "string" },
+        "cookieSecretKey": { "type": "string" },
+        "jwtSecretKey": { "type": "string" },
+        "encryptionKey": { "type": "string" },
+        "connectorGrantSigningKey": { "type": "string" }
+      }
+    },
+    "serviceAccount": {
+      "type": "object",
+      "properties": {
+        "create": { "type": "boolean" },
+        "annotations": { "type": "object" }
+      }
+    },
+    "rbac": {
+      "type": "object",
+      "properties": { "create": { "type": "boolean" } }
+    },
+    "api": {
+      "type": "object",
+      "required": ["enabled", "replicas", "httpPort"],
+      "properties": {
+        "enabled": { "type": "boolean" },
+        "replicas": { "type": "integer", "minimum": 0 },
+        "httpPort": { "type": "integer", "minimum": 1, "maximum": 65535 },
+        "service": {
+          "type": "object",
+          "properties": {
+            "type": { "type": "string", "enum": ["ClusterIP", "NodePort", "LoadBalancer"] },
+            "port": { "type": "integer", "minimum": 1, "maximum": 65535 },
+            "annotations": { "type": "object" }
+          }
+        },
+        "files": {
+          "type": "object",
+          "properties": {
+            "existingClaim": { "type": "string" },
+            "mountPath": { "type": "string", "minLength": 1 }
+          }
+        },
+        "resources": { "$ref": "#/definitions/resources" },
+        "probes": { "$ref": "#/definitions/probes" },
+        "extraEnv": { "type": "array", "items": { "type": "object" } }
+      }
+    },
+    "connector": {
+      "type": "object",
+      "required": ["enabled", "replicas", "listenPort", "healthPort"],
+      "properties": {
+        "enabled": { "type": "boolean" },
+        "replicas": {
+          "description": "Fixed at 1 in chart v1: the static session directory resolves a single connector address, so a second replica would own sessions nothing can route to. The connector process enforces the same rule at startup.",
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 1
+        },
+        "listenPort": { "type": "integer", "minimum": 1, "maximum": 65535 },
+        "healthPort": { "type": "integer", "minimum": 1, "maximum": 65535 },
+        "service": {
+          "type": "object",
+          "properties": {
+            "type": { "type": "string", "enum": ["ClusterIP", "NodePort", "LoadBalancer"] },
+            "annotations": { "type": "object" }
+          }
+        },
+        "resources": { "$ref": "#/definitions/resources" },
+        "probes": { "$ref": "#/definitions/probes" },
+        "extraEnv": { "type": "array", "items": { "type": "object" } }
+      }
+    },
+    "migration": {
+      "type": "object",
+      "required": ["enabled", "backoffLimit", "activeDeadlineSeconds"],
+      "properties": {
+        "enabled": { "type": "boolean" },
+        "backoffLimit": { "type": "integer", "minimum": 0 },
+        "activeDeadlineSeconds": { "type": "integer", "minimum": 1 },
+        "ttlSecondsAfterFinished": { "type": "integer", "minimum": 0 },
+        "resources": { "$ref": "#/definitions/resources" }
+      }
+    },
+    "podSecurityContext": { "type": "object" },
+    "securityContext": { "type": "object" }
+  },
+  "definitions": {
+    "resources": {
+      "type": "object",
+      "properties": {
+        "requests": { "$ref": "#/definitions/resourceQuantities" },
+        "limits": { "$ref": "#/definitions/resourceQuantities" }
+      }
+    },
+    "resourceQuantities": {
+      "type": "object",
+      "properties": {
+        "cpu": { "type": ["string", "number"] },
+        "memory": { "type": ["string", "number"] }
+      }
+    },
+    "probe": {
+      "type": "object",
+      "properties": {
+        "periodSeconds": { "type": "integer", "minimum": 1 },
+        "timeoutSeconds": { "type": "integer", "minimum": 1 },
+        "failureThreshold": { "type": "integer", "minimum": 1 }
+      }
+    },
+    "probes": {
+      "type": "object",
+      "required": ["startup", "liveness", "readiness"],
+      "properties": {
+        "startup": { "$ref": "#/definitions/probe" },
+        "liveness": { "$ref": "#/definitions/probe" },
+        "readiness": { "$ref": "#/definitions/probe" }
+      }
+    }
+  }
+}

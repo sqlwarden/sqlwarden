@@ -1,0 +1,111 @@
+{{- if .Values.migration.enabled }}
+{{- if not .Values.database.existingSecret }}
+{{/*
+The Job runs before the release's own Secret exists, so it carries its own
+copy of the DSN as a hook resource that is deleted once the hook succeeds.
+*/}}
+apiVersion: v1
+kind: Secret
+metadata:
+  name: {{ include "sqlwarden.migration.fullname" . }}
+  labels:
+    {{- include "sqlwarden.labels" . | nindent 4 }}
+    app.kubernetes.io/component: migrate
+  annotations:
+    helm.sh/hook: pre-install,pre-upgrade
+    helm.sh/hook-weight: "-10"
+    helm.sh/hook-delete-policy: before-hook-creation,hook-succeeded
+type: Opaque
+stringData:
+  {{ .Values.database.dsnKey }}: {{ .Values.database.dsn | quote }}
+---
+{{- end }}
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: {{ include "sqlwarden.migration.fullname" . }}
+  labels:
+    {{- include "sqlwarden.labels" . | nindent 4 }}
+    app.kubernetes.io/component: migrate
+  annotations:
+    # Migrations must be applied before any serving replica of the new version
+    # starts, and exactly once per rollout. The Job holds the application's
+    # migration lock, so a retry or a concurrent release waits rather than
+    # interleaving.
+    helm.sh/hook: pre-install,pre-upgrade
+    helm.sh/hook-weight: "-5"
+    helm.sh/hook-delete-policy: before-hook-creation
+spec:
+  backoffLimit: {{ .Values.migration.backoffLimit }}
+  activeDeadlineSeconds: {{ .Values.migration.activeDeadlineSeconds }}
+  {{- with .Values.migration.ttlSecondsAfterFinished }}
+  ttlSecondsAfterFinished: {{ . }}
+  {{- end }}
+  template:
+    metadata:
+      labels:
+        {{- include "sqlwarden.selectorLabels" . | nindent 8 }}
+        app.kubernetes.io/component: migrate
+      {{- with .Values.migration.podAnnotations }}
+      annotations:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+    spec:
+      restartPolicy: Never
+      serviceAccountName: {{ include "sqlwarden.migration.serviceAccountName" . }}
+      automountServiceAccountToken: false
+      {{- with .Values.imagePullSecrets }}
+      imagePullSecrets:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      securityContext:
+        {{- toYaml .Values.podSecurityContext | nindent 8 }}
+      {{- with .Values.migration.nodeSelector }}
+      nodeSelector:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.migration.tolerations }}
+      tolerations:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.migration.affinity }}
+      affinity:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      containers:
+        - name: migrate
+          image: {{ include "sqlwarden.image" . }}
+          imagePullPolicy: {{ .Values.image.pullPolicy }}
+          securityContext:
+            {{- toYaml .Values.securityContext | nindent 12 }}
+          command:
+            - ./sqlwarden
+            - migrate
+          env:
+            - name: DB_DRIVER
+              value: {{ .Values.database.driver | quote }}
+            - name: DB_MIGRATION_TIMEOUT
+              value: {{ .Values.database.migrationTimeout | quote }}
+            - name: LOG_FORMAT
+              value: {{ .Values.config.logFormat | quote }}
+            - name: DB_DSN
+              valueFrom:
+                secretKeyRef:
+                  {{- if .Values.database.existingSecret }}
+                  name: {{ .Values.database.existingSecret }}
+                  {{- else }}
+                  name: {{ include "sqlwarden.migration.fullname" . }}
+                  {{- end }}
+                  key: {{ .Values.database.dsnKey }}
+            {{- with .Values.config.extraEnv }}
+            {{- toYaml . | nindent 12 }}
+            {{- end }}
+          resources:
+            {{- toYaml .Values.migration.resources | nindent 12 }}
+          volumeMounts:
+            - name: tmp
+              mountPath: /tmp
+      volumes:
+        - name: tmp
+          emptyDir: {}
+{{- end }}

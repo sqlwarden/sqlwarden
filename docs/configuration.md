@@ -125,6 +125,9 @@ The default image runs as the `sqlwarden` user. The volume path above persists t
 | --- | --- | --- | --- | --- |
 | `base_url` | `BASE_URL` | `--base-url` | `http://localhost:6020` | Public base URL used for generated links and JWT claims. |
 | `http_port` | `HTTP_PORT` | `--http-port` | `6020` | HTTP server port. |
+| `shutdown_timeout` | `SHUTDOWN_TIMEOUT` | `--shutdown-timeout` | `30s` | Bounds graceful shutdown after `SIGINT` or `SIGTERM`. |
+
+`GET /healthz` reports whether the process is built and not shutting down; `GET /readyz` reports whether this replica can serve requests now. Both are unauthenticated, return `200` or `503`, and are never cached. A connector process serves them on `connector.health_address` because its execution listener requires transport credentials.
 
 ## Logging
 
@@ -152,6 +155,7 @@ The default `all` process remains self-contained and does not create an internal
 | `connector.replicas` | `CONNECTOR_REPLICAS` | `--connector-replicas` | `1` | Must remain `1` while the static directory is selected. |
 | `connector.address` | `CONNECTOR_ADDRESS` | `--connector-address` | `127.0.0.1:6021` | Connector host and port used by an API process. |
 | `connector.listen_address` | `CONNECTOR_LISTEN_ADDRESS` | `--connector-listen-address` | `:6021` | Internal execution listener used by a connector process. |
+| `connector.health_address` | `CONNECTOR_HEALTH_ADDRESS` | `--connector-health-address` | `:6022` | Credential-free liveness and readiness listener used by a connector process. Must differ from `connector.listen_address`. |
 | `connector.transport` | `CONNECTOR_TRANSPORT` | `--connector-transport` | `insecure` | Internal transport mode: `insecure` or `tls`. |
 | `connector.grant_signing_key` | `CONNECTOR_GRANT_SIGNING_KEY` | `--connector-grant-signing-key` | Development-only secret | Shared HMAC key for short-lived execution grants; minimum 32 bytes. |
 | `connector.tls.ca_file` | `CONNECTOR_TLS_CA_FILE` | `--connector-tls-ca-file` | Empty | Optional PEM CA bundle used by API clients. |
@@ -163,11 +167,20 @@ Plaintext transport is intended only for a trusted internal network. Workload id
 
 ## Database
 
+Serving replicas do not migrate. A process whose `process_kinds` explicitly selects `api` or `connector` is one of many identical replicas, so migrating from it would race the others; such a process refuses to start with `db.automigrate=true`. Apply migrations once per rollout instead:
+
+```sh
+./sqlwarden migrate
+```
+
+The command holds a database-level migration lock for the whole run, so a retry or a concurrent rollout waits rather than interleaving. `db.migration_timeout` cancels lock acquisition and signals a running migration to stop; the lock is never released until that runner has actually returned. The single-process `all` topology may still use `db.automigrate`.
+
 | Config key | Environment | CLI flag | Default | Notes |
 | --- | --- | --- | --- | --- |
 | `db.driver` | `DB_DRIVER` | `--db-driver` | `sqlite` | Application database driver. Supported values: `sqlite`, `postgres`. |
 | `db.dsn` | `DB_DSN` | `--db-dsn` | `~/.sqlwarden/sqlwarden.db` | SQLite path or PostgreSQL DSN. `~` is expanded for SQLite. |
-| `db.automigrate` | `DB_AUTOMIGRATE` | `--db-automigrate` | `true` | Runs embedded migrations at startup. |
+| `db.automigrate` | `DB_AUTOMIGRATE` | `--db-automigrate` | `true` | Runs embedded migrations at startup. Rejected when `process_kinds` explicitly selects `api` or `connector`. |
+| `db.migration_timeout` | `DB_MIGRATION_TIMEOUT` | `--db-migration-timeout` | `5m` | Cancels lock acquisition or a running `sqlwarden migrate` operation at the deadline. |
 
 PostgreSQL DSNs are passed without a `postgres://` prefix in the existing compose setup:
 

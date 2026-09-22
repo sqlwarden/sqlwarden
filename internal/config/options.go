@@ -39,6 +39,7 @@ var options = []option{
 	{key: "connector.replicas", env: "CONNECTOR_REPLICAS", flagName: "connector-replicas", defaultValue: defaultConnectorReplicas, category: CategoryBootstrap, usage: "Number of replicas serving the connector process kind"},
 	{key: "connector.address", env: "CONNECTOR_ADDRESS", flagName: "connector-address", defaultValue: defaultConnectorAddress, category: CategoryBootstrap, usage: "Connector host and port used by API processes"},
 	{key: "connector.listen_address", env: "CONNECTOR_LISTEN_ADDRESS", flagName: "connector-listen-address", defaultValue: defaultConnectorListen, category: CategoryBootstrap, usage: "Address on which the connector process serves internal execution requests"},
+	{key: "connector.health_address", env: "CONNECTOR_HEALTH_ADDRESS", flagName: "connector-health-address", defaultValue: defaultConnectorHealth, category: CategoryBootstrap, usage: "Address on which the connector process serves liveness and readiness probes"},
 	{key: "connector.transport", env: "CONNECTOR_TRANSPORT", flagName: "connector-transport", defaultValue: defaultConnectorTransport, category: CategoryBootstrap, usage: "Internal connector transport credentials (insecure or tls)"},
 	{key: "connector.grant_signing_key", env: "CONNECTOR_GRANT_SIGNING_KEY", flagName: "connector-grant-signing-key", defaultValue: defaultConnectorGrantKey, category: CategorySecrets, sensitive: true, usage: "Execution grant signing secret shared by API and connector processes"},
 	{key: "connector.tls.ca_file", env: "CONNECTOR_TLS_CA_FILE", flagName: "connector-tls-ca-file", defaultValue: "", category: CategoryBootstrap, usage: "PEM CA bundle for connector TLS clients"},
@@ -50,6 +51,8 @@ var options = []option{
 	{key: "db.driver", env: "DB_DRIVER", flagName: "db-driver", defaultValue: defaultDBDriver, category: CategoryBootstrap, usage: "Database driver (sqlite or postgres)"},
 	{key: "db.dsn", env: "DB_DSN", flagName: "db-dsn", defaultValue: defaultDBDSN, category: CategoryBootstrap, sensitive: true, usage: "Database DSN"},
 	{key: "db.automigrate", env: "DB_AUTOMIGRATE", flagName: "db-automigrate", defaultValue: defaultDBAutomigrate, category: CategoryBootstrap, usage: "Run database migrations at startup"},
+	{key: "db.migration_timeout", env: "DB_MIGRATION_TIMEOUT", flagName: "db-migration-timeout", defaultValue: defaultMigrationTimeout, category: CategoryBootstrap, usage: "Maximum time one migrate run may spend waiting for the migration lock and applying migrations"},
+	{key: "shutdown_timeout", env: "SHUTDOWN_TIMEOUT", flagName: "shutdown-timeout", defaultValue: defaultShutdownTimeout, category: CategoryBootstrap, usage: "Maximum time graceful shutdown may take after a termination signal"},
 	{key: "encryption.key", env: "ENCRYPTION_KEY", flagName: "encryption-key", defaultValue: defaultEncryptionKey, category: CategorySecrets, sensitive: true, usage: "Application encryption key"},
 	{key: "encryption.previous_keys", env: "ENCRYPTION_PREVIOUS_KEYS", flagName: "encryption-previous-keys", defaultValue: "", category: CategorySecrets, sensitive: true, usage: "Comma-separated retired encryption keys retained for decryption during rotation"},
 	{key: "jwt.secret_key", env: "JWT_SECRET_KEY", flagName: "jwt-secret-key", defaultValue: defaultJWTSecretKey, category: CategorySecrets, sensitive: true, usage: "JWT signing secret"},
@@ -65,4 +68,15 @@ var options = []option{
 	{key: "edition.name", env: "EDITION", flagName: "edition", defaultValue: defaultEdition, category: CategoryEdition, usage: "Licensed edition (community or enterprise)"},
 	{key: "edition.license_file", env: "EDITION_LICENSE_FILE", flagName: "edition-license-file", defaultValue: "", category: CategoryEdition, usage: "Path to the enterprise license file"},
 	{key: "secrets.dir", env: "SECRETS_DIR", flagName: "secrets-dir", defaultValue: defaultSecretsDir, category: CategoryBootstrap, usage: "Directory of mounted secret files, one file per configuration key"},
+}
+
+// EnvVars returns the environment variable name of every loadable
+// configuration key. Deployment artefacts that set configuration through the
+// environment check their variable names against this list.
+func EnvVars() []string {
+	names := make([]string, 0, len(options))
+	for _, opt := range options {
+		names = append(names, opt.env)
+	}
+	return names
 }

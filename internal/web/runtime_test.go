@@ -10,6 +10,7 @@ import (
 
 	coreapp "github.com/sqlwarden/internal/app"
 	"github.com/sqlwarden/internal/config"
+	"github.com/sqlwarden/internal/database"
 	"github.com/sqlwarden/internal/execution"
 	"github.com/sqlwarden/internal/jobs"
 )
@@ -88,10 +89,13 @@ func buildRuntimeProcess(t *testing.T, kinds []string, connectorAddress string) 
 	}
 	cfg.Connector.Address = connectorAddress
 	cfg.Connector.ListenAddress = connectorAddress
+	cfg.Connector.HealthAddress = freeLocalAddress(t)
 	cfg.DB.DSN = filepath.Join(t.TempDir(), "metadata.db")
+	cfg.DB.Automigrate = false
 	cfg.Files.StorageBackends[config.DefaultFilesActiveBackend] = config.FileStorageBackend{
 		Type: config.FilesStorageBackendFilesystem, RootDir: t.TempDir(),
 	}
+	migrateTestDatabase(t, cfg)
 	built, err := coreapp.Build(context.Background(), coreapp.Options{
 		Config: cfg, Logger: slog.New(slog.NewTextHandler(io.Discard, nil)), ProcessKinds: ProcessKinds,
 	})
@@ -100,6 +104,35 @@ func buildRuntimeProcess(t *testing.T, kinds []string, connectorAddress string) 
 	}
 	t.Cleanup(func() { _ = built.Close(context.Background()) })
 	return built
+}
+
+// migrateTestDatabase applies migrations ahead of Build, which the split api
+// and connector topologies require because they reject db.automigrate.
+func migrateTestDatabase(t *testing.T, cfg config.Config) {
+	t.Helper()
+	db, err := database.New(cfg.DB.Driver, cfg.DB.DSN, slog.New(slog.NewTextHandler(io.Discard, nil)))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer db.Close()
+	if err := db.MigrateLocked(context.Background(), func(context.Context) error { return db.MigrateUp() }); err != nil {
+		t.Fatal(err)
+	}
+}
+
+// freeLocalAddress reserves a loopback port and releases it so the process
+// under test can bind it.
+func freeLocalAddress(t *testing.T) string {
+	t.Helper()
+	listener, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatal(err)
+	}
+	address := listener.Addr().String()
+	if err := listener.Close(); err != nil {
+		t.Fatal(err)
+	}
+	return address
 }
 
 func TestAPIProcessKindRunsBackgroundWorkers(t *testing.T) {

@@ -1,0 +1,20 @@
+SQLWarden {{ .Chart.AppVersion }} is installed as release {{ .Release.Name }}.
+
+Processes:
+  api        {{ if .Values.api.enabled }}{{ .Values.api.replicas }} replica(s) at {{ include "sqlwarden.api.fullname" . }}:{{ .Values.api.service.port }}{{ else }}disabled{{ end }}
+  connector  {{ if .Values.connector.enabled }}{{ .Values.connector.replicas }} replica at {{ include "sqlwarden.connectorAddress" . }}{{ else }}disabled{{ end }}
+
+Reach the UI and API:
+
+  kubectl --namespace {{ .Release.Namespace }} port-forward svc/{{ include "sqlwarden.api.fullname" . }} {{ .Values.api.service.port }}:{{ .Values.api.service.port }}
+
+Then open {{ .Values.config.baseURL }} and complete setup at /setup.
+
+Schema migrations ran in the pre-install/pre-upgrade Job
+{{ include "sqlwarden.migration.fullname" . }}, not in the serving replicas: every
+api and connector replica refuses to start with db.automigrate enabled.
+{{- if not .Values.api.files.existingClaim }}
+
+Workspace file content is on an emptyDir and is lost when the api pod restarts.
+Set api.files.existingClaim before storing anything you need to keep.
+{{- end }}

@@ -1,5 +1,7 @@
 package config
 
+import "time"
+
 const (
 	defaultBaseURL              = "http://localhost:6020"
 	defaultHTTPPort             = 6020
@@ -24,11 +26,14 @@ const (
 	defaultConnectorReplicas    = 1
 	defaultConnectorAddress     = "127.0.0.1:6021"
 	defaultConnectorListen      = ":6021"
+	defaultConnectorHealth      = ":6022"
 	defaultConnectorTransport   = ConnectorTransportInsecure
 	defaultConnectorGrantKey    = "dev-execution-grant-key-32bytes!!"
 	defaultSessionDirectory     = SessionDirectoryStatic
 	defaultEdition              = EditionCommunity
 	defaultSecretsDir           = ""
+	defaultShutdownTimeout      = 30 * time.Second
+	defaultMigrationTimeout     = 5 * time.Minute
 )
 
 // DefaultFilesActiveBackend is the backend ID used when file storage runs in
@@ -88,6 +93,11 @@ const (
 	ProcessKindRealtime    = "realtime"
 )
 
+// MigrateCommand is the binary subcommand that applies database migrations
+// under the migration lock. Topologies that reject db.automigrate run it once
+// before their serving replicas start.
+const MigrateCommand = "migrate"
+
 // Session directory backends resolve which process owns a live target-database
 // session. The static directory knows one configured connector address, so it
 // cannot route between replicas.
@@ -130,9 +140,15 @@ type Config struct {
 		SecretKey string
 	}
 	DB struct {
-		Driver      string
-		DSN         string
+		Driver string
+		DSN    string
+		// Automigrate runs migrations during Build. It is rejected on
+		// processes that explicitly serve the api or connector process kind,
+		// where migrations belong to a separate migrate run instead.
 		Automigrate bool
+		// MigrationTimeout bounds one migrate run, including the time spent
+		// waiting for the migration lock.
+		MigrationTimeout time.Duration
 	}
 	Encryption struct {
 		Key string
@@ -162,9 +178,13 @@ type Config struct {
 	Connector struct {
 		// Replicas is the number of processes serving the connector process
 		// kind. Values above 1 require a shared session directory.
-		Replicas        int
-		Address         string
-		ListenAddress   string
+		Replicas      int
+		Address       string
+		ListenAddress string
+		// HealthAddress serves connector liveness and readiness on a plain
+		// HTTP listener, separate from the internal execution transport so
+		// probes never need execution transport credentials.
+		HealthAddress   string
 		Transport       string
 		GrantSigningKey string
 		TLS             struct {
@@ -178,6 +198,9 @@ type Config struct {
 		Name        string
 		LicenseFile string
 	}
+	// ShutdownTimeout bounds graceful shutdown after a termination signal.
+	ShutdownTimeout time.Duration
+
 	// SecretsDir is a directory of mounted secret files, one file per
 	// configuration key with dots and dashes replaced by underscores.
 	SecretsDir string
@@ -215,6 +238,8 @@ func Default() Config {
 	cfg.DB.Driver = defaultDBDriver
 	cfg.DB.DSN = defaultDBDSN
 	cfg.DB.Automigrate = defaultDBAutomigrate
+	cfg.DB.MigrationTimeout = defaultMigrationTimeout
+	cfg.ShutdownTimeout = defaultShutdownTimeout
 	cfg.Encryption.Key = defaultEncryptionKey
 	cfg.JWT.SecretKey = defaultJWTSecretKey
 	cfg.TLS.Enabled = defaultTLSEnabled
@@ -230,6 +255,7 @@ func Default() Config {
 	cfg.Connector.Replicas = defaultConnectorReplicas
 	cfg.Connector.Address = defaultConnectorAddress
 	cfg.Connector.ListenAddress = defaultConnectorListen
+	cfg.Connector.HealthAddress = defaultConnectorHealth
 	cfg.Connector.Transport = defaultConnectorTransport
 	cfg.Connector.GrantSigningKey = defaultConnectorGrantKey
 	cfg.Edition.Name = defaultEdition

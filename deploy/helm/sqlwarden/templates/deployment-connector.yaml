@@ -1,0 +1,111 @@
+{{- if .Values.connector.enabled }}
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ include "sqlwarden.connector.fullname" . }}
+  labels:
+    {{- include "sqlwarden.labels" . | nindent 4 }}
+    app.kubernetes.io/component: connector
+spec:
+  replicas: {{ .Values.connector.replicas }}
+  # A connector replica owns live target-database sessions that cannot move, so
+  # a rollout stops the old replica before starting the new one rather than
+  # running two owners of the same session identity.
+  strategy:
+    type: Recreate
+  selector:
+    matchLabels:
+      {{- include "sqlwarden.selectorLabels" . | nindent 6 }}
+      app.kubernetes.io/component: connector
+  template:
+    metadata:
+      labels:
+        {{- include "sqlwarden.selectorLabels" . | nindent 8 }}
+        app.kubernetes.io/component: connector
+        {{- with .Values.connector.podLabels }}
+        {{- toYaml . | nindent 8 }}
+        {{- end }}
+      annotations:
+        checksum/config: {{ include (print $.Template.BasePath "/configmap.yaml") . | sha256sum }}
+        {{- with .Values.connector.podAnnotations }}
+        {{- toYaml . | nindent 8 }}
+        {{- end }}
+    spec:
+      serviceAccountName: {{ include "sqlwarden.connector.serviceAccountName" . }}
+      automountServiceAccountToken: false
+      terminationGracePeriodSeconds: {{ .Values.config.terminationGracePeriodSeconds }}
+      {{- with .Values.imagePullSecrets }}
+      imagePullSecrets:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      securityContext:
+        {{- toYaml .Values.podSecurityContext | nindent 8 }}
+      {{- with .Values.connector.nodeSelector }}
+      nodeSelector:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.connector.tolerations }}
+      tolerations:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.connector.affinity }}
+      affinity:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      containers:
+        - name: connector
+          image: {{ include "sqlwarden.image" . }}
+          imagePullPolicy: {{ .Values.image.pullPolicy }}
+          securityContext:
+            {{- toYaml .Values.securityContext | nindent 12 }}
+          ports:
+            - name: execution
+              containerPort: {{ .Values.connector.listenPort }}
+              protocol: TCP
+            - name: health
+              containerPort: {{ .Values.connector.healthPort }}
+              protocol: TCP
+          env:
+            - name: PROCESS_KINDS
+              value: connector
+            - name: CONNECTOR_LISTEN_ADDRESS
+              value: {{ printf ":%v" .Values.connector.listenPort | quote }}
+            # The execution listener requires transport credentials, so probes
+            # use this separate credential-free listener instead.
+            - name: CONNECTOR_HEALTH_ADDRESS
+              value: {{ printf ":%v" .Values.connector.healthPort | quote }}
+            - name: DB_AUTOMIGRATE
+              value: "false"
+            {{- include "sqlwarden.commonEnv" . | nindent 12 }}
+            {{- with .Values.connector.extraEnv }}
+            {{- toYaml . | nindent 12 }}
+            {{- end }}
+          startupProbe:
+            httpGet:
+              path: /readyz
+              port: health
+            periodSeconds: {{ .Values.connector.probes.startup.periodSeconds }}
+            failureThreshold: {{ .Values.connector.probes.startup.failureThreshold }}
+          livenessProbe:
+            httpGet:
+              path: /healthz
+              port: health
+            periodSeconds: {{ .Values.connector.probes.liveness.periodSeconds }}
+            timeoutSeconds: {{ .Values.connector.probes.liveness.timeoutSeconds }}
+            failureThreshold: {{ .Values.connector.probes.liveness.failureThreshold }}
+          readinessProbe:
+            httpGet:
+              path: /readyz
+              port: health
+            periodSeconds: {{ .Values.connector.probes.readiness.periodSeconds }}
+            timeoutSeconds: {{ .Values.connector.probes.readiness.timeoutSeconds }}
+            failureThreshold: {{ .Values.connector.probes.readiness.failureThreshold }}
+          resources:
+            {{- toYaml .Values.connector.resources | nindent 12 }}
+          volumeMounts:
+            - name: tmp
+              mountPath: /tmp
+      volumes:
+        - name: tmp
+          emptyDir: {}
+{{- end }}

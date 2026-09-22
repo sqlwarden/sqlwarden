@@ -1,0 +1,15 @@
+{{- include "sqlwarden.validateTopology" . -}}
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ include "sqlwarden.configMapName" . }}
+  labels:
+    {{- include "sqlwarden.labels" . | nindent 4 }}
+data:
+  BASE_URL: {{ .Values.config.baseURL | quote }}
+  ACCESS_MODE: {{ .Values.config.accessMode | quote }}
+  LOG_FORMAT: {{ .Values.config.logFormat | quote }}
+  SHUTDOWN_TIMEOUT: {{ .Values.config.shutdownTimeout | quote }}
+  DB_DRIVER: {{ .Values.database.driver | quote }}
+  DB_MIGRATION_TIMEOUT: {{ .Values.database.migrationTimeout | quote }}
+  FILES_ROOT_DIR: {{ printf "%s/files" (trimSuffix "/" .Values.api.files.mountPath) | quote }}

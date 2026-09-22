@@ -232,6 +232,7 @@ func Build(ctx context.Context, opts Options) (*Application, error) {
 
 	services := &Services{
 		Config:          cfg,
+		Health:          NewHealth(),
 		Logger:          logger,
 		DB:              db,
 		Enforcer:        enforcer,
@@ -277,16 +278,21 @@ func Build(ctx context.Context, opts Options) (*Application, error) {
 
 	shutdownDeadline := opts.ShutdownDeadline
 	if shutdownDeadline <= 0 {
+		shutdownDeadline = cfg.ShutdownTimeout
+	}
+	if shutdownDeadline <= 0 {
 		shutdownDeadline = defaultShutdownDeadline
 	}
 
-	return &Application{
+	application := &Application{
 		Services:         services,
 		ProcessKinds:     kinds,
 		logger:           logger,
 		resources:        acquired,
 		shutdownDeadline: shutdownDeadline,
-	}, nil
+	}
+	services.Health.bind(application)
+	return application, nil
 }
 
 func connectorTransportCredentials(cfg config.Config) (execution.ClientTransportCredentials, execution.ServerTransportCredentials, error) {

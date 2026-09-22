@@ -22,6 +22,9 @@ func (app *application) routes() http.Handler {
 	mux.Use(app.recoverPanic)
 	mux.Use(middleware.Compress(5))
 
+	mux.With(app.noStoreCache).Get(healthLivePath, app.healthLive)
+	mux.With(app.noStoreCache).Get(healthReadyPath, app.healthReady)
+
 	mux.With(app.noStoreCache).Post("/api/setup", app.setup)
 	mux.With(app.noStoreCache).Get("/api/setup/status", app.setupStatus)
 

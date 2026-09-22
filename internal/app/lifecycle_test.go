@@ -32,6 +32,20 @@ func testConfig(t *testing.T) config.Config {
 	return cfg
 }
 
+// migrateTestDatabase applies migrations ahead of Build for topologies that
+// reject db.automigrate on serving replicas.
+func migrateTestDatabase(t *testing.T, cfg config.Config) {
+	t.Helper()
+	db, err := database.New(cfg.DB.Driver, cfg.DB.DSN, testLogger())
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer db.Close()
+	if err := db.MigrateLocked(context.Background(), func(context.Context) error { return db.MigrateUp() }); err != nil {
+		t.Fatal(err)
+	}
+}
+
 func testLogger() *slog.Logger {
 	return slog.New(slog.NewTextHandler(io.Discard, nil))
 }
@@ -86,6 +100,8 @@ func buildTestApp(t *testing.T, configured []string, kinds func(*Services) ([]Pr
 	cfg := testConfig(t)
 	if configured != nil {
 		cfg.ProcessKinds = configured
+		cfg.DB.Automigrate = false
+		migrateTestDatabase(t, cfg)
 	}
 	built, err := Build(context.Background(), Options{
 		Config:       cfg,

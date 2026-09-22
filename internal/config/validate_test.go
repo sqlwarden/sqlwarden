@@ -52,6 +52,7 @@ func TestValidateSessionDirectory(t *testing.T) {
 func TestValidateConnectorTransport(t *testing.T) {
 	cfg := Default()
 	cfg.ProcessKinds = []string{ProcessKindAPI}
+	cfg.DB.Automigrate = false
 	cfg.Connector.Transport = ConnectorTransportTLS
 	if err := Validate(cfg); err != nil {
 		t.Fatalf("API-only TLS config should not require a server certificate: %v", err)
@@ -116,6 +117,7 @@ func TestValidateProcessKinds(t *testing.T) {
 		t.Run(test.name, func(t *testing.T) {
 			cfg := Default()
 			cfg.ProcessKinds = test.kinds
+			cfg.DB.Automigrate = false
 			if err := Validate(cfg); (err != nil) != test.wantErr {
 				t.Fatalf("Validate() error = %v, wantErr %t", err, test.wantErr)
 			}
@@ -220,5 +222,59 @@ func TestNormalizeExpandsHomePaths(t *testing.T) {
 	}
 	if root := cfg.Files.StorageBackends["local"].RootDir; strings.HasPrefix(root, "~") {
 		t.Errorf("files root dir = %q, want an expanded path", root)
+	}
+}
+
+func TestValidateRejectsAutomigrateOnServingReplicas(t *testing.T) {
+	for _, kinds := range [][]string{{ProcessKindAPI}, {ProcessKindConnector}, {ProcessKindAPI, ProcessKindConnector}} {
+		t.Run(strings.Join(kinds, "+"), func(t *testing.T) {
+			cfg := Default()
+			cfg.ProcessKinds = kinds
+			cfg.DB.Automigrate = true
+			if err := Validate(cfg); err == nil {
+				t.Fatal("Validate() accepted db.automigrate on a serving replica")
+			}
+			cfg.DB.Automigrate = false
+			if err := Validate(cfg); err != nil {
+				t.Fatalf("Validate() rejected a serving replica without automigrate: %v", err)
+			}
+		})
+	}
+
+	cfg := Default()
+	if !cfg.DB.Automigrate {
+		t.Fatal("all-in-one mode should keep db.automigrate enabled by default")
+	}
+	if err := Validate(cfg); err != nil {
+		t.Fatalf("all-in-one mode must still allow automigrate: %v", err)
+	}
+}
+
+func TestValidateConnectorHealthAddress(t *testing.T) {
+	cfg := Default()
+	cfg.ProcessKinds = []string{ProcessKindConnector}
+	cfg.DB.Automigrate = false
+	cfg.Connector.HealthAddress = cfg.Connector.ListenAddress
+	if err := Validate(cfg); err == nil {
+		t.Fatal("Validate() accepted a health address shared with the execution listener")
+	}
+
+	cfg.Connector.HealthAddress = ""
+	if err := Validate(cfg); err == nil {
+		t.Fatal("Validate() accepted an empty connector health address")
+	}
+}
+
+func TestValidateRejectsNonPositiveTimeouts(t *testing.T) {
+	cfg := Default()
+	cfg.ShutdownTimeout = 0
+	if err := Validate(cfg); err == nil {
+		t.Fatal("Validate() accepted a zero shutdown timeout")
+	}
+
+	cfg = Default()
+	cfg.DB.MigrationTimeout = 0
+	if err := Validate(cfg); err == nil {
+		t.Fatal("Validate() accepted a zero migration timeout")
 	}
 }

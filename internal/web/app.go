@@ -61,6 +61,7 @@ type application struct {
 	runtimeCancel     context.CancelFunc
 	runtimeUpdates    chan database.InstanceSettings
 	settings          *settingsapp.Service
+	health            *coreapp.Health
 	accessLogsEnabled atomic.Bool
 }
 
@@ -87,6 +88,7 @@ func NewApplication(services *coreapp.Services) *App {
 		fileStores:        services.FileStores,
 		jobStore:          services.JobStore,
 		settings:          services.Settings,
+		health:            services.Health,
 		runtimeUpdates:    make(chan database.InstanceSettings, 1),
 	}
 }

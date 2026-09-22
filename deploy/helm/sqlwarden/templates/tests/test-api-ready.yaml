@@ -1,0 +1,28 @@
+{{- if .Values.api.enabled }}
+apiVersion: v1
+kind: Pod
+metadata:
+  name: {{ include "sqlwarden.fullname" . }}-test-ready
+  labels:
+    {{- include "sqlwarden.labels" . | nindent 4 }}
+  annotations:
+    helm.sh/hook: test
+    helm.sh/hook-delete-policy: before-hook-creation,hook-succeeded
+spec:
+  restartPolicy: Never
+  automountServiceAccountToken: false
+  securityContext:
+    {{- toYaml .Values.podSecurityContext | nindent 4 }}
+  containers:
+    - name: readyz
+      image: {{ include "sqlwarden.image" . }}
+      imagePullPolicy: {{ .Values.image.pullPolicy }}
+      securityContext:
+        {{- toYaml .Values.securityContext | nindent 8 }}
+      command:
+        - wget
+        - -q
+        - -O
+        - "-"
+        - {{ printf "http://%s:%v/readyz" (include "sqlwarden.api.fullname" .) .Values.api.service.port | quote }}
+{{- end }}

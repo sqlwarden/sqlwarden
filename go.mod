@@ -35,6 +35,7 @@ require (
 	golang.org/x/exp v0.0.0-20260218203240-3dfff04db8fa
 	golang.org/x/sync v0.22.0
 	golang.org/x/text v0.41.0
+	gopkg.in/yaml.v3 v3.0.1
 	modernc.org/sqlite v1.48.0
 )
 
@@ -116,7 +117,6 @@ require (
 	golang.org/x/sys v0.47.0 // indirect
 	google.golang.org/genproto/googleapis/api v0.0.0-20260209200024-4cfbd4190f57 // indirect
 	google.golang.org/genproto/googleapis/rpc v0.0.0-20260209200024-4cfbd4190f57 // indirect
-	gopkg.in/yaml.v3 v3.0.1 // indirect
 	mellium.im/sasl v0.3.2 // indirect
 	modernc.org/libc v1.70.0 // indirect
 	modernc.org/mathutil v1.7.1 // indirect

@@ -1,0 +1,27 @@
+{{- if .Values.connector.enabled }}
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ include "sqlwarden.connector.fullname" . }}
+  labels:
+    {{- include "sqlwarden.labels" . | nindent 4 }}
+    app.kubernetes.io/component: connector
+  {{- with .Values.connector.service.annotations }}
+  annotations:
+    {{- toYaml . | nindent 4 }}
+  {{- end }}
+spec:
+  type: {{ .Values.connector.service.type }}
+  ports:
+    - name: execution
+      port: {{ .Values.connector.listenPort }}
+      targetPort: execution
+      protocol: TCP
+    - name: health
+      port: {{ .Values.connector.healthPort }}
+      targetPort: health
+      protocol: TCP
+  selector:
+    {{- include "sqlwarden.selectorLabels" . | nindent 4 }}
+    app.kubernetes.io/component: connector
+{{- end }}

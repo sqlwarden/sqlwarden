@@ -33,6 +33,10 @@ type Services struct {
 	Config config.Config
 	Logger *slog.Logger
 
+	// Health answers process liveness and readiness probes for whichever
+	// process kinds this process runs.
+	Health *Health
+
 	// DB is the SQLWarden metadata database, not a target database.
 	DB       *database.DB
 	Enforcer *access.Enforcer

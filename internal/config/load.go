@@ -5,6 +5,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"time"
 
 	"github.com/spf13/pflag"
 	"github.com/spf13/viper"
@@ -71,6 +72,8 @@ func Load(args []string) (Loaded, error) {
 			flagSet.Bool(opt.flagName, value, opt.usage)
 		case []string:
 			flagSet.StringSlice(opt.flagName, value, opt.usage)
+		case time.Duration:
+			flagSet.Duration(opt.flagName, value, opt.usage)
 		default:
 			return Loaded{}, fmt.Errorf("unsupported config default type for %s", opt.key)
 		}
@@ -218,6 +221,7 @@ func configFromViper(v *viper.Viper) Config {
 	cfg.Connector.Replicas = v.GetInt("connector.replicas")
 	cfg.Connector.Address = strings.TrimSpace(v.GetString("connector.address"))
 	cfg.Connector.ListenAddress = strings.TrimSpace(v.GetString("connector.listen_address"))
+	cfg.Connector.HealthAddress = strings.TrimSpace(v.GetString("connector.health_address"))
 	cfg.Connector.Transport = strings.ToLower(strings.TrimSpace(v.GetString("connector.transport")))
 	cfg.Connector.GrantSigningKey = v.GetString("connector.grant_signing_key")
 	cfg.Connector.TLS.CAFile = v.GetString("connector.tls.ca_file")
@@ -229,6 +233,8 @@ func configFromViper(v *viper.Viper) Config {
 	cfg.DB.Driver = v.GetString("db.driver")
 	cfg.DB.DSN = v.GetString("db.dsn")
 	cfg.DB.Automigrate = v.GetBool("db.automigrate")
+	cfg.DB.MigrationTimeout = v.GetDuration("db.migration_timeout")
+	cfg.ShutdownTimeout = v.GetDuration("shutdown_timeout")
 	cfg.Encryption.Key = v.GetString("encryption.key")
 	cfg.Encryption.PreviousKeys = splitCommaList(v.GetString("encryption.previous_keys"))
 	cfg.JWT.SecretKey = v.GetString("jwt.secret_key")

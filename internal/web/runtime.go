@@ -111,11 +111,14 @@ func (k *apiProcessKind) Done() <-chan error { return k.done }
 
 // connectorProcessKind owns the internal execution listener and the local
 // runtime behind it. It intentionally exposes no public HTTP routes.
+// It serves probes on a second plain HTTP listener because the execution
+// listener may require transport credentials a probe client cannot present.
 type connectorProcessKind struct {
-	services *coreapp.Services
-	server   *http.Server
-	done     chan error
-	serving  atomic.Bool
+	services     *coreapp.Services
+	server       *http.Server
+	healthServer *http.Server
+	done         chan error
+	serving      atomic.Bool
 }
 
 func newConnectorProcessKind(services *coreapp.Services) *connectorProcessKind {
@@ -137,6 +140,23 @@ func (k *connectorProcessKind) Start(context.Context) error {
 		ReadTimeout:  defaultReadTimeout,
 		WriteTimeout: 0,
 	}
+	healthListener, err := net.Listen("tcp", k.services.Config.Connector.HealthAddress)
+	if err != nil {
+		_ = listener.Close()
+		return fmt.Errorf("bind connector health listener: %w", err)
+	}
+	healthServer := &http.Server{
+		Handler:           healthHandler(k.services.Health, k.services.Config.ProcessKinds),
+		ErrorLog:          slog.NewLogLogger(k.services.Logger.Handler(), slog.LevelWarn),
+		ReadHeaderTimeout: defaultReadTimeout,
+	}
+	k.healthServer = healthServer
+	go func() {
+		if err := healthServer.Serve(healthListener); err != nil && !errors.Is(err, http.ErrServerClosed) {
+			k.services.Logger.Warn("connector health listener stopped", slog.Any("error", err))
+		}
+	}()
+
 	k.server = server
 	k.serving.Store(true)
 	go func() {
@@ -158,12 +178,16 @@ func (k *connectorProcessKind) Ready(context.Context) error {
 }
 
 func (k *connectorProcessKind) Close(ctx context.Context) error {
-	if k.server == nil {
-		return nil
+	var errs []error
+	if k.server != nil {
+		errs = append(errs, k.server.Shutdown(ctx))
+		k.server = nil
 	}
-	err := k.server.Shutdown(ctx)
-	k.server = nil
-	return err
+	if k.healthServer != nil {
+		errs = append(errs, k.healthServer.Shutdown(ctx))
+		k.healthServer = nil
+	}
+	return errors.Join(errs...)
 }
 
 func (k *connectorProcessKind) Done() <-chan error { return k.done }

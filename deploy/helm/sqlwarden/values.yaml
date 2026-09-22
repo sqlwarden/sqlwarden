@@ -1,0 +1,198 @@
+# Default values for the SQLWarden chart.
+#
+# The chart runs one binary as two process kinds: "api" serves the public HTTP
+# API and the embedded UI, "connector" holds the live connections to target
+# databases. Schema migrations never run on a serving replica; a pre-install and
+# pre-upgrade Job applies them under the migration lock instead.
+
+nameOverride: ""
+fullnameOverride: ""
+
+image:
+  repository: ghcr.io/sqlwarden/sqlwarden
+  # tag defaults to the chart appVersion. Digest pinning is deliberately not
+  # supported yet; it lands with the deployment hardening work.
+  tag: ""
+  pullPolicy: IfNotPresent
+
+imagePullSecrets: []
+
+config:
+  # baseURL seeds the instance base URL on first start only; afterwards the
+  # value stored in the database is authoritative.
+  baseURL: http://localhost:6020
+  accessMode: multi_user
+  logFormat: json
+  # shutdownTimeout bounds graceful shutdown after SIGTERM. Pod termination
+  # grace periods below are derived from it, so a draining replica finishes its
+  # in-flight work before the kubelet sends SIGKILL.
+  shutdownTimeout: 30s
+  # terminationGracePeriodSeconds must exceed shutdownTimeout so a draining
+  # replica finishes its in-flight work before the kubelet sends SIGKILL.
+  terminationGracePeriodSeconds: 40
+  # extraEnv is appended to every SQLWarden container, including the migration
+  # Job. Use it for configuration keys this chart does not model.
+  extraEnv: []
+
+database:
+  # The split chart requires PostgreSQL. SQLite is supported by the all-in-one
+  # binary, but cannot be shared safely by separate Deployments and a hook Job.
+  driver: postgres
+  # dsn is stored in the chart-managed Secret. Leave it empty and set
+  # existingSecret to keep the DSN out of values.
+  dsn: ""
+  existingSecret: ""
+  dsnKey: db_dsn
+  # migrationTimeout bounds one migration run, including the wait for the
+  # migration lock held against the application database.
+  migrationTimeout: 5m
+
+secrets:
+  # create renders a Secret from the values below. Set it to false and point
+  # existingSecret at a Secret you manage to keep secrets out of values.
+  create: true
+  existingSecret: ""
+  cookieSecretKey: ""
+  jwtSecretKey: ""
+  encryptionKey: ""
+  # connectorGrantSigningKey signs the execution grants the api process sends
+  # to the connector process. It must be at least 32 bytes and identical in
+  # both Deployments, which is why it is one chart-level value.
+  connectorGrantSigningKey: ""
+
+serviceAccount:
+  create: true
+  annotations: {}
+
+rbac:
+  # SQLWarden never calls the Kubernetes API. When create is true, each process
+  # kind receives a distinct empty Role and RoleBinding so its zero-permission
+  # boundary is explicit and can be extended independently in a future release.
+  create: true
+
+api:
+  enabled: true
+  # replicas above 1 requires files.existingClaim: workspace file content is
+  # stored on a filesystem backend, so every api replica must see the same
+  # volume. The chart refuses to render otherwise.
+  replicas: 1
+  httpPort: 6020
+  service:
+    type: ClusterIP
+    port: 6020
+    annotations: {}
+  files:
+    # existingClaim must name a ReadWriteMany PersistentVolumeClaim when more
+    # than one api replica runs. With no claim the chart mounts an emptyDir,
+    # which is single-replica only and does not survive a restart.
+    existingClaim: ""
+    mountPath: /var/lib/sqlwarden
+  # Sizing assumption: an api replica is request-bound, not data-bound. Result
+  # rows stream through the connector, so an api replica holds only request
+  # state, the cached schema metadata, and the embedded UI. 250m/512Mi carries
+  # roughly 50 concurrent interactive users per replica; scale out with
+  # replicas rather than up.
+  resources:
+    requests:
+      cpu: 250m
+      memory: 512Mi
+    limits:
+      cpu: "1"
+      memory: 1Gi
+  probes:
+    startup:
+      periodSeconds: 5
+      failureThreshold: 30
+    liveness:
+      periodSeconds: 10
+      timeoutSeconds: 3
+      failureThreshold: 3
+    readiness:
+      periodSeconds: 5
+      timeoutSeconds: 3
+      failureThreshold: 3
+  podAnnotations: {}
+  podLabels: {}
+  nodeSelector: {}
+  tolerations: []
+  affinity: {}
+  extraEnv: []
+
+connector:
+  enabled: true
+  # replicas is fixed at 1 until a shared session directory lands. The static
+  # session directory resolves one connector address, so a second replica would
+  # own sessions nothing can route to. The application enforces this too: a
+  # connector process started with connector.replicas above 1 and the static
+  # session directory fails validation at startup instead of misrouting.
+  replicas: 1
+  listenPort: 6021
+  healthPort: 6022
+  service:
+    type: ClusterIP
+    annotations: {}
+  # Sizing assumption: a connector replica holds every live target-database
+  # session and buffers result pages, so memory tracks concurrent sessions and
+  # result page size rather than request rate. 500m/1Gi carries roughly 100
+  # live sessions with default page sizes; raise memory before CPU.
+  resources:
+    requests:
+      cpu: 500m
+      memory: 1Gi
+    limits:
+      cpu: "2"
+      memory: 2Gi
+  probes:
+    startup:
+      periodSeconds: 5
+      failureThreshold: 30
+    liveness:
+      periodSeconds: 10
+      timeoutSeconds: 3
+      failureThreshold: 3
+    readiness:
+      periodSeconds: 5
+      timeoutSeconds: 3
+      failureThreshold: 3
+  podAnnotations: {}
+  podLabels: {}
+  nodeSelector: {}
+  tolerations: []
+  affinity: {}
+  extraEnv: []
+
+migration:
+  # enabled renders the pre-install and pre-upgrade migration Job. Disable it
+  # only when migrations are applied by a process outside this release.
+  enabled: true
+  backoffLimit: 1
+  # activeDeadlineSeconds must exceed database.migrationTimeout so the process
+  # reports the timeout itself instead of being killed mid-run.
+  activeDeadlineSeconds: 600
+  ttlSecondsAfterFinished: 600
+  resources:
+    requests:
+      cpu: 100m
+      memory: 256Mi
+    limits:
+      cpu: "1"
+      memory: 512Mi
+  podAnnotations: {}
+  nodeSelector: {}
+  tolerations: []
+  affinity: {}
+
+podSecurityContext:
+  runAsNonRoot: true
+  runAsUser: 1000
+  runAsGroup: 1000
+  fsGroup: 1000
+  seccompProfile:
+    type: RuntimeDefault
+
+securityContext:
+  allowPrivilegeEscalation: false
+  readOnlyRootFilesystem: true
+  capabilities:
+    drop:
+      - ALL

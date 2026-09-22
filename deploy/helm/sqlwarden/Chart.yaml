@@ -1,0 +1,17 @@
+apiVersion: v2
+name: sqlwarden
+description: SQLWarden control plane (api) and data plane (connector) for Kubernetes
+type: application
+version: 0.1.0
+appVersion: "0.9.3"
+kubeVersion: ">=1.25.0-0"
+home: https://github.com/sqlwarden/sqlwarden
+sources:
+  - https://github.com/sqlwarden/sqlwarden
+maintainers:
+  - name: SQLWarden
+    url: https://github.com/sqlwarden
+keywords:
+  - sql
+  - database
+  - ide
