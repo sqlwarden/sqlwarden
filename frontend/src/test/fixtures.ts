@@ -115,6 +115,8 @@ export function instanceConfigurationFixture(
     tls_enabled: false,
     file_storage_mode: 'file',
     file_storage_backend: 'local',
+    edition: 'community',
+    capabilities: {},
     ...overrides,
   }
 }
