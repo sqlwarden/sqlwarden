@@ -1,6 +1,3 @@
-// Package cockroachdb implements the CockroachDB engine as a compatible
-// extension of postgres.Driver. See doc.go for the extension pattern and the
-// specific points of divergence from PostgreSQL.
 package cockroachdb
 
 import (

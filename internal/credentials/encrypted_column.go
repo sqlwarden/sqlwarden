@@ -1,4 +1,3 @@
-// Package credentials contains connector-side credential-provider adapters.
 package credentials
 
 import (

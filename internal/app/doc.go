@@ -9,7 +9,10 @@
 // order. A build that fails partway closes everything it already acquired.
 //
 // Which listeners and workers run is decided by process kinds. A [ProcessKind]
-// is one runtime responsibility with its own start, readiness, and shutdown;
-// production currently composes the single "all" process kind, which serves
-// HTTP and runs every background worker in one process.
+// is one runtime responsibility with its own start, readiness, and shutdown.
+// Transports supply the concrete kinds through [Options.ProcessKinds]; the
+// supported kinds are "all" (the public HTTP API with in-process target
+// execution and every background worker), "api" (the public HTTP API,
+// delegating target execution to a connector), and "connector" (the internal
+// execution endpoint that owns live target sessions and resolves credentials).
 package app

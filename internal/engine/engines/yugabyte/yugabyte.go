@@ -1,5 +1,3 @@
-// Package yugabyte implements the YugabyteDB engine as a compatible
-// extension of postgres.Driver. See doc.go for the extension pattern.
 package yugabyte
 
 import (

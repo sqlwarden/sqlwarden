@@ -1,5 +1,3 @@
-// Package ee is the Enterprise Edition composition root. Core packages never
-// import this tree; an Enterprise binary opts into it explicitly.
 package ee
 
 import (
@@ -13,7 +11,8 @@ import (
 	"github.com/sqlwarden/internal/identity"
 )
 
-// Enterprise composes licensed Enterprise modules and their decorators.
+// Enterprise composes modules gated on a configured license source and their
+// decorators. No shipped entrypoint composes it yet.
 type Enterprise struct {
 	licensed     bool
 	modules      []edition.Module

@@ -1,4 +1,3 @@
-// Package completion coordinates connectionless SQL completion engines.
 package completion
 
 import (

@@ -1,7 +1,17 @@
-# Backend architecture baseline
+# Backend architecture baseline (historical)
 
-Status: Accepted Phase 0 baseline for SQLW-151  
-Captured: 2026-09-22  
+> **Historical, non-current document.** This is the Phase 0 snapshot taken
+> before the SQLW-151 extractions landed. It describes the repository as it
+> was at capture time and is kept only as a regression and decision record.
+> Do not use it to understand the current system; read
+> [SQLWarden Architecture](sqlwarden-architecture.md) instead. Wherever this
+> report and that document or the code disagree, they are correct and this
+> report is not.
+
+Status: Accepted Phase 0 baseline for SQLW-151 (historical)
+
+Captured: 2026-09-22
+
 Reference implementation: `73625231`
 
 This report records the behavior and ownership that later SQLW-151 extractions
@@ -52,7 +62,7 @@ completeness check across all handlers.
 | bounded handler tasks | email notifications, export producers, and schema inspection/write pipeline | request handler through the application wait group or a request context | process-kind drain waits for wait-group tasks; request-scoped pipelines terminate on completion/cancellation |
 | application database | Bun/SQL connection pool and durable state | `app.Build` | resource stack closes it last |
 
-The remaining shared mutable transport state is explicit on `web.application`:
+At capture time the remaining shared mutable transport state was explicit on `web.application`:
 the mailer lock, background wait group, file lock map, runtime update channel,
 job registry pointer, cancellation functions, and atomic access-log switch.
 Schema and completion caches are concurrency-safe service-owned state. Live
@@ -84,14 +94,14 @@ bounds process-kind drain and reports an incomplete drain.
 ## Package dependency and ownership map
 
 At capture time `internal/web` directly imports 40 SQLWarden internal packages.
-That broad fan-out is the extraction backlog, not the target design. Ownership
-for the first boundary is:
+That broad fan-out was the extraction backlog, not the target design. Ownership
+for the first boundary, as planned at capture time, was:
 
 | Package | Owner/responsibility | Allowed outer dependencies |
 | --- | --- | --- |
 | `internal/config` | bootstrap, secret, and edition configuration loading, validation, precedence, and redacted diagnostics | none of `web`, `rpc`, or `realtime` |
 | `internal/app` | dependency construction, resource ownership, process-kind lifecycle, readiness, and reverse shutdown | none of `web`, `rpc`, `realtime`, Enterprise implementations, or Kubernetes APIs |
-| `internal/web` | HTTP routing, middleware, transport mapping, and the temporary `all` runtime bridge pending service extraction | may depend on application/domain packages and adapters |
+| `internal/web` | HTTP routing, middleware, transport mapping, and, at capture time, the temporary `all` runtime bridge pending service extraction | may depend on application/domain packages and adapters |
 | `internal/connection` | process-local target sessions, transactions, and query cursors | engine contracts and adapters only |
 | `internal/database` | durable control-plane persistence and core migrations | database adapter dependencies |
 | `internal/jobs` | durable queue store and worker execution | database plus registered job handlers |
@@ -99,27 +109,27 @@ for the first boundary is:
 | `internal/settings` | validated instance settings and organization/workspace-effective operational policy | never `internal/web`, RPC, or realtime transports |
 | `internal/identity` | password identity use cases plus provider-neutral authentication and federation ports | never `internal/web`, RPC, or realtime transports |
 | `internal/access` | tenant-safe role and policy administration plus authorization decisions | never `internal/web`, RPC, or realtime transports |
-| future `audit`, `catalog`, and `execution` | application use cases and narrow ports | never `internal/web`, RPC, or realtime transports |
-| future `ee` | Enterprise composition and decorators | core contracts; core never imports `ee` |
+| `audit`, `catalog`, and `execution` (not yet extracted at capture time) | application use cases and narrow ports | never `internal/web`, RPC, or realtime transports |
+| `ee` (not yet present at capture time) | Enterprise composition and decorators | core contracts; core never imports `ee` |
 
-`internal/architecture.TestForbiddenProductionImports` makes the currently
-enforceable dependency directions executable. SQLW-163 expands this rule set as
-each application package lands. Normal Go compilation remains the package-cycle
-gate.
+At capture time `internal/architecture.TestForbiddenProductionImports` made the
+then-enforceable dependency directions executable, and SQLW-163 was planned to
+expand the rule set as each application package landed. Normal Go compilation
+remained the package-cycle gate.
 
-## Supported deployments and current limits
+## Supported deployments and limits at capture time
 
-| Shape | Supported now | Limits |
+| Shape | Supported at capture time | Limits at capture time |
 | --- | --- | --- |
 | server, single process | yes, `process_kinds=all` | one process owns HTTP, jobs, sessions, and cursors |
 | desktop/local composition | yes, the same `app.Build` graph with desktop bootstrap values | SQLite/local filesystem defaults; no distributed dependency |
 | application database | SQLite for desktop/single replica; PostgreSQL for server deployments | SQLite is not a distributed control-plane store |
 | workspace file storage | filesystem adapter in file or object semantics | S3/object-store adapter is not implemented |
 | split `api` / `connector` | selectable; API uses WorkerRuntime over authenticated internal HTTP when connector is separate | one connector replica with a static destination |
-| connector replicas | exactly one with the static session directory | more than one fails validation until the Redis directory work lands |
-| Redis session directory | named but rejected as unimplemented | SQLW-165 follow-up |
-| jobs/realtime/edge-gateway process kinds | named but not implemented | later tickets; Edge Agent and collaboration remain outside SQLW-151 |
-| Enterprise modules | configuration category reserved | SQLW-155 introduces the Edition contract and separate composition |
+| connector replicas | exactly one with the static session directory | more than one failed validation; a shared directory was planned |
+| Redis session directory | named but rejected as unimplemented | planned as the SQLW-165 follow-up |
+| jobs/realtime/edge-gateway process kinds | named but not implemented | planned for later tickets; Edge Agent and collaboration were outside SQLW-151 |
+| Enterprise modules | configuration category reserved | the Edition contract and separate composition were planned for SQLW-155 |
 
 ## Performance baseline
 

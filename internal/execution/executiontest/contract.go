@@ -1,5 +1,3 @@
-// Package executiontest contains runtime contract tests shared by local and
-// remote execution adapters.
 package executiontest
 
 import (

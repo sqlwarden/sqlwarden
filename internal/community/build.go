@@ -1,4 +1,3 @@
-// Package community is the Community Edition application composition root.
 package community
 
 import (

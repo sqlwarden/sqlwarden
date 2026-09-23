@@ -4,17 +4,19 @@ This reference applies to the SQLWarden server.
 
 SQLWarden separates deployment-managed bootstrap configuration from database-backed runtime settings.
 
-Bootstrap configuration is read from defaults, config files, environment variables, and CLI flags. It is validated before listeners and workers start, and changes require a restart. Runtime settings are stored in the application database and changed through the administration API. They are read directly from the database for each request or background operation.
+Bootstrap configuration is read from defaults, config files, mounted secret files, environment variables, and CLI flags. It is validated before the application database opens and before any listener or worker starts, and changes require a restart. Runtime settings are stored in the application database and changed through the administration API. They are read directly from the database for each request or background operation.
 
-Bootstrap loading is implemented in `internal/web/config.go`. Runtime ownership and inheritance are implemented by the runtime settings service and typed database models.
+Bootstrap loading, validation, and the redacted effective-configuration diagnostic logged at startup are implemented in `internal/config`. `internal/app` builds the service graph from the validated configuration. Runtime settings ownership, validation, and organization inheritance are implemented by `internal/settings` over typed database models.
 
 ## Configuration Lifecycle
 
 The following settings remain bootstrap-only:
 
 - HTTP listener, deployment mode, access mode, and log format.
+- Process kinds, session directory, and connector transport.
 - Application database driver, DSN, and startup migration behavior.
-- Cookie, JWT-signing, and encryption keys.
+- Cookie, JWT-signing, encryption, and connector grant-signing keys.
+- Edition selection and license file path.
 - TLS certificate configuration.
 - File-storage mode, active backend, backend definitions, and filesystem roots.
 - Desktop backend topology.
@@ -40,12 +42,19 @@ Operational settings are applied immediately on the process that accepts the upd
 
 ## Bootstrap Sources
 
-Configuration is applied in this order:
+Configuration is applied in this order, with later sources taking precedence:
 
 1. Built-in defaults.
 2. `sqlwarden.*` and `.sqlwarden.*` files from the current directory or `./config`.
-3. Environment variables.
-4. CLI flags.
+3. Mounted secret files.
+4. Environment variables.
+5. CLI flags.
+
+A mounted secret file is found either through an environment variable naming its path, formed by appending `_FILE` to the key's environment name (for example `JWT_SECRET_KEY_FILE`), or as a file inside `secrets.dir` named after the key with dots replaced by underscores (for example `jwt_secret_key`). Trailing newlines are trimmed. `secrets.dir` itself cannot come from a secret file.
+
+| Config key | Environment | CLI flag | Default | Notes |
+| --- | --- | --- | --- | --- |
+| `secrets.dir` | `SECRETS_DIR` | `--secrets-dir` | Empty | Directory of mounted secret files, one file per configuration key. |
 
 You can pass an explicit config file:
 
@@ -146,7 +155,17 @@ Server logs do not include request bodies, authorization headers, DSNs, SQL text
 
 ## Process Topology
 
-The default `all` process remains self-contained and does not create an internal execution transport. A split deployment runs one `api` process and exactly one `connector` process with the same grant-signing key.
+One binary serves the process kinds named in `process_kinds`:
+
+- `all` (default): the public HTTP API and embedded UI, the background job workers and file-content reaper, and in-process target execution. It creates no internal execution transport and cannot be combined with other kinds.
+- `api`: the public HTTP API, embedded UI, and background workers. Target database work is forwarded to the connector through the internal execution protocol, and the process constructs no stored-credential provider.
+- `connector`: the internal execution listener that owns live target sessions, transactions, and query cursors, and resolves stored target credentials from the application database. It serves no public routes.
+
+A split deployment runs one or more `api` processes and exactly one `connector` process sharing `connector.grant_signing_key`. Every API request forwarded to the connector carries a short-lived execution grant signed with that key. Both kinds open the application database, so both need the database settings and `encryption.key`. `api` and `connector` may be selected together in one process, in which case execution stays in-process and the internal listener is still served.
+
+The names `jobs`, `realtime`, and `edge-gateway` are reserved; they pass configuration validation but the server refuses to start with them because no implementation exists. `session_directory=redis` is likewise reserved and rejected, so the connector cannot yet be scaled horizontally.
+
+See [Kubernetes Deployment](kubernetes.md) for the Helm chart that runs the split topology.
 
 | Config key | Environment | CLI flag | Default | Notes |
 | --- | --- | --- | --- | --- |
@@ -210,6 +229,15 @@ Use PostgreSQL for larger deployments, environments with multiple server replica
 
 Do not use the default secrets outside local development.
 
+## Edition
+
+| Config key | Environment | CLI flag | Default | Notes |
+| --- | --- | --- | --- | --- |
+| `edition.name` | `EDITION` | `--edition` | `community` | Edition the binary is composed as: `community` or `enterprise`. Must match the edition the binary actually builds. |
+| `edition.license_file` | `EDITION_LICENSE_FILE` | `--edition-license-file` | Empty | Required for `enterprise`; must be empty for `community`. |
+
+The released server binary composes the Community edition only, so it accepts only `edition.name=community`.
+
 ## Interactive Queries
 
 Interactive query limits are runtime settings managed at instance or organization scope through the administration API.
@@ -233,9 +261,9 @@ Export limits are runtime settings managed at instance or organization scope thr
 
 ## Background Jobs
 
-Worker count, polling interval, claim lease, and completed-job retention are instance runtime settings. Updates restart only the in-process job runner; the API process stays available.
+Worker count, polling interval, claim lease, and completed-job retention are instance runtime settings. Updates restart only the in-process job runner; the HTTP listener stays available.
 
-Jobs are persisted in the application database. Workers always run inside the API process and use database claim leases so a future separate worker binary can use the same job table safely. Job scheduling is best effort: due jobs run when a worker is available, with higher-priority due jobs claimed before lower-priority due jobs. Internal maintenance such as stale file-content cleanup uses this framework.
+Jobs are persisted in the application database. Workers run inside every `all` and `api` process, never in a connector, and use database claim leases so multiple API replicas share the same job table safely. A dedicated `jobs` process kind is reserved but not implemented. Job scheduling is best effort: due jobs run when a worker is available, with higher-priority due jobs claimed before lower-priority due jobs. Internal maintenance such as stale file-content cleanup uses this framework.
 
 Maintenance jobs that must have only one active instance use a database-enforced singleton key, so multiple API processes can safely race to schedule the same maintenance work in distributed deployments.
 
@@ -266,7 +294,7 @@ The server stores workspace file content on the local filesystem by default. Rev
 | --- | --- | --- | --- | --- |
 | `drivers.sqlite.allowed_sources` | `DRIVERS_SQLITE_ALLOWED_SOURCES` | `--drivers-sqlite-allowed-sources` | Empty | Comma-separated SQLite target sources to allow. Currently supports only `local`. |
 
-PostgreSQL and MySQL target connections are available through the normal connection flow.
+Network-reachable target engines (the PostgreSQL, MySQL, Oracle, and SQL Server families) are available through the normal connection flow.
 
 SQLite target connections are explicitly gated because local SQLite paths can expose host-local files. Server deployments should leave this empty unless they intentionally allow local SQLite access.
 

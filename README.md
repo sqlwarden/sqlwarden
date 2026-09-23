@@ -12,12 +12,13 @@ SQLWarden is pre-1.0. The API and database schema may change while the project i
 - Organization, workspace, environment, connection, user, team, role, and policy management.
 - Custom additive RBAC with effective permissions APIs for frontend capability checks.
 - Workspace and personal-space models for team and individual database work.
-- PostgreSQL, MySQL, and gated SQLite target database connections.
+- Target database engines for PostgreSQL, CockroachDB, Neon, Supabase, YugabyteDB, MySQL, MariaDB, TiDB, Oracle, SQL Server, and gated SQLite.
 - Query execution with foreground cancellation.
+- Single-process deployment by default, or a split API/connector topology (with a Helm chart) that keeps live target sessions and stored credential resolution in the connector.
 - SQL editor with workspace tabs, explorer, editor tabs, console tabs, result panes, and same-browser multi-window sync.
 - Workspace file APIs with private and shared file scopes.
 - SQLite application database by default, with PostgreSQL application database support.
-- Configuration through file, environment variables, and CLI flags.
+- Configuration through file, environment variables, mounted secret files, and CLI flags.
 - Release automation through Release Please and GoReleaser.
 
 ## Quick Start
@@ -64,7 +65,7 @@ Use the latest published release tag for production deployments. The secrets abo
 
 ## Configuration
 
-SQLWarden can be configured with a config file, environment variables, or CLI flags. See [docs/configuration.md](docs/configuration.md) for the full reference.
+SQLWarden can be configured with a config file, environment variables, mounted secret files, or CLI flags. See [docs/configuration.md](docs/configuration.md) for the full reference.
 
 Common settings:
 
@@ -123,25 +124,47 @@ make hooks/install
 ## Repository Layout
 
 ```text
-assets/                       Embedded migrations, email templates, and frontend build output
-cmd/api/                      Server entrypoint
+assets/                       Embedded core migrations, email templates, and frontend build output
+cmd/api/                      Thin server entrypoint (serve, migrate, rotate-keys)
+deploy/helm/                  Split API/connector Helm chart and its validation tests
 docs/                         Architecture and operator documentation
+ee/                           Enterprise Edition composition tree; never imported by core
 frontend/                     React application
+internal/config/              Bootstrap configuration loading, validation, diagnostics
+internal/app/                 Service-graph composition and process lifecycle
+internal/community/           Community Edition composition root
+internal/edition/             Edition seam between core and edition modules
+internal/web/                 HTTP transport and all/api/connector process adapters
+internal/settings/            Runtime settings service
+internal/identity/            Account identity and authentication service
 internal/access/              RBAC permissions, roles, policies, and enforcer
-internal/connection/          Live target database sessions
-internal/database/            Bun models and database setup
-internal/driver/              Target database driver abstraction
+internal/audit/               Durable audit event contracts and core writer
+internal/catalog/             Organization, workspace, environment, connection service
+internal/execution/           Target execution boundary (local and connector runtimes)
+internal/credentials/         Local-execution stored credential resolution
+internal/connection/          Live target sessions beneath the local runtime
+internal/engine/              Target database engines and capability interfaces
+internal/database/            Bun models and application database setup
 internal/files/               Workspace file service
 internal/filestore/           File content storage backend
-internal/web/                 HTTP app, config, routes, middleware, handlers
+internal/jobs/                Durable background job framework
+internal/architecture/        Executable repository structure and boundary rules
 pkg/result/                   Normalized target query result types
 ```
 
-`cmd/api` is intentionally thin. Reusable HTTP behavior belongs in `internal/web` so future entrypoints, including desktop packaging, can wrap the same application.
+`cmd/api` is intentionally thin: it loads configuration, builds the Community edition through `internal/app`, and runs the selected process kinds. New entrypoints, including desktop packaging, should compose through `internal/app` and reuse `internal/web`.
 
 ## API And Architecture
 
-The committed architecture reference is [docs/sqlwarden-architecture.md](docs/sqlwarden-architecture.md).
+The committed architecture reference is [docs/sqlwarden-architecture.md](docs/sqlwarden-architecture.md). Kubernetes deployment of the split topology is described in [docs/kubernetes.md](docs/kubernetes.md).
+
+One binary serves the process kinds selected by `process_kinds`:
+
+- `all` (default): public HTTP API, embedded UI, background workers, and in-process target execution.
+- `api`: public HTTP API, embedded UI, and background workers; target execution is forwarded to a connector over an authenticated internal protocol.
+- `connector`: internal execution endpoint that owns live target sessions and resolves stored target credentials.
+
+A split deployment currently supports exactly one connector replica.
 
 The API currently uses `/api/v1`, standard JSON error envelopes, and paginated list envelopes for UI-facing list endpoints. SQLWarden is still before v1, so compatibility-breaking cleanup can happen before the first stable release.
 

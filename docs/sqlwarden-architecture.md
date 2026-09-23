@@ -1,8 +1,8 @@
 # SQLWarden Architecture
 
-Updated: 2026-08-06
+Updated: 2026-09-23
 
-SQLWarden is a self-hosted database access platform and SQL editor. The current repository contains a Go backend, embedded React SPA, custom RBAC engine, database connection/session manager, and workspace file storage foundation. Future product direction includes Wails desktop packaging, SSO/SCIM, stronger audit/compliance features, connector agents, and broader file/storage backends.
+SQLWarden is a self-hosted database access platform and SQL editor. The current repository contains a Go backend composed as one binary that runs one or more process kinds, an embedded React SPA, a custom RBAC engine, extracted application services, a process-independent target-execution boundary with an in-process and a connector runtime, an edition seam, and a workspace file storage foundation. Future product direction includes Wails desktop packaging, SSO/SCIM product surfaces, stronger audit/compliance features, an Edge Agent for databases behind firewalls, and broader file/storage backends.
 
 This document is the committed architecture source of truth for the repository. When it conflicts with code, migrations, or tests, code wins.
 
@@ -10,8 +10,16 @@ This document is the committed architecture source of truth for the repository. 
 
 Implemented today:
 
-- One Go server binary in `cmd/api`.
-- HTTP application package in `internal/web`, reusable by future entrypoints such as Wails desktop.
+- One Go server binary in `cmd/api` with `migrate` and `rotate-keys` subcommands.
+- Bootstrap configuration owned by `internal/config`; service-graph composition and lifecycle owned by `internal/app`.
+- Three implemented process kinds: `all` (default single process), `api`, and `connector`, supporting a split API/connector deployment with one connector.
+- HTTP transport and process-kind adapters in `internal/web`, reusable by future entrypoints such as Wails desktop.
+- Application services for runtime settings, identity, access, audit, and the resource catalog.
+- Target execution boundary in `internal/execution` with `LocalRuntime`, `WorkerRuntime`, an authenticated internal execution protocol, and connector-local stored credential resolution.
+- Edition seam in `internal/edition` with the Community composition root in `internal/community`; Enterprise composition code lives in `ee/`.
+- Durable core audit events for identity, access, and catalog use cases.
+- Helm chart for the split topology in `deploy/helm/sqlwarden`.
+- Executable architecture rules in `internal/architecture`.
 - REST API under `/api/v1`.
 - Embedded React SPA served from `assets/static`.
 - First-run setup through `POST /api/setup`.
@@ -22,9 +30,9 @@ Implemented today:
 - Custom additive RBAC enforcer in `internal/access`.
 - Effective permissions API and permissions catalog API for frontend capability gating.
 - Workspace direct/team membership model and `workspace_members` policy principal.
-- Live target database sessions through `internal/connection`.
+- Live target database sessions through `internal/execution`, backed by `internal/connection` in the process that owns execution.
 - Foreground query cancellation through request cancellation.
-- Target database drivers for PostgreSQL, MySQL, and SQLite.
+- Target database engines for PostgreSQL, CockroachDB, Neon, Supabase, YugabyteDB, MySQL, MariaDB, TiDB, Oracle, SQL Server, and SQLite.
 - Server-side SQLite target connection gating through `drivers.sqlite.allowed_sources`.
 - Workspace file metadata/content APIs for private and shared files.
 - Filesystem-backed file content storage under `~/.sqlwarden/files` by default.
@@ -36,20 +44,24 @@ Implemented today:
 - Schema introspection abstraction, cache, and API.
 - React 19 frontend with TanStack Router, TanStack Query, Tailwind CSS 4, shadcn/ui, Base UI primitives, CodeMirror 6, Zustand, IndexedDB, Y.js, and BroadcastChannel.
 - Editor workspace tabs, explorer, file tabs, console tabs, query execution, results pane, editor theme preferences, and same-browser cross-window sync.
-- Config through spf13/viper with config file, environment variables, and CLI flags.
+- Config through spf13/viper with config file, mounted secret files, environment variables, and CLI flags.
 - SQLite app database by default at `~/.sqlwarden/sqlwarden.db`; PostgreSQL app database support exists.
 
 Explicitly future or incomplete:
 
 - Wails desktop binary.
-- SSO, SCIM, invitations, and enterprise identity lifecycle.
+- SSO and SCIM product surfaces and the enterprise identity lifecycle. Identity provider and directory-mapping seams exist, but no SSO login flow or SCIM endpoint is served.
+- A released Enterprise binary. `ee/` composition code and tests exist, but no entrypoint composes it and no license verification is implemented.
 - Multi-backend desktop/server selector UX.
-- Connector agent and WebSocket routing for databases behind firewalls.
+- Edge Agent and the reserved `edge-gateway` process kind for databases behind firewalls.
+- The reserved `jobs` and `realtime` process kinds.
+- A shared session directory (the reserved `redis` backend), multiple connector replicas, and horizontal connector scaling.
+- Vault, AWS, and other external credential providers; only the encrypted-column provider exists.
 - Background query runs and query-run observability.
-- Full audit log product surface, tamper-evident audit logs, and SIEM forwarding.
-- Deny rules and binding expiry enforcement.
+- Audit read/export product surface, data-access (query) audit events, tamper-evident audit logs, and SIEM forwarding.
+- Deny rules and binding expiry enforcement in a shipped binary. Enterprise policy decorators for them exist only in `ee/`.
 - Distributed RBAC cache invalidation.
-- Shared-file collaborative editing through WebSockets.
+- Shared-file collaborative editing through WebSocket or Y.js server-side sync.
 - File uploads, revision browsing UX, S3-compatible file storage, and storage migration tooling.
 - PWA service worker setup.
 
@@ -58,13 +70,18 @@ Explicitly future or incomplete:
 ```text
 sqlwarden/
 ├── assets/
-│   ├── migrations_postgres/          # embedded PostgreSQL migrations
-│   ├── migrations_sqlite/            # embedded SQLite migrations
+│   ├── emails/                       # embedded email templates
+│   ├── migrations_postgres/          # embedded core PostgreSQL migrations
+│   ├── migrations_sqlite/            # embedded core SQLite migrations
 │   └── static/                       # embedded frontend build output
 ├── cmd/
-│   └── api/                          # thin server entrypoint
+│   └── api/                          # thin server entrypoint (serve, migrate, rotate-keys)
+├── deploy/
+│   └── helm/                         # split-topology chart and chart validation tests
 ├── docs/
 │   └── sqlwarden-architecture.md     # canonical committed architecture doc
+├── ee/                               # Enterprise composition tree; never imported by core
+│   └── assets/                       # Enterprise-owned migration streams
 ├── frontend/
 │   ├── components.json               # shadcn/ui registry config
 │   ├── bun.lock
@@ -77,30 +94,115 @@ sqlwarden/
 │       ├── components/
 │       └── lib/
 ├── internal/
-│   ├── access/                       # custom RBAC enforcer and permissions catalog
-│   ├── connection/                   # live target DB sessions
+│   ├── access/                       # custom RBAC enforcer, permissions catalog, role/policy service
+│   ├── app/                          # composition root and process-kind lifecycle
+│   ├── architecture/                 # executable repository and boundary rules (tests only)
+│   ├── audit/                        # durable audit event contracts and core writer
+│   ├── catalog/                      # org/workspace/environment/connection service
+│   ├── community/                    # Community Edition composition root
+│   ├── completion/                   # connectionless completion service
+│   ├── config/                       # bootstrap configuration loading and validation
+│   ├── connection/                   # live target sessions beneath LocalRuntime
+│   ├── credentials/                  # connector-side stored credential providers
 │   ├── database/                     # Bun models and query helpers
+│   ├── edition/                      # edition seam contracts
 │   ├── engine/                       # external data-system engines and capabilities
 │   ├── encrypt/                      # AES-GCM/keyring helpers
+│   ├── execution/                    # target execution boundary, runtimes, internal protocol
 │   ├── files/                        # workspace file service
 │   ├── filestore/                    # filesystem object storage
+│   ├── identity/                     # account identity and authentication service
+│   ├── jobs/                         # durable background job framework
 │   ├── password/                     # bcrypt hashing
 │   ├── request/                      # JSON decoding helpers
 │   ├── response/                     # JSON, pagination, API error envelopes
+│   ├── schema/                       # schema inspection, cache, and snapshots
+│   ├── settings/                     # runtime settings service
 │   ├── smtp/                         # SMTP mailer
-│   ├── token/                        # JWT helpers
+│   ├── token/                        # JWT access tokens and opaque refresh tokens
 │   ├── validator/                    # validation helpers
 │   ├── version/                      # ldflags version injection
-│   └── web/                          # config, app wiring, routes, middleware, handlers
+│   └── web/                          # HTTP transport and process-kind adapters
 └── pkg/
     └── result/                       # normalized target DB result sets
 ```
 
-`cmd/api` should remain thin. New reusable HTTP behavior belongs in `internal/web`, not in `cmd/api`, so future `cmd/desktop` can embed or start the same web application.
+`cmd/api` should remain thin. It loads configuration, builds the Community edition through `internal/community` and `internal/app`, and runs the selected process kinds. New reusable HTTP behavior belongs in `internal/web` and new service wiring belongs in `internal/app`, so a future `cmd/desktop` can compose the same application.
+
+## Backend Composition And Process Topology
+
+### Bootstrap Configuration
+
+`internal/config` owns bootstrap configuration: option definitions, loading from flags, environment variables, mounted secret files, and configuration files (in that precedence order, above defaults), normalization, validation, and the redacted effective-configuration diagnostic that `cmd/api` logs at startup. It knows nothing about transports or the service graph. Runtime settings appear there only as shared vocabulary; `internal/settings` owns them.
+
+### Composition And Lifecycle
+
+`internal/app` is the composition root. `app.Build` validates the selected edition against the configuration, opens the application database, runs core and edition migrations when `db.automigrate` allows it, and constructs every service and long-running resource. Construction starts no goroutines. `Application.Start` starts the session and cursor reapers and then each process kind in configured order; `Application.Close` closes process kinds in reverse order and then releases resources in reverse construction order, bounded by `shutdown_timeout`. A build that fails partway releases what it acquired. `/healthz` and `/readyz` report liveness and readiness from the application and its process kinds.
+
+`internal/community.Build` composes the Community edition. It is the only composition `cmd/api` uses.
+
+### Process Kinds
+
+`process_kinds` selects which runtime responsibilities a process takes on. `internal/web` supplies the concrete process kinds to `internal/app`:
+
+| Kind | Serves | Target execution | Background workers |
+| --- | --- | --- | --- |
+| `all` (default) | public HTTP API and embedded UI | in-process `LocalRuntime`; no internal transport | job runners, runtime-settings supervisor, file-content reaper |
+| `api` | public HTTP API and embedded UI | `WorkerRuntime` forwarding to a connector; no credential provider | job runners, runtime-settings supervisor, file-content reaper |
+| `connector` | internal execution listener plus a separate credential-free health listener | `LocalRuntime` behind the internal protocol | none |
+
+`all` cannot be combined with another kind. `api` and `connector` can share one process, in which case execution stays in-process and the internal listener is still served. `jobs`, `realtime`, and `edge-gateway` are reserved names: configuration accepts them, but the server refuses to start because no implementation exists. Processes that explicitly select `api` or `connector` refuse `db.automigrate=true`; migrations run once per rollout through `sqlwarden migrate` under a database migration lock.
+
+### HTTP Transport
+
+`internal/web` is the HTTP transport: routes, middleware, handlers, request/response mapping, logging helpers, and embedded frontend serving, plus the `all`, `api`, and `connector` process-kind adapters. It does not load configuration or construct the service graph. Handlers decode input, call an application service or the execution runtime, and map results and errors. `internal/web` never imports `internal/connection` or `internal/credentials`; target database work goes through `internal/execution`.
+
+### Application Services
+
+Use-case rules live in application services that never import transports:
+
+- `internal/settings`: seeding and validation of the singleton instance row and resolution of effective organization/workspace settings.
+- `internal/identity`: account registration, authentication, and profile/password use cases behind a provider-neutral `Provider` contract.
+- `internal/access`: RBAC enforcement, permissions catalog, and tenant-safe role and policy administration behind a `PolicyEvaluator` contract.
+- `internal/audit`: the durable audit event model, `Writer` contract, and core SQL-backed writer. Identity, access, and catalog use cases emit events into `audit_events`; there is no audit read API yet.
+- `internal/catalog`: organizations, workspaces, environments, and connections, including validation, ownership checks, hierarchy seeding through its store, RBAC cache invalidation, credential sealing, and connection lifecycle.
+- `internal/schema`, `internal/completion`, `internal/files`, and `internal/jobs` own schema inspection, completion, workspace files, and durable jobs.
+
+### Editions
+
+`internal/edition` defines the `Edition` seam: identity-provider, policy-evaluator, and audit-writer decorators, entitlements, modules, and edition-owned migration streams applied after core migrations. `edition.Community` returns the core implementations unchanged. `ee/` contains Enterprise composition code, including restrict-only policy decorators, directory-mapping hooks, an audit pipeline, and its own migrations, all covered by tests. Core packages never import `ee/`, and no shipped entrypoint composes it; the existence of the seam does not mean Enterprise product features are available.
+
+### Target Execution
+
+`internal/execution` is the process-independent boundary for live target sessions. Transports exchange opaque session handles and typed requests through `SessionRuntime`; only a runtime owns drivers, transactions, cursors, and their lifecycle.
+
+- `LocalRuntime` runs sessions in-process over `internal/connection`. It is used by `all` and `connector` processes.
+- `WorkerRuntime` forwards the same operations from an `api` process to the connector over an internal HTTP protocol (a call endpoint and a streaming endpoint for exports).
+- Every forwarded call carries an execution grant: an HMAC-SHA256-signed envelope keyed by `connector.grant_signing_key`, with a fixed issuer and audience, a one-minute default lifetime, the tenant/account/workspace/connection scope, and the internal operations it authorizes. The connector validates signature, validity window, audience, operation, and that the session's scope matches the grant before touching a session. RBAC decisions stay in the API process; grants only carry their outcome.
+- Transport credentials are pluggable. `insecure` plaintext HTTP is intended only for a trusted internal network; `tls` serves HTTPS with an optional CA bundle and server name on the client side. Workload identity and mutual TLS are not implemented.
+- A `SessionDirectory` maps handles to the connector that owns them. The only implemented backend is `static`, which always resolves the single configured `connector.address`. Configuration therefore pins `connector.replicas` to `1`; the `redis` backend is reserved and rejected. API processes can run multiple replicas; the connector cannot.
+
+### Target Credentials
+
+`execution.CredentialProvider` resolves the stored credentials a session needs when it opens. The core implementation, `credentials.EncryptedColumnProvider`, reads the connection's encrypted DSN, TLS, and SSH documents from the application database and decrypts them with the keyring, without exposing secret material in errors or logs. It is constructed only where `LocalRuntime` runs, so in a split deployment execution-time credential resolution is connector-local and the internal protocol carries connection identifiers, never credentials. API processes still use the keyring for control-plane work such as sealing connection credentials on create/update, revealing or updating stored connection secrets, key rotation, the connection TLS backfill, and SMTP-secret management.
+
+### Deployment
+
+`deploy/helm/sqlwarden` runs the split topology on Kubernetes: separate `api` and `connector` Deployments and Services from one image, a pre-install/pre-upgrade migration Job, per-kind ServiceAccounts with no Kubernetes permissions, a PostgreSQL application database requirement, and probes on `/healthz` and `/readyz`. The connector Deployment is pinned to one replica. `deploy/helm/chart_test.go` checks chart invariants that Helm cannot, such as agreement with the application's own topology and configuration rules. See `docs/kubernetes.md`.
+
+### Architecture Enforcement
+
+`internal/architecture` makes repository rules executable:
+
+- `TestForbiddenProductionImports`: core never imports `ee/`; application service packages never import `internal/web` or the reserved `internal/rpc`/`internal/realtime` transports; `cmd`, `internal/app`, and `internal/web` never import Kubernetes APIs; `internal/web` never imports `internal/connection` or `internal/credentials`.
+- `TestPackageGraphHasNoCycles`, `TestConstructorsDoNotStartBackgroundWork`, and `TestStartedComponentsExposeShutdownPair`: package graph and lifecycle conventions.
+- `TestEveryGoPackageHasDocFile` and `TestRepositoryAgentGuidanceExists`: package documentation and repository guidance presence.
+
+`internal/web.TestArchitectureRouteInventory` snapshots the expanded route surface so handler moves cannot drop or remap an endpoint. Shared behavioral contracts in `executiontest`, `credentialstest`, `audittest`, `editiontest`, and `enginetest` must run against every implementation of their seam.
 
 ## Configuration
 
-Configuration is loaded by `internal/web` using spf13/viper. Supported sources are config file, environment variables, and CLI flags. Defaults are intended to support local development with minimal setup.
+Bootstrap configuration is loaded by `internal/config` using spf13/viper. Supported sources are config file, mounted secret files, environment variables, and CLI flags. Defaults are intended to support local development with minimal setup. See `docs/configuration.md` for the full reference.
 
 Important concepts:
 
@@ -138,7 +240,7 @@ HTTP request
   -> workspace/environment/connection context middleware as needed
   -> concrete permission middleware
   -> handler
-  -> internal/database or service layer
+  -> application service, execution runtime, or internal/database
   -> response.JSON / centralized API error helpers
 ```
 
@@ -535,7 +637,7 @@ Cache categories:
 - Principal cache keyed by org ID/account ID.
 - Ancestry cache keyed by resource type/resource ID.
 
-Policy changes invalidate org policy cache. Team membership changes invalidate principal cache. Resource deletion invalidates ancestry cache when relevant. A future multi-node deployment needs distributed invalidation or a shorter-lived/shared cache strategy.
+Policy changes invalidate org policy cache. Team membership changes invalidate principal cache. Resource deletion invalidates ancestry cache when relevant. Invalidation reaches only the process that made the change, so other `all` or `api` replicas converge on TTL expiry; distributed invalidation or a shorter-lived/shared cache strategy is not implemented.
 
 ### Privileged Org Policy Grants
 
@@ -577,12 +679,13 @@ Cross-org and cross-workspace boundaries must be enforced when creating workspac
 engines target SQL databases, but the package name does not constrain future
 integrations to relational systems.
 
-Implemented target drivers:
+Implemented target engines:
 
-- PostgreSQL
-- MySQL
-- SQLite
+- PostgreSQL, plus CockroachDB, Neon, Supabase, and YugabyteDB, which embed the PostgreSQL driver and override only divergent behavior.
+- MySQL, plus MariaDB and TiDB, which embed the MySQL driver.
 - Oracle
+- SQL Server
+- SQLite
 
 Bringing a new engine to capability parity is a fixed checklist; see
 `docs/adding-a-database-engine.md`.
@@ -623,7 +726,7 @@ as ER diagrams. Engine adapters map completion candidates into the stable
 by connection and metadata version. This boundary allows more resolution to
 move into Omni later without changing metadata storage or the editor protocol.
 
-`internal/connection` manages live target database sessions:
+Handlers reach live sessions only through the `internal/execution` runtime (see Target Execution). Beneath `LocalRuntime`, in the `all` or `connector` process, `internal/connection` manages live target database sessions:
 
 - Sessions are keyed by account and connection.
 - Session IDs are passed through `X-Warden-Session`.
@@ -639,7 +742,7 @@ Interactive query execution has two server APIs:
 - `POST .../query-cursors/{query_cursor_id}/fetch` fetches the next page.
 - `DELETE .../query-cursors/{query_cursor_id}` closes the cursor-backed query cursor.
 
-HTTP query cursors are in-memory and process-local. They are tied to the authenticated account, route context, live DB session, workspace, environment when present, and connection. They must not be treated as durable query history. Server restart, live DB session removal, cursor close, exhaustion, or idle reaping makes the query cursor unavailable and clients should run the query again.
+HTTP query cursors are in-memory and local to the process that owns execution: the `all` process, or the connector in a split deployment. They are tied to the authenticated account, route context, live DB session, workspace, environment when present, and connection. They must not be treated as durable query history. Restart of that process, live DB session removal, cursor close, exhaustion, or idle reaping makes the query cursor unavailable and clients should run the query again.
 
 Query-cursor authorization uses the same SQL classification as direct query execution. `conn:execute` can run any query class. Otherwise `conn:dql`, `conn:dml`, or `conn:ddl` is required based on the query. Authorization is checked when the query cursor is opened. Fetch requests validate authentication, route scope, live parent session ownership, and cursor lifecycle state; they do not reclassify or reauthorize the already-open SQL text.
 
@@ -713,7 +816,7 @@ Implemented:
 Background jobs:
 
 - Jobs are persisted in the application database with user/internal visibility and lifecycle state.
-- The API process runs in-process workers using database claim leases, cooperative cancellation, retry policy, priority-aware best-effort claiming, stale-claim recovery, and completed-job retention pruning.
+- Every `all` and `api` process runs in-process workers using database claim leases, cooperative cancellation, retry policy, priority-aware best-effort claiming, stale-claim recovery, and completed-job retention pruning.
 - Singleton internal jobs use a database-enforced active `singleton_key` so multiple API pods can safely race to schedule maintenance work without creating duplicate queued/running jobs.
 - User-visible job APIs are scoped under organization workspace routes and currently expose only the authenticated user's jobs in that workspace.
 - User-facing job events are append-only progress records for user-visible jobs. They are fetched incrementally with an `after_id` marker and are retained with the parent job.
@@ -746,8 +849,11 @@ Implemented schema introspection includes:
 The metadata database is the synchronization boundary for multiple SQLWarden
 replicas: singleton job keys deduplicate refresh work and immutable snapshot IDs
 avoid partial reads. Redis is not required. Live database sessions and query
-cursors remain process-local and therefore still require sticky routing until a
-separate distributed session design is introduced. Completion should consume
+cursors are owned by the process running `LocalRuntime`. Several `all` replicas
+therefore need sticky routing to the replica that owns a session; in the split topology
+API replicas scale freely and forward to the single connector through the
+static session directory. Multiple connectors require a shared session
+directory, which is not implemented. Completion should consume
 the same snapshot reader through a transport-neutral service; WebSocket/LSP
 transport can be added later for collaboration without changing snapshot
 storage.
@@ -838,6 +944,9 @@ Backend tests are substantial and should be extended with every behavior change:
 - `internal/access/*_test.go`: enforcer, permissions, inheritance, policy behavior.
 - `internal/database/*_test.go`: query helpers and persistence behavior.
 - `internal/files/*_test.go` and `internal/filestore/*_test.go`: file service/storage behavior.
+- `internal/architecture/*_test.go`: import boundaries, lifecycle conventions, package documentation, and agent guidance parity.
+- `deploy/helm/chart_test.go`: Helm chart invariants for the split topology.
+- `*test` contract packages (`executiontest`, `credentialstest`, `audittest`, `editiontest`, `enginetest`): shared behavior every implementation of a seam must pass.
 
 Database tests use testcontainers where needed; Docker must be available locally.
 
@@ -874,6 +983,9 @@ When upgrading Go:
 Current implemented controls:
 
 - Credentials encrypted at rest.
+- Execution-time credential resolution confined to the process running `LocalRuntime` (the connector in a split deployment).
+- Signed, short-lived, scope-bound execution grants on every internal execution call, with optional TLS transport.
+- Durable audit events for identity, access, and catalog use cases.
 - Key rotation foundation for DSNs and file content.
 - Server-side target driver validation/gating.
 - SQLite target connection allowed-source controls.
@@ -887,8 +999,9 @@ Current implemented controls:
 
 Important open gaps:
 
-- Audit trail for policy and data access events.
+- Audit events for data access (query execution), and an audit read/export surface.
 - Tamper-evident audit logs.
+- Workload identity and mutual TLS for the internal execution transport.
 - SSO/SCIM identity lifecycle.
 - SSRF-safe cloud deployment model.
 - Distributed cache invalidation.
@@ -899,7 +1012,7 @@ SQLWarden is primarily self-hosted. Any future hosted/cloud offering needs stron
 
 ## Desktop/Wails Direction
 
-Future Wails support should reuse `internal/web` instead of importing `cmd/api`.
+Future Wails support should compose through `internal/app` and reuse `internal/web` instead of importing `cmd/api`.
 
 Recommended model:
 
@@ -914,7 +1027,7 @@ Future desktop may support multiple remote SQLWarden backends, such as separate 
 
 ## Open-Core / Enterprise Direction
 
-The current repository has no `enterprise/` tree. If SQLWarden later adopts an open-core model, keep the core platform in Apache-licensed packages and isolate proprietary add-ons.
+The open-core boundary is structural today: `internal/edition` is the seam, `internal/community` composes the Community edition that `cmd/api` ships, and `ee/` holds Enterprise composition code that core packages never import (enforced by `internal/architecture`). See Editions above for what `ee/` contains. No released binary composes `ee/`, so none of the features below is available as a product yet.
 
 Likely enterprise-only features:
 
