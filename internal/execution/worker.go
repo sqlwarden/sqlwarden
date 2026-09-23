@@ -479,6 +479,9 @@ func (r *WorkerRuntime) endpoint(ctx context.Context, handle SessionHandle, path
 	if !found || strings.TrimSpace(record.RoutingAddress) == "" {
 		return "", sessionLost(nil)
 	}
+	if record.ProtocolVersion != ProtocolVersion {
+		return "", ErrProtocolMismatch
+	}
 	address := strings.TrimSpace(record.RoutingAddress)
 	if parsed, parseErr := url.Parse(address); parseErr == nil && parsed.Scheme != "" {
 		return strings.TrimRight(address, "/") + path, nil
@@ -501,11 +504,11 @@ func classifyTransportFailure(kind transportFailureKind, err error) error {
 
 func decodeHTTPError(response *http.Response) error {
 	var result rpcResponse
-	if err := json.NewDecoder(io.LimitReader(response.Body, maxRPCResponseBytes)).Decode(&result); err != nil {
-		return fmt.Errorf("execution RPC status %d", response.StatusCode)
-	}
-	if result.Error != nil {
+	if err := json.NewDecoder(io.LimitReader(response.Body, maxRPCResponseBytes)).Decode(&result); err == nil && result.Error != nil {
 		return result.Error.err()
+	}
+	if response.StatusCode == http.StatusNotFound {
+		return ErrProtocolMismatch
 	}
 	return fmt.Errorf("execution RPC status %d", response.StatusCode)
 }

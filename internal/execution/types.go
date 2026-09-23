@@ -4,9 +4,9 @@ import (
 	"context"
 	"errors"
 	"io"
+	"log/slog"
 	"time"
 
-	"github.com/sqlwarden/internal/engine"
 	"github.com/sqlwarden/internal/engine/cursor"
 	"github.com/sqlwarden/internal/engine/ddl"
 	"github.com/sqlwarden/internal/engine/explain"
@@ -56,38 +56,41 @@ type Limits struct {
 	MaxBytes int64 `json:"max_bytes"`
 }
 
-// SSHConfig is the wire-safe SSH tunnel configuration used to reach a target.
+// SSHConfig is decoded SSH tunnel material used locally while opening a target.
 type SSHConfig struct {
-	Host                string `json:"host"`
-	Port                int    `json:"port"`
-	User                string `json:"user"`
-	AuthMethod          string `json:"auth_method"`
-	Password            string `json:"password,omitempty"`
-	PrivateKeyPEM       string `json:"private_key_pem,omitempty"`
-	Passphrase          string `json:"passphrase,omitempty"`
-	KnownHostsEntry     string `json:"known_hosts_entry,omitempty"`
-	Fingerprint         string `json:"fingerprint,omitempty"`
-	InsecureSkipHostKey bool   `json:"insecure_skip_host_key"`
+	Host                string        `json:"host"`
+	Port                int           `json:"port"`
+	User                string        `json:"user"`
+	AuthMethod          SSHAuthMethod `json:"auth_method"`
+	Password            string        `json:"password,omitempty"`
+	PrivateKeyPEM       string        `json:"private_key_pem,omitempty"`
+	Passphrase          string        `json:"passphrase,omitempty"`
+	KnownHostsEntry     string        `json:"known_hosts_entry,omitempty"`
+	Fingerprint         string        `json:"fingerprint,omitempty"`
+	InsecureSkipHostKey bool          `json:"insecure_skip_host_key"`
 }
 
-// Target describes how a runtime opens the target database. Credential
-// resolution moves behind its own provider in SQLW-170; keeping it in this
-// request today preserves current behavior and gives WorkerRuntime a serializable
-// request from its first implementation.
-type Target struct {
-	Driver       string             `json:"driver"`
-	DSN          string             `json:"dsn"`
-	DefaultScope metadata.ScopePath `json:"default_scope,omitempty"`
-	TLS          *engine.TLSConfig  `json:"tls,omitempty"`
-	SSH          *SSHConfig         `json:"ssh,omitempty"`
-	Limits       Limits             `json:"limits"`
+// MarshalJSON prevents decoded SSH secrets from entering transport payloads.
+func (SSHConfig) MarshalJSON() ([]byte, error) {
+	return nil, ErrCredentialSerialization
 }
+
+// String redacts SSH secrets from fmt verbs such as %v and %+v.
+func (SSHConfig) String() string { return "execution.SSHConfig{[redacted]}" }
+
+// GoString redacts SSH secrets from the %#v verb.
+func (c SSHConfig) GoString() string { return c.String() }
+
+// LogValue redacts SSH secrets from structured logs.
+func (c SSHConfig) LogValue() slog.Value { return slog.StringValue(c.String()) }
 
 // OpenRequest describes a target session to open. Ephemeral sessions never
 // reuse an interactive session and are intended for bounded background work.
+// Target credentials are deliberately absent: the owning connector resolves
+// them from Scope.ConnectionID.
 type OpenRequest struct {
 	Scope     Scope  `json:"scope"`
-	Target    Target `json:"target"`
+	Limits    Limits `json:"limits"`
 	Grant     Grant  `json:"grant"`
 	Ephemeral bool   `json:"ephemeral,omitempty"`
 }

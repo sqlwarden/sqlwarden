@@ -5,6 +5,7 @@ import (
 	"errors"
 
 	"github.com/sqlwarden/internal/catalog"
+	"github.com/sqlwarden/internal/execution"
 )
 
 var (
@@ -20,6 +21,27 @@ func (app *application) validateTargetConnection(ctx context.Context, driverName
 		return app.catalog.Targets().Validate(ctx, driverName, dsn)
 	}
 	return catalog.NewTargetPolicy(app.settingsService()).Validate(ctx, driverName, dsn)
+}
+
+// isTargetRejected reports whether an execution Open failed on connector-side
+// target policy. Remote runtimes carry only the most specific sentinel.
+func isTargetRejected(err error) bool {
+	return errors.Is(err, execution.ErrTargetRejected) ||
+		errors.Is(err, execution.ErrSQLiteTargetDisabled) ||
+		errors.Is(err, execution.ErrSQLiteInMemoryTargetDisabled)
+}
+
+// targetCredentialsUnavailableMessage is the user-facing text for credential
+// resolution failures; the underlying error is never shown.
+const targetCredentialsUnavailableMessage = "The connection credentials could not be loaded. Update the connection and try again."
+
+// isTargetCredentialFailure reports whether an execution Open failed resolving
+// stored connection credentials. Retrying cannot repair the stored record, so
+// callers classify these as permanent.
+func isTargetCredentialFailure(err error) bool {
+	return errors.Is(err, execution.ErrCredentialsNotFound) ||
+		errors.Is(err, execution.ErrCredentialDecryption) ||
+		errors.Is(err, execution.ErrCredentialsInvalid)
 }
 
 func targetConnectionFieldError(err error) string {

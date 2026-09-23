@@ -9,8 +9,8 @@ import (
 )
 
 const (
-	runtimeRPCPath    = "/internal/execution/v1/call"
-	runtimeStreamPath = "/internal/execution/v1/stream"
+	runtimeRPCPath    = "/internal/execution/v2/call"
+	runtimeStreamPath = "/internal/execution/v2/stream"
 )
 
 type rpcEnvelope struct {
@@ -39,7 +39,26 @@ const (
 	rpcKindExportFormat             = "export_format_unsupported"
 	rpcKindExportCursor             = "export_cursor_unsupported"
 	rpcKindExportLimit              = "export_limit_exceeded"
+	rpcKindCredentialsNotFound      = "credentials_not_found"
+	rpcKindCredentialDecryption     = "credential_decryption"
+	rpcKindCredentialsInvalid       = "credentials_invalid"
+	rpcKindSQLiteTargetDisabled     = "sqlite_target_disabled"
+	rpcKindSQLiteMemoryDisabled     = "sqlite_memory_target_disabled"
+	rpcKindTargetRejected           = "target_rejected"
+	rpcKindTargetConnection         = "target_connection"
 )
+
+// redactedRPCKinds maps kinds whose underlying errors may carry credential or
+// target detail to the only sentinel allowed to cross the wire for them.
+var redactedRPCKinds = map[string]error{
+	rpcKindCredentialsNotFound:  ErrCredentialsNotFound,
+	rpcKindCredentialDecryption: ErrCredentialDecryption,
+	rpcKindCredentialsInvalid:   ErrCredentialsInvalid,
+	rpcKindSQLiteTargetDisabled: ErrSQLiteTargetDisabled,
+	rpcKindSQLiteMemoryDisabled: ErrSQLiteInMemoryTargetDisabled,
+	rpcKindTargetRejected:       ErrTargetRejected,
+	rpcKindTargetConnection:     ErrTargetConnection,
+}
 
 func newRPCError(err error) *rpcError {
 	if err == nil {
@@ -68,6 +87,23 @@ func newRPCError(err error) *rpcError {
 		wire.Kind = rpcKindExportCursor
 	case errors.Is(err, exports.ErrByteLimitExceeded):
 		wire.Kind = rpcKindExportLimit
+	case errors.Is(err, ErrCredentialsNotFound):
+		wire.Kind = rpcKindCredentialsNotFound
+	case errors.Is(err, ErrCredentialDecryption):
+		wire.Kind = rpcKindCredentialDecryption
+	case errors.Is(err, ErrCredentialsInvalid):
+		wire.Kind = rpcKindCredentialsInvalid
+	case errors.Is(err, ErrSQLiteTargetDisabled):
+		wire.Kind = rpcKindSQLiteTargetDisabled
+	case errors.Is(err, ErrSQLiteInMemoryTargetDisabled):
+		wire.Kind = rpcKindSQLiteMemoryDisabled
+	case errors.Is(err, ErrTargetRejected):
+		wire.Kind = rpcKindTargetRejected
+	case errors.Is(err, ErrTargetConnection):
+		wire.Kind = rpcKindTargetConnection
+	}
+	if sentinel, ok := redactedRPCKinds[wire.Kind]; ok {
+		wire.Message = sentinel.Error()
 	}
 	return wire
 }
@@ -108,9 +144,25 @@ func (e *rpcError) err() error {
 		sentinel = exports.ErrCursorUnsupported
 	case rpcKindExportLimit:
 		sentinel = exports.ErrByteLimitExceeded
+	case rpcKindCredentialsNotFound:
+		sentinel = ErrCredentialsNotFound
+	case rpcKindCredentialDecryption:
+		sentinel = ErrCredentialDecryption
+	case rpcKindCredentialsInvalid:
+		sentinel = ErrCredentialsInvalid
+	case rpcKindSQLiteTargetDisabled:
+		sentinel = ErrSQLiteTargetDisabled
+	case rpcKindSQLiteMemoryDisabled:
+		sentinel = ErrSQLiteInMemoryTargetDisabled
+	case rpcKindTargetRejected:
+		sentinel = ErrTargetRejected
+	case rpcKindTargetConnection:
+		sentinel = ErrTargetConnection
 	}
 	message := errors.New(e.Message)
-	if sentinel != nil {
+	if redacted, ok := redactedRPCKinds[e.Kind]; ok {
+		message = redacted
+	} else if sentinel != nil {
 		message = errors.Join(sentinel, message)
 	}
 	if e.Code != "" {

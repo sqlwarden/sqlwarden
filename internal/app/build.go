@@ -19,6 +19,7 @@ import (
 	"github.com/sqlwarden/internal/completion"
 	"github.com/sqlwarden/internal/config"
 	"github.com/sqlwarden/internal/connection"
+	"github.com/sqlwarden/internal/credentials"
 	"github.com/sqlwarden/internal/database"
 	"github.com/sqlwarden/internal/edition"
 	"github.com/sqlwarden/internal/encrypt"
@@ -181,12 +182,18 @@ func Build(ctx context.Context, opts Options) (*Application, error) {
 		return nil
 	})
 	var sessionDirectory execution.SessionDirectory = execution.NewMemorySessionDirectory()
-	localExecution := execution.NewLocalRuntime(connManager, queryCursors, sessionDirectory, sessionIdleTimeout)
-	executionRuntime := execution.SessionRuntime(localExecution)
+	var localExecution execution.SessionRuntime
+	var executionRuntime execution.SessionRuntime
 	var executionServer *execution.RuntimeServer
 	var serverCredentials execution.ServerTransportCredentials
 	apiSelected := explicitlySelectsProcessKind(cfg, config.ProcessKindAPI)
 	connectorSelected := explicitlySelectsProcessKind(cfg, config.ProcessKindConnector)
+	targetPolicy := catalog.NewTargetPolicy(settingsService)
+	if !apiSelected || connectorSelected {
+		credentialProvider := credentials.NewEncryptedColumnProvider(db, keyring)
+		localExecution = execution.NewLocalRuntime(connManager, queryCursors, sessionDirectory, credentialProvider, targetPolicy, sessionIdleTimeout)
+		executionRuntime = localExecution
+	}
 	if apiSelected || connectorSelected {
 		grantAuthority, grantErr := execution.NewGrantAuthority([]byte(cfg.Connector.GrantSigningKey), "sqlwarden-api", "sqlwarden-connector", 0)
 		if grantErr != nil {
@@ -242,7 +249,7 @@ func Build(ctx context.Context, opts Options) (*Application, error) {
 			enforcer,
 			executionRuntime,
 			keyring,
-			catalog.NewTargetPolicy(settingsService),
+			targetPolicy,
 			auditWriter,
 		),
 		Access:                     access.NewService(access.NewSQLStore(db.DB), enforcer, policyEvaluator, auditWriter),

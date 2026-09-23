@@ -21,8 +21,8 @@ import (
 )
 
 // Services is the constructed dependency graph shared by every process kind.
-// Every field is non-nil once [Build] returns, and none of them own background
-// goroutines that [Application.Close] does not stop.
+// Required fields are non-nil once [Build] returns, and none of them own
+// background goroutines that [Application.Close] does not stop.
 //
 // Services holds infrastructure and cross-cutting capabilities only. Domain
 // behavior that needs request context, such as the job handler registry, is
@@ -75,7 +75,8 @@ type Services struct {
 	// future RPC adapters use this port rather than concrete session managers.
 	Execution execution.SessionRuntime
 	// LocalExecution owns target sessions in all-in-one and connector processes.
-	// Execution may instead be a WorkerRuntime in an API-only process.
+	// It is nil in an API-only process, where Execution is a WorkerRuntime and
+	// no credential provider is constructed.
 	LocalExecution execution.SessionRuntime
 	// ExecutionServer and ConnectorServerCredentials are non-nil only when the
 	// connector process kind is explicitly selected. All-in-one mode creates no

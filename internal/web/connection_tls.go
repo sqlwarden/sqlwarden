@@ -8,7 +8,6 @@ import (
 	"slices"
 	"strings"
 
-	"github.com/sqlwarden/internal/database"
 	"github.com/sqlwarden/internal/engine"
 	"github.com/sqlwarden/internal/validator"
 )
@@ -71,17 +70,6 @@ func (app *application) decodeTLSDocument(encrypted string) (tlsConfigDocument, 
 		return tlsConfigDocument{}, false, fmt.Errorf("decode tls config: unmarshal: %w", err)
 	}
 	return d, true, nil
-}
-
-func (app *application) openTLSConfig(conn database.Connection) (*engine.TLSConfig, error) {
-	doc, has, err := app.decodeTLSDocument(conn.TLSConfigEncrypted)
-	if err != nil {
-		return nil, err
-	}
-	if !has {
-		return nil, nil
-	}
-	return doc.toEngine(), nil
 }
 
 // tlsSpecForDriver returns the engine's TLS spec, or false when the engine

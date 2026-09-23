@@ -22,6 +22,7 @@ import (
 	"github.com/sqlwarden/internal/catalog"
 	completionapp "github.com/sqlwarden/internal/completion"
 	"github.com/sqlwarden/internal/connection"
+	"github.com/sqlwarden/internal/credentials"
 	"github.com/sqlwarden/internal/database"
 	"github.com/sqlwarden/internal/execution"
 	schemaapp "github.com/sqlwarden/internal/schema"
@@ -77,7 +78,8 @@ func newTestApp(t *testing.T) *application {
 	connManager := connection.New(30 * time.Minute)
 	queryCursors := connection.NewQueryCursorManager(30 * time.Minute)
 	app.executionRuntime = execution.NewLocalRuntime(
-		connManager, queryCursors, execution.NewMemorySessionDirectory(), 30*time.Minute,
+		connManager, queryCursors, execution.NewMemorySessionDirectory(),
+		credentials.NewEncryptedColumnProvider(app.db, app.keyring), catalog.NewTargetPolicy(app.settings), 30*time.Minute,
 	)
 	registerTestRuntimeManagers(t, app, connManager, queryCursors)
 	app.catalog = catalog.NewService(

@@ -9,6 +9,7 @@ import (
 	"testing"
 
 	coreapp "github.com/sqlwarden/internal/app"
+	"github.com/sqlwarden/internal/catalog"
 	"github.com/sqlwarden/internal/config"
 	"github.com/sqlwarden/internal/database"
 	"github.com/sqlwarden/internal/execution"
@@ -47,6 +48,23 @@ func TestSeparateAPIAndConnectorProcessesExecuteWithoutAffinity(t *testing.T) {
 	}
 
 	connector := buildRuntimeProcess(t, []string{config.ProcessKindConnector}, connectorAddress)
+	ctx := context.Background()
+	org, err := connector.Services.DB.InsertOrg(ctx, "runtime-org", "Runtime Org")
+	if err != nil {
+		t.Fatal(err)
+	}
+	workspace, err := connector.Services.DB.InsertWorkspace(ctx, &org.ID, "org", org.ID, "Runtime Workspace", "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	encryptedDSN, err := connector.Services.Keyring.Encrypt(filepath.Join(t.TempDir(), "target.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	connectionRecord, err := connector.Services.DB.InsertConnection(ctx, workspace.ID, nil, "Runtime Connection", "sqlite", encryptedDSN, catalog.AccessModeOpen)
+	if err != nil {
+		t.Fatal(err)
+	}
 	if err := connector.Start(context.Background()); err != nil {
 		t.Fatal(err)
 	}
@@ -65,8 +83,7 @@ func TestSeparateAPIAndConnectorProcessesExecuteWithoutAffinity(t *testing.T) {
 	}
 
 	opened, err := api.Services.Execution.Open(context.Background(), execution.OpenRequest{
-		Scope:  execution.Scope{TenantID: "1", AccountID: "2", WorkspaceID: "3", ConnectionID: "4"},
-		Target: execution.Target{Driver: "sqlite", DSN: filepath.Join(t.TempDir(), "target.db")},
+		Scope: execution.ParseNumericScope(2, org.ID, workspace.ID, connectionRecord.ID),
 	})
 	if err != nil {
 		t.Fatal(err)

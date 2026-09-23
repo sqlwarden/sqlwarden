@@ -74,6 +74,9 @@ func TestForbiddenProductionImports(t *testing.T) {
 			if owner == "web" && (importPath == "github.com/sqlwarden/internal/connection" || strings.HasPrefix(importPath, "github.com/sqlwarden/internal/connection/")) {
 				t.Errorf("%s bypasses execution runtime with connection import %q", rel, importPath)
 			}
+			if owner == "web" && (importPath == "github.com/sqlwarden/internal/credentials" || strings.HasPrefix(importPath, "github.com/sqlwarden/internal/credentials/")) {
+				t.Errorf("%s resolves connector credentials in the API adapter via %q", rel, importPath)
+			}
 		}
 		return nil
 	})

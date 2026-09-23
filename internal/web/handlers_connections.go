@@ -634,44 +634,27 @@ func (app *application) connectToDatabase(w http.ResponseWriter, r *http.Request
 		return
 	}
 
-	plainDSN, err := app.keyring.Decrypt(conn.DSNEncrypted)
-	if err != nil {
-		app.serverError(w, r, err)
-		return
-	}
-	if err := app.validateTargetConnection(r.Context(), conn.Driver, plainDSN); err != nil {
-		app.errorMessage(w, r, http.StatusUnprocessableEntity, targetConnectionFieldError(err), nil)
-		return
-	}
-
 	settings, err := app.settingsService().EffectiveForWorkspace(r.Context(), ws)
 	if err != nil {
 		app.serverError(w, r, err)
 		return
 	}
 
-	tlsConfig, err := app.openTLSConfig(conn)
-	if err != nil {
-		app.serverError(w, r, err)
-		return
-	}
-	sshConfig, err := app.openSSHConfig(conn)
-	if err != nil {
-		app.serverError(w, r, err)
-		return
-	}
 	openCtx, cancel := context.WithTimeout(r.Context(), 10*time.Second)
 	defer cancel()
 	opened, err := app.executionRuntime.Open(openCtx, execution.OpenRequest{
-		Scope: execution.ParseNumericScope(account.ID, org.ID, ws.ID, conn.ID),
-		Target: execution.Target{
-			Driver: conn.Driver, DSN: plainDSN, DefaultScope: conn.DefaultScope,
-			TLS: tlsConfig, SSH: sshConfig,
-			Limits: execution.Limits{MaxRows: settings.QueryMaxResultRows, MaxBytes: settings.QueryMaxResultBytes},
-		},
+		Scope:  execution.ParseNumericScope(account.ID, org.ID, ws.ID, conn.ID),
+		Limits: execution.Limits{MaxRows: settings.QueryMaxResultRows, MaxBytes: settings.QueryMaxResultBytes},
 	})
 	if err != nil {
-		app.errorMessage(w, r, http.StatusUnprocessableEntity, err.Error(), nil)
+		switch {
+		case isTargetRejected(err):
+			app.errorMessage(w, r, http.StatusUnprocessableEntity, targetConnectionFieldError(err), nil)
+		case errors.Is(err, execution.ErrTargetConnection):
+			app.errorMessage(w, r, http.StatusUnprocessableEntity, execution.ErrTargetConnection.Error(), nil)
+		default:
+			app.serverError(w, r, err)
+		}
 		return
 	}
 

@@ -260,25 +260,10 @@ func (app *application) inspectAndUpsertObjects(ctx context.Context, inspector m
 // schema work. The caller must invoke closeSession. Errors remain coded so both
 // the job runner and HTTP callers can classify them consistently.
 func (app *application) openTargetSchemaInspector(ctx context.Context, conn database.Connection, ws database.Workspace) (metadata.SchemaInspector, execution.SessionCapabilities, func(), error) {
-	plainDSN, err := app.keyring.Decrypt(conn.DSNEncrypted)
-	if err != nil {
-		return nil, execution.SessionCapabilities{}, nil, err
-	}
-	if err := app.validateTargetConnection(ctx, conn.Driver, plainDSN); err != nil {
-		return nil, execution.SessionCapabilities{}, nil, jobs.Permanent("schema_sync_target_blocked", "The target database is blocked by policy.")
-	}
 	if _, ok := engine.Describe(conn.Driver); !ok {
 		return nil, execution.SessionCapabilities{}, nil, jobs.Permanent("schema_sync_driver_unavailable", "The target driver is unavailable.")
 	}
 	settings, err := app.settingsService().EffectiveForWorkspace(ctx, ws)
-	if err != nil {
-		return nil, execution.SessionCapabilities{}, nil, err
-	}
-	tlsCfg, err := app.openTLSConfig(conn)
-	if err != nil {
-		return nil, execution.SessionCapabilities{}, nil, err
-	}
-	sshCfg, err := app.openSSHConfig(conn)
 	if err != nil {
 		return nil, execution.SessionCapabilities{}, nil, err
 	}
@@ -287,14 +272,17 @@ func (app *application) openTargetSchemaInspector(ctx context.Context, conn data
 		tenantID = strconv.FormatInt(*ws.OrgID, 10)
 	}
 	opened, err := app.executionRuntime.Open(ctx, execution.OpenRequest{
-		Scope: execution.Scope{TenantID: tenantID, WorkspaceID: strconv.FormatInt(ws.ID, 10), ConnectionID: strconv.FormatInt(conn.ID, 10)},
-		Target: execution.Target{
-			Driver: conn.Driver, DSN: plainDSN, DefaultScope: conn.DefaultScope, TLS: tlsCfg, SSH: sshCfg,
-			Limits: execution.Limits{MaxRows: settings.QueryMaxResultRows, MaxBytes: settings.QueryMaxResultBytes},
-		},
+		Scope:     execution.Scope{TenantID: tenantID, WorkspaceID: strconv.FormatInt(ws.ID, 10), ConnectionID: strconv.FormatInt(conn.ID, 10)},
+		Limits:    execution.Limits{MaxRows: settings.QueryMaxResultRows, MaxBytes: settings.QueryMaxResultBytes},
 		Ephemeral: true,
 	})
 	if err != nil {
+		if isTargetRejected(err) {
+			return nil, execution.SessionCapabilities{}, nil, jobs.Permanent("schema_sync_target_blocked", "The target database is blocked by policy.")
+		}
+		if isTargetCredentialFailure(err) {
+			return nil, execution.SessionCapabilities{}, nil, jobs.Permanent("schema_sync_credentials_unavailable", targetCredentialsUnavailableMessage)
+		}
 		return nil, execution.SessionCapabilities{}, nil, jobs.Retryable("schema_sync_connect_failed", "Could not connect to the target database.")
 	}
 	closeSession := func() {

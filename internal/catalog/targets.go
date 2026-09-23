@@ -2,10 +2,12 @@ package catalog
 
 import (
 	"context"
+	"errors"
 	"strings"
 
 	"github.com/sqlwarden/internal/engine"
 	metadata "github.com/sqlwarden/internal/engine/metadata"
+	"github.com/sqlwarden/internal/execution"
 )
 
 // TargetPolicy decides which target databases may be registered on this
@@ -25,7 +27,8 @@ func NewTargetPolicy(reader InstanceSettingsReader) *TargetPolicy {
 }
 
 // Validate reports whether a target with this driver and DSN may be
-// registered. It returns the driver registration error for an unknown driver,
+// registered. It returns the driver registration error joined with
+// [execution.ErrTargetRejected] for an unknown driver,
 // and [ErrSQLiteTargetDisabled] or [ErrSQLiteInMemoryTargetDisabled] for a
 // target the instance has turned off.
 func (p *TargetPolicy) Validate(ctx context.Context, driverName, dsn string) error {
@@ -33,7 +36,7 @@ func (p *TargetPolicy) Validate(ctx context.Context, driverName, dsn string) err
 	dsn = strings.TrimSpace(dsn)
 
 	if _, err := engine.New(driverName); err != nil {
-		return err
+		return errors.Join(execution.ErrTargetRejected, err)
 	}
 	if driverName != string(engine.DialectSQLite) {
 		return nil

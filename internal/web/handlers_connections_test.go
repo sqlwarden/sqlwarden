@@ -1547,7 +1547,7 @@ func TestExecuteDQLQueryFallsBackToSessionQueryWhenCursorUnsupported(t *testing.
 	if err != nil {
 		t.Fatal(err)
 	}
-	app := &application{executionRuntime: execution.NewLocalRuntime(sessions, cursors, execution.NewMemorySessionDirectory(), time.Minute)}
+	app := &application{executionRuntime: execution.NewLocalRuntime(sessions, cursors, execution.NewMemorySessionDirectory(), nil, nil, time.Minute)}
 	useCursor := true
 	req := httptest.NewRequest(http.MethodPost, "/query", nil)
 

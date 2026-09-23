@@ -7,7 +7,6 @@ import (
 	"errors"
 	"net/http"
 	"net/http/httptest"
-	"path/filepath"
 	"strings"
 	"sync/atomic"
 	"testing"
@@ -26,7 +25,7 @@ func TestWorkerRuntimeContract(t *testing.T) {
 		sessions := connection.New(time.Minute)
 		cursors := connection.NewQueryCursorManager(time.Minute)
 		localDirectory := execution.NewMemorySessionDirectory()
-		local := execution.NewLocalRuntime(sessions, cursors, localDirectory, time.Minute)
+		local := execution.NewLocalRuntime(sessions, cursors, localDirectory, sqliteCredentials(t, "44"), nil, time.Minute)
 		authority, err := execution.NewGrantAuthority([]byte(testGrantKey), "api", "connector", time.Minute)
 		if err != nil {
 			t.Fatal(err)
@@ -87,10 +86,35 @@ func TestWorkerRuntimeDoesNotReplayAmbiguousWrite(t *testing.T) {
 	}
 }
 
+func TestWorkerRuntimeRejectsIncompatibleDirectoryProtocol(t *testing.T) {
+	directory := execution.NewMemorySessionDirectory()
+	handle := execution.SessionHandle("old-runtime-session")
+	scope := execution.Scope{ConnectionID: "42"}
+	now := time.Now()
+	if err := directory.Put(t.Context(), execution.DirectoryRecord{
+		Handle: handle, Scope: scope, OwnerRuntimeID: "old-runtime", RoutingAddress: "connector.internal:6021",
+		CreatedAt: now, LastSeenAt: now, LeaseExpiresAt: now.Add(time.Minute), ProtocolVersion: execution.ProtocolVersion - 1,
+	}); err != nil {
+		t.Fatal(err)
+	}
+	authority, err := execution.NewGrantAuthority([]byte(testGrantKey), "api", "connector", time.Minute)
+	if err != nil {
+		t.Fatal(err)
+	}
+	worker, err := execution.NewWorkerRuntime(directory, authority, execution.InsecureTransportCredentials{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	_, err = worker.Query(t.Context(), execution.QueryRequest{Handle: handle, Grant: execution.Grant{Scope: scope}, SQL: "SELECT 1"})
+	if !errors.Is(err, execution.ErrProtocolMismatch) {
+		t.Fatalf("Query() error = %v, want protocol mismatch", err)
+	}
+}
+
 func TestWorkerRuntimeDoesNotRequireAPIReplicaAffinity(t *testing.T) {
 	sessions := connection.New(time.Minute)
 	cursors := connection.NewQueryCursorManager(time.Minute)
-	local := execution.NewLocalRuntime(sessions, cursors, execution.NewMemorySessionDirectory(), time.Minute)
+	local := execution.NewLocalRuntime(sessions, cursors, execution.NewMemorySessionDirectory(), sqliteCredentials(t, "4"), nil, time.Minute)
 	authority, err := execution.NewGrantAuthority([]byte(testGrantKey), "api", "connector", time.Minute)
 	if err != nil {
 		t.Fatal(err)
@@ -118,8 +142,7 @@ func TestWorkerRuntimeDoesNotRequireAPIReplicaAffinity(t *testing.T) {
 
 	ctx := context.Background()
 	opened, err := first.Open(ctx, execution.OpenRequest{
-		Scope:  execution.Scope{TenantID: "1", AccountID: "2", WorkspaceID: "3", ConnectionID: "4"},
-		Target: execution.Target{Driver: "sqlite", DSN: filepath.Join(t.TempDir(), "affinity.db")},
+		Scope: execution.Scope{TenantID: "1", AccountID: "2", WorkspaceID: "3", ConnectionID: "4"},
 	})
 	if err != nil {
 		t.Fatal(err)
@@ -143,7 +166,7 @@ func newConnectorFixture(t *testing.T) (*httptest.Server, *execution.GrantAuthor
 	t.Helper()
 	sessions := connection.New(time.Minute)
 	cursors := connection.NewQueryCursorManager(time.Minute)
-	local := execution.NewLocalRuntime(sessions, cursors, execution.NewMemorySessionDirectory(), time.Minute)
+	local := execution.NewLocalRuntime(sessions, cursors, execution.NewMemorySessionDirectory(), sqliteCredentials(t, "4"), nil, time.Minute)
 	authority, err := execution.NewGrantAuthority([]byte(testGrantKey), "api", "connector", time.Minute)
 	if err != nil {
 		t.Fatal(err)
@@ -165,8 +188,7 @@ func TestRuntimeServerRejectsGrantForAnotherScope(t *testing.T) {
 	server, authority, local := newConnectorFixture(t)
 	scope := execution.Scope{TenantID: "1", AccountID: "2", WorkspaceID: "3", ConnectionID: "4"}
 	opened, err := local.Open(context.Background(), execution.OpenRequest{
-		Scope:  scope,
-		Target: execution.Target{Driver: "sqlite", DSN: filepath.Join(t.TempDir(), "scope.db")},
+		Scope: scope,
 	})
 	if err != nil {
 		t.Fatal(err)
@@ -184,7 +206,7 @@ func TestRuntimeServerRejectsGrantForAnotherScope(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	response, err := server.Client().Post(server.URL+"/internal/execution/v1/call", "application/json", bytes.NewReader(body))
+	response, err := server.Client().Post(server.URL+"/internal/execution/v2/call", "application/json", bytes.NewReader(body))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -214,8 +236,7 @@ func TestWorkerRuntimeStreamSurfacesRemoteFailure(t *testing.T) {
 	}
 	ctx := context.Background()
 	opened, err := worker.Open(ctx, execution.OpenRequest{
-		Scope:  execution.Scope{TenantID: "1", AccountID: "2", WorkspaceID: "3", ConnectionID: "4"},
-		Target: execution.Target{Driver: "sqlite", DSN: filepath.Join(t.TempDir(), "stream.db")},
+		Scope: execution.Scope{TenantID: "1", AccountID: "2", WorkspaceID: "3", ConnectionID: "4"},
 	})
 	if err != nil {
 		t.Fatal(err)

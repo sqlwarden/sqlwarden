@@ -876,7 +876,7 @@ func (app *application) schemaSyncHTTPError(w http.ResponseWriter, r *http.Reque
 		status = http.StatusNotFound
 	case "schema_snapshots_disabled":
 		status = http.StatusConflict
-	case "schema_sync_target_blocked":
+	case "schema_sync_target_blocked", "schema_sync_credentials_unavailable":
 		status = http.StatusUnprocessableEntity
 	case "schema_sync_driver_unavailable", "schema_sync_unsupported":
 		status = http.StatusNotImplemented

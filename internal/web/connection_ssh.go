@@ -7,7 +7,6 @@ import (
 	"net/http"
 	"strings"
 
-	"github.com/sqlwarden/internal/database"
 	"github.com/sqlwarden/internal/engine"
 	"github.com/sqlwarden/internal/execution"
 	"github.com/sqlwarden/internal/response"
@@ -54,7 +53,7 @@ func (d sshConfigDocument) toConnection() *execution.SSHConfig {
 		Host:                d.Host,
 		Port:                d.Port,
 		User:                d.User,
-		AuthMethod:          d.AuthMethod,
+		AuthMethod:          execution.SSHAuthMethod(d.AuthMethod),
 		Password:            d.Password,
 		PrivateKeyPEM:       d.PrivateKeyPEM,
 		Passphrase:          d.Passphrase,
@@ -88,17 +87,6 @@ func (app *application) decodeSSHDocument(encrypted string) (sshConfigDocument, 
 		return sshConfigDocument{}, false, fmt.Errorf("decode ssh config: unmarshal: %w", err)
 	}
 	return d, true, nil
-}
-
-func (app *application) openSSHConfig(conn database.Connection) (*execution.SSHConfig, error) {
-	doc, has, err := app.decodeSSHDocument(conn.SSHConfigEncrypted)
-	if err != nil {
-		return nil, err
-	}
-	if !has {
-		return nil, nil
-	}
-	return doc.toConnection(), nil
 }
 
 // sshTunnelSupported reports whether the engine can route its transport through

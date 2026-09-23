@@ -5,7 +5,6 @@ package executiontest
 import (
 	"context"
 	"errors"
-	"path/filepath"
 	"testing"
 
 	_ "github.com/sqlwarden/internal/engine/engines/sqlite"
@@ -25,11 +24,8 @@ func RunRuntimeContract(t *testing.T, factory Factory) {
 	scope := execution.Scope{TenantID: "11", AccountID: "22", WorkspaceID: "33", ConnectionID: "44"}
 
 	opened, err := runtime.Open(ctx, execution.OpenRequest{
-		Scope: scope,
-		Target: execution.Target{
-			Driver: "sqlite", DSN: filepath.Join(t.TempDir(), "runtime.db"),
-			Limits: execution.Limits{MaxRows: 100, MaxBytes: 1 << 20},
-		},
+		Scope:  scope,
+		Limits: execution.Limits{MaxRows: 100, MaxBytes: 1 << 20},
 	})
 	if err != nil {
 		t.Fatal(err)
@@ -37,7 +33,7 @@ func RunRuntimeContract(t *testing.T, factory Factory) {
 	if opened.Handle == "" || opened.Reused {
 		t.Fatalf("Open() = %+v", opened)
 	}
-	openedAgain, err := runtime.Open(ctx, execution.OpenRequest{Scope: scope, Target: execution.Target{Driver: "sqlite"}})
+	openedAgain, err := runtime.Open(ctx, execution.OpenRequest{Scope: scope})
 	if err != nil {
 		t.Fatal(err)
 	}

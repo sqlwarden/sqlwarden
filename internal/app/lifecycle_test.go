@@ -146,11 +146,12 @@ func TestBuildSelectsExecutionRuntimeForProcessTopology(t *testing.T) {
 		name       string
 		kinds      []string
 		wantWorker bool
+		wantLocal  bool
 	}{
-		{name: "all remains local", kinds: []string{config.ProcessKindAll}},
+		{name: "all remains local", kinds: []string{config.ProcessKindAll}, wantLocal: true},
 		{name: "api delegates to connector", kinds: []string{config.ProcessKindAPI}, wantWorker: true},
-		{name: "co-located api and connector remains local", kinds: []string{config.ProcessKindAPI, config.ProcessKindConnector}},
-		{name: "connector remains local", kinds: []string{config.ProcessKindConnector}},
+		{name: "co-located api and connector remains local", kinds: []string{config.ProcessKindAPI, config.ProcessKindConnector}, wantLocal: true},
+		{name: "connector remains local", kinds: []string{config.ProcessKindConnector}, wantLocal: true},
 	}
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
@@ -159,8 +160,8 @@ func TestBuildSelectsExecutionRuntimeForProcessTopology(t *testing.T) {
 			if isWorker != test.wantWorker {
 				t.Fatalf("Execution is WorkerRuntime = %t, want %t", isWorker, test.wantWorker)
 			}
-			if services.LocalExecution == nil {
-				t.Fatal("local execution runtime is missing")
+			if (services.LocalExecution != nil) != test.wantLocal {
+				t.Fatalf("local execution runtime present = %t, want %t", services.LocalExecution != nil, test.wantLocal)
 			}
 			wantServer := false
 			for _, kind := range test.kinds {

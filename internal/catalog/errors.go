@@ -1,6 +1,10 @@
 package catalog
 
-import "errors"
+import (
+	"errors"
+
+	"github.com/sqlwarden/internal/execution"
+)
 
 // Catalog application errors. Transports map these to status codes and
 // user-facing messages. None of them carry DSNs, credentials, or row data.
@@ -36,10 +40,10 @@ var (
 
 	// ErrSQLiteTargetDisabled reports a SQLite file target refused by instance
 	// policy.
-	ErrSQLiteTargetDisabled = errors.New("sqlite file target connections are disabled for this instance")
+	ErrSQLiteTargetDisabled = execution.ErrSQLiteTargetDisabled
 	// ErrSQLiteInMemoryTargetDisabled reports an in-memory SQLite target
 	// refused by instance policy.
-	ErrSQLiteInMemoryTargetDisabled = errors.New("sqlite in-memory target connections are disabled for this instance")
+	ErrSQLiteInMemoryTargetDisabled = execution.ErrSQLiteInMemoryTargetDisabled
 )
 
 // ActiveSessionsReason distinguishes the connection changes that invalidate

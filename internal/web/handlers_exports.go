@@ -16,7 +16,6 @@ import (
 
 	"github.com/sqlwarden/internal/access"
 	"github.com/sqlwarden/internal/database"
-	"github.com/sqlwarden/internal/engine"
 	"github.com/sqlwarden/internal/engine/classifier"
 	"github.com/sqlwarden/internal/execution"
 	"github.com/sqlwarden/internal/exports"
@@ -259,26 +258,26 @@ func (app *application) handleExportJob(ctx context.Context, runtime jobs.Runtim
 		return nil, jobs.Permanent("export_multi_statement", "Only a single query can be exported. Multi-query export isn't supported yet.")
 	}
 
-	plainDSN, err := app.keyring.Decrypt(conn.DSNEncrypted)
-	if err != nil {
-		return nil, err
-	}
-	if err := app.validateTargetConnection(ctx, conn.Driver, plainDSN); err != nil {
-		return nil, jobs.Permanent("export_target_blocked", targetConnectionFieldError(err))
-	}
-	driver, err := engine.New(conn.Driver)
-	if err != nil {
-		return nil, err
-	}
-	if err := driver.Connect(ctx, engine.ConnectionConfig{DSN: plainDSN, Driver: conn.Driver, DefaultScope: conn.DefaultScope}); err != nil {
-		return nil, jobs.Retryable("export_connect_failed", "Could not connect to the target database.")
-	}
-	defer driver.Close()
-	runtime.Events.Info(ctx, "target_connected", "Connected to database.", nil)
 	runtimeSettings, err := app.settingsService().EffectiveForWorkspace(ctx, ws)
 	if err != nil {
 		return nil, err
 	}
+	opened, err := app.executionRuntime.Open(ctx, execution.OpenRequest{
+		Scope:     execution.ParseNumericScope(input.AccountID, org.ID, ws.ID, conn.ID),
+		Limits:    execution.Limits{MaxRows: runtimeSettings.QueryMaxResultRows, MaxBytes: runtimeSettings.QueryMaxResultBytes},
+		Ephemeral: true,
+	})
+	if err != nil {
+		if isTargetRejected(err) {
+			return nil, jobs.Permanent("export_target_blocked", targetConnectionFieldError(err))
+		}
+		if isTargetCredentialFailure(err) {
+			return nil, jobs.Permanent("export_credentials_unavailable", targetCredentialsUnavailableMessage)
+		}
+		return nil, jobs.Retryable("export_connect_failed", "Could not connect to the target database.")
+	}
+	defer app.executionRuntime.Close(context.WithoutCancel(ctx), execution.CloseRequest{Handle: opened.Handle})
+	runtime.Events.Info(ctx, "target_connected", "Connected to database.", nil)
 
 	scope := files.Scope{AccountID: input.AccountID, OrgID: org.ID, OrgSlug: org.Slug, Workspace: ws, Visibility: database.FileVisibilityPrivate}
 	file, err := app.createExportFile(ctx, scope, input.Filename)
@@ -293,7 +292,7 @@ func (app *application) handleExportJob(ctx context.Context, runtime jobs.Runtim
 	go func() {
 		defer writer.Close()
 		var lastProgress int64
-		streamResult, err = exports.NewService().Stream(ctx, driver, writer, exports.StreamOptions{
+		streamResult, err = app.executionRuntime.Stream(ctx, execution.SessionRequest{Handle: opened.Handle}, writer, exports.StreamOptions{
 			Format:   input.Format,
 			SQL:      input.SQL,
 			MaxBytes: runtimeSettings.ExportsBackgroundMaxBytes,

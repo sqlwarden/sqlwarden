@@ -3,7 +3,6 @@ package execution
 import (
 	"context"
 	"errors"
-	"fmt"
 	"io"
 	"net"
 	"strconv"
@@ -19,7 +18,7 @@ import (
 )
 
 // ProtocolVersion is the execution contract version recorded in directory leases.
-const ProtocolVersion uint32 = 1
+const ProtocolVersion uint32 = 2
 
 // SSHAuthMethod identifies a supported tunnel authentication mechanism.
 type SSHAuthMethod string
@@ -55,71 +54,90 @@ func (t *SSHTunnel) Close() error { return t.tunnel.Close() }
 // LocalRuntime implements the execution boundary in-process by adapting the
 // existing session and cursor managers. It adds no network hop.
 type LocalRuntime struct {
-	sessions  *connection.Manager
-	cursors   *connection.QueryCursorManager
-	directory SessionDirectory
-	leaseTTL  time.Duration
-	now       func() time.Time
+	sessions           *connection.Manager
+	cursors            *connection.QueryCursorManager
+	directory          SessionDirectory
+	credentialProvider CredentialProvider
+	targetValidator    TargetValidator
+	leaseTTL           time.Duration
+	now                func() time.Time
 }
 
 // NewLocalRuntime adapts the existing in-process session and cursor managers
 // to the process-independent execution contract.
-func NewLocalRuntime(sessions *connection.Manager, cursors *connection.QueryCursorManager, directory SessionDirectory, leaseTTL time.Duration) *LocalRuntime {
+func NewLocalRuntime(sessions *connection.Manager, cursors *connection.QueryCursorManager, directory SessionDirectory, credentialProvider CredentialProvider, targetValidator TargetValidator, leaseTTL time.Duration) *LocalRuntime {
 	if directory == nil {
 		directory = NewMemorySessionDirectory()
 	}
-	return &LocalRuntime{sessions: sessions, cursors: cursors, directory: directory, leaseTTL: leaseTTL, now: time.Now}
+	return &LocalRuntime{
+		sessions: sessions, cursors: cursors, directory: directory,
+		credentialProvider: credentialProvider, targetValidator: targetValidator,
+		leaseTTL: leaseTTL, now: time.Now,
+	}
 }
 
 // Open creates or reuses a target session and publishes its directory lease.
 func (r *LocalRuntime) Open(ctx context.Context, request OpenRequest) (OpenResult, error) {
+	if r.credentialProvider == nil {
+		return OpenResult{}, errors.New("execution credential provider is unavailable")
+	}
+	credentials, err := r.credentialProvider.Resolve(ctx, request.Scope.ConnectionID)
+	if err != nil {
+		return OpenResult{}, err
+	}
+	if r.targetValidator != nil {
+		if err := r.targetValidator.Validate(ctx, credentials.Driver, credentials.DSN); err != nil {
+			return OpenResult{}, err
+		}
+	}
+
 	var tunnel *connection.Tunnel
 	open := func() (engine.Driver, func(), error) {
-		var err error
-		if request.Target.SSH != nil {
-			tunnel, err = connection.OpenTunnel(ctx, toConnectionSSH(*request.Target.SSH))
-			if err != nil {
-				return nil, nil, fmt.Errorf("ssh tunnel: %w", err)
+		if credentials.SSH != nil {
+			openedTunnel, tunnelErr := connection.OpenTunnel(ctx, toConnectionSSH(*credentials.SSH))
+			if tunnelErr != nil {
+				return nil, nil, ErrTargetConnection
 			}
+			tunnel = openedTunnel
 		}
 		teardown := func() {}
 		if tunnel != nil {
 			teardown = func() { _ = tunnel.Close() }
 		}
 
-		driver, err := engine.New(request.Target.Driver)
-		if err != nil {
+		driver, driverErr := engine.New(credentials.Driver)
+		if driverErr != nil {
 			teardown()
-			return nil, nil, err
+			return nil, nil, driverErr
 		}
 		config := engine.ConnectionConfig{
-			DSN:            request.Target.DSN,
-			Driver:         request.Target.Driver,
-			DefaultScope:   request.Target.DefaultScope,
-			MaxResultRows:  request.Target.Limits.MaxRows,
-			MaxResultBytes: request.Target.Limits.MaxBytes,
-			TLS:            request.Target.TLS,
+			DSN:            credentials.DSN,
+			Driver:         credentials.Driver,
+			DefaultScope:   credentials.DefaultScope,
+			MaxResultRows:  request.Limits.MaxRows,
+			MaxResultBytes: request.Limits.MaxBytes,
+			TLS:            credentials.TLS,
 		}
 		if tunnel != nil {
 			config.SSHDialer = tunnel.DialContext
 		}
 		if err := driver.Connect(ctx, config); err != nil {
 			teardown()
-			return nil, nil, err
+			return nil, nil, ErrTargetConnection
 		}
 		return driver, teardown, nil
 	}
 	metadata := connection.SessionMetadata{OrgID: request.Scope.TenantID, WorkspaceID: request.Scope.WorkspaceID}
 	var session *connection.Session
 	created := true
-	var err error
+	var openErr error
 	if request.Ephemeral {
-		session, err = r.sessions.CreateWithMetadata(request.Scope.AccountID, request.Scope.ConnectionID, metadata, open)
+		session, openErr = r.sessions.CreateWithMetadata(request.Scope.AccountID, request.Scope.ConnectionID, metadata, open)
 	} else {
-		session, created, err = r.sessions.GetOrCreateWithMetadata(request.Scope.AccountID, request.Scope.ConnectionID, metadata, open)
+		session, created, openErr = r.sessions.GetOrCreateWithMetadata(request.Scope.AccountID, request.Scope.ConnectionID, metadata, open)
 	}
-	if err != nil {
-		return OpenResult{}, err
+	if openErr != nil {
+		return OpenResult{}, openErr
 	}
 	if created && tunnel != nil {
 		t := tunnel
