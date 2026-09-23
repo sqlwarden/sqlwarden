@@ -93,7 +93,7 @@ func (app *application) setTransactionMode(w http.ResponseWriter, r *http.Reques
 		app.serverError(w, r, err)
 		return
 	}
-	app.logInfo(r, "transaction mode changed", slog.String("session_id", string(session)), slog.String("mode", input.Mode))
+	app.logDebug(r, "transaction mode changed", slog.String("mode", input.Mode))
 	if err := response.JSON(w, http.StatusOK, newTransactionStatusView(status)); err != nil {
 		app.serverError(w, r, err)
 	}
@@ -113,7 +113,7 @@ func (app *application) commitTransaction(w http.ResponseWriter, r *http.Request
 		app.errorMessage(w, r, http.StatusUnprocessableEntity, err.Error(), nil)
 		return
 	}
-	app.logInfo(r, "transaction committed", slog.String("session_id", string(session)))
+	app.logDebug(r, "transaction committed")
 	if err := response.JSON(w, http.StatusOK, newTransactionStatusView(status)); err != nil {
 		app.serverError(w, r, err)
 	}
@@ -133,7 +133,7 @@ func (app *application) rollbackTransaction(w http.ResponseWriter, r *http.Reque
 		app.errorMessage(w, r, http.StatusUnprocessableEntity, err.Error(), nil)
 		return
 	}
-	app.logInfo(r, "transaction rolled back", slog.String("session_id", string(session)))
+	app.logDebug(r, "transaction rolled back")
 	if err := response.JSON(w, http.StatusOK, newTransactionStatusView(status)); err != nil {
 		app.serverError(w, r, err)
 	}

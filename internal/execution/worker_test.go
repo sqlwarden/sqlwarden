@@ -55,8 +55,10 @@ func TestWorkerRuntimeContract(t *testing.T) {
 
 func TestWorkerRuntimeDoesNotReplayAmbiguousWrite(t *testing.T) {
 	var calls atomic.Int32
-	client := &http.Client{Transport: roundTripperFunc(func(*http.Request) (*http.Response, error) {
+	var requestURL string
+	client := &http.Client{Transport: roundTripperFunc(func(request *http.Request) (*http.Response, error) {
 		calls.Add(1)
+		requestURL = request.URL.String()
 		return nil, errors.New("connection dropped after write")
 	})}
 	authority, err := execution.NewGrantAuthority([]byte(testGrantKey), "api", "connector", time.Minute)
@@ -83,6 +85,9 @@ func TestWorkerRuntimeDoesNotReplayAmbiguousWrite(t *testing.T) {
 	}
 	if got := calls.Load(); got != 1 {
 		t.Fatalf("transport calls = %d, want exactly 1", got)
+	}
+	if requestURL != "http://connector.internal:6021/internal/execution/v2/call" {
+		t.Fatalf("request URL = %q, want connector RPC URL", requestURL)
 	}
 }
 

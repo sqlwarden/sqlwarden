@@ -71,7 +71,8 @@ func TestDecodeHTTPErrorMapsMissingProtocolEndpointToMismatch(t *testing.T) {
 		StatusCode: http.StatusNotFound,
 		Body:       io.NopCloser(strings.NewReader("404 page not found\n")),
 	}
-	if err := decodeHTTPError(response); !errors.Is(err, ErrProtocolMismatch) {
-		t.Fatalf("decodeHTTPError() = %v, want protocol mismatch", err)
+	remote, err := decodeHTTPError(response)
+	if remote || !errors.Is(err, ErrProtocolMismatch) {
+		t.Fatalf("decodeHTTPError() = (%t, %v), want non-remote protocol mismatch", remote, err)
 	}
 }

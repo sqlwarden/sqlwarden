@@ -168,6 +168,12 @@ Use-case rules live in application services that never import transports:
 - `internal/catalog`: organizations, workspaces, environments, and connections, including validation, ownership checks, hierarchy seeding through its store, RBAC cache invalidation, credential sealing, and connection lifecycle.
 - `internal/schema`, `internal/completion`, `internal/files`, and `internal/jobs` own schema inspection, completion, workspace files, and durable jobs.
 
+### Operational Logging
+
+Application logs are structured `log/slog` diagnostics for operators; they are separate from durable `internal/audit` events and user-facing job events. `internal/web` owns public HTTP access/error logging and request/resource correlation. `internal/execution` owns connector RPC outcomes, transport failures, and safe target-session lifecycle diagnostics. `internal/jobs` owns worker lifecycle and job outcome logs, while service packages log their own cache and dependency outcomes.
+
+The API accepts or generates a validated request ID, stores it through `internal/observability`, and forwards it to connector RPCs so API, metadata-database, and connector records share `request_id`. Production defaults to `Info`; the database-backed runtime setting can change the live level. Metadata query tracing logs placeholder-bearing templates only. Target SQL, bind values, credentials, DSNs, opaque execution handles, response data, and raw target/transport errors are excluded from operational logs.
+
 ### Editions
 
 `internal/edition` defines the `Edition` seam: identity-provider, policy-evaluator, and audit-writer decorators, entitlements, modules, and edition-owned migration streams applied after core migrations. `edition.Community` returns the core implementations unchanged. `ee/` contains Enterprise composition code, including restrict-only policy decorators, directory-mapping hooks, an audit pipeline, and its own migrations, all covered by tests. Core packages never import `ee/`, and no shipped entrypoint composes it; the existence of the seam does not mean Enterprise product features are available.

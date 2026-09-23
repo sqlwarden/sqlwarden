@@ -23,7 +23,7 @@ func main() {
 	err := run(os.Args[1:])
 	if err != nil {
 		trace := string(debug.Stack())
-		bootstrapLogger().Error(err.Error(), "trace", trace)
+		bootstrapLogger().Error("application startup failed", "error", err, "trace", trace)
 		os.Exit(1)
 	}
 }

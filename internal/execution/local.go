@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"io"
+	"log/slog"
 	"net"
 	"strconv"
 	"time"
@@ -61,41 +62,52 @@ type LocalRuntime struct {
 	targetValidator    TargetValidator
 	leaseTTL           time.Duration
 	now                func() time.Time
+	logger             *slog.Logger
 }
 
 // NewLocalRuntime adapts the existing in-process session and cursor managers
-// to the process-independent execution contract.
-func NewLocalRuntime(sessions *connection.Manager, cursors *connection.QueryCursorManager, directory SessionDirectory, credentialProvider CredentialProvider, targetValidator TargetValidator, leaseTTL time.Duration) *LocalRuntime {
+// to the process-independent execution contract. Supply WithLogger to record
+// session lifecycle outcomes.
+func NewLocalRuntime(sessions *connection.Manager, cursors *connection.QueryCursorManager, directory SessionDirectory, credentialProvider CredentialProvider, targetValidator TargetValidator, leaseTTL time.Duration, opts ...Option) *LocalRuntime {
 	if directory == nil {
 		directory = NewMemorySessionDirectory()
 	}
+	options := applyOptions(opts)
 	return &LocalRuntime{
 		sessions: sessions, cursors: cursors, directory: directory,
 		credentialProvider: credentialProvider, targetValidator: targetValidator,
-		leaseTTL: leaseTTL, now: time.Now,
+		leaseTTL: leaseTTL, now: time.Now, logger: options.logger,
 	}
 }
 
 // Open creates or reuses a target session and publishes its directory lease.
 func (r *LocalRuntime) Open(ctx context.Context, request OpenRequest) (OpenResult, error) {
 	if r.credentialProvider == nil {
+		r.logOpenFailure(ctx, request, "", openStageCredentialProvider, "unavailable", slog.LevelError)
 		return OpenResult{}, errors.New("execution credential provider is unavailable")
 	}
 	credentials, err := r.credentialProvider.Resolve(ctx, request.Scope.ConnectionID)
 	if err != nil {
+		category, level := credentialFailure(err)
+		r.logOpenFailure(ctx, request, "", openStageCredentials, category, level)
 		return OpenResult{}, err
 	}
 	if r.targetValidator != nil {
 		if err := r.targetValidator.Validate(ctx, credentials.Driver, credentials.DSN); err != nil {
+			category, level := targetPolicyFailure(err)
+			r.logOpenFailure(ctx, request, credentials.Driver, openStageTargetPolicy, category, level)
 			return OpenResult{}, err
 		}
 	}
 
 	var tunnel *connection.Tunnel
+	stageLogged := false
 	open := func() (engine.Driver, func(), error) {
 		if credentials.SSH != nil {
 			openedTunnel, tunnelErr := connection.OpenTunnel(ctx, toConnectionSSH(*credentials.SSH))
 			if tunnelErr != nil {
+				stageLogged = true
+				r.logOpenFailure(ctx, request, credentials.Driver, openStageTunnel, contextOr(ctx, "tunnel_failed"), contextLevel(ctx, slog.LevelWarn))
 				return nil, nil, ErrTargetConnection
 			}
 			tunnel = openedTunnel
@@ -107,6 +119,8 @@ func (r *LocalRuntime) Open(ctx context.Context, request OpenRequest) (OpenResul
 
 		driver, driverErr := engine.New(credentials.Driver)
 		if driverErr != nil {
+			stageLogged = true
+			r.logOpenFailure(ctx, request, credentials.Driver, openStageDriver, "unsupported_driver", slog.LevelError)
 			teardown()
 			return nil, nil, driverErr
 		}
@@ -122,6 +136,8 @@ func (r *LocalRuntime) Open(ctx context.Context, request OpenRequest) (OpenResul
 			config.SSHDialer = tunnel.DialContext
 		}
 		if err := driver.Connect(ctx, config); err != nil {
+			stageLogged = true
+			r.logOpenFailure(ctx, request, credentials.Driver, openStageConnect, contextOr(ctx, "connect_failed"), contextLevel(ctx, slog.LevelWarn))
 			teardown()
 			return nil, nil, ErrTargetConnection
 		}
@@ -137,6 +153,9 @@ func (r *LocalRuntime) Open(ctx context.Context, request OpenRequest) (OpenResul
 		session, created, openErr = r.sessions.GetOrCreateWithMetadata(request.Scope.AccountID, request.Scope.ConnectionID, metadata, open)
 	}
 	if openErr != nil {
+		if !stageLogged {
+			r.logOpenFailure(ctx, request, credentials.Driver, openStageSessionPool, contextOr(ctx, "session_unavailable"), contextLevel(ctx, slog.LevelWarn))
+		}
 		return OpenResult{}, openErr
 	}
 	if created && tunnel != nil {
@@ -157,12 +176,71 @@ func (r *LocalRuntime) Open(ctx context.Context, request OpenRequest) (OpenResul
 		}
 	}
 	if err := r.directory.Put(ctx, record); err != nil {
+		r.logOpenFailure(ctx, request, credentials.Driver, openStageDirectory, "lease_publish_failed", slog.LevelError)
 		if created {
 			r.sessions.Remove(session.ID)
 		}
 		return OpenResult{}, err
 	}
+	level := slog.LevelInfo
+	if !created {
+		level = slog.LevelDebug
+	}
+	attrs := append(openAttrs(request, credentials.Driver), slog.Bool("reused", !created))
+	r.logger.LogAttrs(ctx, level, "execution session opened", appendRequestID(ctx, attrs)...)
 	return OpenResult{Handle: handle, Reused: !created}, nil
+}
+
+func (r *LocalRuntime) logOpenFailure(ctx context.Context, request OpenRequest, driver, stage, category string, level slog.Level) {
+	attrs := append(openAttrs(request, driver),
+		slog.String("stage", stage),
+		slog.String("failure_category", category),
+	)
+	r.logger.LogAttrs(ctx, level, "execution session open failed", appendRequestID(ctx, attrs)...)
+}
+
+func openAttrs(request OpenRequest, driver string) []slog.Attr {
+	attrs := []slog.Attr{
+		slog.String("org_id", request.Scope.TenantID),
+		slog.String("workspace_id", request.Scope.WorkspaceID),
+		slog.String("connection_id", request.Scope.ConnectionID),
+		slog.String("account_id", request.Scope.AccountID),
+		slog.Bool("ephemeral", request.Ephemeral),
+	}
+	if driver != "" {
+		attrs = append(attrs, slog.String("driver", driver))
+	}
+	return attrs
+}
+
+func credentialFailure(err error) (string, slog.Level) {
+	switch {
+	case isContextError(err):
+		return transportCategoryCanceled, slog.LevelDebug
+	case errors.Is(err, ErrCredentialsNotFound):
+		return rpcKindCredentialsNotFound, slog.LevelWarn
+	case errors.Is(err, ErrCredentialDecryption):
+		return rpcKindCredentialDecryption, slog.LevelError
+	case errors.Is(err, ErrCredentialsInvalid):
+		return rpcKindCredentialsInvalid, slog.LevelError
+	default:
+		return "credentials_unavailable", slog.LevelError
+	}
+}
+
+func targetPolicyFailure(err error) (string, slog.Level) {
+	switch {
+	case isContextError(err):
+		return transportCategoryCanceled, slog.LevelDebug
+	case errors.Is(err, ErrTargetRejected):
+		return rpcKindTargetRejected, slog.LevelWarn
+	case errors.Is(err, ErrSQLiteTargetDisabled):
+		return rpcKindSQLiteTargetDisabled, slog.LevelWarn
+	case errors.Is(err, ErrSQLiteInMemoryTargetDisabled):
+		return rpcKindSQLiteMemoryDisabled, slog.LevelWarn
+	default:
+		return "target_validation_failed", slog.LevelError
+	}
 }
 
 // Query executes a row-producing operation and optionally creates a cursor.
@@ -494,7 +572,12 @@ func (r *LocalRuntime) session(ctx context.Context, handle SessionHandle) (*conn
 }
 
 func (r *LocalRuntime) renew(ctx context.Context, handle SessionHandle) error {
-	return r.directory.Renew(ctx, handle, r.now().Add(r.leaseTTL))
+	err := r.directory.Renew(ctx, handle, r.now().Add(r.leaseTTL))
+	if err != nil && !isContextError(err) {
+		attrs := []slog.Attr{slog.String("stage", openStageDirectory), slog.String("failure_category", "lease_renew_failed")}
+		r.logger.LogAttrs(ctx, slog.LevelError, "execution session lease renewal failed", appendRequestID(ctx, attrs)...)
+	}
+	return err
 }
 
 func (r *LocalRuntime) schemaInspector(ctx context.Context, handle SessionHandle) (metadata.SchemaInspector, engine.Driver, error) {

@@ -24,7 +24,9 @@ func TestReportServerError(t *testing.T) {
 
 		app.reportServerError(req, errors.New("this is a test error"))
 		assert.True(t, strings.Contains(buf.String(), "level=ERROR"))
-		assert.True(t, strings.Contains(buf.String(), `msg="this is a test error"`))
+		assert.True(t, strings.Contains(buf.String(), `msg="http request failed"`))
+		assert.True(t, strings.Contains(buf.String(), `failure_category=internal_error`))
+		assert.False(t, strings.Contains(buf.String(), "this is a test error"))
 		assert.True(t, strings.Contains(buf.String(), "request.method=GET"))
 		assert.True(t, strings.Contains(buf.String(), "request.path=/test"))
 	})
@@ -58,6 +60,21 @@ func TestReportServerError(t *testing.T) {
 	})
 }
 
+func TestReportServerErrorDoesNotLogRawTransportDetails(t *testing.T) {
+	var buf bytes.Buffer
+	app := newTestApplication(t)
+	app.logger = slog.New(slog.NewTextHandler(&buf, nil))
+	req := newTestRequest(t, http.MethodGet, "/test", nil)
+
+	app.reportServerError(req, fmt.Errorf("execution transport: %w", errors.New("dial tcp connector.internal:6021: transport-secret")))
+
+	output := buf.String()
+	assert.True(t, strings.Contains(output, `msg="http request failed"`))
+	assert.True(t, strings.Contains(output, `failure_category=target_error`))
+	assert.False(t, strings.Contains(output, "connector.internal"))
+	assert.False(t, strings.Contains(output, "transport-secret"))
+}
+
 func TestServerError(t *testing.T) {
 	t.Run("Logs error and sends a 500 response without exposing error details", func(t *testing.T) {
 		var buf bytes.Buffer
@@ -75,7 +92,9 @@ func TestServerError(t *testing.T) {
 		assertAPIError(t, res, apiErrorInternalServer, "The server encountered a problem and could not process your request.")
 
 		assert.True(t, strings.Contains(buf.String(), "level=ERROR"))
-		assert.True(t, strings.Contains(buf.String(), `msg="this is a test error"`))
+		assert.True(t, strings.Contains(buf.String(), `msg="http request failed"`))
+		assert.True(t, strings.Contains(buf.String(), `failure_category=internal_error`))
+		assert.False(t, strings.Contains(buf.String(), "this is a test error"))
 		assert.True(t, strings.Contains(buf.String(), "request.method=GET"))
 		assert.True(t, strings.Contains(buf.String(), "request.path=/test"))
 	})

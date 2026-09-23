@@ -38,7 +38,7 @@ func NewRunner(store *Store, registry *Registry, logger *slog.Logger, cfg Worker
 		cfg.ClaimLease = 5 * time.Minute
 	}
 	if logger == nil {
-		logger = slog.Default()
+		logger = slog.New(slog.DiscardHandler)
 	}
 	return &Runner{store: store, registry: registry, logger: logger, cfg: cfg}
 }
@@ -313,7 +313,7 @@ func newStoreEventWriter(store *Store, logger *slog.Logger, job Record) EventWri
 		return noopEventWriter{}
 	}
 	if logger == nil {
-		logger = slog.Default()
+		logger = slog.New(slog.DiscardHandler)
 	}
 	return storeEventWriter{store: store, logger: logger, job: job}
 }

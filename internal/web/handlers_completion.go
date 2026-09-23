@@ -127,7 +127,7 @@ func (app *application) completeConnectionSQL(w http.ResponseWriter, r *http.Req
 			slog.Int64("connection_id", conn.ID),
 			slog.String("driver", conn.Driver),
 			slog.String("mode", out.Mode),
-			slog.String("error", err.Error()),
+			slog.String("failure_category", executionErrorCategory(err)),
 		)
 		req.Schema = nil
 		out.MetadataAvailable, out.MetadataStatus, out.SnapshotID = false, "degraded", ""
@@ -219,12 +219,12 @@ func (app *application) addEphemeralCompletionMetadata(r *http.Request, connID s
 	inspector := runtimeSchemaInspector{runtime: app.executionRuntime, handle: session.Handle, spec: *capabilities.Schema}
 	directory, err := app.schemaService.Directory(r.Context(), connID, inspector)
 	if err != nil {
-		app.logWarn(r, "completion directory inspection failed", slog.String("connection_id", connID), slog.String("error", err.Error()))
+		app.logWarn(r, "completion directory inspection failed", slog.String("connection_id", connID), slog.String("failure_category", executionErrorCategory(err)))
 		return false
 	}
 	objects, err := app.schemaService.Objects(r.Context(), connID, directoryObjectRefs(directory), inspector)
 	if err != nil {
-		app.logWarn(r, "completion object inspection failed", slog.String("connection_id", connID), slog.String("error", err.Error()))
+		app.logWarn(r, "completion object inspection failed", slog.String("connection_id", connID), slog.String("failure_category", executionErrorCategory(err)))
 		return false
 	}
 	req.Schema = &metadata.MetadataSet{

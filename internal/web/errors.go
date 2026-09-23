@@ -40,11 +40,15 @@ func (app *application) reportServerError(r *http.Request, err error) {
 		trace   = string(debug.Stack())
 	)
 
-	app.logger.ErrorContext(r.Context(), message,
+	attrs := requestIDAttrs(r)
+	attrs = append(attrs,
 		slog.Group("request", attrsToAny(requestAttrs(r))...),
 		slog.Group("resource", attrsToAny(resourceAttrs(r))...),
-		"trace", trace,
+		slog.String("failure_category", serverErrorCategory(err)),
+		slog.String("error_type", fmt.Sprintf("%T", err)),
+		slog.String("trace", trace),
 	)
+	app.logger.LogAttrs(r.Context(), slog.LevelError, "http request failed", attrs...)
 
 	notificationEmail := ""
 	baseURL := ""
@@ -67,13 +71,24 @@ func (app *application) reportServerError(r *http.Request, err error) {
 		}
 		if err != nil {
 			trace = string(debug.Stack())
-			app.logger.ErrorContext(r.Context(), err.Error(),
+			attrs := requestIDAttrs(r)
+			attrs = append(attrs,
 				slog.Group("request", attrsToAny(requestAttrs(r))...),
 				slog.Group("resource", attrsToAny(resourceAttrs(r))...),
-				"trace", trace,
+				slog.Any("error", err),
+				slog.String("trace", trace),
 			)
+			app.logger.LogAttrs(r.Context(), slog.LevelError, "error notification delivery failed", attrs...)
 		}
 	}
+}
+
+func serverErrorCategory(err error) string {
+	category := executionErrorCategory(err)
+	if category != "target_error" || strings.HasPrefix(err.Error(), "execution transport:") {
+		return category
+	}
+	return "internal_error"
 }
 
 func (app *application) errorMessage(w http.ResponseWriter, r *http.Request, status int, message string, headers http.Header) {

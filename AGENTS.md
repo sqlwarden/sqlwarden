@@ -130,7 +130,32 @@ Bootstrap configuration is loaded by `internal/config` using spf13/viper.
 - UI-facing paginated lists use `{ "items": [], "page": 1, "page_size": 25, "total": 0 }`.
 - Non-paginated list responses should still avoid top-level arrays.
 - Keep API JSON lower snake_case.
-- Add robust logs for new backend behavior where useful. Use request-aware `logDebug`, `logInfo`, and `logWarn` helpers in `internal/web` for HTTP/domain events so logs carry request/resource correlation. Log high-signal lifecycle events, denied/degraded paths, unsupported capabilities, cache decisions, and background worker outcomes. Do not log request bodies, authorization headers, DSNs, SQL text, bind parameters, raw query strings, or row values.
+- Add robust logs for new backend behavior where useful, following Application Logging Standards below. Use request-aware `logDebug`, `logInfo`, and `logWarn` helpers in `internal/web` for HTTP/domain events so logs carry request/resource correlation. Log high-signal lifecycle events, denied/degraded paths, unsupported capabilities, cache decisions, and background worker outcomes.
+
+## Application Logging Standards
+
+Three separate channels record what happens; never use one as a substitute for another.
+
+- **Operational logs** (`log/slog`): diagnostics for operators. Best-effort, level-filtered, and never a security or compliance record.
+- **Durable audit events** (`internal/audit`): who did what to which resource, for security and compliance. Written through the audit service regardless of log level; do not emit an audit fact only as a log line.
+- **User-facing job events** (`internal/jobs`): progress and outcome shown to the user who owns a job. Operators still get an operational log for worker outcomes; users never see raw operational logs.
+
+Levels are owned by the component that can judge severity:
+
+- `Debug`: normal, high-frequency success paths (per-query, per-RPC success, cache hits, reused sessions). Target query operations never log at `Info`.
+- `Info`: low-frequency lifecycle facts (process start/stop, new target session opened, migrations, background job outcomes).
+- `Warn`: rejected or degraded requests an operator may investigate (invalid input, authorization denial, unreachable dependency, policy refusal).
+- `Error`: unexpected or operator-actionable failures (misconfiguration, decryption failure, metadata store failure, encoding bugs). Expected user errors (bad SQL, missing objects) are never `Error`.
+
+Rules:
+
+- Messages are constant lower-case phrases (`"execution rpc completed"`); variable data goes only in attributes. Never interpolate values into the message.
+- Attribute keys are structured lower snake_case (`request_id`, `rpc_method`, `org_id`, `connection_id`, `duration_ms`, `failure_category`). Record failures as stable low-cardinality categories, not error strings.
+- Use context-aware calls (`LogAttrs(ctx, ...)`, `InfoContext`, or the `internal/web` helpers) so correlation flows from the request context.
+- Correlation: `internal/observability` owns `RequestIDHeader`, `NormalizeRequestID`, `WithRequestID`, and `RequestID`. Accept inbound IDs only through `NormalizeRequestID`, attach them to the context, include `request_id` when present, and forward the header on every internal hop (for example API to connector).
+- One owner per event: the component that handles a failure logs it once. Callers that only propagate an error do not log it again; for example, `WorkerRuntime` logs transport/protocol failures, while remote application failures are logged by the connector's `RuntimeServer`.
+- Inject loggers through constructors (a `*slog.Logger` argument or a `WithLogger` option) wired from `internal/app`. Components that receive no logger discard output; never fall back to `slog.Default()` or a package-global logger.
+- Never log: request or response bodies, authorization headers, cookies, tokens, passwords, grants or grant signatures, credentials, DSNs, connection strings, SSH material, connector or target network addresses, user/target SQL text, bind parameters, raw URL query strings, row or cell values, session/cursor handles, or raw target driver and transport errors (they can embed any of the above). Metadata database query hooks may log Bun's placeholder-bearing `QueryTemplate`, but never its interpolated `Query`.
 
 ## RBAC Invariants
 

@@ -150,7 +150,6 @@ func (app *application) resolveSchemaSession(w http.ResponseWriter, r *http.Requ
 	}
 	if !found {
 		app.logWarn(r, "schema session unavailable",
-			slog.String("session_id", sessionID),
 			slog.Int64("connection_id", conn.ID),
 		)
 		app.errorMessage(w, r, http.StatusGone, "Session has expired or does not exist.", nil)
@@ -159,7 +158,6 @@ func (app *application) resolveSchemaSession(w http.ResponseWriter, r *http.Requ
 	if session.Scope.AccountID != strconv.FormatInt(account.ID, 10) ||
 		session.Scope.ConnectionID != strconv.FormatInt(conn.ID, 10) {
 		app.logWarn(r, "schema session scope mismatch",
-			slog.String("session_id", string(session.Handle)),
 			slog.String("session_account_id", session.Scope.AccountID),
 			slog.String("session_connection_id", session.Scope.ConnectionID),
 			slog.Int64("account_id", account.ID),
@@ -185,7 +183,6 @@ func (app *application) resolveSchemaInspector(w http.ResponseWriter, r *http.Re
 	}
 	if capabilities.Schema == nil {
 		app.logWarn(r, "schema inspection unsupported",
-			slog.String("session_id", string(session.Handle)),
 			slog.Int64("connection_id", contextGetConnection(r).ID),
 		)
 		app.errorMessage(w, r, http.StatusNotImplemented, "This driver does not support schema inspection.", nil)
@@ -208,7 +205,6 @@ func (app *application) resolveRelationshipInspector(w http.ResponseWriter, r *h
 	}
 	if !capabilities.Relationships || capabilities.Schema == nil {
 		app.logWarn(r, "schema relationships unsupported",
-			slog.String("session_id", string(session.Handle)),
 			slog.Int64("connection_id", contextGetConnection(r).ID),
 		)
 		app.errorMessage(w, r, http.StatusNotImplemented, "This driver does not support schema relationships.", nil)
@@ -269,7 +265,6 @@ func (app *application) getConnectionSchemaRelationships(w http.ResponseWriter, 
 		return
 	}
 	app.logDebug(r, "schema relationships returned",
-		slog.String("session_id", string(session.Handle)),
 		slog.String("scope", string(scope)),
 		slog.Int("edge_count", len(graph.Relationships)),
 	)
@@ -401,7 +396,6 @@ func (app *application) resolveSchemaObjects(w http.ResponseWriter, r *http.Requ
 		return nil, nil, false
 	}
 	app.logDebug(r, "schema objects returned",
-		slog.String("session_id", string(session.Handle)),
 		slog.Int("requested_ref_count", len(refs)),
 		slog.Int("object_count", len(objects)),
 	)
@@ -449,7 +443,6 @@ func (app *application) applyConnectionDDL(w http.ResponseWriter, r *http.Reques
 	app.schemaService.RefreshConnection(session.Scope.ConnectionID)
 	app.completionService.InvalidateConnection(session.Scope.ConnectionID)
 	app.logInfo(r, "DDL applied",
-		slog.String("session_id", string(session.Handle)),
 		slog.String("connection_id", session.Scope.ConnectionID),
 		slog.String("operation", string(input.Operation)),
 	)
@@ -561,7 +554,6 @@ func (app *application) getConnectionSchemaDirectory(w http.ResponseWriter, r *h
 	}
 	markLazyScopes(directory, settings.SchemaLazyThreshold)
 	app.logDebug(r, "schema directory returned",
-		slog.String("session_id", string(session.Handle)),
 		slog.String("engine", directory.Engine),
 	)
 	directory = directory.WithSystemScopes(contextGetConnection(r).ShowSystemSchemas)
@@ -656,7 +648,6 @@ func (app *application) getConnectionSchemaObjectDefinition(w http.ResponseWrite
 		return
 	}
 	app.logDebug(r, "schema object definition returned",
-		slog.String("session_id", string(session.Handle)),
 		slog.String("kind", ref.Kind),
 		slog.String("scope", string(ref.Scope)),
 		slog.Bool("found", descriptor != nil),
@@ -757,7 +748,6 @@ func (app *application) refreshConnectionSchema(w http.ResponseWriter, r *http.R
 		app.schemaService.RefreshObject(session.Scope.ConnectionID, *input.Ref)
 		app.completionService.InvalidateConnection(session.Scope.ConnectionID)
 		app.logInfo(r, "schema object cache refresh requested",
-			slog.String("session_id", string(session.Handle)),
 			slog.String("connection_id", session.Scope.ConnectionID),
 			slog.String("kind", input.Ref.Kind),
 			slog.String("scope", string(input.Ref.Scope)),
@@ -767,7 +757,6 @@ func (app *application) refreshConnectionSchema(w http.ResponseWriter, r *http.R
 		app.schemaService.RefreshConnection(session.Scope.ConnectionID)
 		app.completionService.InvalidateConnection(session.Scope.ConnectionID)
 		app.logInfo(r, "schema connection cache refresh requested",
-			slog.String("session_id", string(session.Handle)),
 			slog.String("connection_id", session.Scope.ConnectionID),
 		)
 	}

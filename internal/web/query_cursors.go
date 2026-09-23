@@ -81,7 +81,6 @@ func (app *application) startQueryCursor(w http.ResponseWriter, r *http.Request)
 	if err != nil {
 		if errors.Is(err, execution.ErrQueryCursorUnsupported) {
 			app.logWarn(r, "query cursor unsupported",
-				slog.String("session_id", string(handle)),
 				slog.Int("page_size", pageSize),
 			)
 			app.errorMessage(w, r, http.StatusUnprocessableEntity, "Connection driver does not support query cursors.", nil)
@@ -90,16 +89,14 @@ func (app *application) startQueryCursor(w http.ResponseWriter, r *http.Request)
 		if app.isQueryRequestCanceled(r, err) {
 			_ = app.executionRuntime.Cancel(context.WithoutCancel(r.Context()), execution.SessionRequest{Handle: handle})
 			app.logDebug(r, "query cursor start cancelled",
-				slog.String("session_id", string(handle)),
 				slog.Int64("duration_ms", time.Since(start).Milliseconds()),
 			)
 			app.errorMessage(w, r, statusClientClosedRequest, "Query was cancelled.", nil)
 			return
 		}
 		app.logWarn(r, "query cursor start failed",
-			slog.String("session_id", string(handle)),
 			slog.Int64("duration_ms", time.Since(start).Milliseconds()),
-			slog.String("error", err.Error()),
+			slog.String("failure_category", executionErrorCategory(err)),
 		)
 		app.errorMessage(w, r, http.StatusUnprocessableEntity, err.Error(), nil)
 		return
@@ -168,7 +165,7 @@ func (app *application) fetchQueryCursor(w http.ResponseWriter, r *http.Request)
 		app.logWarn(r, "query cursor fetch failed",
 			queryCursorAttrs(handle, cursorHandle,
 				slog.Int64("duration_ms", time.Since(start).Milliseconds()),
-				slog.String("error", err.Error()),
+				slog.String("failure_category", executionErrorCategory(err)),
 			)...,
 		)
 		app.errorMessage(w, r, http.StatusUnprocessableEntity, err.Error(), nil)
@@ -245,12 +242,8 @@ func querySessionMatchesRequest(r *http.Request, session execution.SessionInfo) 
 		session.Scope.ConnectionID == strconv.FormatInt(conn.ID, 10)
 }
 
-func queryCursorAttrs(session execution.SessionHandle, cursorHandle execution.CursorHandle, attrs ...slog.Attr) []slog.Attr {
-	out := []slog.Attr{
-		slog.String("query_cursor_id", string(cursorHandle)),
-		slog.String("session_id", string(session)),
-	}
-	return append(out, attrs...)
+func queryCursorAttrs(_ execution.SessionHandle, _ execution.CursorHandle, attrs ...slog.Attr) []slog.Attr {
+	return attrs
 }
 
 func queryCursorPageSize(requested *int, settings settingsapp.Effective) int {

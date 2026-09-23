@@ -129,7 +129,9 @@ func TestBackgroundTask(t *testing.T) {
 
 		assert.True(t, executed)
 		assert.True(t, strings.Contains(buf.String(), "level=ERROR"))
-		assert.True(t, strings.Contains(buf.String(), `msg="this is a test error"`))
+		assert.True(t, strings.Contains(buf.String(), `msg="http request failed"`))
+		assert.True(t, strings.Contains(buf.String(), `failure_category=internal_error`))
+		assert.False(t, strings.Contains(buf.String(), "this is a test error"))
 		assert.True(t, strings.Contains(buf.String(), "request.method=GET"))
 		assert.True(t, strings.Contains(buf.String(), "request.path=/test"))
 	})
@@ -154,7 +156,9 @@ func TestBackgroundTask(t *testing.T) {
 
 		assert.True(t, executed)
 		assert.True(t, strings.Contains(buf.String(), "level=ERROR"))
-		assert.True(t, strings.Contains(buf.String(), `msg="this is a test error"`))
+		assert.True(t, strings.Contains(buf.String(), `msg="http request failed"`))
+		assert.True(t, strings.Contains(buf.String(), `failure_category=internal_error`))
+		assert.False(t, strings.Contains(buf.String(), "this is a test error"))
 		assert.True(t, strings.Contains(buf.String(), "request.method=GET"))
 		assert.True(t, strings.Contains(buf.String(), "request.path=/test"))
 	})

@@ -12,9 +12,39 @@ import (
 
 	"github.com/go-chi/chi/v5"
 	"github.com/sqlwarden/internal/config"
+	"github.com/sqlwarden/internal/execution"
+	"github.com/sqlwarden/internal/observability"
 )
 
 var errTestServerFailure = errors.New("test server failure")
+
+func TestAccessLogLevelLeavesErrorOwnershipToFailureLogger(t *testing.T) {
+	if got := accessLogLevel(http.StatusInternalServerError); got != slog.LevelWarn {
+		t.Fatalf("accessLogLevel(500) = %v, want WARN", got)
+	}
+	if got := accessLogLevel(http.StatusBadRequest); got != slog.LevelWarn {
+		t.Fatalf("accessLogLevel(400) = %v, want WARN", got)
+	}
+	if got := accessLogLevel(http.StatusOK); got != slog.LevelInfo {
+		t.Fatalf("accessLogLevel(200) = %v, want INFO", got)
+	}
+}
+
+func TestExecutionErrorCategoryDoesNotExposeRawErrors(t *testing.T) {
+	tests := []struct {
+		err  error
+		want string
+	}{
+		{errors.Join(execution.ErrSessionLost, errors.New("driver-secret")), "session_lost"},
+		{errors.Join(execution.ErrTargetConnection, errors.New("postgres://user:secret@host/db")), "target_connection"},
+		{errors.New("SELECT secret FROM private_table"), "target_error"},
+	}
+	for _, tt := range tests {
+		if got := executionErrorCategory(tt.err); got != tt.want {
+			t.Fatalf("executionErrorCategory(%v) = %q, want %q", tt.err, got, tt.want)
+		}
+	}
+}
 
 func TestLoggerLevelChangesAtRuntime(t *testing.T) {
 	var buf bytes.Buffer
@@ -62,7 +92,7 @@ func TestRequestLoggingContextGeneratesRequestIDAndSafeAccessLog(t *testing.T) {
 
 	router.ServeHTTP(rr, req)
 
-	if rr.Header().Get(requestIDHeader) == "" {
+	if rr.Header().Get(observability.RequestIDHeader) == "" {
 		t.Fatal("expected generated request ID response header")
 	}
 
@@ -83,8 +113,8 @@ func TestRequestLoggingContextGeneratesRequestIDAndSafeAccessLog(t *testing.T) {
 	if !ok {
 		t.Fatalf("request group missing from log: %#v", entry)
 	}
-	if request["id"] == "" {
-		t.Fatalf("request.id missing from log: %#v", request)
+	if entry["request_id"] == "" {
+		t.Fatalf("request_id missing from log: %#v", entry)
 	}
 	if request["path"] != "/health" {
 		t.Fatalf("request.path = %v, want /health", request["path"])
@@ -142,12 +172,12 @@ func TestRequestLoggingContextPreservesValidIncomingRequestID(t *testing.T) {
 	})
 
 	req := httptest.NewRequest(http.MethodGet, "/", nil)
-	req.Header.Set(requestIDHeader, "client-request-123")
+	req.Header.Set(observability.RequestIDHeader, "client-request-123")
 	rr := httptest.NewRecorder()
 
 	router.ServeHTTP(rr, req)
 
-	if got := rr.Header().Get(requestIDHeader); got != "client-request-123" {
+	if got := rr.Header().Get(observability.RequestIDHeader); got != "client-request-123" {
 		t.Fatalf("response request ID = %q, want client-request-123", got)
 	}
 }
@@ -166,12 +196,12 @@ func TestRequestLoggingContextReplacesInvalidIncomingRequestID(t *testing.T) {
 	})
 
 	req := httptest.NewRequest(http.MethodGet, "/", nil)
-	req.Header.Set(requestIDHeader, "bad request id\n")
+	req.Header.Set(observability.RequestIDHeader, "bad request id\n")
 	rr := httptest.NewRecorder()
 
 	router.ServeHTTP(rr, req)
 
-	if got := rr.Header().Get(requestIDHeader); got == "" || got == "bad request id\n" {
+	if got := rr.Header().Get(observability.RequestIDHeader); got == "" || got == "bad request id\n" {
 		t.Fatalf("invalid request ID was not replaced, got %q", got)
 	}
 }
@@ -189,7 +219,7 @@ func TestReportServerErrorLogsRequestIDAndSafeRequestPath(t *testing.T) {
 	})
 
 	req := httptest.NewRequest(http.MethodGet, "/boom?token=secret-token", nil)
-	req.Header.Set(requestIDHeader, "req-error-1")
+	req.Header.Set(observability.RequestIDHeader, "req-error-1")
 	rr := httptest.NewRecorder()
 
 	router.ServeHTTP(rr, req)
@@ -207,8 +237,8 @@ func TestReportServerErrorLogsRequestIDAndSafeRequestPath(t *testing.T) {
 	if !ok {
 		t.Fatalf("request group missing from log: %#v", entry)
 	}
-	if request["id"] != "req-error-1" {
-		t.Fatalf("request.id = %v, want req-error-1", request["id"])
+	if entry["request_id"] != "req-error-1" {
+		t.Fatalf("request_id = %v, want req-error-1", entry["request_id"])
 	}
 	if request["path"] != "/boom" {
 		t.Fatalf("request.path = %v, want /boom", request["path"])

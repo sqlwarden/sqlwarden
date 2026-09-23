@@ -76,8 +76,8 @@ func (app *application) listConnections(w http.ResponseWriter, r *http.Request) 
 	}
 }
 
-func queryLogAttrs(account database.Account, org database.Organization, ws database.Workspace, conn database.Connection, classification classifier.Result) []any {
-	return []any{
+func queryLogAttrs(account database.Account, org database.Organization, ws database.Workspace, conn database.Connection, classification classifier.Result) []slog.Attr {
+	return []slog.Attr{
 		slog.Group("account", "id", account.ID),
 		slog.Group("org", "id", org.ID, "slug", org.Slug),
 		slog.Group("workspace", "id", ws.ID, "owner_type", ws.OwnerType),
@@ -658,7 +658,7 @@ func (app *application) connectToDatabase(w http.ResponseWriter, r *http.Request
 		return
 	}
 
-	app.logInfo(r, "database session opened", slog.Int64("connection_id", conn.ID), slog.String("session_id", string(opened.Handle)), slog.Bool("reused", opened.Reused))
+	app.logInfo(r, "database session opened", slog.Int64("connection_id", conn.ID), slog.Bool("reused", opened.Reused))
 	app.maybeEnqueueSchemaSync(context.WithoutCancel(r.Context()), conn, ws.OrgID)
 	err = response.JSON(w, http.StatusOK, map[string]any{
 		"session_id": string(opened.Handle),
@@ -779,7 +779,7 @@ func (app *application) disconnectFromDatabase(w http.ResponseWriter, r *http.Re
 			app.schemaService.RefreshConnection(connID)
 		}
 	}
-	app.logInfo(r, "database session disconnected", slog.Int64("connection_id", conn.ID), slog.String("session_id", sessionID))
+	app.logInfo(r, "database session disconnected", slog.Int64("connection_id", conn.ID))
 	w.WriteHeader(http.StatusNoContent)
 }
 
@@ -822,7 +822,7 @@ func (app *application) revokeWorkspaceDatabaseSession(w http.ResponseWriter, r 
 		app.serverError(w, r, err)
 		return
 	}
-	app.logInfo(r, "database session revoked", slog.Int64("workspace_id", ws.ID), slog.String("session_id", sessionID), slog.String("session_account_id", session.Scope.AccountID))
+	app.logInfo(r, "database session revoked", slog.Int64("workspace_id", ws.ID), slog.String("session_account_id", session.Scope.AccountID))
 	w.WriteHeader(http.StatusNoContent)
 }
 
@@ -913,9 +913,9 @@ func (app *application) executeQuery(w http.ResponseWriter, r *http.Request) {
 	}
 	logAttrs := queryLogAttrs(account, org, ws, conn, classification)
 	if classification.Kind == classifier.KindUnknown {
-		app.logger.Warn("query classification unknown", logAttrs...)
+		app.logWarn(r, "query classification unknown", logAttrs...)
 	} else {
-		app.logger.Debug("query classified", logAttrs...)
+		app.logDebug(r, "query classified", logAttrs...)
 	}
 
 	// execSQL is what actually reaches the target database. Permission and
@@ -941,7 +941,7 @@ func (app *application) executeQuery(w http.ResponseWriter, r *http.Request) {
 		if explainErr != nil {
 			switch {
 			case errors.Is(explainErr, explain.ErrMultipleStatements):
-				app.logger.Warn("explain refused for multi-statement input", logAttrs...)
+				app.logWarn(r, "explain refused for multi-statement input", logAttrs...)
 				app.errorMessage(w, r, http.StatusUnprocessableEntity, "EXPLAIN requires exactly one statement.", nil)
 			case errors.Is(explainErr, explain.ErrAlreadyExplained):
 				app.errorMessage(w, r, http.StatusUnprocessableEntity, "This statement is already an EXPLAIN statement.", nil)
@@ -992,7 +992,7 @@ func (app *application) executeQuery(w http.ResponseWriter, r *http.Request) {
 			ws.OwnerType, "connection", conn.ID,
 			access.PermConnDQL,
 		) {
-			app.logger.Warn("query permission denied", append(logAttrs, "required_permission", access.PermConnDQL)...)
+			app.logWarn(r, "query permission denied", append(logAttrs, slog.String("required_permission", access.PermConnDQL))...)
 			app.notPermitted(w, r)
 			return
 		}
@@ -1007,7 +1007,7 @@ func (app *application) executeQuery(w http.ResponseWriter, r *http.Request) {
 			ws.OwnerType, "connection", conn.ID,
 			access.PermConnDML,
 		) {
-			app.logger.Warn("query permission denied", append(logAttrs, "required_permission", access.PermConnDML)...)
+			app.logWarn(r, "query permission denied", append(logAttrs, slog.String("required_permission", access.PermConnDML))...)
 			app.notPermitted(w, r)
 			return
 		}
@@ -1021,7 +1021,7 @@ func (app *application) executeQuery(w http.ResponseWriter, r *http.Request) {
 				return
 			}
 			if safetyResult.Unsafe {
-				app.logger.Warn("unsafe query refused pending confirmation", append(logAttrs, "unsafe_statement_count", len(safetyResult.Statements))...)
+				app.logWarn(r, "unsafe query refused pending confirmation", append(logAttrs, slog.Int("unsafe_statement_count", len(safetyResult.Statements)))...)
 				app.apiError(w, r, http.StatusUnprocessableEntity,
 					"unsafe_query_confirmation_required",
 					"This statement has no WHERE clause and will affect every row. Confirm to run it anyway.",
@@ -1042,7 +1042,7 @@ func (app *application) executeQuery(w http.ResponseWriter, r *http.Request) {
 			ws.OwnerType, "connection", conn.ID,
 			access.PermConnDDL,
 		) {
-			app.logger.Warn("query permission denied", append(logAttrs, "required_permission", access.PermConnDDL)...)
+			app.logWarn(r, "query permission denied", append(logAttrs, slog.String("required_permission", access.PermConnDDL))...)
 			app.notPermitted(w, r)
 			return
 		}
@@ -1053,7 +1053,7 @@ func (app *application) executeQuery(w http.ResponseWriter, r *http.Request) {
 		}
 	default:
 		if !hasBroadExecute {
-			app.logger.Warn("query permission denied", append(logAttrs, "required_permission", access.PermConnExecute)...)
+			app.logWarn(r, "query permission denied", append(logAttrs, slog.String("required_permission", access.PermConnExecute))...)
 			app.notPermitted(w, r)
 			return
 		}
@@ -1066,18 +1066,21 @@ func (app *application) executeQuery(w http.ResponseWriter, r *http.Request) {
 
 	for _, stmt := range explainPlan.Teardown {
 		if _, tdErr := app.executionRuntime.Execute(context.WithoutCancel(r.Context()), execution.ExecuteRequest{Handle: handle, SQL: stmt}); tdErr != nil {
-			app.logger.Warn("explain teardown failed", append(logAttrs, "error", tdErr.Error())...)
+			app.logWarn(r, "explain teardown failed", append(logAttrs, slog.String("failure_category", executionErrorCategory(tdErr)))...)
 		}
 	}
 
 	if execErr != nil {
 		if errors.Is(execErr, context.Canceled) || errors.Is(execErr, context.DeadlineExceeded) || r.Context().Err() != nil {
 			_ = app.executionRuntime.Cancel(context.WithoutCancel(r.Context()), execution.SessionRequest{Handle: handle})
-			app.logger.Warn("query cancelled", append(logAttrs, "duration_ms", time.Since(start).Milliseconds())...)
+			app.logDebug(r, "query cancelled", append(logAttrs, slog.Int64("duration_ms", time.Since(start).Milliseconds()))...)
 			app.errorMessage(w, r, statusClientClosedRequest, "Query was cancelled.", nil)
 			return
 		}
-		app.logger.Warn("query execution failed", append(logAttrs, "duration_ms", time.Since(start).Milliseconds(), "error", execErr.Error())...)
+		app.logWarn(r, "query execution failed", append(logAttrs,
+			slog.Int64("duration_ms", time.Since(start).Milliseconds()),
+			slog.String("failure_category", executionErrorCategory(execErr)),
+		)...)
 		app.errorMessage(w, r, http.StatusUnprocessableEntity, execErr.Error(), nil)
 		return
 	}
@@ -1086,15 +1089,14 @@ func (app *application) executeQuery(w http.ResponseWriter, r *http.Request) {
 	}
 
 	rs.DurationMs = time.Since(start).Milliseconds()
-	app.logger.Info("query executed", append(logAttrs,
-		"duration_ms", rs.DurationMs,
+	app.logDebug(r, "query executed", append(logAttrs,
+		slog.Int64("duration_ms", rs.DurationMs),
 		slog.Group("result", "rows", len(rs.Rows), "columns", len(rs.Columns)),
-		slog.String("query_cursor_id", rs.QueryCursorID),
 	)...)
 	if classification.Kind == classifier.KindDDL {
 		if _, _, syncErr := app.enqueueSchemaSync(context.WithoutCancel(r.Context()), conn.ID, ws.OrgID); syncErr != nil &&
 			!errors.Is(syncErr, jobs.ErrActiveExists) {
-			app.logger.Warn("post-ddl schema snapshot enqueue failed", append(logAttrs, "error", syncErr)...)
+			app.logWarn(r, "post-ddl schema snapshot enqueue failed", append(logAttrs, slog.String("failure_category", "enqueue_failed"))...)
 		}
 	}
 
@@ -1122,9 +1124,7 @@ func (app *application) executeDQLQuery(r *http.Request, handle execution.Sessio
 			return nil, err
 		}
 		if errors.Is(err, execution.ErrQueryCursorUnsupported) {
-			app.logInfo(r, "query cursor unsupported; falling back to buffered query",
-				slog.String("session_id", string(handle)),
-			)
+			app.logDebug(r, "query cursor unsupported; falling back to buffered query")
 		}
 	}
 	queried, err := app.executionRuntime.Query(r.Context(), execution.QueryRequest{
@@ -1135,8 +1135,7 @@ func (app *application) executeDQLQuery(r *http.Request, handle execution.Sessio
 }
 
 func (app *application) executeQueryWithCursor(r *http.Request, handle execution.SessionHandle, sql string, pageSize int, start time.Time, runtimeSettings settingsapp.Effective) (*result.ResultSet, error) {
-	app.logInfo(r, "query cursor opening",
-		slog.String("session_id", string(handle)),
+	app.logDebug(r, "query cursor opening",
 		slog.Int("page_size", pageSize),
 	)
 	queried, err := app.executionRuntime.Query(r.Context(), execution.QueryRequest{
@@ -1157,7 +1156,7 @@ func (app *application) executeQueryWithCursor(r *http.Request, handle execution
 		rs.QueryCursorID = string(queried.Cursor)
 		rs.Exhausted = &exhausted
 	}
-	app.logInfo(r, "query cursor initial page returned",
+	app.logDebug(r, "query cursor initial page returned",
 		queryCursorAttrs(handle, queried.Cursor,
 			slog.Int("page_size", pageSize),
 			slog.Int("rows_returned", rs.RowsReturned),

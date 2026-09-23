@@ -191,7 +191,7 @@ func Build(ctx context.Context, opts Options) (*Application, error) {
 	targetPolicy := catalog.NewTargetPolicy(settingsService)
 	if !apiSelected || connectorSelected {
 		credentialProvider := credentials.NewEncryptedColumnProvider(db, keyring)
-		localExecution = execution.NewLocalRuntime(connManager, queryCursors, sessionDirectory, credentialProvider, targetPolicy, sessionIdleTimeout)
+		localExecution = execution.NewLocalRuntime(connManager, queryCursors, sessionDirectory, credentialProvider, targetPolicy, sessionIdleTimeout, execution.WithLogger(logger))
 		executionRuntime = localExecution
 	}
 	if apiSelected || connectorSelected {
@@ -205,14 +205,14 @@ func Build(ctx context.Context, opts Options) (*Application, error) {
 		}
 		if connectorSelected {
 			serverCredentials = configuredServerCredentials
-			executionServer, err = execution.NewRuntimeServer(localExecution, grantAuthority)
+			executionServer, err = execution.NewRuntimeServer(localExecution, grantAuthority, execution.WithLogger(logger))
 			if err != nil {
 				return fail(fmt.Errorf("execution server: %w", err))
 			}
 		}
 		if apiSelected && !connectorSelected {
 			staticDirectory := execution.NewStaticSessionDirectory(cfg.Connector.Address)
-			workerRuntime, workerErr := execution.NewWorkerRuntime(staticDirectory, grantAuthority, clientCredentials)
+			workerRuntime, workerErr := execution.NewWorkerRuntime(staticDirectory, grantAuthority, clientCredentials, execution.WithLogger(logger))
 			if workerErr != nil {
 				return fail(fmt.Errorf("worker execution runtime: %w", workerErr))
 			}

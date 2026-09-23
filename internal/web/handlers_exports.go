@@ -148,13 +148,13 @@ func (app *application) downloadConnectionExport(w http.ResponseWriter, r *http.
 		MaxBytes: runtimeSettings.ExportsSyncMaxBytes,
 	})
 	if err != nil {
-		app.logWarn(r, "synchronous export failed", slog.Int64("connection_id", conn.ID), slog.String("session_id", sessionID), slog.String("error", exportErrorCategory(err)))
+		app.logWarn(r, "synchronous export failed", slog.Int64("connection_id", conn.ID), slog.String("failure_category", exportErrorCategory(err)))
 		if errors.Is(err, exports.ErrByteLimitExceeded) {
 			panic(http.ErrAbortHandler)
 		}
 		return
 	}
-	app.logInfo(r, "synchronous export completed", slog.Int64("connection_id", conn.ID), slog.String("session_id", sessionID), slog.Int64("rows", result.Rows), slog.Int64("bytes", result.Bytes))
+	app.logInfo(r, "synchronous export completed", slog.Int64("connection_id", conn.ID), slog.Int64("rows", result.Rows), slog.Int64("bytes", result.Bytes))
 }
 
 func (app *application) decodeExportRequest(w http.ResponseWriter, r *http.Request) (exportRequest, bool) {

@@ -5,23 +5,20 @@ import (
 	"encoding/hex"
 	"fmt"
 	"net/http"
-	"strings"
 	"time"
 
 	"github.com/sqlwarden/internal/observability"
 	"github.com/sqlwarden/internal/response"
 )
 
-const maxRequestIDLength = 128
-
 func (app *application) requestLoggingContext(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		requestID := normalizeRequestID(r.Header.Get(requestIDHeader))
+		requestID := observability.NormalizeRequestID(r.Header.Get(observability.RequestIDHeader))
 		if requestID == "" {
 			requestID = newRequestID()
 		}
 
-		w.Header().Set(requestIDHeader, requestID)
+		w.Header().Set(observability.RequestIDHeader, requestID)
 		meta := &requestLogContext{RequestID: requestID}
 		r = contextSetRequestLogContext(r, meta)
 		r = r.WithContext(observability.WithRequestID(r.Context(), requestID))
@@ -74,24 +71,6 @@ func (app *application) logAccess(next http.Handler) http.Handler {
 		duration := time.Since(startedAt)
 		app.logger.LogAttrs(r.Context(), accessLogLevel(mw.StatusCode), "http request", accessLogAttrs(r, mw, duration)...)
 	})
-}
-
-func normalizeRequestID(requestID string) string {
-	requestID = strings.TrimSpace(requestID)
-	if requestID == "" || len(requestID) > maxRequestIDLength {
-		return ""
-	}
-	for _, r := range requestID {
-		switch {
-		case r >= 'a' && r <= 'z':
-		case r >= 'A' && r <= 'Z':
-		case r >= '0' && r <= '9':
-		case r == '-', r == '_', r == '.', r == ':', r == '/', r == '=':
-		default:
-			return ""
-		}
-	}
-	return requestID
 }
 
 func newRequestID() string {

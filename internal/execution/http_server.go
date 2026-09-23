@@ -8,10 +8,13 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"log/slog"
 	"net/http"
 	"strconv"
+	"time"
 
 	"github.com/sqlwarden/internal/exports"
+	"github.com/sqlwarden/internal/observability"
 )
 
 const maxRPCBodyBytes = 16 << 20
@@ -74,14 +77,17 @@ type RuntimeServer struct {
 	runtime   SessionRuntime
 	authority *GrantAuthority
 	handler   http.Handler
+	logger    *slog.Logger
 }
 
-// NewRuntimeServer returns an internal execution RPC handler.
-func NewRuntimeServer(runtime SessionRuntime, authority *GrantAuthority) (*RuntimeServer, error) {
+// NewRuntimeServer returns an internal execution RPC handler. Each request
+// produces one outcome log; supply WithLogger to record them.
+func NewRuntimeServer(runtime SessionRuntime, authority *GrantAuthority, opts ...Option) (*RuntimeServer, error) {
 	if runtime == nil || authority == nil {
 		return nil, errors.New("execution runtime server requires runtime and grant authority")
 	}
-	server := &RuntimeServer{runtime: runtime, authority: authority}
+	options := applyOptions(opts)
+	server := &RuntimeServer{runtime: runtime, authority: authority, logger: options.logger}
 	mux := http.NewServeMux()
 	mux.HandleFunc(runtimeRPCPath, server.serveCall)
 	mux.HandleFunc(runtimeStreamPath, server.serveStream)
@@ -93,17 +99,20 @@ func NewRuntimeServer(runtime SessionRuntime, authority *GrantAuthority) (*Runti
 func (s *RuntimeServer) Handler() http.Handler { return s.handler }
 
 func (s *RuntimeServer) serveCall(w http.ResponseWriter, r *http.Request) {
+	startedAt := time.Now()
+	ctx := requestContext(r)
 	if r.Method != http.MethodPost {
+		s.logOutcome(ctx, rpcMethodUnknown, outcomeInvalidRequest, slog.LevelWarn, startedAt)
 		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
 		return
 	}
 	var envelope rpcEnvelope
 	if err := decodeRPCJSON(r.Body, &envelope); err != nil {
+		s.logOutcome(ctx, rpcMethodUnknown, outcomeInvalidRequest, slog.LevelWarn, startedAt)
 		http.Error(w, "invalid execution request", http.StatusBadRequest)
 		return
 	}
 
-	ctx := r.Context()
 	var result any
 	var err error
 	switch envelope.Method {
@@ -239,30 +248,43 @@ func (s *RuntimeServer) serveCall(w http.ResponseWriter, r *http.Request) {
 	default:
 		err = fmt.Errorf("unknown execution method %q", envelope.Method)
 	}
-	writeRPCResponse(w, result, err)
+	err = writeRPCResponse(w, result, err)
+
+	method := safeRPCMethod(envelope.Method)
+	outcome, level := rpcOutcome(err)
+	if method == rpcMethodUnknown {
+		outcome, level = outcomeUnknownMethod, slog.LevelWarn
+	}
+	s.logOutcome(ctx, method, outcome, level, startedAt)
 }
 
 func (s *RuntimeServer) serveStream(w http.ResponseWriter, r *http.Request) {
+	startedAt := time.Now()
+	ctx := requestContext(r)
 	if r.Method != http.MethodPost {
+		s.logOutcome(ctx, rpcStream, outcomeInvalidRequest, slog.LevelWarn, startedAt)
 		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
 		return
 	}
 	var request streamRequest
 	if err := decodeRPCJSON(r.Body, &request); err != nil {
+		s.logOutcome(ctx, rpcStream, outcomeInvalidRequest, slog.LevelWarn, startedAt)
 		http.Error(w, "invalid execution stream request", http.StatusBadRequest)
 		return
 	}
-	if err := s.authorizeHandle(r.Context(), request.Handle, request.Grant, rpcStream); err != nil {
+	if err := s.authorizeHandle(ctx, request.Handle, request.Grant, rpcStream); err != nil {
 		w.Header().Set("Content-Type", "application/json")
 		w.WriteHeader(http.StatusForbidden)
 		writeRPCResponse(w, nil, err)
+		outcome, level := rpcOutcome(err)
+		s.logOutcome(ctx, rpcStream, outcome, level, startedAt)
 		return
 	}
 	w.Header().Set("Content-Type", "application/octet-stream")
 	w.Header().Add("Trailer", "X-SQLWarden-Stream-Rows")
 	w.Header().Add("Trailer", "X-SQLWarden-Stream-Bytes")
 	w.Header().Add("Trailer", "X-SQLWarden-Stream-Error")
-	result, err := s.runtime.Stream(r.Context(), request.SessionRequest, w, exports.StreamOptions{
+	result, err := s.runtime.Stream(ctx, request.SessionRequest, w, exports.StreamOptions{
 		Format: request.Options.Format, SQL: request.Options.SQL,
 		MaxBytes: request.Options.MaxBytes, PageSize: request.Options.PageSize,
 	})
@@ -272,6 +294,27 @@ func (s *RuntimeServer) serveStream(w http.ResponseWriter, r *http.Request) {
 		encoded, _ := json.Marshal(newRPCError(err))
 		w.Header().Set("X-SQLWarden-Stream-Error", base64.RawURLEncoding.EncodeToString(encoded))
 	}
+	outcome, level := rpcOutcome(err)
+	s.logOutcome(ctx, rpcStream, outcome, level, startedAt)
+}
+
+// requestContext attaches the caller's correlation ID, when valid, so runtime
+// logs for this request share it.
+func requestContext(r *http.Request) context.Context {
+	ctx := r.Context()
+	if requestID := observability.NormalizeRequestID(r.Header.Get(observability.RequestIDHeader)); requestID != "" {
+		ctx = observability.WithRequestID(ctx, requestID)
+	}
+	return ctx
+}
+
+func (s *RuntimeServer) logOutcome(ctx context.Context, method, outcome string, level slog.Level, startedAt time.Time) {
+	attrs := []slog.Attr{
+		slog.String("rpc_method", method),
+		slog.String("outcome", outcome),
+		slog.Int64("duration_ms", time.Since(startedAt).Milliseconds()),
+	}
+	s.logger.LogAttrs(ctx, level, "execution rpc completed", appendRequestID(ctx, attrs)...)
 }
 
 // authorizeHandle authenticates the grant before it reads session state, so an
@@ -309,9 +352,12 @@ func decodeRPCJSON(reader io.Reader, target any) error {
 
 func decodePayload(payload json.RawMessage, target any) error {
 	if len(payload) > maxRPCBodyBytes {
-		return errors.New("execution payload exceeds maximum size")
+		return invalidPayloadError{err: errors.New("execution payload exceeds maximum size")}
 	}
-	return decodeStrictJSON(payload, target)
+	if err := decodeStrictJSON(payload, target); err != nil {
+		return invalidPayloadError{err: err}
+	}
+	return nil
 }
 
 func decodeStrictJSON(payload []byte, target any) error {
@@ -326,14 +372,19 @@ func decodeStrictJSON(payload []byte, target any) error {
 	return nil
 }
 
-func writeRPCResponse(w http.ResponseWriter, value any, err error) {
+// writeRPCResponse writes the RPC reply and returns the error the caller
+// observed, which differs from err only when the result could not be encoded.
+func writeRPCResponse(w http.ResponseWriter, value any, err error) error {
 	w.Header().Set("Content-Type", "application/json")
 	response := rpcResponse{Error: newRPCError(err)}
 	if err == nil && value != nil {
-		response.Payload, err = json.Marshal(value)
-		if err != nil {
-			response.Error = newRPCError(err)
+		var marshalErr error
+		response.Payload, marshalErr = json.Marshal(value)
+		if marshalErr != nil {
+			response.Error = newRPCError(marshalErr)
+			err = errServerEncoding
 		}
 	}
 	_ = json.NewEncoder(w).Encode(response)
+	return err
 }

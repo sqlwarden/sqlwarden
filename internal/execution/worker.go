@@ -8,6 +8,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"log/slog"
 	"net/http"
 	"net/url"
 	"strconv"
@@ -16,6 +17,7 @@ import (
 
 	"github.com/sqlwarden/internal/engine/metadata"
 	"github.com/sqlwarden/internal/exports"
+	"github.com/sqlwarden/internal/observability"
 )
 
 const maxRPCResponseBytes = 256 << 20
@@ -36,20 +38,23 @@ type WorkerRuntime struct {
 	authority   *GrantAuthority
 	credentials ClientTransportCredentials
 	client      *http.Client
+	logger      *slog.Logger
 	scopes      sync.Map // SessionHandle -> Scope
 }
 
-// NewWorkerRuntime returns a remote runtime routed by directory.
-func NewWorkerRuntime(directory SessionDirectory, authority *GrantAuthority, credentials ClientTransportCredentials) (*WorkerRuntime, error) {
+// NewWorkerRuntime returns a remote runtime routed by directory. Supply
+// WithLogger to record transport and protocol failures.
+func NewWorkerRuntime(directory SessionDirectory, authority *GrantAuthority, credentials ClientTransportCredentials, opts ...Option) (*WorkerRuntime, error) {
 	if directory == nil || authority == nil {
 		return nil, errors.New("worker runtime requires session directory and grant authority")
 	}
 	if credentials == nil {
 		credentials = InsecureTransportCredentials{}
 	}
+	options := applyOptions(opts)
 	return &WorkerRuntime{
 		directory: directory, authority: authority, credentials: credentials,
-		client: credentials.HTTPClient(),
+		client: credentials.HTTPClient(), logger: options.logger,
 	}, nil
 }
 
@@ -329,29 +334,41 @@ func (r *WorkerRuntime) Stream(ctx context.Context, request SessionRequest, writ
 	}
 	endpoint, err := r.endpoint(ctx, request.Handle, runtimeStreamPath)
 	if err != nil {
+		r.logRoutingFailure(ctx, rpcStream, err)
 		return exports.StreamResult{}, err
 	}
 	payload, err := json.Marshal(streamRequest{SessionRequest: request, Options: streamOptions{
 		Format: opts.Format, SQL: opts.SQL, MaxBytes: opts.MaxBytes, PageSize: opts.PageSize,
 	}})
 	if err != nil {
+		r.logTransportFailure(ctx, rpcStream, transportCategoryRequestEncoding)
 		return exports.StreamResult{}, err
 	}
-	httpRequest, err := http.NewRequestWithContext(ctx, http.MethodPost, endpoint, bytes.NewReader(payload))
+	httpRequest, err := r.newRequest(ctx, endpoint, payload)
 	if err != nil {
+		r.logTransportFailure(ctx, rpcStream, transportCategoryRouting)
 		return exports.StreamResult{}, err
 	}
-	httpRequest.GetBody = nil
-	httpRequest.Header.Set("Content-Type", "application/json")
 	response, err := r.client.Do(httpRequest)
 	if err != nil {
+		r.logTransportFailure(ctx, rpcStream, contextOr(ctx, transportCategoryUnreachable))
 		return exports.StreamResult{}, err
 	}
 	defer response.Body.Close()
 	if response.StatusCode != http.StatusOK {
-		return exports.StreamResult{}, decodeHTTPError(response)
+		remote, httpErr := decodeHTTPError(response)
+		if !remote {
+			r.logTransportFailure(ctx, rpcStream, remoteStatusCategory(httpErr))
+		}
+		return exports.StreamResult{}, httpErr
 	}
-	if _, err := io.Copy(writer, response.Body); err != nil {
+	trackedWriter := &errorTrackingWriter{writer: writer}
+	if _, err := io.Copy(trackedWriter, response.Body); err != nil {
+		category := transportCategoryStreamCopy
+		if trackedWriter.failed {
+			category = transportCategoryClientWrite
+		}
+		r.logTransportFailure(ctx, rpcStream, contextOr(ctx, category))
 		return exports.StreamResult{}, err
 	}
 	result := exports.StreamResult{}
@@ -363,15 +380,30 @@ func (r *WorkerRuntime) Stream(ctx context.Context, request SessionRequest, writ
 	if encoded := response.Trailer.Get("X-SQLWarden-Stream-Error"); encoded != "" {
 		data, decodeErr := base64.RawURLEncoding.DecodeString(encoded)
 		if decodeErr != nil {
+			r.logTransportFailure(ctx, rpcStream, transportCategoryResponseDecoding)
 			return result, decodeErr
 		}
 		var remote rpcError
 		if err := json.Unmarshal(data, &remote); err != nil {
+			r.logTransportFailure(ctx, rpcStream, transportCategoryResponseDecoding)
 			return result, err
 		}
 		return result, remote.err()
 	}
 	return result, nil
+}
+
+type errorTrackingWriter struct {
+	writer io.Writer
+	failed bool
+}
+
+func (w *errorTrackingWriter) Write(p []byte) (int, error) {
+	n, err := w.writer.Write(p)
+	if err != nil || n != len(p) {
+		w.failed = true
+	}
+	return n, err
 }
 
 func (r *WorkerRuntime) signHandleRequest(ctx context.Context, handle SessionHandle, grant *Grant, permission string) error {
@@ -415,35 +447,41 @@ func (r *WorkerRuntime) issue(scope Scope, supplied Grant, permission string) (G
 func (r *WorkerRuntime) call(ctx context.Context, handle SessionHandle, method string, input, output any, failure transportFailureKind) error {
 	payload, err := json.Marshal(input)
 	if err != nil {
+		r.logTransportFailure(ctx, method, transportCategoryRequestEncoding)
 		return err
 	}
 	body, err := json.Marshal(rpcEnvelope{Method: method, Payload: payload})
 	if err != nil {
+		r.logTransportFailure(ctx, method, transportCategoryRequestEncoding)
 		return err
 	}
 	endpoint, err := r.endpoint(ctx, handle, runtimeRPCPath)
 	if err != nil {
+		r.logRoutingFailure(ctx, method, err)
 		return err
 	}
-	request, err := http.NewRequestWithContext(ctx, http.MethodPost, endpoint, bytes.NewReader(body))
+	request, err := r.newRequest(ctx, endpoint, body)
 	if err != nil {
+		r.logTransportFailure(ctx, method, transportCategoryRouting)
 		return err
 	}
-	// Disabling GetBody makes the no-replay guarantee explicit even if a future
-	// transport policy adds idempotency handling to the standard client.
-	request.GetBody = nil
-	request.Header.Set("Content-Type", "application/json")
 	response, err := r.client.Do(request)
 	if err != nil {
+		r.logTransportFailure(ctx, method, contextOr(ctx, transportCategoryUnreachable))
 		return classifyTransportFailure(failure, err)
 	}
 	defer response.Body.Close()
 	if response.StatusCode != http.StatusOK {
-		return classifyRemoteFailure(failure, decodeHTTPError(response))
+		remote, httpErr := decodeHTTPError(response)
+		if !remote {
+			r.logTransportFailure(ctx, method, remoteStatusCategory(httpErr))
+		}
+		return classifyRemoteFailure(failure, httpErr)
 	}
 	var result rpcResponse
 	decoder := json.NewDecoder(io.LimitReader(response.Body, maxRPCResponseBytes))
 	if err := decoder.Decode(&result); err != nil {
+		r.logTransportFailure(ctx, method, contextOr(ctx, transportCategoryResponseDecoding))
 		return classifyTransportFailure(failure, err)
 	}
 	if result.Error != nil {
@@ -451,10 +489,62 @@ func (r *WorkerRuntime) call(ctx context.Context, handle SessionHandle, method s
 	}
 	if output != nil && len(result.Payload) > 0 {
 		if err := json.Unmarshal(result.Payload, output); err != nil {
+			r.logTransportFailure(ctx, method, transportCategoryResponseDecoding)
 			return classifyTransportFailure(failure, err)
 		}
 	}
 	return nil
+}
+
+// newRequest builds a connector request that forwards the caller's
+// correlation ID. Disabling GetBody makes the no-replay guarantee explicit even
+// if a future transport policy adds idempotency handling to the standard client.
+func (r *WorkerRuntime) newRequest(ctx context.Context, endpoint string, body []byte) (*http.Request, error) {
+	request, err := http.NewRequestWithContext(ctx, http.MethodPost, endpoint, bytes.NewReader(body))
+	if err != nil {
+		return nil, err
+	}
+	request.GetBody = nil
+	request.Header.Set("Content-Type", "application/json")
+	if requestID := observability.RequestID(ctx); requestID != "" {
+		request.Header.Set(observability.RequestIDHeader, requestID)
+	}
+	return request, nil
+}
+
+// logTransportFailure records failures the connector never answered or
+// answered outside the RPC protocol. Remote application failures are logged by
+// the connector's RuntimeServer and are not repeated here. Connector addresses
+// and raw errors are omitted.
+func (r *WorkerRuntime) logTransportFailure(ctx context.Context, method, category string) {
+	level := slog.LevelWarn
+	if category == transportCategoryCanceled || category == transportCategoryClientWrite {
+		level = slog.LevelDebug
+	}
+	attrs := []slog.Attr{
+		slog.String("rpc_method", method),
+		slog.String("failure_category", category),
+	}
+	r.logger.LogAttrs(ctx, level, "execution transport failed", appendRequestID(ctx, attrs)...)
+}
+
+// logRoutingFailure ignores a lost session, which is an application outcome
+// rather than a transport fault.
+func (r *WorkerRuntime) logRoutingFailure(ctx context.Context, method string, err error) {
+	switch {
+	case errors.Is(err, ErrSessionLost):
+	case errors.Is(err, ErrProtocolMismatch):
+		r.logTransportFailure(ctx, method, transportCategoryProtocolMismatch)
+	default:
+		r.logTransportFailure(ctx, method, transportCategoryRouting)
+	}
+}
+
+func remoteStatusCategory(err error) string {
+	if errors.Is(err, ErrProtocolMismatch) {
+		return transportCategoryProtocolMismatch
+	}
+	return transportCategoryRemoteStatus
 }
 
 func classifyRemoteFailure(kind transportFailureKind, err error) error {
@@ -483,7 +573,7 @@ func (r *WorkerRuntime) endpoint(ctx context.Context, handle SessionHandle, path
 		return "", ErrProtocolMismatch
 	}
 	address := strings.TrimSpace(record.RoutingAddress)
-	if parsed, parseErr := url.Parse(address); parseErr == nil && parsed.Scheme != "" {
+	if parsed, parseErr := url.Parse(address); parseErr == nil && parsed.Scheme != "" && parsed.Host != "" {
 		return strings.TrimRight(address, "/") + path, nil
 	}
 	return r.credentials.Scheme() + "://" + address + path, nil
@@ -502,15 +592,17 @@ func classifyTransportFailure(kind transportFailureKind, err error) error {
 	}
 }
 
-func decodeHTTPError(response *http.Response) error {
+// decodeHTTPError reports remote=true when the connector answered with an RPC
+// application error rather than failing outside the protocol.
+func decodeHTTPError(response *http.Response) (remote bool, err error) {
 	var result rpcResponse
-	if err := json.NewDecoder(io.LimitReader(response.Body, maxRPCResponseBytes)).Decode(&result); err == nil && result.Error != nil {
-		return result.Error.err()
+	if decodeErr := json.NewDecoder(io.LimitReader(response.Body, maxRPCResponseBytes)).Decode(&result); decodeErr == nil && result.Error != nil {
+		return true, result.Error.err()
 	}
 	if response.StatusCode == http.StatusNotFound {
-		return ErrProtocolMismatch
+		return false, ErrProtocolMismatch
 	}
-	return fmt.Errorf("execution RPC status %d", response.StatusCode)
+	return false, fmt.Errorf("execution RPC status %d", response.StatusCode)
 }
 
 var _ SessionRuntime = (*WorkerRuntime)(nil)

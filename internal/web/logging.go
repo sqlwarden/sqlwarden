@@ -1,6 +1,8 @@
 package web
 
 import (
+	"context"
+	"errors"
 	"fmt"
 	"io"
 	"log/slog"
@@ -11,12 +13,11 @@ import (
 	"github.com/go-chi/chi/v5"
 	"github.com/lmittmann/tint"
 	"github.com/sqlwarden/internal/config"
+	"github.com/sqlwarden/internal/execution"
 	"github.com/sqlwarden/internal/response"
 	"github.com/sqlwarden/internal/version"
 	"github.com/tomasen/realip"
 )
-
-const requestIDHeader = "X-Request-ID"
 
 type requestLogContext struct {
 	RequestID     string
@@ -49,6 +50,7 @@ func NewLogger(cfg config.Config, out io.Writer) (*slog.Logger, error) {
 	return slog.New(handler).With(
 		"service", "sqlwarden",
 		"version", version.Get(),
+		"process_kinds", strings.Join(cfg.ProcessKinds, ","),
 	), nil
 }
 
@@ -95,8 +97,6 @@ func parseLogLevel(level string) (slog.Level, error) {
 
 func accessLogLevel(status int) slog.Level {
 	switch {
-	case status >= http.StatusInternalServerError:
-		return slog.LevelError
 	case status >= http.StatusBadRequest:
 		return slog.LevelWarn
 	default:
@@ -105,7 +105,6 @@ func accessLogLevel(status int) slog.Level {
 }
 
 func requestAttrs(r *http.Request) []slog.Attr {
-	meta := contextGetRequestLogContext(r)
 	attrs := []slog.Attr{
 		slog.String("method", r.Method),
 		slog.String("path", requestPath(r)),
@@ -114,9 +113,6 @@ func requestAttrs(r *http.Request) []slog.Attr {
 	}
 	if route := routePattern(r); route != "" {
 		attrs = append(attrs, slog.String("route", route))
-	}
-	if meta != nil && meta.RequestID != "" {
-		attrs = append(attrs, slog.String("id", meta.RequestID))
 	}
 	if ua := r.UserAgent(); ua != "" {
 		attrs = append(attrs, slog.String("user_agent", ua))
@@ -156,7 +152,8 @@ func resourceAttrs(r *http.Request) []slog.Attr {
 }
 
 func accessLogAttrs(r *http.Request, mw *response.MetricsResponseWriter, duration time.Duration) []slog.Attr {
-	return []slog.Attr{
+	attrs := requestIDAttrs(r)
+	return append(attrs,
 		slog.Group("request", attrsToAny(requestAttrs(r))...),
 		slog.Group("response",
 			slog.Int("status", mw.StatusCode),
@@ -164,6 +161,37 @@ func accessLogAttrs(r *http.Request, mw *response.MetricsResponseWriter, duratio
 			slog.Int64("duration_ms", duration.Milliseconds()),
 		),
 		slog.Group("resource", attrsToAny(resourceAttrs(r))...),
+	)
+}
+
+func requestIDAttrs(r *http.Request) []slog.Attr {
+	meta := contextGetRequestLogContext(r)
+	if meta == nil || meta.RequestID == "" {
+		return nil
+	}
+	return []slog.Attr{slog.String("request_id", meta.RequestID)}
+}
+
+func executionErrorCategory(err error) string {
+	switch {
+	case errors.Is(err, context.Canceled):
+		return "canceled"
+	case errors.Is(err, context.DeadlineExceeded):
+		return "timeout"
+	case errors.Is(err, execution.ErrSessionLost):
+		return "session_lost"
+	case errors.Is(err, execution.ErrCursorLost):
+		return "cursor_lost"
+	case errors.Is(err, execution.ErrTransactionLost):
+		return "transaction_lost"
+	case errors.Is(err, execution.ErrOutcomeUnknown):
+		return "outcome_unknown"
+	case errors.Is(err, execution.ErrLimitExceeded):
+		return "limit_exceeded"
+	case errors.Is(err, execution.ErrTargetConnection):
+		return "target_connection"
+	default:
+		return "target_error"
 	}
 }
 
@@ -173,10 +201,10 @@ func (app *application) logInfo(r *http.Request, message string, attrs ...slog.A
 	if app.logger == nil {
 		return
 	}
-	base := []slog.Attr{
+	base := append(requestIDAttrs(r),
 		slog.Group("request", attrsToAny(requestAttrs(r))...),
 		slog.Group("resource", attrsToAny(resourceAttrs(r))...),
-	}
+	)
 	base = append(base, attrs...)
 	app.logger.LogAttrs(r.Context(), slog.LevelInfo, message, base...)
 }
@@ -188,10 +216,10 @@ func (app *application) logDebug(r *http.Request, message string, attrs ...slog.
 	if app.logger == nil {
 		return
 	}
-	base := []slog.Attr{
+	base := append(requestIDAttrs(r),
 		slog.Group("request", attrsToAny(requestAttrs(r))...),
 		slog.Group("resource", attrsToAny(resourceAttrs(r))...),
-	}
+	)
 	base = append(base, attrs...)
 	app.logger.LogAttrs(r.Context(), slog.LevelDebug, message, base...)
 }
@@ -202,10 +230,10 @@ func (app *application) logWarn(r *http.Request, message string, attrs ...slog.A
 	if app.logger == nil {
 		return
 	}
-	base := []slog.Attr{
+	base := append(requestIDAttrs(r),
 		slog.Group("request", attrsToAny(requestAttrs(r))...),
 		slog.Group("resource", attrsToAny(resourceAttrs(r))...),
-	}
+	)
 	base = append(base, attrs...)
 	app.logger.LogAttrs(r.Context(), slog.LevelWarn, message, base...)
 }

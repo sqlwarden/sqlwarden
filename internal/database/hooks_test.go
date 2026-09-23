@@ -17,7 +17,7 @@ import (
 )
 
 func TestSlowQueryDetectorHook(t *testing.T) {
-	t.Run("Logs slow queries with the full executed query", func(t *testing.T) {
+	t.Run("Logs slow queries with only the query template", func(t *testing.T) {
 		var buf bytes.Buffer
 		logger := slog.New(slog.NewTextHandler(&buf, &slog.HandlerOptions{Level: slog.LevelWarn}))
 
@@ -37,7 +37,8 @@ func TestSlowQueryDetectorHook(t *testing.T) {
 
 		output := buf.String()
 		assert.True(t, strings.Contains(output, "slow query detected"))
-		assert.True(t, strings.Contains(output, "SELECT * FROM users WHERE id = 'sensitive-id'"))
+		assert.True(t, strings.Contains(output, "SELECT * FROM users WHERE id = ?"))
+		assert.False(t, strings.Contains(output, "sensitive-id"))
 	})
 
 	t.Run("Includes request ID without requiring query tracing", func(t *testing.T) {
@@ -50,8 +51,8 @@ func TestSlowQueryDetectorHook(t *testing.T) {
 		}
 
 		event := &bun.QueryEvent{
-			StartTime: time.Now().Add(-100 * time.Millisecond),
-			Query:     "SELECT * FROM users WHERE id = 1",
+			StartTime:     time.Now().Add(-100 * time.Millisecond),
+			QueryTemplate: "SELECT * FROM users WHERE id = ?",
 		}
 
 		ctx := observability.WithRequestID(context.Background(), "req-slow-1")
@@ -59,22 +60,23 @@ func TestSlowQueryDetectorHook(t *testing.T) {
 
 		output := buf.String()
 		assert.True(t, strings.Contains(output, "slow query detected"))
-		assert.True(t, strings.Contains(output, "SELECT * FROM users WHERE id = 1"))
+		assert.True(t, strings.Contains(output, "SELECT * FROM users WHERE id = ?"))
 		assert.True(t, strings.Contains(output, "req-slow-1"))
 	})
 
-	t.Run("Falls back to the template when the executed query is unavailable", func(t *testing.T) {
+	t.Run("Logs an unavailable marker instead of the interpolated query", func(t *testing.T) {
 		var buf bytes.Buffer
 		logger := slog.New(slog.NewTextHandler(&buf, &slog.HandlerOptions{Level: slog.LevelWarn}))
 		hook := &slowQueryDetectorHook{threshold: 50, logger: logger}
 
 		hook.AfterQuery(context.Background(), &bun.QueryEvent{
-			StartTime:     time.Now().Add(-100 * time.Millisecond),
-			QueryTemplate: "SELECT * FROM secrets WHERE value = ?",
+			StartTime: time.Now().Add(-100 * time.Millisecond),
+			Query:     "SELECT * FROM secrets WHERE value = 'slow-only-secret'",
 		})
 
 		output := buf.String()
-		assert.True(t, strings.Contains(output, "SELECT * FROM secrets WHERE value = ?"))
+		assert.True(t, strings.Contains(output, queryTemplateUnavailable))
+		assert.False(t, strings.Contains(output, "slow-only-secret"))
 	})
 
 	t.Run("Does not log fast queries below threshold", func(t *testing.T) {
@@ -133,8 +135,9 @@ func TestDebugQueryLoggerHook(t *testing.T) {
 
 		output := buf.String()
 		assert.True(t, strings.Contains(output, "executed query"))
-		assert.True(t, strings.Contains(output, "INSERT INTO users"))
+		assert.True(t, strings.Contains(output, "INSERT INTO users (email, hashed_password) VALUES (?, ?)"))
 		assert.True(t, strings.Contains(output, "rows_affected"))
+		assert.False(t, strings.Contains(output, "test@example.com"))
 	})
 
 	t.Run("Includes request ID when present", func(t *testing.T) {
@@ -311,18 +314,34 @@ func TestHooksIntegration(t *testing.T) {
 	})
 }
 
-func TestDebugQueryTracingLogsFullExecutedQuery(t *testing.T) {
-	var buf bytes.Buffer
-	logger := slog.New(slog.NewTextHandler(&buf, &slog.HandlerOptions{Level: slog.LevelDebug}))
-	enabled := &atomic.Bool{}
-	enabled.Store(true)
-	hook := &debugQueryLoggerHook{logger: logger, enabled: enabled}
-	hook.AfterQuery(context.Background(), &bun.QueryEvent{
-		StartTime: time.Now(), QueryTemplate: "INSERT INTO secrets (value) VALUES (?)",
-		Query: "INSERT INTO secrets (value) VALUES ('plaintext-password')",
+func TestDebugQueryTracingNeverLogsInterpolatedQuery(t *testing.T) {
+	t.Run("Logs the template when present", func(t *testing.T) {
+		var buf bytes.Buffer
+		logger := slog.New(slog.NewTextHandler(&buf, &slog.HandlerOptions{Level: slog.LevelDebug}))
+		enabled := &atomic.Bool{}
+		enabled.Store(true)
+		hook := &debugQueryLoggerHook{logger: logger, enabled: enabled}
+		hook.AfterQuery(context.Background(), &bun.QueryEvent{
+			StartTime: time.Now(), QueryTemplate: "INSERT INTO secrets (value) VALUES (?)",
+			Query: "INSERT INTO secrets (value) VALUES ('plaintext-password')",
+		})
+		output := buf.String()
+		assert.True(t, strings.Contains(output, "INSERT INTO secrets (value) VALUES (?)"))
+		assert.False(t, strings.Contains(output, "plaintext-password"))
 	})
-	output := buf.String()
-	assert.True(t, strings.Contains(output, "VALUES ('plaintext-password')"))
+
+	t.Run("Logs an unavailable marker when only the interpolated query exists", func(t *testing.T) {
+		var buf bytes.Buffer
+		logger := slog.New(slog.NewTextHandler(&buf, &slog.HandlerOptions{Level: slog.LevelDebug}))
+		hook := &debugQueryLoggerHook{logger: logger}
+		hook.AfterQuery(context.Background(), &bun.QueryEvent{
+			StartTime: time.Now(),
+			Query:     "UPDATE accounts SET token = 'query-only-secret'",
+		})
+		output := buf.String()
+		assert.True(t, strings.Contains(output, queryTemplateUnavailable))
+		assert.False(t, strings.Contains(output, "query-only-secret"))
+	})
 }
 
 // testResult is a mock implementation of sql.Result for testing

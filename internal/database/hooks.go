@@ -78,12 +78,15 @@ func (d *debugQueryLoggerHook) BeforeQuery(ctx context.Context, event *bun.Query
 
 var _ bun.QueryHook = (*debugQueryLoggerHook)(nil) // enforce that debugQueryLoggerHook implements bun.QueryHook
 
-// traceQuery intentionally prefers Bun's full executed query while SQLWarden
-// is under development. Production hardening must replace this with a
-// placeholder-bearing or redacted representation.
+// queryTemplateUnavailable replaces the logged statement when Bun did not
+// record a placeholder-bearing template.
+const queryTemplateUnavailable = "<query template unavailable>"
+
+// traceQuery returns the placeholder-bearing statement template. Bun's
+// interpolated Query embeds bind values and must never reach logs.
 func traceQuery(event *bun.QueryEvent) string {
-	if event.Query != "" {
-		return event.Query
+	if event.QueryTemplate != "" {
+		return event.QueryTemplate
 	}
-	return event.QueryTemplate
+	return queryTemplateUnavailable
 }
