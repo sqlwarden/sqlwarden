@@ -19,7 +19,7 @@ import {
 import '@xyflow/react/dist/style.css'
 import { toPng, toSvg } from 'html-to-image'
 import { toast } from 'sonner'
-import { useQuery } from '@tanstack/react-query'
+import { useQueries, useQuery } from '@tanstack/react-query'
 import { Icon } from '#/lib/icons'
 import { cn } from '#/lib/utils'
 import { Button } from '#/components/ui/button'
@@ -32,14 +32,16 @@ import {
   DropdownMenuTrigger,
 } from '#/components/ui/dropdown-menu'
 import { api } from '#/lib/api/client'
-import type { ObjectDetail, ObjectRef, ScopeNode, Workspace } from '#/lib/api/types'
-import { scopeKey, scopeLabel } from '#/lib/api/scope'
+import type { NavigatorItem, ObjectDetail, ObjectRef, Workspace } from '#/lib/api/types'
+import { scopeLabel } from '#/lib/api/scope'
 import {
   objectRefKey,
-  orgConnectionDirectoryQueryOptions,
   orgConnectionRelationshipsQueryOptions,
-  orgConnectionSchemaSpecQueryOptions,
+  schemaNodesQueryOptions,
+  schemaTreeQueryOptions,
 } from '#/lib/api/query'
+import { refOfPath } from '../navigator/model'
+import { diagramFolders } from './capability'
 import { useIde, type EditorTab } from '../useIdeStore'
 import { newObjectTab } from '../object-detail/objectTab'
 import { useObjectDetails } from '../useObjectDetails'
@@ -67,8 +69,20 @@ const NODE_TYPES: NodeTypes = { table: TableNode }
 const EDGE_TYPES: EdgeTypes = { fk: FkEdge }
 type FlowNode = Node<TableNodeData, 'table'>
 
-function flattenScopeNodes(nodes: ScopeNode[]): ScopeNode[] {
-  return nodes.flatMap((node) => [node, ...flattenScopeNodes(node.children ?? [])])
+type ListingResult = {
+  data?: { items: NavigatorItem[] }
+  error: unknown
+  isSuccess: boolean
+  isLoading: boolean
+}
+
+function combineListings(results: ListingResult[]) {
+  return {
+    items: results.flatMap((result) => result.data?.items ?? []),
+    ready: results.every((result) => result.isSuccess),
+    loading: results.some((result) => result.isLoading),
+    error: results.find((result) => result.error)?.error ?? null,
+  }
 }
 
 type Box = { x: number; y: number; w: number; h: number }
@@ -139,23 +153,25 @@ function DiagramCanvas({
 
   const enabled = Boolean(sessionId && connectionId && target && loadRequested)
 
-  const specQuery = useQuery({
-    ...orgConnectionSchemaSpecQueryOptions(
-      orgSlug,
-      workspace.id,
-      connectionId ?? 0,
-      sessionId ?? '',
-    ),
+  const treeQuery = useQuery({
+    ...schemaTreeQueryOptions(orgSlug, workspace.id, connectionId ?? 0),
     enabled,
   })
-  const directoryQuery = useQuery({
-    ...orgConnectionDirectoryQueryOptions(
-      orgSlug,
-      workspace.id,
-      connectionId ?? 0,
-      sessionId ?? '',
-    ),
-    enabled,
+  const tree = treeQuery.data
+  const folders = useMemo(() => diagramFolders(tree, scope), [tree, scope])
+  const listings = useQueries({
+    queries: folders.map((folder) => ({
+      ...schemaNodesQueryOptions(
+        orgSlug,
+        workspace.id,
+        connectionId ?? 0,
+        scope,
+        folder.kind,
+        sessionId,
+      ),
+      enabled,
+    })),
+    combine: combineListings,
   })
   const relQuery = useQuery({
     ...orgConnectionRelationshipsQueryOptions(
@@ -172,29 +188,22 @@ function DiagramCanvas({
     workspaceId: workspace.id,
     connectionId: connectionId ?? 0,
     sessionId,
+    path: scope,
   })
 
   // A 410 from any diagram query means the server-side session died — drop it
   // so the canvas flips to its reconnect pane instead of silently stalling.
-  useEvictGoneSession(connectionId, [specQuery.error, directoryQuery.error, relQuery.error])
+  useEvictGoneSession(connectionId, [treeQuery.error, listings.error, relQuery.error])
 
-  const spec = specQuery.data?.spec
   const edges = useMemo(() => relQuery.data?.graph?.relationships ?? [], [relQuery.data])
-  const directoryReady = directoryQuery.isSuccess && directoryQuery.data?.status !== 'pending'
-  const relationshipsReady = relQuery.isSuccess && relQuery.data?.status !== 'pending'
+  const listingsReady = treeQuery.isSuccess && listings.ready
+  const relationshipsReady = relQuery.isSuccess
 
   const refByKey = useMemo(() => {
     const map = new Map<string, ObjectRef>()
-    const diagramKinds = new Set(
-      (spec?.kinds ?? []).filter((k) => k.supports_diagram).map((k) => k.kind),
-    )
-    const nodes = flattenScopeNodes(directoryQuery.data?.directory?.roots ?? [])
-    for (const node of nodes) {
-      if (scopeKey(node.path) !== scopeKey(scope)) continue
-      for (const group of node.groups) {
-        if (!diagramKinds.has(group.kind)) continue
-        for (const ref of group.objects) map.set(refKey(ref), ref)
-      }
+    for (const item of listings.items) {
+      const ref = refOfPath(item.path)
+      map.set(refKey(ref), ref)
     }
     for (const e of edges) {
       map.set(refKey(e.source), e.source)
@@ -202,7 +211,7 @@ function DiagramCanvas({
     }
     if (target?.kind === 'object') map.set(refKey(target.ref), target.ref)
     return map
-  }, [directoryQuery.data, edges, spec, scope, target])
+  }, [listings.items, edges, target])
 
   const [present, setPresent] = useState<ObjectRef[]>([])
   const [collapsed, setCollapsed] = useState<Set<string>>(new Set())
@@ -233,7 +242,7 @@ function DiagramCanvas({
   // expanded/removed tables are exactly where the user left them on reload. If
   // there's a saved set, mark it seeded so the fresh seed below doesn't run.
   useEffect(() => {
-    if (hydratedRef.current || !directoryReady || !relationshipsReady) return
+    if (hydratedRef.current || !listingsReady || !relationshipsReady) return
     hydratedRef.current = true
     void loadDiagram(tab.id).then((saved) => {
       savedPositions.current = saved.positions
@@ -251,7 +260,7 @@ function DiagramCanvas({
       }
       setHydrateChecked(true)
     })
-  }, [tab.id, refByKey, directoryReady, relationshipsReady])
+  }, [tab.id, refByKey, listingsReady, relationshipsReady])
 
   // Seed the working set from the target — only after the queries have
   // SUCCEEDED (so edges are populated) and persisted positions have loaded.
@@ -260,7 +269,7 @@ function DiagramCanvas({
   // edges and show only the anchor table.
   useEffect(() => {
     if (seededRef.current || !hydrateChecked || !target) return
-    if (!directoryReady || !relationshipsReady) return
+    if (!listingsReady || !relationshipsReady) return
     seededRef.current = true
     const seed =
       target.kind === 'object'
@@ -274,7 +283,7 @@ function DiagramCanvas({
     target,
     edges,
     refByKey,
-    directoryReady,
+    listingsReady,
     relationshipsReady,
     hydrateChecked,
     requestLayout,
@@ -852,12 +861,12 @@ function DiagramCanvas({
     hasConnection: Boolean(connectionId),
     hasSession: Boolean(sessionId),
     loadRequested,
-    spec,
-    specError: specQuery.error,
-    directoryError: directoryQuery.error,
+    tree,
+    treeError: treeQuery.error,
+    listingError: listings.error,
     relationshipsError: relQuery.error,
-    directoryLoading: directoryQuery.isLoading || directoryQuery.data?.status === 'pending',
-    relationshipsLoading: relQuery.isLoading || relQuery.data?.status === 'pending',
+    listingLoading: treeQuery.isLoading || listings.loading,
+    relationshipsLoading: relQuery.isLoading,
     presentCount: present.length,
   })
   if (viewState === 'missing-target' || !target || !connectionId)

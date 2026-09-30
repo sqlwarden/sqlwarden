@@ -7,8 +7,9 @@ import type { Connection, ObjectRef, Workspace } from '#/lib/api/types'
 import { scopeLabel } from '#/lib/api/scope'
 import {
   invalidateConnectionSchemaQueries,
+  objectRefPath,
   orgConnectionObjectQueryOptions,
-  orgConnectionSchemaSpecQueryOptions,
+  schemaTreeQueryOptions,
 } from '#/lib/api/query'
 import { dialectFor } from '../sqlDialect'
 import { useIde, type EditorTab } from '../useIdeStore'
@@ -44,7 +45,7 @@ export function ObjectDetailView({
     workspaceId: workspace.id,
     connectionId: connectionId ?? 0,
     sessionId,
-    ref,
+    path: ref ? objectRefPath(ref) : undefined,
   })
 
   const detailQuery = useQuery({
@@ -57,14 +58,14 @@ export function ObjectDetailView({
     ),
     enabled: Boolean(connectionId && ref && sessionId),
   })
-  const specQuery = useQuery({
-    ...orgConnectionSchemaSpecQueryOptions(orgSlug, workspace.id, connectionId ?? 0, sessionId),
-    enabled: Boolean(connectionId && ref && sessionId),
+  const treeQuery = useQuery({
+    ...schemaTreeQueryOptions(orgSlug, workspace.id, connectionId ?? 0),
+    enabled: Boolean(connectionId && ref),
   })
 
   // A 410 means the server-side session died while this tab was open — drop it
   // so the view flips to the reconnect pane instead of erroring on stale data.
-  useEvictGoneSession(connectionId, [detailQuery.error, specQuery.error])
+  useEvictGoneSession(connectionId, [detailQuery.error])
 
   const detail = detailQuery.data?.detail ?? null
   const state = resolveObjectViewState({
@@ -80,7 +81,7 @@ export function ObjectDetailView({
       detail && connectionId
         ? {
             detail,
-            spec: specQuery.data?.spec,
+            tree: treeQuery.data,
             dialect: dialectFor(driver),
             driver,
             orgSlug,
@@ -89,7 +90,7 @@ export function ObjectDetailView({
             sessionId: sessionId ?? '',
           }
         : null,
-    [connectionId, detail, driver, orgSlug, sessionId, specQuery.data?.spec, workspace.id],
+    [connectionId, detail, driver, orgSlug, sessionId, treeQuery.data, workspace.id],
   )
   const sections = useMemo(() => (vm ? renderer.sections(vm) : []), [vm, renderer])
   const current = sections.find((s) => s.id === activeSection) ?? sections[0]
@@ -129,7 +130,7 @@ export function ObjectDetailView({
         canRefresh={state.kind === 'ready'}
         refreshing={refreshSchema.isPending}
         onViewInDiagram={
-          diagramSupportedForKind(specQuery.data?.spec, ref.kind)
+          diagramSupportedForKind(treeQuery.data, ref.kind)
             ? () =>
                 openTab(
                   newDiagramTab({ id: connectionId, driver } as Connection, workspace, {

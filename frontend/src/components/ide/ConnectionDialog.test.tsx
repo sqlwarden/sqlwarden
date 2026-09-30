@@ -2,7 +2,7 @@ import { QueryClientProvider } from '@tanstack/react-query'
 import { fireEvent, render, screen, waitFor } from '@testing-library/react'
 import { http, HttpResponse } from 'msw'
 import userEvent from '@testing-library/user-event'
-import { describe, expect, it, vi } from 'vitest'
+import { beforeEach, describe, expect, it, vi } from 'vitest'
 import type { Environment } from '#/lib/api/types'
 import { createTestQueryClient } from '#/test/render'
 import { server } from '#/test/server'
@@ -36,7 +36,27 @@ function renderDialog(overrides: { lockedEnvironmentId?: number } = {}) {
   return { onOpenChange }
 }
 
+function stubEngine(overrides: Record<string, unknown> = {}) {
+  server.use(
+    http.get('/api/v1/engines/:engine', ({ params }) =>
+      HttpResponse.json({
+        id: params.engine,
+        display_name: 'PostgreSQL',
+        dialect: 'postgres',
+        capabilities: {},
+        supports_system_objects: false,
+        show_all_databases: false,
+        ...overrides,
+      }),
+    ),
+  )
+}
+
 describe('ConnectionDialog', () => {
+  beforeEach(() => {
+    stubEngine()
+  })
+
   it('filters the build-time driver registry without a fallback option', async () => {
     const user = userEvent.setup()
     renderDialog()
@@ -160,5 +180,21 @@ describe('ConnectionDialog', () => {
     await user.click(screen.getByRole('button', { name: 'Hide password' }))
 
     expect(document.querySelector('input[type="password"]')).not.toBeNull()
+  })
+
+  it('locks "Show all databases" on until a default database is entered', async () => {
+    const user = userEvent.setup()
+    stubEngine({ show_all_databases: true })
+    renderDialog({ lockedEnvironmentId: 4 })
+    await user.click(screen.getByRole('button', { name: /PostgreSQL/ }))
+
+    const checkbox = await screen.findByRole('checkbox', { name: 'Show all databases' })
+    expect(checkbox).toBeChecked()
+    expect(checkbox).toHaveAttribute('aria-disabled', 'true')
+
+    await user.type(screen.getByPlaceholderText('Optional'), 'app')
+    expect(checkbox).not.toBeChecked()
+    expect(checkbox).not.toHaveAttribute('aria-disabled', 'true')
+    expect(screen.queryByRole('checkbox', { name: 'Show system schemas' })).not.toBeInTheDocument()
   })
 })

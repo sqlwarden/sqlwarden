@@ -4,7 +4,6 @@ import (
 	"log/slog"
 	"net/http"
 	"sort"
-	"strconv"
 	"time"
 
 	metadata "github.com/sqlwarden/internal/engine/metadata"
@@ -36,55 +35,33 @@ type completionIndexResponse struct {
 func (app *application) getConnectionCompletionIndex(w http.ResponseWriter, r *http.Request) {
 	started := time.Now()
 
-	persistent, err := app.persistentSchemaMode(r)
+	if !app.authorizeSchemaAccess(w, r) {
+		return
+	}
+	if _, ok := app.optionalSchemaSession(w, r); !ok {
+		return
+	}
+	conn := contextGetConnection(r)
+	navConn, err := app.navigatorConnection(r)
 	if err != nil {
 		app.serverError(w, r, err)
 		return
 	}
-
-	var (
-		directory *metadata.Directory
-		objects   []metadata.Object
-		version   string
-		mode      string
-	)
-
-	if persistent {
-		if !app.authorizeSchemaAccess(w, r) {
-			return
-		}
-		conn := contextGetConnection(r)
-		snapshot, dir, found, lookupErr := app.schemaSnapshots.Active(r.Context(), conn.ID)
-		if lookupErr != nil {
-			app.serverError(w, r, lookupErr)
-			return
-		}
-		if !found {
-			app.writeSnapshotPending(w, r)
-			return
-		}
-		objs, objErr := app.schemaSnapshots.AllObjects(r.Context(), snapshot.ID)
-		if objErr != nil {
-			app.serverError(w, r, objErr)
-			return
-		}
-		directory, objects, version = app.completionWithCachedScopes(strconv.FormatInt(conn.ID, 10), dir, objs, snapshot.ID)
+	mode := "ephemeral"
+	if navConn.Persistent {
 		mode = "persistent"
-	} else {
-		session, inspector, ok := app.resolveSchemaInspector(w, r)
-		if !ok {
-			return
-		}
-		dir, dirErr := app.schemaService.Directory(r.Context(), session.ConnectionID, inspector)
-		if dirErr != nil {
-			app.serverError(w, r, dirErr)
-			return
-		}
-		objs := app.schemaService.CachedObjects(session.ConnectionID, dir.ObjectRefs())
-		directory, objects, version, mode = dir, objs, dir.GeneratedAt.UTC().Format(time.RFC3339Nano), "ephemeral"
 	}
-
-	out := projectCompletionIndex(directory, objects, version)
+	var set *metadata.MetadataSet
+	if tree, ok := app.optionalNavigatorTree(conn); ok {
+		set, err = app.schemaNavigator.CompletionMetadata(r.Context(), navConn, tree)
+		if err != nil {
+			app.serverError(w, r, err)
+			return
+		}
+	} else {
+		set = &metadata.MetadataSet{Directory: &metadata.Directory{DefaultScope: conn.DefaultScope}}
+	}
+	out := projectCompletionIndex(set.Directory, set.Objects, set.Version)
 
 	app.logDebug(r, "completion index returned",
 		slog.String("mode", mode),

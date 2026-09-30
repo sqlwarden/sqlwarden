@@ -20,9 +20,9 @@ import (
 	"github.com/sqlwarden/internal/engine/explain"
 	metadata "github.com/sqlwarden/internal/engine/metadata"
 	"github.com/sqlwarden/internal/engine/safety"
-	"github.com/sqlwarden/internal/jobs"
 	"github.com/sqlwarden/internal/request"
 	"github.com/sqlwarden/internal/response"
+	schemaapp "github.com/sqlwarden/internal/schema"
 	"github.com/sqlwarden/internal/validator"
 	"github.com/sqlwarden/pkg/result"
 )
@@ -247,16 +247,31 @@ func connectionSafetyChecker(driverName string) safety.Checker {
 	return safety.NewHeuristic()
 }
 
-// driverSupportsSystemSchemas reports whether a driver's SchemaSpec flags
-// system scopes (metadata.ScopeNode.System) — the only drivers where the
-// "show system schemas" connection setting has any effect.
 func driverSupportsSystemSchemas(driverName string) bool {
-	d, err := engine.New(driverName)
-	if err != nil {
+	set, ok := engine.Describe(driverName)
+	if !ok {
 		return false
 	}
-	si, ok := d.(metadata.SchemaInspector)
-	return ok && si.SchemaSpec().SystemSchemas
+	if set.Tree != nil {
+		return set.Tree.SystemObjects
+	}
+	return set.Schema != nil && set.Schema.SystemSchemas
+}
+
+// resolveShowAllDatabases forces the setting on when the connection names no
+// default database, and drops it for drivers without a database level.
+func resolveShowAllDatabases(tree *metadata.Tree, defaultScope metadata.ScopePath, requested bool) bool {
+	if tree == nil {
+		return false
+	}
+	kind := tree.DatabaseKind()
+	if kind == "" {
+		return false
+	}
+	if defaultScope.Name(kind) == "" {
+		return true
+	}
+	return requested
 }
 
 // registeredConnectionExplainer resolves an Explainer implemented by the
@@ -280,6 +295,7 @@ func (app *application) createConnection(w http.ResponseWriter, r *http.Request)
 		AccessMode        string              `json:"access_mode"`
 		DefaultScope      metadata.ScopePath  `json:"default_scope,omitempty"`
 		ShowSystemSchemas bool                `json:"show_system_schemas"`
+		ShowAllDatabases  bool                `json:"show_all_databases"`
 		TLS               *tlsConfigDocument  `json:"tls"`
 		SSH               *sshConfigDocument  `json:"ssh"`
 		V                 validator.Validator `json:"-"`
@@ -364,11 +380,13 @@ func (app *application) createConnection(w http.ResponseWriter, r *http.Request)
 	}
 
 	showSystemSchemas := input.ShowSystemSchemas && driverSupportsSystemSchemas(input.Driver)
+	set, _ := engine.Describe(input.Driver)
+	showAllDatabases := resolveShowAllDatabases(set.Tree, input.DefaultScope, input.ShowAllDatabases)
 
 	conn, err := app.db.InsertConnectionWithScope(context.Background(),
 		ws.ID, targetEnvID,
 		input.Name, input.Driver, dsnEncrypted, input.AccessMode, input.DefaultScope,
-		showSystemSchemas,
+		showSystemSchemas, showAllDatabases,
 	)
 	if err != nil {
 		app.serverError(w, r, err)
@@ -487,6 +505,7 @@ func (app *application) updateConnection(w http.ResponseWriter, r *http.Request)
 		SchemaSnapshotPolicy *string             `json:"schema_snapshot_policy"`
 		DefaultScope         *metadata.ScopePath `json:"default_scope"`
 		ShowSystemSchemas    *bool               `json:"show_system_schemas"`
+		ShowAllDatabases     *bool               `json:"show_all_databases"`
 		TLS                  *tlsConfigDocument  `json:"tls"`
 		SSH                  *sshConfigDocument  `json:"ssh"`
 		Force                bool                `json:"force"`
@@ -517,7 +536,7 @@ func (app *application) updateConnection(w http.ResponseWriter, r *http.Request)
 			*input.SchemaSnapshotPolicy == database.SchemaSnapshotPolicyDisabled,
 			"schema_snapshot_policy", "Schema snapshot policy must be inherit or disabled.")
 	}
-	input.V.CheckField(input.Name != nil || input.DSN != nil || input.AccessMode != nil || input.SchemaSnapshotPolicy != nil || input.DefaultScope != nil || input.ShowSystemSchemas != nil || input.TLS != nil || input.SSH != nil,
+	input.V.CheckField(input.Name != nil || input.DSN != nil || input.AccessMode != nil || input.SchemaSnapshotPolicy != nil || input.DefaultScope != nil || input.ShowSystemSchemas != nil || input.ShowAllDatabases != nil || input.TLS != nil || input.SSH != nil,
 		"request", "At least one setting is required.")
 	if input.V.HasErrors() {
 		app.failedValidation(w, r, input.V)
@@ -656,6 +675,12 @@ func (app *application) updateConnection(w http.ResponseWriter, r *http.Request)
 		nextShowSystemSchemas = *input.ShowSystemSchemas
 	}
 	nextShowSystemSchemas = nextShowSystemSchemas && driverSupportsSystemSchemas(conn.Driver)
+	nextShowAllDatabases := conn.ShowAllDatabases
+	if input.ShowAllDatabases != nil {
+		nextShowAllDatabases = *input.ShowAllDatabases
+	}
+	set, _ := engine.Describe(conn.Driver)
+	nextShowAllDatabases = resolveShowAllDatabases(set.Tree, nextDefaultScope, nextShowAllDatabases)
 	scopeChanged := nextDefaultScope != conn.DefaultScope
 	if scopeChanged && !dsnChanged {
 		activeSessions := app.connManager.CountForConnection(strconv.FormatInt(conn.ID, 10))
@@ -667,31 +692,29 @@ func (app *application) updateConnection(w http.ResponseWriter, r *http.Request)
 			app.connManager.RemoveForConnection(strconv.FormatInt(conn.ID, 10))
 		}
 	}
-	err = app.db.UpdateConnectionWithScopeAndPolicy(r.Context(), conn.ID, nextName, dsnEncrypted, nextAccessMode, nextSnapshotPolicy, nextDefaultScope, nextShowSystemSchemas)
+	// Purge before persisting so a failed purge leaves the DSN unchanged and
+	// the rotation can be retried, instead of stranding the old target's cache.
+	if dsnChanged {
+		if err := app.purgeConnectionSchemaCache(r.Context(), conn.ID); err != nil {
+			app.serverError(w, r, err)
+			return
+		}
+		app.logInfo(r, "connection schema cache purged for dsn rotation", slog.Int64("connection_id", conn.ID))
+	}
+	err = app.db.UpdateConnectionWithScopeAndPolicy(r.Context(), conn.ID, nextName, dsnEncrypted, nextAccessMode, nextSnapshotPolicy, nextDefaultScope, nextShowSystemSchemas, nextShowAllDatabases)
 	if err != nil {
 		app.serverError(w, r, err)
 		return
 	}
 	if conn.SchemaSnapshotPolicy != database.SchemaSnapshotPolicyDisabled &&
 		nextSnapshotPolicy == database.SchemaSnapshotPolicyDisabled {
-		if err := app.disableConnectionSnapshots(r.Context(), conn.ID); err != nil {
+		if err := app.purgeConnectionSchemaCache(r.Context(), conn.ID); err != nil {
 			app.serverError(w, r, err)
 			return
 		}
 	}
-	if scopeChanged {
-		app.schemaService.RefreshConnection(strconv.FormatInt(conn.ID, 10))
+	if scopeChanged && !dsnChanged {
 		app.completionService.InvalidateConnection(strconv.FormatInt(conn.ID, 10))
-		if snapshotsEnabled, enabledErr := app.db.SchemaSnapshotsEnabled(r.Context(), conn.ID); enabledErr != nil {
-			app.logWarn(r, "schema snapshot policy lookup failed after scope change",
-				slog.Int64("connection_id", conn.ID), slog.String("error", enabledErr.Error()))
-		} else if snapshotsEnabled {
-			if _, _, enqueueErr := app.enqueueSchemaSync(r.Context(), conn.ID, contextGetWorkspace(r).OrgID); enqueueErr != nil &&
-				!errors.Is(enqueueErr, jobs.ErrActiveExists) {
-				app.logWarn(r, "schema sync enqueue failed after scope change",
-					slog.Int64("connection_id", conn.ID), slog.String("error", enqueueErr.Error()))
-			}
-		}
 	}
 	if tlsChanged {
 		if err := app.db.UpdateConnectionTLSConfig(r.Context(), conn.ID, tlsEncrypted); err != nil {
@@ -708,7 +731,7 @@ func (app *application) updateConnection(w http.ResponseWriter, r *http.Request)
 		app.logInfo(r, "connection ssh updated", slog.Int64("connection_id", conn.ID))
 	}
 
-	app.logInfo(r, "connection updated", slog.Int64("connection_id", conn.ID), slog.Bool("dsn_rotated", dsnChanged), slog.Bool("scope_changed", scopeChanged), slog.String("access_mode", nextAccessMode), slog.String("schema_snapshot_policy", nextSnapshotPolicy))
+	app.logInfo(r, "connection updated", slog.Int64("connection_id", conn.ID), slog.Bool("dsn_rotated", dsnChanged), slog.Bool("scope_changed", scopeChanged), slog.String("access_mode", nextAccessMode), slog.String("schema_snapshot_policy", nextSnapshotPolicy), slog.Bool("show_all_databases", nextShowAllDatabases))
 	w.WriteHeader(http.StatusNoContent)
 }
 
@@ -839,7 +862,14 @@ func (app *application) testConnection(w http.ResponseWriter, r *http.Request) {
 		"ok":         true,
 		"latency_ms": latency,
 	}
-	if discoverer, ok := d.(metadata.ScopeDiscoverer); ok {
+	if inspector, ok := d.(metadata.SchemaInspector); ok {
+		discovery, discoveryErr := schemaapp.DiscoverScopes(ctx, inspector, input.ParentScope)
+		if discoveryErr == nil {
+			payload["scope_discovery"] = discovery
+		} else {
+			payload["scope_discovery_error"] = discoveryErr.Error()
+		}
+	} else if discoverer, ok := d.(metadata.ScopeDiscoverer); ok {
 		discovery, discoveryErr := discoverer.DiscoverScopes(ctx, metadata.ScopeDiscoveryRequest{Parent: input.ParentScope})
 		if discoveryErr == nil {
 			payload["scope_discovery"] = discovery
@@ -943,7 +973,6 @@ func (app *application) connectToDatabase(w http.ResponseWriter, r *http.Request
 	}
 
 	app.logInfo(r, "database session opened", slog.Int64("connection_id", conn.ID), slog.String("session_id", session.ID), slog.Bool("reused", !created))
-	app.maybeEnqueueSchemaSync(context.WithoutCancel(r.Context()), conn, ws.OrgID)
 	err = response.JSON(w, http.StatusOK, map[string]any{
 		"session_id": session.ID,
 		"reused":     !created,
@@ -1045,11 +1074,6 @@ func (app *application) disconnectFromDatabase(w http.ResponseWriter, r *http.Re
 	}
 
 	app.connManager.Remove(sessionID)
-	if app.connManager.CountForConnection(connID) == 0 {
-		if persistent, policyErr := app.db.SchemaSnapshotsEnabled(r.Context(), conn.ID); policyErr == nil && !persistent {
-			app.schemaService.RefreshConnection(connID)
-		}
-	}
 	app.logInfo(r, "database session disconnected", slog.Int64("connection_id", conn.ID), slog.String("session_id", sessionID))
 	w.WriteHeader(http.StatusNoContent)
 }
@@ -1342,13 +1366,6 @@ func (app *application) executeQuery(w http.ResponseWriter, r *http.Request) {
 		slog.Group("result", "rows", len(rs.Rows), "columns", len(rs.Columns)),
 		slog.String("query_cursor_id", rs.QueryCursorID),
 	)...)
-	if classification.Kind == classifier.KindDDL {
-		if _, _, syncErr := app.enqueueSchemaSync(context.WithoutCancel(r.Context()), conn.ID, ws.OrgID); syncErr != nil &&
-			!errors.Is(syncErr, jobs.ErrActiveExists) {
-			app.logger.Warn("post-ddl schema snapshot enqueue failed", append(logAttrs, "error", syncErr)...)
-		}
-	}
-
 	err = response.JSON(w, http.StatusOK, struct {
 		*result.ResultSet
 		Transaction transactionStatusView `json:"transaction"`

@@ -26,6 +26,7 @@ type Connection struct {
 	AccessMode           string             `bun:",notnull,default:'open'" json:"access_mode"`
 	SchemaSnapshotPolicy string             `bun:",notnull,default:'inherit'" json:"schema_snapshot_policy"`
 	ShowSystemSchemas    bool               `bun:",notnull,default:false" json:"show_system_schemas"`
+	ShowAllDatabases     bool               `bun:",notnull,default:false" json:"show_all_databases"`
 	DefaultScope         metadata.ScopePath `bun:",notnull,default:''" json:"default_scope,omitempty"`
 	CreatedAt            time.Time          `bun:",notnull"          json:"created_at"`
 	UpdatedAt            time.Time          `bun:",notnull"          json:"updated_at"`
@@ -49,17 +50,17 @@ type ListConnectionsParams struct {
 }
 
 func (db *DB) InsertConnection(ctx context.Context, workspaceID int64, envID *int64, name, driver, dsnEncrypted, accessMode string) (Connection, error) {
-	return db.InsertConnectionWithScope(ctx, workspaceID, envID, name, driver, dsnEncrypted, accessMode, "", false)
+	return db.InsertConnectionWithScope(ctx, workspaceID, envID, name, driver, dsnEncrypted, accessMode, "", false, false)
 }
 
-func (db *DB) InsertConnectionWithScope(ctx context.Context, workspaceID int64, envID *int64, name, driver, dsnEncrypted, accessMode string, defaultScope metadata.ScopePath, showSystemSchemas bool) (Connection, error) {
+func (db *DB) InsertConnectionWithScope(ctx context.Context, workspaceID int64, envID *int64, name, driver, dsnEncrypted, accessMode string, defaultScope metadata.ScopePath, showSystemSchemas, showAllDatabases bool) (Connection, error) {
 	ctx, cancel := context.WithTimeout(ctx, defaultTimeout)
 	defer cancel()
 
 	var conn Connection
 	err := db.RunInTx(ctx, nil, func(ctx context.Context, tx bun.Tx) error {
 		var err error
-		conn, err = db.InsertConnectionWithScopeAndExecutor(ctx, tx, workspaceID, envID, name, driver, dsnEncrypted, accessMode, defaultScope, showSystemSchemas)
+		conn, err = db.InsertConnectionWithScopeAndExecutor(ctx, tx, workspaceID, envID, name, driver, dsnEncrypted, accessMode, defaultScope, showSystemSchemas, showAllDatabases)
 		return err
 	})
 	if err != nil {
@@ -71,10 +72,10 @@ func (db *DB) InsertConnectionWithScope(ctx context.Context, workspaceID int64, 
 // InsertConnectionWithExecutor inserts a connection and its hierarchy row using
 // exec so callers can compose connection creation in a larger transaction.
 func (db *DB) InsertConnectionWithExecutor(ctx context.Context, exec bun.IDB, workspaceID int64, envID *int64, name, driver, dsnEncrypted, accessMode string) (Connection, error) {
-	return db.InsertConnectionWithScopeAndExecutor(ctx, exec, workspaceID, envID, name, driver, dsnEncrypted, accessMode, "", false)
+	return db.InsertConnectionWithScopeAndExecutor(ctx, exec, workspaceID, envID, name, driver, dsnEncrypted, accessMode, "", false, false)
 }
 
-func (db *DB) InsertConnectionWithScopeAndExecutor(ctx context.Context, exec bun.IDB, workspaceID int64, envID *int64, name, driver, dsnEncrypted, accessMode string, defaultScope metadata.ScopePath, showSystemSchemas bool) (Connection, error) {
+func (db *DB) InsertConnectionWithScopeAndExecutor(ctx context.Context, exec bun.IDB, workspaceID int64, envID *int64, name, driver, dsnEncrypted, accessMode string, defaultScope metadata.ScopePath, showSystemSchemas, showAllDatabases bool) (Connection, error) {
 	resolvedEnvID := int64(0)
 	if envID == nil {
 		var err error
@@ -95,6 +96,7 @@ func (db *DB) InsertConnectionWithScopeAndExecutor(ctx context.Context, exec bun
 		AccessMode:           accessMode,
 		SchemaSnapshotPolicy: SchemaSnapshotPolicyInherit,
 		ShowSystemSchemas:    showSystemSchemas,
+		ShowAllDatabases:     showAllDatabases,
 		DefaultScope:         defaultScope,
 		CreatedAt:            time.Now(),
 		UpdatedAt:            time.Now(),
@@ -160,7 +162,7 @@ func (db *DB) UpdateConnectionWithPolicy(ctx context.Context, id int64, name, ds
 	return err
 }
 
-func (db *DB) UpdateConnectionWithScopeAndPolicy(ctx context.Context, id int64, name, dsnEncrypted, accessMode, snapshotPolicy string, defaultScope metadata.ScopePath, showSystemSchemas bool) error {
+func (db *DB) UpdateConnectionWithScopeAndPolicy(ctx context.Context, id int64, name, dsnEncrypted, accessMode, snapshotPolicy string, defaultScope metadata.ScopePath, showSystemSchemas, showAllDatabases bool) error {
 	ctx, cancel := context.WithTimeout(ctx, defaultTimeout)
 	defer cancel()
 
@@ -171,6 +173,7 @@ func (db *DB) UpdateConnectionWithScopeAndPolicy(ctx context.Context, id int64, 
 		Set("schema_snapshot_policy = ?", snapshotPolicy).
 		Set("default_scope = ?", defaultScope).
 		Set("show_system_schemas = ?", showSystemSchemas).
+		Set("show_all_databases = ?", showAllDatabases).
 		Set("updated_at = ?", time.Now()).
 		Where("id = ?", id).
 		Exec(ctx)

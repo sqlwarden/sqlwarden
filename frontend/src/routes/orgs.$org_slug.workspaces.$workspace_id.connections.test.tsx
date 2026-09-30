@@ -36,6 +36,7 @@ const connection: Connection = {
   driver: 'postgres',
   access_mode: 'open',
   show_system_schemas: false,
+  show_all_databases: false,
   created_at: '2026-01-01T00:00:00Z',
   updated_at: '2026-01-01T00:00:00Z',
 }

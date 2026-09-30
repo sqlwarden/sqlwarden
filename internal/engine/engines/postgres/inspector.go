@@ -9,7 +9,7 @@ import (
 	build "github.com/sqlwarden/internal/engine/metadata/build"
 )
 
-var _ metadata.SchemaInspector = (*Driver)(nil)
+var _ metadata.DirectoryInspector = (*Driver)(nil)
 var _ metadata.ScopeDiscoverer = (*Driver)(nil)
 var _ metadata.DefinitionInspector = (*Driver)(nil)
 
@@ -223,6 +223,23 @@ ORDER BY schema_name`)
 // catalog.go and inspector_objects.go. A compatible engine overrides this
 // method entirely to drop or add kinds.
 func (d *Driver) InspectObjects(ctx context.Context, refs []metadata.ObjectRef) ([]metadata.Object, error) {
+	var out []metadata.Object
+	for database, group := range groupRefsByDatabase(refs) {
+		db, err := d.databaseFor(ctx, database)
+		if err != nil {
+			return nil, err
+		}
+		objs, err := inspectObjectsIn(ctx, db, group)
+		if err != nil {
+			return nil, err
+		}
+		qualifyObjects(objs, database)
+		out = append(out, objs...)
+	}
+	return out, nil
+}
+
+func inspectObjectsIn(ctx context.Context, db *sql.DB, refs []metadata.ObjectRef) ([]metadata.Object, error) {
 	var relRefs, mvRefs, fnRefs, seqRefs, procRefs, trigRefs, typeRefs, domainRefs, foreignRefs []metadata.ObjectRef
 	for _, r := range refs {
 		switch r.Kind {
@@ -249,63 +266,63 @@ func (d *Driver) InspectObjects(ctx context.Context, refs []metadata.ObjectRef) 
 
 	var out []metadata.Object
 	if len(relRefs) > 0 {
-		objs, err := RelationalObjects(ctx, d.db, relRefs)
+		objs, err := RelationalObjects(ctx, db, relRefs)
 		if err != nil {
 			return nil, err
 		}
 		out = append(out, objs...)
 	}
 	if len(mvRefs) > 0 {
-		objs, err := MaterializedViewObjects(ctx, d.db, mvRefs)
+		objs, err := MaterializedViewObjects(ctx, db, mvRefs)
 		if err != nil {
 			return nil, err
 		}
 		out = append(out, objs...)
 	}
 	if len(fnRefs) > 0 {
-		objs, err := FunctionObjects(ctx, d.db, fnRefs)
+		objs, err := FunctionObjects(ctx, db, fnRefs)
 		if err != nil {
 			return nil, err
 		}
 		out = append(out, objs...)
 	}
 	if len(seqRefs) > 0 {
-		objs, err := SequenceObjects(ctx, d.db, seqRefs)
+		objs, err := SequenceObjects(ctx, db, seqRefs)
 		if err != nil {
 			return nil, err
 		}
 		out = append(out, objs...)
 	}
 	if len(procRefs) > 0 {
-		objs, err := ProcedureObjects(ctx, d.db, procRefs)
+		objs, err := ProcedureObjects(ctx, db, procRefs)
 		if err != nil {
 			return nil, err
 		}
 		out = append(out, objs...)
 	}
 	if len(trigRefs) > 0 {
-		objs, err := TriggerObjects(ctx, d.db, trigRefs)
+		objs, err := TriggerObjects(ctx, db, trigRefs)
 		if err != nil {
 			return nil, err
 		}
 		out = append(out, objs...)
 	}
 	if len(typeRefs) > 0 {
-		objs, err := TypeObjects(ctx, d.db, typeRefs)
+		objs, err := TypeObjects(ctx, db, typeRefs)
 		if err != nil {
 			return nil, err
 		}
 		out = append(out, objs...)
 	}
 	if len(domainRefs) > 0 {
-		objs, err := DomainObjects(ctx, d.db, domainRefs)
+		objs, err := DomainObjects(ctx, db, domainRefs)
 		if err != nil {
 			return nil, err
 		}
 		out = append(out, objs...)
 	}
 	if len(foreignRefs) > 0 {
-		objs, err := ForeignTableObjects(ctx, d.db, foreignRefs)
+		objs, err := ForeignTableObjects(ctx, db, foreignRefs)
 		if err != nil {
 			return nil, err
 		}
@@ -324,63 +341,71 @@ func (d *Driver) InspectObjects(ctx context.Context, refs []metadata.ObjectRef) 
 // overrides this method to special-case a kind and delegate everything else to
 // this default via d.Driver.InspectDefinition(ctx, ref).
 func (d *Driver) InspectDefinition(ctx context.Context, ref metadata.ObjectRef) (*metadata.Descriptor, error) {
+	db, err := d.databaseFor(ctx, ref.Scope.Name("database"))
+	if err != nil {
+		return nil, err
+	}
+	return inspectDefinitionIn(ctx, db, ref)
+}
+
+func inspectDefinitionIn(ctx context.Context, db *sql.DB, ref metadata.ObjectRef) (*metadata.Descriptor, error) {
 	switch ref.Kind {
 	case "table":
-		ddl, err := TableDDL(ctx, d.db, ref)
+		ddl, err := TableDDL(ctx, db, ref)
 		if err != nil {
 			return nil, err
 		}
 		return SourceDescriptor("DDL", "sql", ddl), nil
 	case "view":
-		def, err := ViewDefinition(ctx, d.db, ref)
+		def, err := ViewDefinition(ctx, db, ref)
 		if err != nil {
 			return nil, err
 		}
 		return SourceDescriptor("Definition", "sql", def), nil
 	case "materialized_view":
-		def, err := MaterializedViewDefinition(ctx, d.db, ref)
+		def, err := MaterializedViewDefinition(ctx, db, ref)
 		if err != nil {
 			return nil, err
 		}
 		return SourceDescriptor("DDL", "sql", def), nil
 	case "function":
-		language, def, err := FunctionDefinition(ctx, d.db, ref)
+		language, def, err := FunctionDefinition(ctx, db, ref)
 		if err != nil {
 			return nil, err
 		}
 		return SourceDescriptor("Definition", language, def), nil
 	case "procedure":
-		language, def, err := ProcedureDefinition(ctx, d.db, ref)
+		language, def, err := ProcedureDefinition(ctx, db, ref)
 		if err != nil {
 			return nil, err
 		}
 		return SourceDescriptor("Definition", language, def), nil
 	case "trigger":
-		def, err := TriggerDefinition(ctx, d.db, ref)
+		def, err := TriggerDefinition(ctx, db, ref)
 		if err != nil {
 			return nil, err
 		}
 		return SourceDescriptor("Definition", "sql", def), nil
 	case "sequence":
-		def, err := SequenceDefinition(ctx, d.db, ref)
+		def, err := SequenceDefinition(ctx, db, ref)
 		if err != nil {
 			return nil, err
 		}
 		return SourceDescriptor("DDL", "sql", def), nil
 	case "domain":
-		def, err := DomainDefinition(ctx, d.db, ref)
+		def, err := DomainDefinition(ctx, db, ref)
 		if err != nil {
 			return nil, err
 		}
 		return SourceDescriptor("DDL", "sql", def), nil
 	case "type":
-		def, err := TypeDefinition(ctx, d.db, ref)
+		def, err := TypeDefinition(ctx, db, ref)
 		if err != nil {
 			return nil, err
 		}
 		return SourceDescriptor("DDL", "sql", def), nil
 	case "foreign_table":
-		def, err := ForeignTableDefinition(ctx, d.db, ref)
+		def, err := ForeignTableDefinition(ctx, db, ref)
 		if err != nil {
 			return nil, err
 		}

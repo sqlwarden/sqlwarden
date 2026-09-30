@@ -35,6 +35,29 @@ const workspace = {
   updated_at: '',
 }
 
+function stubEmptySchemaTree() {
+  server.use(
+    http.get('/api/v1/orgs/acme/workspaces/3/connections/7/schema/tree', () =>
+      HttpResponse.json({
+        system_objects: false,
+        root: {
+          label: 'Connection',
+          icon: 'connection',
+          leaf: false,
+          folders: [],
+          scope: false,
+          relational: false,
+          supports_diagram: false,
+          has_definition: false,
+          show_all_databases: false,
+          column: false,
+        },
+        nodes: {},
+      }),
+    ),
+  )
+}
+
 describe('DatabasePanel', () => {
   let store: ReturnType<typeof createIdeStore>
 
@@ -297,14 +320,7 @@ describe('DatabasePanel', () => {
 
   it('collapses an expanded connection schema tree when the connection disconnects', async () => {
     handlers('populated')
-    server.use(
-      http.get('/api/v1/orgs/acme/workspaces/3/connections/7/schema/directory', () =>
-        HttpResponse.json({ groups: [] }),
-      ),
-      http.get('/api/v1/orgs/acme/workspaces/3/connections/7/schema/spec', () =>
-        HttpResponse.json({ scopes: [] }),
-      ),
-    )
+    stubEmptySchemaTree()
     store.getState().setSession(7, 'session-7')
     const { user } = renderPanel({ splitView: false })
 
@@ -436,10 +452,11 @@ describe('DatabasePanel', () => {
 
   it('shows a connect CTA in the split view schema pane for an unconnected connection', async () => {
     handlers('populated')
+    stubEmptySchemaTree()
     const { user } = renderPanel()
 
     await user.click(await screen.findByText('analytics-pg'))
-    expect(await screen.findByText('Not connected.')).toBeInTheDocument()
+    expect(await screen.findByText(/^Not connected\./)).toBeInTheDocument()
     expect(screen.getByRole('button', { name: 'Connect' })).toBeInTheDocument()
   })
 

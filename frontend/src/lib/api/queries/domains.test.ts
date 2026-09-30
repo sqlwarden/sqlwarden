@@ -5,7 +5,7 @@ import { instanceAccountsQueryOptions } from './instance'
 import { orgMembersQueryOptions } from './organization'
 import { orgWorkspaceQueryOptions } from './workspace'
 import { orgWorkspacePrivateFilesQueryOptions } from './files'
-import { orgConnectionDirectoryQueryOptions } from './database'
+import { schemaNodesQueryOptions } from './database'
 
 afterEach(() => vi.restoreAllMocks())
 
@@ -49,10 +49,10 @@ describe('API query domains', () => {
   })
 
   it('sends the live database session for schema calls', async () => {
-    const get = vi.spyOn(api, 'get').mockResolvedValue({ directory: {} })
-    await runQuery(orgConnectionDirectoryQueryOptions('acme', 4, 7, 'session-1'))
+    const get = vi.spyOn(api, 'get').mockResolvedValue({ items: [] })
+    await runQuery(schemaNodesQueryOptions('acme', 4, 7, [], 'databases', 'session-1'))
     expect(get).toHaveBeenCalledWith(
-      '/api/v1/orgs/acme/workspaces/4/connections/7/schema/directory',
+      '/api/v1/orgs/acme/workspaces/4/connections/7/schema/nodes?folder=databases',
       { headers: { 'X-Warden-Session': 'session-1' } },
     )
   })

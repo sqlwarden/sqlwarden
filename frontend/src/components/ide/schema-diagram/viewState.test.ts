@@ -7,24 +7,39 @@ const base = {
   hasConnection: true,
   hasSession: true,
   loadRequested: true,
-  spec: {
-    dialect: 'postgres',
-    kinds: [
-      {
-        kind: 'table',
+  tree: {
+    system_objects: false,
+    root: {
+      label: 'Connection',
+      icon: 'connection',
+      leaf: false,
+      folders: [],
+      scope: false,
+      relational: false,
+      supports_diagram: false,
+      has_definition: false,
+      show_all_databases: false,
+      column: false,
+    },
+    nodes: {
+      table: {
         label: 'Table',
-        plural_label: 'Tables',
-        order: 1,
+        icon: 'table',
+        leaf: false,
+        folders: [],
+        scope: false,
         relational: true,
         supports_diagram: true,
-        listing: 'enumerated' as const,
+        has_definition: true,
+        show_all_databases: false,
+        column: false,
       },
-    ],
+    },
   },
-  specError: null,
-  directoryError: null,
+  treeError: null,
+  listingError: null,
   relationshipsError: null,
-  directoryLoading: false,
+  listingLoading: false,
   relationshipsLoading: false,
   presentCount: 1,
 }
@@ -46,16 +61,16 @@ describe('resolveDiagramViewState', () => {
     expect(
       resolveDiagramViewState({ ...base, relationshipsError: new ApiError('Unsupported', 501) }),
     ).toBe('unsupported')
-    expect(resolveDiagramViewState({ ...base, spec: { dialect: 'redis', kinds: [] } })).toBe(
+    expect(resolveDiagramViewState({ ...base, tree: { ...base.tree, nodes: {} } })).toBe(
       'unsupported',
     )
-    expect(
-      resolveDiagramViewState({ ...base, directoryError: new ApiError('Forbidden', 403) }),
-    ).toBe('forbidden')
+    expect(resolveDiagramViewState({ ...base, listingError: new ApiError('Forbidden', 403) })).toBe(
+      'forbidden',
+    )
   })
 
   it('orders loading and empty states after terminal query states', () => {
-    expect(resolveDiagramViewState({ ...base, directoryLoading: true })).toBe('loading')
+    expect(resolveDiagramViewState({ ...base, listingLoading: true })).toBe('loading')
     expect(resolveDiagramViewState({ ...base, presentCount: 0 })).toBe('empty')
     expect(resolveDiagramViewState(base)).toBe('ready')
   })

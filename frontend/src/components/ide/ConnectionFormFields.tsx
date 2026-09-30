@@ -377,12 +377,32 @@ export function ShowSystemSchemasField({
   return (
     <label className="flex cursor-pointer items-center gap-3 py-1">
       <Checkbox
-        aria-label="Show system schemas"
         checked={checked}
         disabled={disabled}
         onCheckedChange={(next) => onChange(next === true)}
       />
       <span className="text-xs font-medium text-foreground">Show system schemas</span>
+    </label>
+  )
+}
+
+export function ShowAllDatabasesField({
+  checked,
+  disabled,
+  onChange,
+}: {
+  checked: boolean
+  disabled?: boolean
+  onChange: (checked: boolean) => void
+}) {
+  return (
+    <label className="flex cursor-pointer items-center gap-3 py-1">
+      <Checkbox
+        checked={checked}
+        disabled={disabled}
+        onCheckedChange={(next) => onChange(next === true)}
+      />
+      <span className="text-xs font-medium text-foreground">Show all databases</span>
     </label>
   )
 }

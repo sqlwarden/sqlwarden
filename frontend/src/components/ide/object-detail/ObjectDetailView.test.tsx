@@ -72,21 +72,34 @@ describe('ObjectDetailView', () => {
       http.post('/api/v1/orgs/acme/workspaces/3/connections/7/schema/objects', () =>
         HttpResponse.json({ objects: [detail] }),
       ),
-      http.get('/api/v1/orgs/acme/workspaces/3/connections/7/schema/spec', () =>
+      http.get('/api/v1/orgs/acme/workspaces/3/connections/7/schema/tree', () =>
         HttpResponse.json({
-          spec: {
-            dialect: 'postgres',
-            kinds: [
-              {
-                kind: 'table',
-                label: 'Table',
-                plural_label: 'Tables',
-                order: 1,
-                relational: true,
-                supports_diagram: true,
-                listing: 'enumerated',
-              },
-            ],
+          system_objects: false,
+          root: {
+            label: 'Connection',
+            icon: 'connection',
+            leaf: false,
+            folders: [],
+            scope: false,
+            relational: false,
+            supports_diagram: false,
+            has_definition: false,
+            show_all_databases: false,
+            column: false,
+          },
+          nodes: {
+            table: {
+              label: 'Table',
+              icon: 'table',
+              leaf: false,
+              folders: [],
+              scope: false,
+              relational: true,
+              supports_diagram: true,
+              has_definition: true,
+              show_all_databases: false,
+              column: false,
+            },
           },
         }),
       ),
@@ -152,7 +165,7 @@ describe('ObjectDetailView', () => {
         '/api/v1/orgs/acme/workspaces/3/connections/7/schema/refresh',
         async ({ request }) => {
           refreshBody = await request.json()
-          return HttpResponse.json({ status: 'ok', mode: 'ephemeral' })
+          return HttpResponse.json({ items: [] })
         },
       ),
     )
@@ -161,7 +174,9 @@ describe('ObjectDetailView', () => {
     await screen.findByRole('button', { name: 'Columns' })
     fireEvent.click(screen.getByRole('button', { name: 'Refresh' }))
 
-    await waitFor(() => expect(refreshBody).toEqual({ ref }))
+    await waitFor(() =>
+      expect(refreshBody).toEqual({ path: [...ref.scope, { kind: ref.kind, name: ref.name }] }),
+    )
   })
 
   it('renders permission loss without stale object data', async () => {
@@ -175,14 +190,26 @@ describe('ObjectDetailView', () => {
           { status: 403 },
         ),
       ),
-      http.get('/api/v1/orgs/acme/workspaces/3/connections/7/schema/spec', () =>
-        HttpResponse.json({ spec: { dialect: 'postgres', kinds: [] } }),
-      ),
     )
     renderView()
 
     expect(
       await screen.findByText('You no longer have access to this connection.'),
     ).toBeInTheDocument()
+  })
+
+  it('shows the reconnect pane when the server needs a session for an uncached object', async () => {
+    store.getState().setSession(7, 'session-7')
+    server.use(
+      http.post('/api/v1/orgs/acme/workspaces/3/connections/7/schema/objects', () =>
+        HttpResponse.json(
+          { error: { code: 'session_required', message: 'Connect to this database.' } },
+          { status: 409 },
+        ),
+      ),
+    )
+    renderView()
+
+    expect(await screen.findByRole('button', { name: 'Reconnect' })).toBeInTheDocument()
   })
 })

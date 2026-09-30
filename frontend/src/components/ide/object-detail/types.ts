@@ -1,11 +1,11 @@
 import type { ReactNode } from 'react'
 import type { AppIcon } from '#/lib/icons'
-import type { DbColumn, ObjectDetail, SchemaSpec } from '#/lib/api/types'
+import type { DbColumn, ObjectDetail, NavigatorTree } from '#/lib/api/types'
 import type { SqlDialect } from '../dialect'
 
 export interface ObjectViewModel {
   detail: ObjectDetail
-  spec?: SchemaSpec
+  tree?: NavigatorTree
   dialect: SqlDialect
   driver: string
   orgSlug: string

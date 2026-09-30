@@ -1,4 +1,4 @@
-import type { ListQuery, ObjectRef, ResourceType } from '#/lib/api/types'
+import type { ListQuery, ObjectRef, ResourceType, ScopePath } from '#/lib/api/types'
 
 /**
  * Canonical TanStack Query keys. Scope keys intentionally omit list filters so
@@ -7,6 +7,33 @@ import type { ListQuery, ObjectRef, ResourceType } from '#/lib/api/types'
 export const queryKeys = {
   setupStatus: () => ['setup-status'] as const,
   engine: (engineID: string) => ['engine', engineID] as const,
+  connectionSchemaScope: (
+    slug: string,
+    workspaceId: string | number,
+    connectionId: string | number,
+  ) => ['connection-schema', slug, String(workspaceId), String(connectionId)] as const,
+  connectionSchemaTree: (
+    slug: string,
+    workspaceId: string | number,
+    connectionId: string | number,
+  ) => [...queryKeys.connectionSchemaScope(slug, workspaceId, connectionId), 'tree'] as const,
+  connectionSchemaNodesScope: (
+    slug: string,
+    workspaceId: string | number,
+    connectionId: string | number,
+  ) => [...queryKeys.connectionSchemaScope(slug, workspaceId, connectionId), 'nodes'] as const,
+  connectionSchemaNodes: (
+    slug: string,
+    workspaceId: string | number,
+    connectionId: string | number,
+    path: ScopePath,
+    folder: string,
+  ) =>
+    [
+      ...queryKeys.connectionSchemaNodesScope(slug, workspaceId, connectionId),
+      JSON.stringify(path),
+      folder,
+    ] as const,
   session: () => ['session'] as const,
   accountOrganizationsScope: () => ['account-organizations'] as const,
   accountOrganizations: (query?: ListQuery) =>

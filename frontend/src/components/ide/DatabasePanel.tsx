@@ -29,7 +29,7 @@ import { copyWithToast } from './contextMenus/clipboard'
 import { buildConnectionMenu } from './contextMenus/connectionMenu'
 import { buildEnvironmentMenu } from './contextMenus/environmentMenu'
 import { SidebarPane } from './SidebarPane'
-import { SchemaTree } from './SchemaTree'
+import { SchemaNavigator } from './navigator/SchemaNavigator'
 import { ExplorerSplitView } from './ExplorerSplitView'
 import { sidebarActiveRowClass } from './sidebarRowStyles'
 import { ConnectionDialog } from './ConnectionDialog'
@@ -780,7 +780,7 @@ export function EnvironmentRow({
   onDeleteEnvironment: () => void
   /** Forwarded to each ConnectionRow. */
   wholeRowClickable?: boolean
-  /** Forwarded to each ConnectionRow's SchemaTree. */
+  /** Forwarded to each ConnectionRow's schema navigator. */
   onFilteringChange?: (connectionId: number, pending: boolean) => void
 }) {
   const nodeKey = `env:${environment.id}`
@@ -905,7 +905,7 @@ export function ConnectionRow({
   filter: string
   canEditConnection: boolean
   canDeleteConnection: boolean
-  /** Suppresses the expand chevron and inline SchemaTree. */
+  /** Suppresses the expand chevron and inline schema navigator. */
   hideSchemaExpand?: boolean
   /** Makes the entire row (not just the name) trigger onSelect. */
   wholeRowClickable?: boolean
@@ -914,7 +914,7 @@ export function ConnectionRow({
   onOpenConsole: () => void
   onConnect: () => void
   onDisconnect: () => void
-  /** Forwarded to this row's SchemaTree, keyed by connection id. */
+  /** Forwarded to this row's schema navigator, keyed by connection id. */
   onFilteringChange?: (connectionId: number, pending: boolean) => void
 }) {
   const nodeKey = `conn:${connection.id}`
@@ -1088,10 +1088,10 @@ export function ConnectionRow({
 
       {/* A live disconnect auto-collapses this (see the effect above), but a
           row restored already-expanded from a prior session still renders
-          here so SchemaTree can show its own "Not connected · Connect" hint. */}
+          here so the schema navigator can show its own "Not connected · Connect" hint. */}
       {expanded && (
         <div style={{ marginLeft: connIndent + 14 }} className="border-l border-border/60">
-          <SchemaTree
+          <SchemaNavigator
             orgSlug={orgSlug}
             workspaceId={connection.workspace_id}
             connectionId={connection.id}

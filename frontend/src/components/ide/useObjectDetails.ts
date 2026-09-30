@@ -88,7 +88,7 @@ export function useObjectDetails(opts: {
     chunks.forEach((chunkRefs, index) => {
       const result = results[index]
       const objects = result?.data?.objects
-      const loading = (result?.isLoading || result?.data?.status === 'pending') ?? false
+      const loading = result?.isLoading ?? false
       for (const ref of chunkRefs) {
         const detail = objects?.find((o) => objectRefKey(o.ref) === objectRefKey(ref)) ?? null
         map.set(objectRefKey(ref), { detail, loading })

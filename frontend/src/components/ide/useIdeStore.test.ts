@@ -35,6 +35,7 @@ const mockConnection = {
   driver: 'postgres',
   access_mode: 'open' as const,
   show_system_schemas: false,
+  show_all_databases: false,
   created_at: '',
   updated_at: '',
 }

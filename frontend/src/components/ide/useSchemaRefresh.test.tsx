@@ -3,14 +3,9 @@ import { QueryClientProvider } from '@tanstack/react-query'
 import { act, renderHook, waitFor } from '@testing-library/react'
 import { http, HttpResponse } from 'msw'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
-import type { ObjectRef } from '#/lib/api/types'
-import {
-  connectionDirectoryQueryKey,
-  connectionObjectDefinitionQueryKey,
-  connectionObjectQueryKey,
-  connectionObjectsBatchQueryKey,
-  connectionRelationshipsQueryKey,
-} from '#/lib/api/query'
+import { queryKeys } from '#/lib/api/query-keys'
+import type { NavigatorListing, ObjectRef } from '#/lib/api/types'
+import { connectionObjectQueryKey } from '#/lib/api/query'
 import { createTestQueryClient } from '#/test/render'
 import { server } from '#/test/server'
 import * as completion from './completion'
@@ -25,10 +20,27 @@ vi.mock('sonner', () => ({
   },
 }))
 
-const ref: ObjectRef = {
-  scope: [{ kind: 'schema', name: 'public' }],
-  kind: 'table',
-  name: 'users',
+const schemaPath = [
+  { kind: 'database', name: 'app' },
+  { kind: 'schema', name: 'public' },
+]
+const ref: ObjectRef = { scope: schemaPath, kind: 'table', name: 'users' }
+const refreshURL = '/api/v1/orgs/acme/workspaces/3/connections/7/schema/refresh'
+
+function tables(names: string[]): NavigatorListing {
+  return {
+    path: schemaPath,
+    folder: 'tables',
+    items: names.map((name) => ({
+      kind: 'table',
+      name,
+      path: [...schemaPath, { kind: 'table', name }],
+      system: false,
+      current: false,
+    })),
+    fetched_at: '2026-09-29T00:00:00Z',
+    source: 'live',
+  }
 }
 
 describe('useSchemaRefresh', () => {
@@ -44,30 +56,19 @@ describe('useSchemaRefresh', () => {
     return <QueryClientProvider client={queryClient}>{children}</QueryClientProvider>
   }
 
-  it('waits for a persistent refresh and invalidates the complete schema cache', async () => {
-    let release!: () => void
-    const pending = new Promise<void>((resolve) => {
-      release = resolve
-    })
+  it('posts the node path with the session and writes the returned listings', async () => {
+    let body: unknown
+    let session: string | null = null
     server.use(
-      http.post('/api/v1/orgs/acme/workspaces/3/connections/7/schema/refresh', async () => {
-        await pending
-        return HttpResponse.json({
-          status: 'ok',
-          mode: 'persistent',
-          snapshot_id: 'snapshot-2',
-          generated_at: '2026-08-06T00:00:00Z',
-        })
+      http.post(refreshURL, async ({ request }) => {
+        body = await request.json()
+        session = request.headers.get('X-Warden-Session')
+        return HttpResponse.json({ items: [tables(['orders', 'users'])] })
       }),
     )
-    const directoryKey = connectionDirectoryQueryKey('acme', 3, 7)
-    const objectKey = connectionObjectQueryKey('acme', 3, 7, ref, 'session-7')
-    const definitionKey = connectionObjectDefinitionQueryKey('acme', 3, 7, ref)
-    const relationshipsKey = connectionRelationshipsQueryKey('acme', 3, 7, ref.scope)
-    queryClient.setQueryData(directoryKey, { directory: {} })
-    queryClient.setQueryData(objectKey, { ref })
-    queryClient.setQueryData(definitionKey, { descriptor: null })
-    queryClient.setQueryData(relationshipsKey, { relationships: [] })
+    const tablesKey = queryKeys.connectionSchemaNodes('acme', 3, 7, schemaPath, 'tables')
+    queryClient.setQueryData(tablesKey, tables(['users']))
+    const completionSpy = vi.spyOn(completion, 'invalidateCompletionIndex')
 
     const { result } = renderHook(
       () =>
@@ -76,33 +77,32 @@ describe('useSchemaRefresh', () => {
           workspaceId: 3,
           connectionId: 7,
           sessionId: 'session-7',
+          path: schemaPath,
         }),
       { wrapper },
     )
     act(() => result.current.mutate())
-    await waitFor(() => expect(result.current.isPending).toBe(true))
-    release()
     await waitFor(() => expect(result.current.isSuccess).toBe(true))
 
-    expect(queryClient.getQueryState(directoryKey)?.isInvalidated).toBe(true)
-    expect(queryClient.getQueryState(objectKey)?.isInvalidated).toBe(true)
-    expect(queryClient.getQueryState(definitionKey)?.isInvalidated).toBe(true)
-    expect(queryClient.getQueryState(relationshipsKey)?.isInvalidated).toBe(true)
+    expect(body).toEqual({ path: schemaPath })
+    expect(session).toBe('session-7')
+    expect(
+      queryClient.getQueryData<NavigatorListing>(tablesKey)?.items.map((item) => item.name),
+    ).toEqual(['orders', 'users'])
+    expect(completionSpy).toHaveBeenCalledWith(7)
     expect(toastSuccess).toHaveBeenCalledWith('Schema refreshed')
   })
 
-  it('keeps an ephemeral object refresh scoped to that object', async () => {
+  it('refreshes the connection root when no path is given and invalidates object details', async () => {
+    let body: unknown
     server.use(
-      http.post('/api/v1/orgs/acme/workspaces/3/connections/7/schema/refresh', () =>
-        HttpResponse.json({ status: 'ok', mode: 'ephemeral' }),
-      ),
+      http.post(refreshURL, async ({ request }) => {
+        body = await request.json()
+        return HttpResponse.json({ items: [] })
+      }),
     )
-    const directoryKey = connectionDirectoryQueryKey('acme', 3, 7)
     const objectKey = connectionObjectQueryKey('acme', 3, 7, ref, 'session-7')
-    const definitionKey = connectionObjectDefinitionQueryKey('acme', 3, 7, ref)
-    queryClient.setQueryData(directoryKey, { directory: {} })
-    queryClient.setQueryData(objectKey, { ref })
-    queryClient.setQueryData(definitionKey, { descriptor: null })
+    queryClient.setQueryData(objectKey, { detail: null })
 
     const { result } = renderHook(
       () =>
@@ -111,40 +111,29 @@ describe('useSchemaRefresh', () => {
           workspaceId: 3,
           connectionId: 7,
           sessionId: 'session-7',
-          ref,
         }),
       { wrapper },
     )
     act(() => result.current.mutate())
     await waitFor(() => expect(result.current.isSuccess).toBe(true))
 
+    expect(body).toEqual({ path: [] })
     expect(queryClient.getQueryState(objectKey)?.isInvalidated).toBe(true)
-    expect(queryClient.getQueryState(definitionKey)?.isInvalidated).toBe(true)
-    expect(queryClient.getQueryState(directoryKey)?.isInvalidated).toBe(false)
   })
 
-  it('keeps a persistent object refresh scoped to that object', async () => {
+  it('refreshes and prunes a per-call target instead of the hook path', async () => {
+    let body: unknown
     server.use(
-      http.post('/api/v1/orgs/acme/workspaces/3/connections/7/schema/refresh', () =>
-        HttpResponse.json({
-          status: 'ok',
-          mode: 'persistent',
-          snapshot_id: 'snapshot-4',
-          generated_at: '2026-08-06T00:00:00Z',
-        }),
-      ),
+      http.post(refreshURL, async ({ request }) => {
+        body = await request.json()
+        return HttpResponse.json({ items: [] })
+      }),
     )
-    const directoryKey = connectionDirectoryQueryKey('acme', 3, 7)
-    const objectKey = connectionObjectQueryKey('acme', 3, 7, ref, 'session-7')
-    const definitionKey = connectionObjectDefinitionQueryKey('acme', 3, 7, ref)
-    const batchKey = connectionObjectsBatchQueryKey('acme', 3, 7, [
-      ref,
-      { scope: ref.scope, kind: 'table', name: 'orders' },
-    ])
-    queryClient.setQueryData(directoryKey, { directory: {} })
-    queryClient.setQueryData(objectKey, { ref })
-    queryClient.setQueryData(definitionKey, { descriptor: null })
-    queryClient.setQueryData(batchKey, [{ ref }])
+    const usersPath = [...schemaPath, { kind: 'table', name: 'users' }]
+    const columnsKey = queryKeys.connectionSchemaNodes('acme', 3, 7, usersPath, 'columns')
+    const tablesKey = queryKeys.connectionSchemaNodes('acme', 3, 7, schemaPath, 'tables')
+    queryClient.setQueryData(columnsKey, { ...tables([]), path: usersPath, folder: 'columns' })
+    queryClient.setQueryData(tablesKey, tables(['users']))
 
     const { result } = renderHook(
       () =>
@@ -153,68 +142,43 @@ describe('useSchemaRefresh', () => {
           workspaceId: 3,
           connectionId: 7,
           sessionId: 'session-7',
-          ref,
         }),
       { wrapper },
     )
-    act(() => result.current.mutate())
+    act(() => result.current.mutate(usersPath))
     await waitFor(() => expect(result.current.isSuccess).toBe(true))
 
-    expect(queryClient.getQueryState(objectKey)?.isInvalidated).toBe(true)
-    expect(queryClient.getQueryState(definitionKey)?.isInvalidated).toBe(true)
-    expect(queryClient.getQueryState(directoryKey)?.isInvalidated).toBe(false)
-    expect(queryClient.getQueryState(batchKey)?.isInvalidated).toBe(true)
+    expect(body).toEqual({ path: usersPath })
+    expect(queryClient.getQueryData(columnsKey)).toBeUndefined()
+    expect(queryClient.getQueryData(tablesKey)).toBeDefined()
   })
 
-  it('reports refresh failures without invalidating cached schema data', async () => {
+  it('shows the session_required message without touching cached listings', async () => {
     server.use(
-      http.post('/api/v1/orgs/acme/workspaces/3/connections/7/schema/refresh', () =>
+      http.post(refreshURL, () =>
         HttpResponse.json(
-          { error: { code: 'schema_sync_timeout', message: 'Schema refresh timed out.' } },
-          { status: 504 },
+          {
+            error: {
+              code: 'session_required',
+              message: 'Connect to this database to load schema objects.',
+            },
+          },
+          { status: 409 },
         ),
       ),
     )
-    const directoryKey = connectionDirectoryQueryKey('acme', 3, 7)
-    queryClient.setQueryData(directoryKey, { directory: {} })
-    const { result } = renderHook(
-      () => useSchemaRefresh({ orgSlug: 'acme', workspaceId: 3, connectionId: 7 }),
-      { wrapper },
-    )
-
-    act(() => result.current.mutate())
-    await waitFor(() => expect(result.current.isError).toBe(true))
-    expect(queryClient.getQueryState(directoryKey)?.isInvalidated).toBe(false)
-    expect(toastError).toHaveBeenCalledWith('Schema refresh timed out.')
-  })
-
-  it('invalidates the completion index after a successful schema refresh', async () => {
-    const spy = vi.spyOn(completion, 'invalidateCompletionIndex')
-    server.use(
-      http.post('/api/v1/orgs/acme/workspaces/3/connections/7/schema/refresh', () =>
-        HttpResponse.json({
-          status: 'ok',
-          mode: 'persistent',
-          snapshot_id: 'snapshot-3',
-          generated_at: '2026-08-06T00:00:00Z',
-        }),
-      ),
-    )
+    const tablesKey = queryKeys.connectionSchemaNodes('acme', 3, 7, schemaPath, 'tables')
+    queryClient.setQueryData(tablesKey, tables(['users']))
 
     const { result } = renderHook(
       () =>
-        useSchemaRefresh({
-          orgSlug: 'acme',
-          workspaceId: 3,
-          connectionId: 7,
-          sessionId: 'session-7',
-        }),
+        useSchemaRefresh({ orgSlug: 'acme', workspaceId: 3, connectionId: 7, path: schemaPath }),
       { wrapper },
     )
     act(() => result.current.mutate())
-    await waitFor(() => expect(result.current.isSuccess).toBe(true))
+    await waitFor(() => expect(result.current.isError).toBe(true))
 
-    expect(spy).toHaveBeenCalledWith(7)
-    spy.mockRestore()
+    expect(toastError).toHaveBeenCalledWith('Connect to this database to load schema objects.')
+    expect(queryClient.getQueryData<NavigatorListing>(tablesKey)?.items).toHaveLength(1)
   })
 })

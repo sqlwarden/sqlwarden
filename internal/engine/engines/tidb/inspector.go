@@ -10,7 +10,7 @@ import (
 	build "github.com/sqlwarden/internal/engine/metadata/build"
 )
 
-var _ metadata.SchemaInspector = (*driver)(nil)
+var _ metadata.DirectoryInspector = (*driver)(nil)
 var _ metadata.DefinitionInspector = (*driver)(nil)
 
 // SchemaSpec drops function, procedure, and trigger from the embedded mysql

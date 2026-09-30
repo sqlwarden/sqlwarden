@@ -1,13 +1,11 @@
 package web
 
 import (
-	"context"
 	"encoding/json"
 	"errors"
 	"log/slog"
 	"net/http"
 	"strconv"
-	"time"
 
 	"github.com/sqlwarden/internal/access"
 	"github.com/sqlwarden/internal/connection"
@@ -15,26 +13,9 @@ import (
 	"github.com/sqlwarden/internal/engine/ddl"
 	"github.com/sqlwarden/internal/engine/metadata"
 	"github.com/sqlwarden/internal/engine/statement"
-	"github.com/sqlwarden/internal/jobs"
 	"github.com/sqlwarden/internal/request"
 	"github.com/sqlwarden/internal/response"
 )
-
-const manualSchemaSyncTimeout = 2 * time.Minute
-
-// lazyDefinitionTimeout bounds the on-demand object-definition fetch, which in
-// persistent mode opens a short-lived target connection of its own.
-const lazyDefinitionTimeout = 30 * time.Second
-
-type schemaSpecResponse struct {
-	Spec       metadata.SchemaSpec `json:"spec"`
-	DDL        *ddl.Spec           `json:"editor,omitempty"`
-	Statements *statement.Spec     `json:"statements,omitempty"`
-}
-
-type directoryResponse struct {
-	Directory *metadata.Directory `json:"directory"`
-}
 
 type objectsRequest struct {
 	Refs []metadata.ObjectRef `json:"refs"`
@@ -42,23 +23,10 @@ type objectsRequest struct {
 
 type objectsResponse struct {
 	Objects []metadata.Object `json:"objects"`
-	// PendingConnection lists requested refs that need a live connection to
-	// resolve but were skipped because the caller has no active session —
-	// the schema tree shows a connect prompt for these instead of silently
-	// opening a connection the user never asked for.
-	PendingConnection []metadata.ObjectRef `json:"pending_connection,omitempty"`
 }
 
 type objectDefinitionResponse struct {
 	Descriptor *metadata.Descriptor `json:"descriptor"`
-}
-
-type refreshRequest struct {
-	Ref *metadata.ObjectRef `json:"ref"`
-}
-
-type loadSchemaScopeRequest struct {
-	Scope metadata.ScopePath `json:"scope"`
 }
 
 type relationshipsResponse struct {
@@ -75,18 +43,16 @@ type generateStatementResponse struct {
 }
 
 type schemaStatusResponse struct {
-	Status      string     `json:"status"`
-	Mode        string     `json:"mode"`
-	SnapshotID  string     `json:"snapshot_id,omitempty"`
-	GeneratedAt *time.Time `json:"generated_at,omitempty"`
-	Stale       bool       `json:"stale,omitempty"`
-	JobID       string     `json:"job_id,omitempty"`
+	Status string `json:"status"`
+	Mode   string `json:"mode"`
+	Stale  bool   `json:"stale,omitempty"`
 }
 
 type schemaEditResponse struct {
-	Applied     bool                  `json:"applied"`
-	Schema      schemaStatusResponse  `json:"schema"`
-	Transaction transactionStatusView `json:"transaction"`
+	Applied     bool                   `json:"applied"`
+	Schema      schemaStatusResponse   `json:"schema"`
+	Transaction transactionStatusView  `json:"transaction"`
+	Listings    []navigatorListingView `json:"listings,omitempty"`
 }
 
 func (app *application) authorizeSchemaAccess(w http.ResponseWriter, r *http.Request) bool {
@@ -103,17 +69,6 @@ func (app *application) authorizeSchemaAccess(w http.ResponseWriter, r *http.Req
 
 func (app *application) persistentSchemaMode(r *http.Request) (bool, error) {
 	return app.db.SchemaSnapshotsEnabled(r.Context(), contextGetConnection(r).ID)
-}
-
-func (app *application) writeSnapshotPending(w http.ResponseWriter, r *http.Request) {
-	conn := contextGetConnection(r)
-	status := schemaStatusResponse{Status: "pending", Mode: "persistent"}
-	if job, found, err := app.workspaceJobStore().ActiveBySingletonKey(r.Context(), schemaSyncSingletonKey(conn.ID)); err == nil && found {
-		status.JobID = job.ID
-	}
-	if err := response.JSON(w, http.StatusAccepted, status); err != nil {
-		app.serverError(w, r, err)
-	}
 }
 
 // resolveSchemaSession applies the same preconditions as executeQuery: a valid
@@ -167,135 +122,44 @@ func (app *application) resolveSchemaSession(w http.ResponseWriter, r *http.Requ
 	return session, true
 }
 
-// resolveSchemaInspector resolves the active database session and checks whether
-// the concrete driver supports schema inspection.
-func (app *application) resolveSchemaInspector(w http.ResponseWriter, r *http.Request) (*connection.Session, metadata.SchemaInspector, bool) {
-	session, ok := app.resolveSchemaSession(w, r)
-	if !ok {
-		return nil, nil, false
-	}
-	inspector, ok := session.Conn.(metadata.SchemaInspector)
-	if !ok {
-		app.logWarn(r, "schema inspection unsupported",
-			slog.String("session_id", session.ID),
-			slog.Int64("connection_id", contextGetConnection(r).ID),
-		)
-		app.errorMessage(w, r, http.StatusNotImplemented, "This driver does not support schema inspection.", nil)
-		return nil, nil, false
-	}
-	return session, inspector, true
-}
-
-// resolveRelationshipInspector resolves the session and asserts the optional
-// relationship capability, returning 501 when the driver lacks it.
-func (app *application) resolveRelationshipInspector(w http.ResponseWriter, r *http.Request) (*connection.Session, metadata.RelationshipInspector, bool) {
-	session, ok := app.resolveSchemaSession(w, r)
-	if !ok {
-		return nil, nil, false
-	}
-	inspector, ok := session.Conn.(metadata.RelationshipInspector)
-	if !ok {
-		app.logWarn(r, "schema relationships unsupported",
-			slog.String("session_id", session.ID),
-			slog.Int64("connection_id", contextGetConnection(r).ID),
-		)
-		app.errorMessage(w, r, http.StatusNotImplemented, "This driver does not support schema relationships.", nil)
-		return nil, nil, false
-	}
-	return session, inspector, true
-}
-
 func (app *application) getConnectionSchemaRelationships(w http.ResponseWriter, r *http.Request) {
+	if !app.authorizeSchemaAccess(w, r) {
+		return
+	}
 	scope, err := schemaScopeQuery(r)
 	if err != nil {
 		app.badRequest(w, r, err)
 		return
 	}
-	persistent, err := app.persistentSchemaMode(r)
-	if err != nil {
-		app.serverError(w, r, err)
+	session, ok := app.optionalSchemaSession(w, r)
+	if !ok {
 		return
 	}
-	if persistent {
-		if !app.authorizeSchemaAccess(w, r) {
-			return
-		}
-		snapshot, directory, found, err := app.schemaSnapshots.Active(r.Context(), contextGetConnection(r).ID)
-		if err != nil {
-			app.serverError(w, r, err)
-			return
-		}
-		if !found {
-			app.writeSnapshotPending(w, r)
-			return
-		}
-		if lazySchemaScope(directory, scope) {
-			app.getLiveSchemaRelationships(w, r, scope)
-			return
-		}
-		graph, found, err := app.schemaSnapshots.Relationship(r.Context(), snapshot.ID, scope)
-		if err != nil {
-			app.serverError(w, r, err)
-			return
-		}
-		if !found {
+	var live metadata.RelationshipInspector
+	if session != nil {
+		inspector, supported := session.Conn.(metadata.RelationshipInspector)
+		if !supported {
 			app.errorMessage(w, r, http.StatusNotImplemented, "This driver does not support schema relationships.", nil)
 			return
 		}
-		if err := response.JSON(w, http.StatusOK, relationshipsResponse{Graph: graph}); err != nil {
-			app.serverError(w, r, err)
-		}
-		return
+		live = inspector
 	}
-	session, inspector, ok := app.resolveRelationshipInspector(w, r)
-	if !ok {
-		return
-	}
-	graph, err := app.schemaService.Relationships(r.Context(), session.ConnectionID, scope, inspector)
+	conn, err := app.navigatorConnection(r)
 	if err != nil {
 		app.serverError(w, r, err)
+		return
+	}
+	graph, err := app.schemaNavigator.Relationships(r.Context(), conn, live, scope)
+	if err != nil {
+		app.navigatorError(w, r, err)
 		return
 	}
 	app.logDebug(r, "schema relationships returned",
-		slog.String("session_id", session.ID),
-		slog.String("scope", string(scope)),
+		slog.Int64("connection_id", conn.ID),
 		slog.Int("edge_count", len(graph.Relationships)),
+		slog.Bool("session", session != nil),
 	)
 	if err := response.JSON(w, http.StatusOK, relationshipsResponse{Graph: graph}); err != nil {
-		app.serverError(w, r, err)
-	}
-}
-
-func (app *application) getConnectionSchemaSpec(w http.ResponseWriter, r *http.Request) {
-	if !app.authorizeSchemaAccess(w, r) {
-		return
-	}
-	driver, err := engine.New(contextGetConnection(r).Driver)
-	if err != nil {
-		app.errorMessage(w, r, http.StatusNotImplemented, "This driver does not support schema inspection.", nil)
-		return
-	}
-	inspector, ok := driver.(metadata.SchemaInspector)
-	if !ok {
-		app.errorMessage(w, r, http.StatusNotImplemented, "This driver does not support schema inspection.", nil)
-		return
-	}
-	spec := app.schemaService.Spec(inspector)
-	var ddlSpec *ddl.Spec
-	if executor, ok := driver.(ddl.Executor); ok {
-		s := executor.DDLSpec()
-		ddlSpec = &s
-	}
-	var statementSpec *statement.Spec
-	if generator, ok := driver.(statement.Generator); ok {
-		s := generator.StatementSpec()
-		statementSpec = &s
-	}
-	app.logDebug(r, "schema spec returned",
-		slog.String("dialect", spec.Dialect),
-		slog.Int("kind_count", len(spec.Kinds)),
-	)
-	if err := response.JSON(w, http.StatusOK, schemaSpecResponse{Spec: spec, DDL: ddlSpec, Statements: statementSpec}); err != nil {
 		app.serverError(w, r, err)
 	}
 }
@@ -323,9 +187,27 @@ func (app *application) generateConnectionStatement(w http.ResponseWriter, r *ht
 		app.apiError(w, r, http.StatusUnprocessableEntity, "statement_generation_failed", "The requested statement is not supported for this object.", response.APIError{}, nil)
 		return
 	}
-
-	objects, _, ok := app.resolveSchemaObjects(w, r, []metadata.ObjectRef{input.Ref})
+	session, ok := app.optionalSchemaSession(w, r)
 	if !ok {
+		return
+	}
+	var live metadata.ObjectInspector
+	if session != nil {
+		inspector, supported := session.Conn.(metadata.ObjectInspector)
+		if !supported {
+			app.errorMessage(w, r, http.StatusNotImplemented, "This driver does not support schema inspection.", nil)
+			return
+		}
+		live = inspector
+	}
+	navConn, err := app.navigatorConnection(r)
+	if err != nil {
+		app.serverError(w, r, err)
+		return
+	}
+	objects, err := app.schemaNavigator.Objects(r.Context(), navConn, live, []metadata.ObjectRef{input.Ref})
+	if err != nil {
+		app.navigatorError(w, r, err)
 		return
 	}
 	if len(objects) != 1 || objects[0].Ref != input.Ref {
@@ -340,60 +222,6 @@ func (app *application) generateConnectionStatement(w http.ResponseWriter, r *ht
 	if err := response.JSON(w, http.StatusOK, generateStatementResponse{SQL: generated}); err != nil {
 		app.serverError(w, r, err)
 	}
-}
-
-// resolveSchemaObjects supplies metadata to object inspection and SQL generation.
-// It authorizes snapshot access, inspects lazy scopes on demand, and otherwise
-// requires a valid live session. A false result means a response (including
-// snapshot-pending status) has already been written and the caller must stop.
-// The returned refs are ones that need a live connection to resolve but were
-// skipped because the caller has no active session (see liveSchemaObjects).
-func (app *application) resolveSchemaObjects(w http.ResponseWriter, r *http.Request, refs []metadata.ObjectRef) ([]metadata.Object, []metadata.ObjectRef, bool) {
-	persistent, err := app.persistentSchemaMode(r)
-	if err != nil {
-		app.serverError(w, r, err)
-		return nil, nil, false
-	}
-	if persistent {
-		if !app.authorizeSchemaAccess(w, r) {
-			return nil, nil, false
-		}
-		snapshot, directory, found, err := app.schemaSnapshots.Active(r.Context(), contextGetConnection(r).ID)
-		if err != nil {
-			app.serverError(w, r, err)
-			return nil, nil, false
-		}
-		if !found {
-			app.writeSnapshotPending(w, r)
-			return nil, nil, false
-		}
-		for _, ref := range refs {
-			if lazySchemaScope(directory, ref.Scope) {
-				return app.liveSchemaObjects(w, r, refs)
-			}
-		}
-		objects, err := app.schemaSnapshots.Objects(r.Context(), snapshot.ID, refs)
-		if err != nil {
-			app.serverError(w, r, err)
-			return nil, nil, false
-		}
-		return objects, nil, true
-	}
-	session, inspector, ok := app.resolveSchemaInspector(w, r)
-	if !ok {
-		return nil, nil, false
-	}
-	objects, err := app.schemaService.Objects(r.Context(), session.ConnectionID, refs, inspector)
-	if err != nil {
-		app.serverError(w, r, err)
-		return nil, nil, false
-	}
-	app.logDebug(r, "schema objects returned",
-		slog.String("session_id", session.ID),
-		slog.Int("requested_ref_count", len(refs)),
-		slog.Int("object_count", len(objects)),
-	)
-	return objects, nil, true
 }
 
 func (app *application) applyConnectionDDL(w http.ResponseWriter, r *http.Request) {
@@ -430,185 +258,115 @@ func (app *application) applyConnectionDDL(w http.ResponseWriter, r *http.Reques
 		return
 	}
 
-	app.schemaService.RefreshConnection(session.ConnectionID)
 	app.completionService.InvalidateConnection(session.ConnectionID)
 	app.logInfo(r, "DDL applied",
 		slog.String("session_id", session.ID),
-		slog.String("connection_id", session.ConnectionID),
+		slog.Int64("connection_id", conn.ID),
 		slog.String("operation", string(input.Operation)),
 	)
 
-	persistent, err := app.persistentSchemaMode(r)
+	navConn, err := app.navigatorConnection(r)
 	if err != nil {
 		app.serverError(w, r, err)
 		return
 	}
-	if !persistent {
-		if err := response.JSON(w, http.StatusOK, schemaEditResponse{
-			Applied: true, Schema: schemaStatusResponse{Status: "available", Mode: "ephemeral"},
-			Transaction: newTransactionStatusView(session.TransactionStatus()),
-		}); err != nil {
-			app.serverError(w, r, err)
-		}
-		return
+	mode := "ephemeral"
+	if navConn.Persistent {
+		mode = "persistent"
 	}
-
-	_ = http.NewResponseController(w).SetWriteDeadline(time.Now().Add(manualSchemaSyncTimeout + 5*time.Second))
-	ctx, cancel := context.WithTimeout(r.Context(), manualSchemaSyncTimeout)
-	defer cancel()
-	output, syncErr := app.syncSchemaSnapshot(ctx, conn.ID)
-	if syncErr != nil {
-		app.logWarn(r, "schema edit snapshot refresh failed",
-			slog.Int64("connection_id", conn.ID),
-			slog.String("operation", string(input.Operation)),
-			slog.Any("error", syncErr),
-		)
-		if err := response.JSON(w, http.StatusOK, schemaEditResponse{
-			Applied: true, Schema: schemaStatusResponse{Status: "refresh_failed", Mode: "persistent", Stale: true},
-			Transaction: newTransactionStatusView(session.TransactionStatus()),
-		}); err != nil {
-			app.serverError(w, r, err)
-		}
-		return
-	}
-	if err := response.JSON(w, http.StatusOK, schemaEditResponse{
+	out := schemaEditResponse{
 		Applied:     true,
-		Schema:      schemaStatusResponse{Status: "available", Mode: "persistent", SnapshotID: output.SnapshotID, GeneratedAt: &output.GeneratedAt},
+		Schema:      schemaStatusResponse{Status: "available", Mode: mode},
 		Transaction: newTransactionStatusView(session.TransactionStatus()),
-	}); err != nil {
-		app.serverError(w, r, err)
 	}
-}
-
-func (app *application) getConnectionSchemaDirectory(w http.ResponseWriter, r *http.Request) {
-	persistent, err := app.persistentSchemaMode(r)
-	if err != nil {
-		app.serverError(w, r, err)
-		return
-	}
-	if r.URL.Query().Has("scope") {
-		scope, scopeErr := schemaScopeQuery(r)
-		if scopeErr != nil {
-			app.badRequest(w, r, scopeErr)
-			return
+	if tree, ok := app.optionalNavigatorTree(conn); ok {
+		root := input.Scope
+		if input.Ref != nil {
+			root = input.Ref.Path()
 		}
-		app.getConnectionSchemaScopeDirectory(w, r, scope, persistent)
-		return
-	}
-	if persistent {
-		if !app.authorizeSchemaAccess(w, r) {
-			return
+		listings, refreshErr := app.schemaNavigator.Refresh(r.Context(), navConn, tree, navigatorLive(session), root)
+		if refreshErr != nil {
+			app.logWarn(r, "schema edit listing refresh failed",
+				slog.Int64("connection_id", conn.ID),
+				slog.String("operation", string(input.Operation)),
+				slog.Any("error", refreshErr),
+			)
+			if invalidateErr := app.schemaNavigator.Invalidate(r.Context(), navConn, root); invalidateErr != nil {
+				app.logWarn(r, "schema edit cache invalidation failed", slog.Int64("connection_id", conn.ID), slog.Any("error", invalidateErr))
+			}
+			out.Schema = schemaStatusResponse{Status: "refresh_failed", Mode: mode, Stale: true}
+		} else {
+			for _, listing := range listings {
+				out.Listings = append(out.Listings, listingView(listing))
+			}
 		}
-		_, directory, found, err := app.schemaSnapshots.Active(r.Context(), contextGetConnection(r).ID)
-		if err != nil {
-			app.serverError(w, r, err)
-			return
-		}
-		if !found {
-			app.writeSnapshotPending(w, r)
-			return
-		}
-		directory = directory.WithSystemScopes(contextGetConnection(r).ShowSystemSchemas)
-		if err := response.JSON(w, http.StatusOK, directoryResponse{Directory: directory}); err != nil {
-			app.serverError(w, r, err)
-		}
-		return
 	}
-	session, inspector, ok := app.resolveSchemaInspector(w, r)
-	if !ok {
-		return
-	}
-	directory, err := app.schemaService.Directory(r.Context(), session.ConnectionID, inspector)
-	if err != nil {
-		app.serverError(w, r, err)
-		return
-	}
-	settings, err := app.effectiveRuntimeSettingsForWorkspace(r.Context(), contextGetWorkspace(r))
-	if err != nil {
-		app.serverError(w, r, err)
-		return
-	}
-	markLazyScopes(directory, settings.SchemaLazyThreshold)
-	app.logDebug(r, "schema directory returned",
-		slog.String("session_id", session.ID),
-		slog.String("engine", directory.Engine),
-	)
-	directory = directory.WithSystemScopes(contextGetConnection(r).ShowSystemSchemas)
-	if err := response.JSON(w, http.StatusOK, directoryResponse{Directory: directory}); err != nil {
+	if err := response.JSON(w, http.StatusOK, out); err != nil {
 		app.serverError(w, r, err)
 	}
 }
 
 func (app *application) getConnectionSchemaObjects(w http.ResponseWriter, r *http.Request) {
+	if !app.authorizeSchemaAccess(w, r) {
+		return
+	}
 	var input objectsRequest
 	if err := request.DecodeJSON(w, r, &input); err != nil {
 		app.badRequest(w, r, err)
 		return
 	}
-	objects, pending, ok := app.resolveSchemaObjects(w, r, input.Refs)
+	session, ok := app.optionalSchemaSession(w, r)
 	if !ok {
 		return
 	}
+	var live metadata.ObjectInspector
+	if session != nil {
+		inspector, supported := session.Conn.(metadata.ObjectInspector)
+		if !supported {
+			app.errorMessage(w, r, http.StatusNotImplemented, "This driver does not support schema inspection.", nil)
+			return
+		}
+		live = inspector
+	}
+	conn, err := app.navigatorConnection(r)
+	if err != nil {
+		app.serverError(w, r, err)
+		return
+	}
+	objects, err := app.schemaNavigator.Objects(r.Context(), conn, live, input.Refs)
+	if err != nil {
+		app.navigatorError(w, r, err)
+		return
+	}
+	app.logDebug(r, "schema objects returned",
+		slog.Int64("connection_id", conn.ID),
+		slog.Int("requested_ref_count", len(input.Refs)),
+		slog.Int("object_count", len(objects)),
+		slog.Bool("session", session != nil),
+	)
 	if objects == nil {
 		objects = []metadata.Object{}
 	}
-	if err := response.JSON(w, http.StatusOK, objectsResponse{Objects: objects, PendingConnection: pending}); err != nil {
+	if err := response.JSON(w, http.StatusOK, objectsResponse{Objects: objects}); err != nil {
 		app.serverError(w, r, err)
 	}
 }
 
-// getConnectionSchemaObjectDefinition returns one object's canonical text
-// definition on demand. Engines that omit the definition from bulk inspection for
-// cost reasons (Oracle: one DBMS_METADATA.GET_DDL round trip per object) expose
-// it here via metadata.DefinitionInspector. In persistent mode there is no live
-// session, so the fetch opens a short-lived target connection of its own.
 func (app *application) getConnectionSchemaObjectDefinition(w http.ResponseWriter, r *http.Request) {
+	if !app.authorizeSchemaAccess(w, r) {
+		return
+	}
 	ref, err := schemaObjectRefQuery(r)
 	if err != nil {
 		app.badRequest(w, r, err)
 		return
 	}
-	persistent, err := app.persistentSchemaMode(r)
-	if err != nil {
-		app.serverError(w, r, err)
-		return
-	}
-	if persistent {
-		if !app.authorizeSchemaAccess(w, r) {
-			return
-		}
-		conn := contextGetConnection(r)
-		ctx, cancel := context.WithTimeout(r.Context(), lazyDefinitionTimeout)
-		defer cancel()
-		driver, err := app.openTargetDriver(ctx, conn, contextGetWorkspace(r))
-		if err != nil {
-			app.schemaSyncHTTPError(w, r, err)
-			return
-		}
-		defer driver.Close()
-		inspector, ok := driver.(metadata.DefinitionInspector)
-		if !ok {
-			app.errorMessage(w, r, http.StatusNotImplemented, "This driver does not support on-demand object definitions.", nil)
-			return
-		}
-		descriptor, err := inspector.InspectDefinition(ctx, ref)
-		if err != nil {
-			app.serverError(w, r, err)
-			return
-		}
-		app.logDebug(r, "schema object definition returned",
-			slog.Int64("connection_id", conn.ID),
-			slog.String("kind", ref.Kind),
-			slog.String("scope", string(ref.Scope)),
-			slog.Bool("found", descriptor != nil),
-		)
-		if err := response.JSON(w, http.StatusOK, objectDefinitionResponse{Descriptor: descriptor}); err != nil {
-			app.serverError(w, r, err)
-		}
-		return
-	}
-	session, ok := app.resolveSchemaSession(w, r)
+	session, ok := app.optionalSchemaSession(w, r)
 	if !ok {
+		return
+	}
+	if session == nil {
+		app.sessionRequired(w, r)
 		return
 	}
 	inspector, ok := session.Conn.(metadata.DefinitionInspector)
@@ -618,13 +376,12 @@ func (app *application) getConnectionSchemaObjectDefinition(w http.ResponseWrite
 	}
 	descriptor, err := inspector.InspectDefinition(r.Context(), ref)
 	if err != nil {
-		app.serverError(w, r, err)
+		app.navigatorError(w, r, err)
 		return
 	}
 	app.logDebug(r, "schema object definition returned",
 		slog.String("session_id", session.ID),
 		slog.String("kind", ref.Kind),
-		slog.String("scope", string(ref.Scope)),
 		slog.Bool("found", descriptor != nil),
 	)
 	if err := response.JSON(w, http.StatusOK, objectDefinitionResponse{Descriptor: descriptor}); err != nil {
@@ -632,241 +389,6 @@ func (app *application) getConnectionSchemaObjectDefinition(w http.ResponseWrite
 	}
 }
 
-func (app *application) refreshConnectionSchema(w http.ResponseWriter, r *http.Request) {
-	persistent, err := app.persistentSchemaMode(r)
-	if err != nil {
-		app.serverError(w, r, err)
-		return
-	}
-	if persistent {
-		if !app.authorizeSchemaAccess(w, r) {
-			return
-		}
-		var input refreshRequest
-		if r.Body != nil && r.ContentLength != 0 {
-			if err := request.DecodeJSON(w, r, &input); err != nil {
-				app.badRequest(w, r, err)
-				return
-			}
-		}
-		conn := contextGetConnection(r)
-		// The server's general write timeout is intentionally short. Give this
-		// user-initiated long operation enough time to return its terminal result,
-		// while the context below remains the authoritative execution limit.
-		_ = http.NewResponseController(w).SetWriteDeadline(time.Now().Add(manualSchemaSyncTimeout + 5*time.Second))
-		ctx, cancel := context.WithTimeout(r.Context(), manualSchemaSyncTimeout)
-		defer cancel()
-
-		if input.Ref != nil {
-			snapshot, directory, found, err := app.schemaSnapshots.Active(ctx, conn.ID)
-			if err != nil {
-				app.serverError(w, r, err)
-				return
-			}
-			if !found {
-				app.writeSnapshotPending(w, r)
-				return
-			}
-			driver, err := app.openTargetDriver(ctx, conn, contextGetWorkspace(r))
-			if err != nil {
-				app.schemaSyncHTTPError(w, r, err)
-				return
-			}
-			defer driver.Close()
-			inspector, ok := driver.(metadata.SchemaInspector)
-			if !ok {
-				app.errorMessage(w, r, http.StatusNotImplemented, "This driver does not support schema inspection.", nil)
-				return
-			}
-			if _, err := app.inspectAndUpsertObjects(ctx, inspector, snapshot.ID, []metadata.ObjectRef{*input.Ref}); err != nil {
-				app.schemaSyncHTTPError(w, r, err)
-				return
-			}
-			app.schemaService.RefreshObject(strconv.FormatInt(conn.ID, 10), *input.Ref)
-			app.completionService.InvalidateConnection(strconv.FormatInt(conn.ID, 10))
-			app.logInfo(r, "schema object refreshed",
-				slog.Int64("connection_id", conn.ID),
-				slog.String("kind", input.Ref.Kind),
-				slog.String("scope", string(input.Ref.Scope)),
-				slog.String("name", input.Ref.Name),
-			)
-			if err := response.JSON(w, http.StatusOK, schemaStatusResponse{
-				Status: "ok", Mode: "persistent", SnapshotID: snapshot.ID, GeneratedAt: &directory.GeneratedAt,
-			}); err != nil {
-				app.serverError(w, r, err)
-			}
-			return
-		}
-
-		output, syncErr := app.syncSchemaSnapshot(ctx, conn.ID)
-		if syncErr != nil {
-			if ctx.Err() != nil {
-				syncErr = ctx.Err()
-			}
-			app.schemaSyncHTTPError(w, r, syncErr)
-			return
-		}
-		if err := response.JSON(w, http.StatusOK, schemaStatusResponse{
-			Status: "ok", Mode: "persistent", SnapshotID: output.SnapshotID, GeneratedAt: &output.GeneratedAt,
-		}); err != nil {
-			app.serverError(w, r, err)
-		}
-		return
-	}
-	session, _, ok := app.resolveSchemaInspector(w, r)
-	if !ok {
-		return
-	}
-	var input refreshRequest
-	if r.Body != nil && r.ContentLength != 0 {
-		if err := request.DecodeJSON(w, r, &input); err != nil {
-			app.badRequest(w, r, err)
-			return
-		}
-	}
-	if input.Ref != nil {
-		app.schemaService.RefreshObject(session.ConnectionID, *input.Ref)
-		app.completionService.InvalidateConnection(session.ConnectionID)
-		app.logInfo(r, "schema object cache refresh requested",
-			slog.String("session_id", session.ID),
-			slog.String("connection_id", session.ConnectionID),
-			slog.String("kind", input.Ref.Kind),
-			slog.String("scope", string(input.Ref.Scope)),
-			slog.String("name", input.Ref.Name),
-		)
-	} else {
-		app.schemaService.RefreshConnection(session.ConnectionID)
-		app.completionService.InvalidateConnection(session.ConnectionID)
-		app.logInfo(r, "schema connection cache refresh requested",
-			slog.String("session_id", session.ID),
-			slog.String("connection_id", session.ConnectionID),
-		)
-	}
-	if err := response.JSON(w, http.StatusOK, schemaStatusResponse{Status: "ok", Mode: "ephemeral"}); err != nil {
-		app.serverError(w, r, err)
-	}
-}
-
-// loadConnectionSchemaScope is the manual override for someone who wants full
-// object detail for one scope despite it being marked lazy. It runs the same
-// inspect-and-store code path the sync job uses, scoped to one scope's refs
-// instead of the whole connection, and writes into the already-published
-// snapshot the way a single-object fetch does.
-func (app *application) loadConnectionSchemaScope(w http.ResponseWriter, r *http.Request) {
-	var input loadSchemaScopeRequest
-	if err := request.DecodeJSON(w, r, &input); err != nil {
-		app.badRequest(w, r, err)
-		return
-	}
-	if len(input.Scope) == 0 {
-		app.badRequest(w, r, errors.New("scope is required"))
-		return
-	}
-	persistent, err := app.persistentSchemaMode(r)
-	if err != nil {
-		app.serverError(w, r, err)
-		return
-	}
-	if !persistent {
-		app.errorMessage(w, r, http.StatusNotImplemented, "Loading a full scope on demand is only available for connections with schema snapshots enabled.", nil)
-		return
-	}
-	if !app.authorizeSchemaAccess(w, r) {
-		return
-	}
-	conn := contextGetConnection(r)
-	snapshot, directory, found, err := app.schemaSnapshots.Active(r.Context(), conn.ID)
-	if err != nil {
-		app.serverError(w, r, err)
-		return
-	}
-	if !found {
-		app.writeSnapshotPending(w, r)
-		return
-	}
-	var refs []metadata.ObjectRef
-	for _, node := range directory.ScopeNodes() {
-		if node.Path != metadata.ScopePath(input.Scope) {
-			continue
-		}
-		for _, group := range node.Groups {
-			refs = append(refs, group.Objects...)
-		}
-	}
-	if len(refs) == 0 {
-		if err := response.JSON(w, http.StatusOK, schemaStatusResponse{
-			Status: "ok", Mode: "persistent", SnapshotID: snapshot.ID, GeneratedAt: &directory.GeneratedAt,
-		}); err != nil {
-			app.serverError(w, r, err)
-		}
-		return
-	}
-	ctx, cancel := context.WithTimeout(r.Context(), manualSchemaSyncTimeout)
-	defer cancel()
-	driver, err := app.openTargetDriver(ctx, conn, contextGetWorkspace(r))
-	if err != nil {
-		app.schemaSyncHTTPError(w, r, err)
-		return
-	}
-	defer driver.Close()
-	inspector, ok := driver.(metadata.SchemaInspector)
-	if !ok {
-		app.errorMessage(w, r, http.StatusNotImplemented, "This driver does not support schema inspection.", nil)
-		return
-	}
-	if _, err := app.inspectAndUpsertObjects(ctx, inspector, snapshot.ID, refs); err != nil {
-		app.schemaSyncHTTPError(w, r, err)
-		return
-	}
-	app.schemaService.RefreshConnection(strconv.FormatInt(conn.ID, 10))
-	app.completionService.InvalidateConnection(strconv.FormatInt(conn.ID, 10))
-	app.logInfo(r, "schema scope loaded on demand",
-		slog.Int64("connection_id", conn.ID),
-		slog.Int("object_count", len(refs)),
-	)
-	if err := response.JSON(w, http.StatusOK, schemaStatusResponse{
-		Status: "ok", Mode: "persistent", SnapshotID: snapshot.ID, GeneratedAt: &directory.GeneratedAt,
-	}); err != nil {
-		app.serverError(w, r, err)
-	}
-}
-
-func (app *application) schemaSyncHTTPError(w http.ResponseWriter, r *http.Request, err error) {
-	if errors.Is(err, context.DeadlineExceeded) {
-		app.apiError(w, r, http.StatusGatewayTimeout, "schema_sync_timeout", "Schema refresh timed out.", response.APIError{}, nil)
-		return
-	}
-	if errors.Is(err, context.Canceled) {
-		app.apiError(w, r, statusClientClosedRequest, "schema_sync_cancelled", "Schema refresh was cancelled.", response.APIError{}, nil)
-		return
-	}
-
-	var coded jobs.CodedError
-	if !errors.As(err, &coded) {
-		app.serverError(w, r, err)
-		return
-	}
-	status := http.StatusInternalServerError
-	switch coded.Code {
-	case "connection_not_found", "workspace_not_found":
-		status = http.StatusNotFound
-	case "schema_snapshots_disabled":
-		status = http.StatusConflict
-	case "schema_sync_target_blocked":
-		status = http.StatusUnprocessableEntity
-	case "schema_sync_driver_unavailable", "schema_sync_unsupported":
-		status = http.StatusNotImplemented
-	case "schema_sync_connect_failed", "schema_directory_failed", "schema_objects_failed", "schema_relationships_failed":
-		status = http.StatusBadGateway
-	default:
-		app.serverError(w, r, err)
-		return
-	}
-	app.apiError(w, r, status, coded.Code, coded.Message, response.APIError{}, nil)
-}
-
-// schemaObjectRefQuery reads a full object ref from scope/kind/name query
-// parameters, used by GET endpoints that address a single object.
 func schemaObjectRefQuery(r *http.Request) (metadata.ObjectRef, error) {
 	scope, err := schemaScopeQuery(r)
 	if err != nil {
@@ -893,48 +415,4 @@ func schemaScopeQuery(r *http.Request) (metadata.ScopePath, error) {
 		return "", errors.New("scope query parameter must not be empty")
 	}
 	return scope, nil
-}
-
-func (app *application) getConnectionSchemaSnapshot(w http.ResponseWriter, r *http.Request) {
-	if !app.authorizeSchemaAccess(w, r) {
-		return
-	}
-	conn := contextGetConnection(r)
-	persistent, err := app.persistentSchemaMode(r)
-	if err != nil {
-		app.serverError(w, r, err)
-		return
-	}
-	if !persistent {
-		if err := response.JSON(w, http.StatusOK, schemaStatusResponse{Status: "available", Mode: "ephemeral"}); err != nil {
-			app.serverError(w, r, err)
-		}
-		return
-	}
-	snapshot, _, found, err := app.schemaSnapshots.Active(r.Context(), conn.ID)
-	if err != nil {
-		app.serverError(w, r, err)
-		return
-	}
-	if !found {
-		app.writeSnapshotPending(w, r)
-		return
-	}
-	runtimeSettings, err := app.effectiveRuntimeSettingsForWorkspace(r.Context(), contextGetWorkspace(r))
-	if err != nil {
-		app.serverError(w, r, err)
-		return
-	}
-	status := schemaStatusResponse{
-		Status: "available", Mode: "persistent", SnapshotID: snapshot.ID,
-		GeneratedAt: &snapshot.GeneratedAt,
-		Stale:       time.Since(snapshot.GeneratedAt) >= runtimeSettings.SchemaSnapshotFreshness,
-	}
-	if job, active, lookupErr := app.workspaceJobStore().ActiveBySingletonKey(r.Context(), schemaSyncSingletonKey(conn.ID)); lookupErr == nil && active {
-		status.Status = "refreshing"
-		status.JobID = job.ID
-	}
-	if err := response.JSON(w, http.StatusOK, status); err != nil {
-		app.serverError(w, r, err)
-	}
 }

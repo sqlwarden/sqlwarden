@@ -173,23 +173,6 @@ describe('buildNamespaceMenu / buildObjectGroupMenu', () => {
       'Connect to the database to make this change.',
     )
   })
-  it('omits Load full detail unless onLoadAll is provided', () => {
-    const items = buildNamespaceMenu({
-      onCopyName: noop,
-      onRefresh: noop,
-      dropLabel: 'Drop schema',
-    })
-    expect(action(items, 'load-all')).toBeUndefined()
-  })
-  it('exposes Load full detail when onLoadAll is provided', () => {
-    const items = buildNamespaceMenu({
-      onCopyName: noop,
-      onRefresh: noop,
-      dropLabel: 'Drop schema',
-      onLoadAll: noop,
-    })
-    expect(action(items, 'load-all')?.label).toBe('Load full detail')
-  })
   it('object-group omits new-object entirely without create-table support (non-table kinds)', () => {
     for (const newLabel of ['New View…', 'New Function…', 'New Sequence…', 'New Trigger…']) {
       const items = buildObjectGroupMenu({ newLabel, onRefresh: noop })

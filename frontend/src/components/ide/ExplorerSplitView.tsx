@@ -16,7 +16,7 @@ import {
 import { Tip } from './schema-diagram/Tip'
 import { ConnectionRow, ConnectionStatusDot, EnvironmentRow } from './DatabasePanel'
 import { DriverBadge } from './DriverBadge'
-import { SchemaTree } from './SchemaTree'
+import { SchemaNavigator } from './navigator/SchemaNavigator'
 import { useSchemaRefresh } from './useSchemaRefresh'
 import { useIde, resolveConnectionState } from './useIdeStore'
 
@@ -362,7 +362,7 @@ function SchemaPane({
         />
       </div>
       <div className="min-h-0 flex-1 overflow-y-auto overflow-x-hidden [scrollbar-width:thin]">
-        <SchemaTree
+        <SchemaNavigator
           orgSlug={orgSlug}
           workspaceId={connection.workspace_id}
           connectionId={connection.id}

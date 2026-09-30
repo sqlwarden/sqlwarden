@@ -9,7 +9,7 @@ import (
 	build "github.com/sqlwarden/internal/engine/metadata/build"
 )
 
-var _ metadata.SchemaInspector = (*Driver)(nil)
+var _ metadata.DirectoryInspector = (*Driver)(nil)
 var _ metadata.ScopeDiscoverer = (*Driver)(nil)
 var _ metadata.DefinitionInspector = (*Driver)(nil)
 

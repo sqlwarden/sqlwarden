@@ -9,13 +9,13 @@ import (
 	"net/http"
 	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"sync"
 	"sync/atomic"
 	"time"
 
 	"github.com/sqlwarden/internal/access"
-	"github.com/sqlwarden/internal/cache"
 	completionapp "github.com/sqlwarden/internal/completion"
 	"github.com/sqlwarden/internal/connection"
 	"github.com/sqlwarden/internal/database"
@@ -28,10 +28,8 @@ import (
 )
 
 const (
-	schemaCacheTTL      = 10 * time.Minute
-	schemaCacheCapacity = 256
-	fileReaperInterval  = 15 * time.Minute
-	fileReaperRetry     = time.Minute
+	fileReaperInterval = 15 * time.Minute
+	fileReaperRetry    = time.Minute
 )
 
 type App = application
@@ -45,8 +43,7 @@ type application struct {
 	wg                sync.WaitGroup
 	connManager       *connection.Manager
 	queryCursors      *connection.QueryCursorManager
-	schemaService     *schemaapp.Service
-	schemaSnapshots   *schemaapp.SnapshotStore
+	schemaNavigator   *schemaapp.Navigator
 	completionService *completionapp.Service
 	keyring           *encrypt.Keyring
 	enforcer          *access.Enforcer
@@ -157,7 +154,6 @@ func New(cfg Config, logger *slog.Logger) (*App, error) {
 		return nil, fmt.Errorf("encryption keyring init: %w", err)
 	}
 
-	snapshotStore := schemaapp.NewSnapshotStore(db)
 	app := &application{
 		config:            cfg,
 		db:                db,
@@ -165,8 +161,7 @@ func New(cfg Config, logger *slog.Logger) (*App, error) {
 		mailer:            smtp.NewDisabledMailer(""),
 		connManager:       connection.New(30 * time.Minute),
 		queryCursors:      connection.NewQueryCursorManager(30 * time.Minute),
-		schemaService:     schemaapp.NewServiceWithLogger(cache.NewMemCache(schemaCacheCapacity), schemaCacheTTL, logger),
-		schemaSnapshots:   snapshotStore,
+		schemaNavigator:   schemaapp.NewNavigator(db, logger),
 		completionService: completionapp.NewService(),
 		keyring:           keyring,
 		enforcer:          enforcer,
@@ -199,11 +194,13 @@ func (app *application) configureConnectionCacheInvalidation() {
 		return
 	}
 	app.connManager.SetOnConnectionEmpty(func(connectionID string) {
-		if app.schemaService != nil {
-			app.schemaService.RefreshConnection(connectionID)
-		}
 		if app.completionService != nil {
 			app.completionService.InvalidateConnection(connectionID)
+		}
+		if app.schemaNavigator != nil {
+			if id, err := strconv.ParseInt(connectionID, 10, 64); err == nil {
+				app.schemaNavigator.ForgetConnection(id)
+			}
 		}
 	})
 }
@@ -276,16 +273,6 @@ func (app *application) defaultJobRegistry() *jobs.Registry {
 		MaxAttempts: 1,
 		Handler: jobs.HandlerFunc(func(ctx context.Context, runtime jobs.Runtime) (any, error) {
 			return app.handleExportJob(ctx, runtime)
-		}),
-	})
-	registry.Register(jobs.Definition{
-		Type:        jobs.TypeSchemaSync,
-		MaxAttempts: 3,
-		Backoff: func(attempt int) time.Duration {
-			return time.Duration(attempt) * time.Minute
-		},
-		Handler: jobs.HandlerFunc(func(ctx context.Context, runtime jobs.Runtime) (any, error) {
-			return app.handleSchemaSyncJob(ctx, runtime)
 		}),
 	})
 	return registry

@@ -116,7 +116,7 @@ func TestConnectionDefaultScopeRoundTrips(t *testing.T) {
 		metadata.ScopeSegment{Kind: "schema", Name: "reporting"},
 	)
 	conn, err := db.InsertConnectionWithScope(
-		ctx, ws.ID, nil, "analytics", "postgres", "encrypted", "open", initial, false,
+		ctx, ws.ID, nil, "analytics", "postgres", "encrypted", "open", initial, false, false,
 	)
 	if err != nil {
 		t.Fatal(err)
@@ -144,7 +144,7 @@ func TestConnectionDefaultScopeRoundTrips(t *testing.T) {
 	replacement := metadata.NewScopePath(metadata.ScopeSegment{Kind: "database", Name: "warehouse"})
 	if err := db.UpdateConnectionWithScopeAndPolicy(
 		ctx, conn.ID, "renamed", "encrypted-2", "restricted",
-		SchemaSnapshotPolicyInherit, replacement, false,
+		SchemaSnapshotPolicyInherit, replacement, false, false,
 	); err != nil {
 		t.Fatal(err)
 	}
@@ -154,6 +154,35 @@ func TestConnectionDefaultScopeRoundTrips(t *testing.T) {
 	}
 	if stored.DefaultScope != replacement {
 		t.Fatalf("updated scope = %q, want %q", stored.DefaultScope, replacement)
+	}
+}
+
+func TestConnectionShowAllDatabasesRoundTrip(t *testing.T) {
+	db := newTestDB(t)
+	ctx := context.Background()
+	org, err := db.InsertOrg(ctx, "show-all-org", "Show All Org")
+	if err != nil {
+		t.Fatal(err)
+	}
+	ws, err := db.InsertWorkspace(ctx, &org.ID, "org", org.ID, "Main", "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	scope := metadata.NewScopePath(metadata.ScopeSegment{Kind: "database", Name: "app"})
+	conn, err := db.InsertConnectionWithScope(ctx, ws.ID, nil, "c", "postgres", "dsn", "open", scope, false, true)
+	if err != nil {
+		t.Fatal(err)
+	}
+	got, _, err := db.GetConnection(ctx, conn.ID)
+	if err != nil || !got.ShowAllDatabases {
+		t.Fatalf("after insert: %+v, %v", got, err)
+	}
+	if err := db.UpdateConnectionWithScopeAndPolicy(ctx, conn.ID, "c", "dsn", "open", SchemaSnapshotPolicyInherit, scope, false, false); err != nil {
+		t.Fatal(err)
+	}
+	got, _, err = db.GetConnection(ctx, conn.ID)
+	if err != nil || got.ShowAllDatabases {
+		t.Fatalf("after update: %+v, %v", got, err)
 	}
 }
 

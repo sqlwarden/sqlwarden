@@ -1,14 +1,14 @@
 import { describe, it, expect } from 'vitest'
 import { getObjectRenderer, type ObjectViewModel } from './registry'
 import { dialectFor } from '../sqlDialect'
-import type { ObjectDetail, SchemaSpec } from '#/lib/api/types'
+import type { ObjectDetail, NavigatorTree } from '#/lib/api/types'
 
-function vm(detail: ObjectDetail, driver = 'postgres', spec?: SchemaSpec): ObjectViewModel {
+function vm(detail: ObjectDetail, driver = 'postgres', tree?: NavigatorTree): ObjectViewModel {
   return {
     detail,
     dialect: dialectFor(driver),
     driver,
-    spec,
+    tree,
     orgSlug: 'o',
     workspaceId: 1,
     connectionId: 1,
@@ -16,22 +16,20 @@ function vm(detail: ObjectDetail, driver = 'postgres', spec?: SchemaSpec): Objec
   }
 }
 
-function kindSpec(kind: string, hasDefinition: boolean): SchemaSpec {
-  return {
-    dialect: 'postgres',
-    kinds: [
-      {
-        kind,
-        label: kind,
-        plural_label: `${kind}s`,
-        order: 1,
-        relational: false,
-        supports_diagram: false,
-        listing: 'enumerated',
-        has_definition: hasDefinition,
-      },
-    ],
+function kindSpec(kind: string, hasDefinition: boolean): NavigatorTree {
+  const node = {
+    label: kind,
+    icon: kind,
+    leaf: true,
+    folders: [],
+    scope: false,
+    relational: false,
+    supports_diagram: false,
+    has_definition: hasDefinition,
+    show_all_databases: false,
+    column: false,
   }
+  return { system_objects: false, root: { ...node, leaf: false }, nodes: { [kind]: node } }
 }
 
 const tableDetail: ObjectDetail = {

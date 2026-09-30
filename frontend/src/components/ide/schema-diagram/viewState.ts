@@ -1,5 +1,6 @@
 import { isApiError } from '#/lib/api/errors'
-import type { SchemaSpec } from '#/lib/api/types'
+import type { NavigatorTree } from '#/lib/api/types'
+import { diagramSupported } from './capability'
 
 export type DiagramViewState =
   | 'missing-target'
@@ -16,11 +17,11 @@ export function resolveDiagramViewState({
   hasConnection,
   hasSession,
   loadRequested,
-  spec,
-  specError,
-  directoryError,
+  tree,
+  treeError,
+  listingError,
   relationshipsError,
-  directoryLoading,
+  listingLoading,
   relationshipsLoading,
   presentCount,
 }: {
@@ -28,11 +29,11 @@ export function resolveDiagramViewState({
   hasConnection: boolean
   hasSession: boolean
   loadRequested: boolean
-  spec?: SchemaSpec
-  specError: unknown
-  directoryError: unknown
+  tree?: NavigatorTree
+  treeError: unknown
+  listingError: unknown
   relationshipsError: unknown
-  directoryLoading: boolean
+  listingLoading: boolean
   relationshipsLoading: boolean
   presentCount: number
 }): DiagramViewState {
@@ -41,17 +42,17 @@ export function resolveDiagramViewState({
   if (!loadRequested) return 'needs-load'
   if (
     (isApiError(relationshipsError) && relationshipsError.status === 501) ||
-    (spec != null && !spec.kinds.some((kind) => kind.supports_diagram))
+    (tree != null && !diagramSupported(tree))
   )
     return 'unsupported'
   if (
-    [specError, directoryError, relationshipsError].some(
+    [treeError, listingError, relationshipsError].some(
       (error) => isApiError(error) && error.status === 403,
     )
   ) {
     return 'forbidden'
   }
-  if (directoryLoading || relationshipsLoading) return 'loading'
+  if (listingLoading || relationshipsLoading) return 'loading'
   if (presentCount === 0) return 'empty'
   return 'ready'
 }

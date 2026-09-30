@@ -1,10 +1,7 @@
 package web
 
 import (
-	"crypto/sha256"
-	"encoding/json"
 	"errors"
-	"fmt"
 	"log/slog"
 	"net/http"
 	"strconv"
@@ -13,7 +10,6 @@ import (
 
 	completionapp "github.com/sqlwarden/internal/completion"
 	"github.com/sqlwarden/internal/engine/completer"
-	metadata "github.com/sqlwarden/internal/engine/metadata"
 	"github.com/sqlwarden/internal/request"
 	"github.com/sqlwarden/internal/response"
 )
@@ -35,7 +31,6 @@ type completionResponse struct {
 	Mode              string                 `json:"mode"`
 	MetadataAvailable bool                   `json:"metadata_available"`
 	MetadataStatus    string                 `json:"metadata_status"`
-	SnapshotID        string                 `json:"snapshot_id,omitempty"`
 	Context           string                 `json:"context,omitempty"`
 }
 
@@ -86,33 +81,24 @@ func (app *application) completeConnectionSQL(w http.ResponseWriter, r *http.Req
 		MetadataStatus: "unavailable",
 	}
 
-	persistent, err := app.persistentSchemaMode(r)
+	if _, ok := app.optionalSchemaSession(w, r); !ok {
+		return
+	}
+	navConn, err := app.navigatorConnection(r)
 	if err != nil {
 		app.serverError(w, r, err)
 		return
 	}
-	if persistent {
+	if navConn.Persistent {
 		out.Mode = "persistent"
-		out.MetadataStatus = "pending"
-		snapshot, directory, found, lookupErr := app.schemaSnapshots.Active(r.Context(), conn.ID)
-		if lookupErr != nil {
-			app.serverError(w, r, lookupErr)
-			return
-		}
-		if found {
-			objects, objectErr := app.schemaSnapshots.AllObjects(r.Context(), snapshot.ID)
-			if objectErr != nil {
-				app.serverError(w, r, objectErr)
-				return
-			}
-			directory, objects, version := app.completionWithCachedScopes(connID, directory, objects, snapshot.ID)
-			req.Schema = &metadata.MetadataSet{Directory: directory, Objects: objects, Version: version}
-			out.MetadataAvailable, out.MetadataStatus, out.SnapshotID = true, "ready", snapshot.ID
-		}
-	} else {
-		if app.addEphemeralCompletionMetadata(r, connID, &req, &out) {
-			app.notPermitted(w, r)
-			return
+	}
+	if tree, ok := app.optionalNavigatorTree(conn); ok {
+		set, metaErr := app.schemaNavigator.CompletionMetadata(r.Context(), navConn, tree)
+		if metaErr != nil {
+			app.logWarn(r, "completion metadata unavailable", slog.Int64("connection_id", conn.ID), slog.Any("error", metaErr))
+		} else if len(set.Directory.Roots) > 0 || len(set.Objects) > 0 {
+			req.Schema = set
+			out.MetadataAvailable, out.MetadataStatus = true, "ready"
 		}
 	}
 
@@ -129,7 +115,7 @@ func (app *application) completeConnectionSQL(w http.ResponseWriter, r *http.Req
 			slog.String("error", err.Error()),
 		)
 		req.Schema = nil
-		out.MetadataAvailable, out.MetadataStatus, out.SnapshotID = false, "degraded", ""
+		out.MetadataAvailable, out.MetadataStatus = false, "degraded"
 		result, err = app.completionService.Complete(r.Context(), conn.Driver, req)
 	}
 	if err != nil {
@@ -160,78 +146,6 @@ func (app *application) completeConnectionSQL(w http.ResponseWriter, r *http.Req
 	if err := response.JSON(w, http.StatusOK, out); err != nil {
 		app.serverError(w, r, err)
 	}
-}
-
-// completionWithCachedScopes augments a saved snapshot with schema listings and
-// object details already cached by on-demand browsing. Both completion endpoints
-// use it without opening a target connection or modifying the saved snapshot.
-// The returned version includes a content hash so newly cached metadata rebuilds
-// prepared completion indexes.
-func (app *application) completionWithCachedScopes(connID string, directory *metadata.Directory, objects []metadata.Object, version string) (*metadata.Directory, []metadata.Object, string) {
-	lazy := false
-	for _, node := range directory.ScopeNodes() {
-		lazy = lazy || node.Lazy
-	}
-	if !lazy {
-		return directory, objects, version
-	}
-	merged := app.schemaService.WithCachedScopes(connID, directory)
-	seen := make(map[metadata.ObjectRef]bool, len(objects))
-	for _, object := range objects {
-		seen[object.Ref] = true
-	}
-	var refs []metadata.ObjectRef
-	for _, ref := range merged.ObjectRefs() {
-		if !seen[ref] {
-			refs = append(refs, ref)
-		}
-	}
-	extra := app.schemaService.CachedObjects(connID, refs)
-	result := append(append([]metadata.Object(nil), objects...), extra...)
-	data, _ := json.Marshal(struct {
-		Directory *metadata.Directory
-		Objects   []metadata.Object
-	}{merged, extra})
-	return merged, result, fmt.Sprintf("%s:%x", version, sha256.Sum256(data))
-}
-
-// addEphemeralCompletionMetadata returns true only when an existing session is
-// scoped to another account or connection. Missing/expired sessions intentionally
-// degrade to keyword-only completion.
-func (app *application) addEphemeralCompletionMetadata(r *http.Request, connID string, req *completer.Request, out *completionResponse) bool {
-	sessionID := r.Header.Get("X-Warden-Session")
-	if sessionID == "" {
-		return false
-	}
-	session, found := app.connManager.Get(sessionID)
-	if !found {
-		return false
-	}
-	account := contextGetAccount(r)
-	if session.AccountID != strconv.FormatInt(account.ID, 10) || session.ConnectionID != connID {
-		return true
-	}
-	inspector, ok := session.Conn.(metadata.SchemaInspector)
-	if !ok {
-		return false
-	}
-	directory, err := app.schemaService.Directory(r.Context(), connID, inspector)
-	if err != nil {
-		app.logWarn(r, "completion directory inspection failed", slog.String("connection_id", connID), slog.String("error", err.Error()))
-		return false
-	}
-	objects, err := app.schemaService.Objects(r.Context(), connID, directoryObjectRefs(directory), inspector)
-	if err != nil {
-		app.logWarn(r, "completion object inspection failed", slog.String("connection_id", connID), slog.String("error", err.Error()))
-		return false
-	}
-	req.Schema = &metadata.MetadataSet{
-		Directory: directory,
-		Objects:   objects,
-		Version:   directory.GeneratedAt.UTC().Format(time.RFC3339Nano),
-	}
-	out.MetadataAvailable, out.MetadataStatus = true, "ready"
-	return false
 }
 
 func utf16OffsetToByteOffset(text string, offset int) (int, error) {

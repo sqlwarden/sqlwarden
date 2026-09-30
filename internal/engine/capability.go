@@ -21,11 +21,14 @@ type Capability string
 // interface the engine type implements (see CapabilitySet and capabilitiesOf).
 const (
 	// CapabilitySchemaDirectory provides a cheap hierarchy and object-name
-	// listing through metadata.SchemaInspector.InspectDirectory.
+	// listing through metadata.DirectoryInspector.InspectDirectory.
 	CapabilitySchemaDirectory Capability = "schema.directory"
 	// CapabilitySchemaObjects provides on-demand columns, keys, indexes, and
-	// descriptors through metadata.SchemaInspector.InspectObjects.
+	// descriptors through metadata.DirectoryInspector.InspectObjects.
 	CapabilitySchemaObjects Capability = "schema.objects"
+	// CapabilitySchemaNavigator provides the lazy navigator grammar and folder
+	// loaders through metadata.SchemaInspector.
+	CapabilitySchemaNavigator Capability = "schema.navigator"
 	// CapabilityDDL applies the bounded structured schema operations advertised
 	// by ddl.Executor.DDLSpec. It does not accept arbitrary SQL.
 	CapabilityDDL Capability = "schema.edit"
@@ -78,6 +81,8 @@ type SSHTunnelCapable interface {
 type CapabilitySet struct {
 	Engine       EngineDescriptor    `json:"engine"`
 	Capabilities map[Capability]bool `json:"capabilities"`
+	// Tree accompanies schema.navigator. Serialized by the schema API, not /engines.
+	Tree *metadata.Tree `json:"-"`
 	// Schema accompanies schema.directory/schema.objects.
 	Schema *metadata.SchemaSpec `json:"schema,omitempty"`
 	// DDL accompanies schema.edit.
@@ -95,48 +100,51 @@ type CapabilitySet struct {
 // DERIVED, never hand-declared, so a reported capability can never disagree with
 // what the engine actually implements. The probe is created but never connected,
 // which is why this works for the static /engines report.
-func capabilitiesOf(reg Registration) (map[Capability]bool, *metadata.SchemaSpec, *ddl.Spec, *statement.Spec, *explain.Spec, *TLSSpec) {
+func capabilitiesOf(reg Registration) CapabilitySet {
 	probe := reg.New()
-	caps := map[Capability]bool{
+	set := CapabilitySet{Capabilities: map[Capability]bool{
 		CapabilitySchemaDirectory: false,
 		CapabilitySchemaObjects:   false,
+		CapabilitySchemaNavigator: false,
 		CapabilityDDL:             false,
 		CapabilityQueryCursor:     false,
 		CapabilitySQLGenerate:     false,
 		CapabilitySQLExplain:      false,
 		CapabilityTLS:             false,
 		CapabilitySSHTunnel:       false,
-	}
-	var spec *metadata.SchemaSpec
-	var ddlSpec *ddl.Spec
-	var statementSpec *statement.Spec
-	var explainSpec *explain.Spec
-	var tlsSpec *TLSSpec
+	}}
+	caps := set.Capabilities
 	if si, ok := probe.(metadata.SchemaInspector); ok {
+		caps[CapabilitySchemaNavigator] = true
+		caps[CapabilitySchemaObjects] = true
+		tree := si.Tree()
+		set.Tree = &tree
+	}
+	if di, ok := probe.(metadata.DirectoryInspector); ok {
 		caps[CapabilitySchemaDirectory] = true
 		caps[CapabilitySchemaObjects] = true
-		s := si.SchemaSpec()
-		spec = &s
+		s := di.SchemaSpec()
+		set.Schema = &s
 	}
 	if executor, ok := probe.(ddl.Executor); ok {
 		caps[CapabilityDDL] = true
 		s := executor.DDLSpec()
-		ddlSpec = &s
+		set.DDL = &s
 	}
 	if generator, ok := probe.(statement.Generator); ok {
 		caps[CapabilitySQLGenerate] = true
 		s := generator.StatementSpec()
-		statementSpec = &s
+		set.Statements = &s
 	}
 	if explainer, ok := probe.(explain.Explainer); ok {
 		caps[CapabilitySQLExplain] = true
 		s := explainer.ExplainSpec()
-		explainSpec = &s
+		set.Explain = &s
 	}
 	if tc, ok := probe.(TLSCapable); ok {
 		caps[CapabilityTLS] = true
 		s := tc.TLSSpec()
-		tlsSpec = &s
+		set.TLS = &s
 	}
 	if sc, ok := probe.(SSHTunnelCapable); ok {
 		caps[CapabilitySSHTunnel] = sc.SupportsSSHTunnel()
@@ -147,20 +155,13 @@ func capabilitiesOf(reg Registration) (map[Capability]bool, *metadata.SchemaSpec
 	_, caps[CapabilitySQLParse] = probe.(parser.Parser)
 	_, caps[CapabilitySQLRewrite] = probe.(rewriter.Rewriter)
 	_, caps[CapabilitySQLComplete] = probe.(completer.Completer)
-	return caps, spec, ddlSpec, statementSpec, explainSpec, tlsSpec
+	return set
 }
 
 // capabilityReport builds the full static capability report for an engine: its
 // descriptor plus the derived capability map and schema spec.
 func capabilityReport(reg Registration) CapabilitySet {
-	caps, spec, ddlSpec, statementSpec, explainSpec, tlsSpec := capabilitiesOf(reg)
-	return CapabilitySet{
-		Engine:       EngineDescriptor{ID: reg.ID, DisplayName: reg.DisplayName, Dialect: reg.Dialect},
-		Capabilities: caps,
-		Schema:       spec,
-		DDL:          ddlSpec,
-		Statements:   statementSpec,
-		Explain:      explainSpec,
-		TLS:          tlsSpec,
-	}
+	set := capabilitiesOf(reg)
+	set.Engine = EngineDescriptor{ID: reg.ID, DisplayName: reg.DisplayName, Dialect: reg.Dialect}
+	return set
 }
