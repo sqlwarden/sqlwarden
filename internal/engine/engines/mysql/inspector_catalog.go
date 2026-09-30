@@ -350,8 +350,8 @@ func IndexDefinition(ctx context.Context, db *sql.DB, ref metadata.ObjectRef, fu
 	rows, err := db.QueryContext(ctx, `
 SELECT table_name, non_unique, index_type, column_name, sub_part, collation, `+exprCol+` AS expression, seq_in_index
 FROM information_schema.statistics
-WHERE table_schema = ? AND index_name = ? AND index_name <> 'PRIMARY'
-ORDER BY table_name, seq_in_index`, schema, ref.Name)
+WHERE table_schema = ? AND index_name = ? AND index_name <> 'PRIMARY' AND (? = '' OR table_name = ?)
+ORDER BY table_name, seq_in_index`, schema, ref.Name, ref.Scope.Name("table"), ref.Scope.Name("table"))
 	if err != nil {
 		return "", fmt.Errorf("mysql: index definition: %w", err)
 	}
@@ -428,7 +428,12 @@ ORDER BY table_name, seq_in_index`, schema, ref.Name)
 // CatalogConstraints); each gets its own statement. PRIMARY KEY, UNIQUE,
 // FOREIGN KEY (with referential actions) and CHECK constraints are reproduced;
 // index prefix lengths on key columns and the MATCH clause are not.
-func ConstraintDefinition(ctx context.Context, db *sql.DB, ref metadata.ObjectRef) (string, error) {
+// checkTableColumn selects information_schema.check_constraints.table_name,
+// which exists on MariaDB (where CHECK names are unique per table, not per
+// schema) but not MySQL; callers on an engine without it pass false and take
+// the table from the joined table_constraints row, which is safe because
+// CHECK names are unique per schema there.
+func ConstraintDefinition(ctx context.Context, db *sql.DB, ref metadata.ObjectRef, checkTableColumn bool) (string, error) {
 	schema := ref.Scope.Name("database")
 	rows, err := db.QueryContext(ctx, `
 SELECT tc.table_name, tc.constraint_type,
@@ -444,8 +449,8 @@ LEFT JOIN information_schema.referential_constraints rc
   ON rc.constraint_schema = tc.constraint_schema
  AND rc.constraint_name = tc.constraint_name
  AND rc.table_name = tc.table_name
-WHERE tc.table_schema = ? AND tc.constraint_name = ?
-ORDER BY tc.table_name, kcu.ordinal_position`, schema, ref.Name)
+WHERE tc.table_schema = ? AND tc.constraint_name = ? AND (? = '' OR tc.table_name = ?)
+ORDER BY tc.table_name, kcu.ordinal_position`, schema, ref.Name, ref.Scope.Name("table"), ref.Scope.Name("table"))
 	if err != nil {
 		return "", fmt.Errorf("mysql: constraint definition: %w", err)
 	}
@@ -488,13 +493,12 @@ ORDER BY tc.table_name, kcu.ordinal_position`, schema, ref.Name)
 		return "", nil
 	}
 
-	checkClauses, err := mysqlCheckClauses(ctx, db, schema, ref.Name)
+	checkClauses, err := mysqlCheckClauses(ctx, db, schema, ref.Name, ref.Scope.Name("table"), checkTableColumn)
 	if err != nil {
 		return "", err
 	}
 
 	stmts := make([]string, 0, len(order))
-	checkIdx := 0
 	for _, entry := range order {
 		alter := fmt.Sprintf("ALTER TABLE %s.%s ADD ", mysqlQuoteIdent(schema), mysqlQuoteIdent(entry.table))
 		switch entry.ctype {
@@ -514,11 +518,7 @@ ORDER BY tc.table_name, kcu.ordinal_position`, schema, ref.Name)
 				alter += " ON UPDATE " + r
 			}
 		case "CHECK":
-			clause := ""
-			if checkIdx < len(checkClauses) {
-				clause = checkClauses[checkIdx]
-				checkIdx++
-			}
+			clause := checkClauses[entry.table]
 			if clause == "" {
 				continue
 			}
@@ -569,28 +569,35 @@ func isFullyParenthesized(s string) bool {
 }
 
 // mysqlCheckClauses returns the CHECK_CLAUSE text of every check constraint
-// named by (schema, name), ordered by table name to line up with the
-// table-ordered instances ConstraintDefinition iterates.
-func mysqlCheckClauses(ctx context.Context, db *sql.DB, schema, name string) ([]string, error) {
-	rows, err := db.QueryContext(ctx, `
-SELECT cc.check_clause
+// named by (schema, name), keyed by the table that carries it. A non-empty
+// table narrows the lookup to that table. checkTableColumn is documented on
+// ConstraintDefinition.
+func mysqlCheckClauses(ctx context.Context, db *sql.DB, schema, name, table string, checkTableColumn bool) (map[string]string, error) {
+	query := `
+SELECT tc.table_name, cc.check_clause
 FROM information_schema.check_constraints cc
 JOIN information_schema.table_constraints tc
   ON tc.constraint_schema = cc.constraint_schema
  AND tc.constraint_name = cc.constraint_name
-WHERE cc.constraint_schema = ? AND cc.constraint_name = ?
-ORDER BY tc.table_name`, schema, name)
+WHERE cc.constraint_schema = ? AND cc.constraint_name = ? AND (? = '' OR tc.table_name = ?)`
+	if checkTableColumn {
+		query = `
+SELECT cc.table_name, cc.check_clause
+FROM information_schema.check_constraints cc
+WHERE cc.constraint_schema = ? AND cc.constraint_name = ? AND (? = '' OR cc.table_name = ?)`
+	}
+	rows, err := db.QueryContext(ctx, query, schema, name, table, table)
 	if err != nil {
 		return nil, fmt.Errorf("mysql: check constraint clause: %w", err)
 	}
 	defer rows.Close()
-	var out []string
+	out := map[string]string{}
 	for rows.Next() {
-		var clause string
-		if err := rows.Scan(&clause); err != nil {
+		var tbl, clause string
+		if err := rows.Scan(&tbl, &clause); err != nil {
 			return nil, fmt.Errorf("mysql: check constraint clause scan: %w", err)
 		}
-		out = append(out, clause)
+		out[tbl] = clause
 	}
 	return out, rows.Err()
 }

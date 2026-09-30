@@ -119,15 +119,23 @@ func (d *driver) InspectObjects(ctx context.Context, refs []metadata.ObjectRef) 
 }
 
 // InspectDefinition special-cases sequences (SHOW CREATE SEQUENCE has no
-// equivalent in the embedded mysql implementation) and index reconstruction
+// equivalent in the embedded mysql implementation), index reconstruction
 // (MariaDB's information_schema.statistics lacks the EXPRESSION column the
-// base implementation selects), and delegates every other kind to it unmodified.
+// base implementation selects) and constraint reconstruction (MariaDB's
+// information_schema.check_constraints carries table_name, needed because CHECK
+// names are unique per table), and delegates every other kind to it unmodified.
 func (d *driver) InspectDefinition(ctx context.Context, ref metadata.ObjectRef) (*metadata.Descriptor, error) {
 	switch ref.Kind {
 	case "sequence":
 		return mysql.ShowCreateDefinition(ctx, d.DB(), ref, "SHOW CREATE SEQUENCE ", "Definition")
 	case "index":
 		def, err := mysql.IndexDefinition(ctx, d.DB(), ref, false)
+		if err != nil {
+			return nil, err
+		}
+		return mysql.SourceDescriptor("DDL", def), nil
+	case "constraint":
+		def, err := mysql.ConstraintDefinition(ctx, d.DB(), ref, true)
 		if err != nil {
 			return nil, err
 		}
