@@ -221,15 +221,23 @@ ORDER BY schema_name`)
 // MaterializedViewObjects, FunctionObjects, SequenceObjects, ProcedureObjects,
 // TriggerObjects, TypeObjects, DomainObjects, and ForeignTableObjects from
 // catalog.go and inspector_objects.go. A compatible engine overrides this
-// method entirely to drop or add kinds.
+// method with InspectObjectsWith and its own per-database inspect function.
 func (d *Driver) InspectObjects(ctx context.Context, refs []metadata.ObjectRef) ([]metadata.Object, error) {
+	return d.InspectObjectsWith(ctx, refs, InspectObjectsIn)
+}
+
+// InspectObjectsWith runs inspect once per database the refs span, against
+// that database's pool, and qualifies results with the database scope.
+// Compatible engines pass their own inspect to add or replace kinds.
+func (d *Driver) InspectObjectsWith(ctx context.Context, refs []metadata.ObjectRef,
+	inspect func(context.Context, *sql.DB, []metadata.ObjectRef) ([]metadata.Object, error)) ([]metadata.Object, error) {
 	var out []metadata.Object
 	for database, group := range groupRefsByDatabase(refs) {
 		db, err := d.databaseFor(ctx, database)
 		if err != nil {
 			return nil, err
 		}
-		objs, err := inspectObjectsIn(ctx, db, group)
+		objs, err := inspect(ctx, db, group)
 		if err != nil {
 			return nil, err
 		}
@@ -239,7 +247,7 @@ func (d *Driver) InspectObjects(ctx context.Context, refs []metadata.ObjectRef) 
 	return out, nil
 }
 
-func inspectObjectsIn(ctx context.Context, db *sql.DB, refs []metadata.ObjectRef) ([]metadata.Object, error) {
+func InspectObjectsIn(ctx context.Context, db *sql.DB, refs []metadata.ObjectRef) ([]metadata.Object, error) {
 	var relRefs, mvRefs, fnRefs, seqRefs, procRefs, trigRefs, typeRefs, domainRefs, foreignRefs []metadata.ObjectRef
 	for _, r := range refs {
 		switch r.Kind {

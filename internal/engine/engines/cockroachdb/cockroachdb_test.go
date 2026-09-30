@@ -21,7 +21,7 @@ func TestMain(m *testing.M) {
 	ctx := context.Background()
 
 	container, err := tccockroachdb.Run(ctx,
-		"cockroachdb/cockroach:v23.1.13",
+		"cockroachdb/cockroach:v23.2.20",
 		tccockroachdb.WithInsecure(),
 	)
 	if err != nil {

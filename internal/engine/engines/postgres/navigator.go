@@ -266,7 +266,7 @@ const listTablesSQL = `
 SELECT n.nspname, c.relname, c.relkind = 'p' AS partitioned, GREATEST(c.reltuples, 0)::bigint AS row_count
 FROM pg_catalog.pg_class c
 JOIN pg_catalog.pg_namespace n ON n.oid = c.relnamespace
-WHERE n.nspname = ANY($1) AND c.relkind IN ('r', 'p') AND NOT c.relispartition
+WHERE n.nspname = ANY($1) AND c.relkind IN ('r', 'p') AND NOT COALESCE(c.relispartition, false)
 ORDER BY n.nspname, c.relname`
 
 const listForeignTablesSQL = `

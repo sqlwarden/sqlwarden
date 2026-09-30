@@ -60,7 +60,7 @@ func functionPairFilter(refs []metadata.ObjectRef, start int) (string, []any) {
 	return sb.String(), args
 }
 
-func functionRequestedRef(refs []metadata.ObjectRef, namespace, name string) metadata.ObjectRef {
+func functionRequestedRef(refs []metadata.ObjectRef, kind, namespace, name string) metadata.ObjectRef {
 	for _, ref := range refs {
 		if ref.Scope.Name("schema") == namespace && ref.Name == name {
 			return ref
@@ -70,16 +70,19 @@ func functionRequestedRef(refs []metadata.ObjectRef, namespace, name string) met
 	if len(refs) > 0 {
 		scope = refs[0].Scope.With("schema", namespace)
 	}
-	return metadata.ObjectRef{Scope: scope, Kind: "function", Name: name}
+	return metadata.ObjectRef{Scope: scope, Kind: kind, Name: name}
 }
+
+// routineKinds maps the routine object kinds to their pg_proc.prokind code.
+var routineKinds = map[string]string{"function": "f", "procedure": "p"}
 
 // functionObjects mirrors postgres.FunctionObjects but drops the JOIN
 // pg_language: CockroachDB's pg_catalog.pg_language compatibility table is
 // always empty, so pg_proc.prolang never resolves against it and an inner
 // join silently returns zero rows for every function. The language is
 // instead recovered from the LANGUAGE clause pg_get_functiondef always
-// emits.
-func functionObjects(ctx context.Context, db *sql.DB, refs []metadata.ObjectRef) ([]metadata.Object, error) {
+// emits. kind selects functions or procedures via routineKinds.
+func functionObjects(ctx context.Context, db *sql.DB, kind string, refs []metadata.ObjectRef) ([]metadata.Object, error) {
 	pairs, args := functionPairFilter(refs, 1)
 	q := `
 SELECT n.nspname, p.proname,
@@ -88,9 +91,9 @@ SELECT n.nspname, p.proname,
        pg_get_functiondef(p.oid)
 FROM pg_proc p
 JOIN pg_namespace n ON n.oid = p.pronamespace
-WHERE p.prokind = 'f' AND (n.nspname, p.proname) IN (` + pairs + `)
+WHERE p.prokind = $` + fmt.Sprint(len(args)+1) + ` AND (n.nspname, p.proname) IN (` + pairs + `)
 ORDER BY n.nspname, p.proname, p.oid`
-	rows, err := db.QueryContext(ctx, q, args...)
+	rows, err := db.QueryContext(ctx, q, append(args, routineKinds[kind])...)
 	if err != nil {
 		return nil, fmt.Errorf("cockroachdb: function detail: %w", err)
 	}
@@ -112,7 +115,7 @@ ORDER BY n.nspname, p.proname, p.oid`
 			descriptors = append(descriptors, metadata.Descriptor{Kind: "fields", Title: title, Fields: fields})
 		}
 		out = append(out, metadata.Object{
-			Ref:         functionRequestedRef(refs, ns, name),
+			Ref:         functionRequestedRef(refs, kind, ns, name),
 			Descriptors: descriptors,
 		})
 		overloads = nil
@@ -143,13 +146,13 @@ ORDER BY n.nspname, p.proname, p.oid`
 // functionDefinition mirrors postgres.FunctionDefinition but, like
 // functionObjects, recovers the language from pg_get_functiondef's own
 // LANGUAGE clause instead of joining pg_language.
-func functionDefinition(ctx context.Context, db *sql.DB, ref metadata.ObjectRef) (language, body string, err error) {
+func functionDefinition(ctx context.Context, db metadata.Querier, ref metadata.ObjectRef) (language, body string, err error) {
 	rows, err := db.QueryContext(ctx, `
 SELECT pg_get_functiondef(p.oid)
 FROM pg_proc p
 JOIN pg_namespace n ON n.oid = p.pronamespace
-WHERE p.prokind = 'f' AND n.nspname = $1 AND p.proname = $2
-ORDER BY p.oid`, ref.Scope.Name("schema"), ref.Name)
+WHERE p.prokind = $3 AND n.nspname = $1 AND p.proname = $2
+ORDER BY p.oid`, ref.Scope.Name("schema"), ref.Name, routineKinds[ref.Kind])
 	if err != nil {
 		return "", "", fmt.Errorf("cockroachdb: function definition: %w", err)
 	}

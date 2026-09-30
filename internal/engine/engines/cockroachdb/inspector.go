@@ -103,39 +103,29 @@ func (d *driver) InspectDirectory(ctx context.Context, opts metadata.DirectoryOp
 	return b.Build("", "cockroachdb", defaultScope), nil
 }
 
-// InspectObjects mirrors postgres.Driver.InspectObjects but drops the
-// materialized_view bucket.
+// InspectObjects uses postgres detail for every kind except function and
+// procedure, whose signature and language CockroachDB only exposes through
+// pg_get_functiondef.
 func (d *driver) InspectObjects(ctx context.Context, refs []metadata.ObjectRef) ([]metadata.Object, error) {
-	db := d.DB()
-	var relRefs, fnRefs, seqRefs []metadata.ObjectRef
-	for _, r := range refs {
-		switch r.Kind {
-		case "table", "view":
-			relRefs = append(relRefs, r)
-		case "function":
-			fnRefs = append(fnRefs, r)
-		case "sequence":
-			seqRefs = append(seqRefs, r)
-		}
-	}
+	return d.InspectObjectsWith(ctx, refs, inspectObjectsIn)
+}
 
-	var out []metadata.Object
-	if len(relRefs) > 0 {
-		objs, err := postgres.RelationalObjects(ctx, db, relRefs)
-		if err != nil {
-			return nil, err
+func inspectObjectsIn(ctx context.Context, db *sql.DB, refs []metadata.ObjectRef) ([]metadata.Object, error) {
+	routines := map[string][]metadata.ObjectRef{}
+	var rest []metadata.ObjectRef
+	for _, r := range refs {
+		if _, ok := routineKinds[r.Kind]; ok {
+			routines[r.Kind] = append(routines[r.Kind], r)
+		} else {
+			rest = append(rest, r)
 		}
-		out = append(out, objs...)
 	}
-	if len(fnRefs) > 0 {
-		objs, err := functionObjects(ctx, db, fnRefs)
-		if err != nil {
-			return nil, err
-		}
-		out = append(out, objs...)
+	out, err := postgres.InspectObjectsIn(ctx, db, rest)
+	if err != nil {
+		return nil, err
 	}
-	if len(seqRefs) > 0 {
-		objs, err := postgres.SequenceObjects(ctx, db, seqRefs)
+	for kind, kindRefs := range routines {
+		objs, err := functionObjects(ctx, db, kind, kindRefs)
 		if err != nil {
 			return nil, err
 		}
@@ -164,16 +154,20 @@ func (d *driver) DiscoverScopes(ctx context.Context, request metadata.ScopeDisco
 	return discovery, nil
 }
 
-// InspectDefinition delegates every kind except function to postgres.Driver.
-// function is overridden because functionDefinition (catalog.go) must
+// InspectDefinition delegates every kind except function and procedure to
+// postgres.Driver. Those are overridden because functionDefinition (catalog.go) must
 // recover the language from pg_get_functiondef's own LANGUAGE clause rather
 // than postgres.FunctionDefinition's pg_language join, which always returns
 // zero rows on CockroachDB.
 func (d *driver) InspectDefinition(ctx context.Context, ref metadata.ObjectRef) (*metadata.Descriptor, error) {
-	if ref.Kind != "function" {
+	if _, ok := routineKinds[ref.Kind]; !ok {
 		return d.Driver.InspectDefinition(ctx, ref)
 	}
-	language, def, err := functionDefinition(ctx, d.DB(), ref)
+	q, err := d.Querier(ctx, ref.Scope.Name("database"))
+	if err != nil {
+		return nil, err
+	}
+	language, def, err := functionDefinition(ctx, q, ref)
 	if err != nil {
 		return nil, err
 	}

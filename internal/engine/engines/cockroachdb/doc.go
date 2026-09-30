@@ -6,10 +6,9 @@
 //
 //   - Dialect reports engine.DialectCockroachDB rather than
 //     engine.DialectPostgres, since CockroachDB's SQL surface diverges enough
-//     (no materialized views, different EXPLAIN grammar) to need its own
+//     (different EXPLAIN grammar, catalog gaps) to need its own
 //     dialect identity rather than reusing Postgres's unmodified.
-//   - SchemaSpec/InspectDirectory/InspectObjects drop the materialized_view
-//     kind: CockroachDB has no CREATE MATERIALIZED VIEW support.
+//   - SchemaSpec/InspectDirectory drop the materialized_view kind.
 //   - InspectDirectory's row-count step uses a local attachRowCounts (catalog.go)
 //     instead of postgres.AttachRowCounts: CockroachDB's pg_class compatibility
 //     view reports pg_class.reltuples as NULL until a table has been scanned by
@@ -27,8 +26,8 @@
 //     pg_get_function_arguments for crdb_internal's builtins), so they must
 //     be excluded from user-facing catalog listings and scope discovery the
 //     same way pg_catalog and information_schema already are.
-//   - InspectObjects' function branch and InspectDefinition's function case
-//     use local functionObjects/functionDefinition (catalog.go) instead of
+//   - InspectObjects and InspectDefinition route function and procedure refs
+//     to local functionObjects/functionDefinition (catalog.go) instead of
 //     their postgres.Function* counterparts: CockroachDB's
 //     pg_catalog.pg_language compatibility table is always empty, so
 //     pg_proc.prolang never resolves against it and postgres's inner join on
