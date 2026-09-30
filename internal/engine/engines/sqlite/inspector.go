@@ -130,9 +130,9 @@ func (d *sqliteDriver) InspectObjects(ctx context.Context, refs []metadata.Objec
 	return out, nil
 }
 
-// InspectDefinition returns the stored CREATE statement for a table, view, or
-// trigger as a single source descriptor, fetched lazily rather than in bulk
-// InspectObjects.
+// InspectDefinition returns the stored CREATE statement for a table, view,
+// trigger, or index as a single source descriptor, fetched lazily rather than
+// in bulk InspectObjects.
 func (d *sqliteDriver) InspectDefinition(ctx context.Context, ref metadata.ObjectRef) (*metadata.Descriptor, error) {
 	ns := ref.Scope.Name("database")
 	allowed, err := d.sqliteNamespaceSet(ctx)
@@ -150,6 +150,8 @@ func (d *sqliteDriver) InspectDefinition(ctx context.Context, ref metadata.Objec
 		typ, title = "view", "Definition"
 	case "trigger":
 		typ, title = "trigger", "Definition"
+	case "index":
+		typ, title = "index", "DDL"
 	default:
 		return nil, nil
 	}

@@ -87,7 +87,8 @@ var KnownIcons = map[string]bool{
 	"foreign_key": true, "index": true, "dependency": true, "reference": true,
 	"partition": true, "trigger": true, "rule": true, "policy": true, "function": true,
 	"procedure": true, "sequence": true, "type": true, "domain": true, "aggregate": true,
-	"event_trigger": true, "extension": true, "event": true, "user": true,
+	"event_trigger": true, "extension": true, "event": true, "user": true, "role": true,
+	"profile": true, "package": true, "queue": true, "synonym": true, "extended_property": true,
 }
 
 func (t Tree) Node(kind string) (Node, bool) {
@@ -139,19 +140,20 @@ func (t Tree) NodeKindOf(path ScopePath) string {
 	return last.Kind
 }
 
-// FolderContaining returns the folder under parentKind whose items may be of
-// childKind.
-func (t Tree) FolderContaining(parentKind, childKind string) (Folder, bool) {
+// FoldersContaining returns the folders under parentKind whose items may be
+// of childKind, in declaration order.
+func (t Tree) FoldersContaining(parentKind, childKind string) []Folder {
 	node, ok := t.Node(parentKind)
 	if !ok {
-		return Folder{}, false
+		return nil
 	}
+	var out []Folder
 	for _, folder := range node.Folders {
 		if folder.Contains(childKind) {
-			return folder, true
+			out = append(out, folder)
 		}
 	}
-	return Folder{}, false
+	return out
 }
 
 func (t Tree) Validate() error {

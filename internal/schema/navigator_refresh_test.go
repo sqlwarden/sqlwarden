@@ -90,6 +90,36 @@ func TestRefreshLeafRelistsContainingFolderOnly(t *testing.T) {
 	}
 }
 
+func TestRefreshLeafRelistsFolderHoldingItWhenKindsAreShared(t *testing.T) {
+	cat := newFakeCatalog()
+	schema := schemaPathOf("app", "public")
+	cat.set(schema, "tables", metadata.Child{Kind: "table", Name: "orders"})
+	cat.set(schema, "archived", metadata.Child{Kind: "table", Name: "old_orders"}, metadata.Child{Kind: "table", Name: "older_orders"})
+	tree := cat.Tree().WithFolder("schema", metadata.Folder{Kind: "archived", Label: "Archived", Child: "table", List: cat.loader("archived")})
+	n := newTestNavigator(nil)
+	conn := Connection{ID: 1}
+	for _, folder := range []string{"tables", "archived"} {
+		if _, err := n.Children(context.Background(), conn, tree, cat, schema, folder); err != nil {
+			t.Fatal(err)
+		}
+	}
+	cat.mu.Lock()
+	cat.calls = nil
+	cat.mu.Unlock()
+	cat.set(schema, "archived", metadata.Child{Kind: "table", Name: "old_orders"})
+
+	listings, err := n.Refresh(context.Background(), conn, tree, cat, schema.Child(seg("table", "older_orders")))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := cat.callLog(); !slices.Equal(got, []string{"archived:1"}) {
+		t.Fatalf("calls = %v", got)
+	}
+	if len(listings) != 1 || !slices.Equal(itemNames(listings[0]), []string{"old_orders"}) {
+		t.Fatalf("listings = %+v", listings)
+	}
+}
+
 func TestRefreshLeafDeletesVanishedObjectSubtree(t *testing.T) {
 	cat := newFakeCatalog()
 	cat.set(schemaPathOf("app", "public"), "tables",

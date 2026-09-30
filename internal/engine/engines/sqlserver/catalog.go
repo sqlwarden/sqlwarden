@@ -105,7 +105,7 @@ func sqlServerModuleKind(objType string) string {
 // ModuleObjects returns a fields descriptor for each procedure/function/trigger
 // ref. The canonical T-SQL body is served on demand by InspectDefinition, so it
 // is deliberately not inlined here.
-func ModuleObjects(ctx context.Context, db *sql.DB, refs []metadata.ObjectRef) ([]metadata.Object, error) {
+func ModuleObjects(ctx context.Context, db metadata.Querier, refs []metadata.ObjectRef) ([]metadata.Object, error) {
 	if len(refs) == 0 {
 		return nil, nil
 	}
@@ -185,7 +185,7 @@ func sqlServerValuesFilter(refs []metadata.ObjectRef) (string, []any) {
 
 // RelationalObjects fetches full column/PK/FK/index detail for tables and
 // views named in refs.
-func RelationalObjects(ctx context.Context, db *sql.DB, refs []metadata.ObjectRef) ([]metadata.Object, error) {
+func RelationalObjects(ctx context.Context, db metadata.Querier, refs []metadata.ObjectRef) ([]metadata.Object, error) {
 	if len(refs) == 0 {
 		return nil, nil
 	}
@@ -309,7 +309,7 @@ ORDER BY s.name, o.name, fk.name, fkc.constraint_column_id`
 			return nil, fmt.Errorf("sqlserver: object fk scan: %w", err)
 		}
 		b.AddForeignKeyColumn(refFor(schema, table), name, col,
-			metadata.ObjectRef{Scope: metadata.NewScopePath(metadata.ScopeSegment{Kind: "schema", Name: refSchema}), Kind: "table", Name: refTable}, refCol)
+			metadata.ObjectRef{Scope: refFor(schema, table).Scope.With("schema", refSchema), Kind: "table", Name: refTable}, refCol)
 	}
 	if err := frows.Err(); err != nil {
 		frows.Close()

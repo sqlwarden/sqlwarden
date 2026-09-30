@@ -647,19 +647,38 @@ WHERE `+colFilter, colArgs...)
 // InspectDefinition fetches an object's DDL on demand via DBMS_METADATA.GET_DDL,
 // so the bulk InspectObjects path (and every schema snapshot) avoids one round
 // trip per object for text the UI needs only when a user opens an object's
-// detail view. PL/SQL kinds (function, procedure, package, trigger, type)
-// already carry their all_source text inline from InspectObjects and are not
-// re-fetched here. Retrieval is best-effort: a kind without a retrievable
+// detail view. Retrieval is best-effort: a kind without a retrievable
 // definition, or a failure (insufficient privilege, unsupported storage),
-// yields a nil descriptor rather than an error. Views fall back to
-// all_views.text when GET_DDL is unavailable to the caller. Constraint DDL is
+// yields a nil descriptor rather than an error. GET_DDL on another schema's
+// object needs SELECT_CATALOG_ROLE, so views fall back to all_views.text and
+// PL/SQL kinds to all_source, which EXECUTE alone exposes. Constraint DDL is
 // reconstructed from all_constraints/all_cons_columns rather than GET_DDL.
+// Navigator children owned outside the listed schema are named OWNER.NAME; a
+// name that resolves to nothing in the scope schema is retried split that way.
 func (d *oracleDriver) InspectDefinition(ctx context.Context, ref metadata.ObjectRef) (*metadata.Descriptor, error) {
-	owner := ref.Scope.Name("schema")
-	name := ref.Name
+	desc, err := d.oracleDefinition(ctx, ref.Kind, ref.Scope.Name("schema"), ref.Name)
+	if desc != nil || err != nil {
+		return desc, err
+	}
+	if owner, name, ok := strings.Cut(ref.Name, "."); ok {
+		return d.oracleDefinition(ctx, ref.Kind, owner, name)
+	}
+	return nil, nil
+}
 
+// oracleStoredSourceTypes lists the ALL_SOURCE types that make up each PL/SQL
+// kind, spec first.
+var oracleStoredSourceTypes = map[string][]string{
+	"package":   {"PACKAGE", "PACKAGE BODY"},
+	"type":      {"TYPE", "TYPE BODY"},
+	"procedure": {"PROCEDURE"},
+	"function":  {"FUNCTION"},
+	"trigger":   {"TRIGGER"},
+}
+
+func (d *oracleDriver) oracleDefinition(ctx context.Context, kind, owner, name string) (*metadata.Descriptor, error) {
 	var metadataType string
-	switch ref.Kind {
+	switch kind {
 	case "table":
 		metadataType = "TABLE"
 	case "view":
@@ -676,7 +695,17 @@ func (d *oracleDriver) InspectDefinition(ctx context.Context, ref metadata.Objec
 		metadataType = "INDEX"
 	case "queue":
 		metadataType = "AQ_QUEUE"
-	case "constraint":
+	case "trigger":
+		metadataType = "TRIGGER"
+	case "package":
+		metadataType = "PACKAGE"
+	case "procedure":
+		metadataType = "PROCEDURE"
+	case "function":
+		metadataType = "FUNCTION"
+	case "type":
+		metadataType = "TYPE"
+	case "constraint", "foreign_key":
 		return d.oracleConstraintDefinition(ctx, owner, name)
 	default:
 		return nil, nil
@@ -691,7 +720,10 @@ func (d *oracleDriver) InspectDefinition(ctx context.Context, ref metadata.Objec
 		}
 	}
 
-	if ref.Kind != "view" {
+	if types, ok := oracleStoredSourceTypes[kind]; ok {
+		return d.oracleStoredSource(ctx, owner, name, types), nil
+	}
+	if kind != "view" {
 		return nil, nil
 	}
 	var text sql.NullString
@@ -701,6 +733,38 @@ func (d *oracleDriver) InspectDefinition(ctx context.Context, ref metadata.Objec
 		return nil, nil
 	}
 	return oracleSourceDescriptor("DDL", text.String), nil
+}
+
+// oracleStoredSource rebuilds CREATE OR REPLACE statements from ALL_SOURCE,
+// one per source type present, or nil when none is visible.
+func (d *oracleDriver) oracleStoredSource(ctx context.Context, owner, name string, types []string) *metadata.Descriptor {
+	var sections []string
+	for _, typ := range types {
+		rows, err := d.db.QueryContext(ctx,
+			`SELECT text FROM all_source WHERE owner = :1 AND name = :2 AND type = :3 ORDER BY line`,
+			owner, name, typ)
+		if err != nil {
+			return nil
+		}
+		var body strings.Builder
+		for rows.Next() {
+			var line sql.NullString
+			if err := rows.Scan(&line); err != nil {
+				rows.Close()
+				return nil
+			}
+			body.WriteString(line.String)
+		}
+		err = rows.Err()
+		rows.Close()
+		if err != nil {
+			return nil
+		}
+		if text := strings.TrimSpace(body.String()); text != "" {
+			sections = append(sections, "CREATE OR REPLACE "+text+"\n/")
+		}
+	}
+	return oracleSourceDescriptor("DDL", strings.Join(sections, "\n\n"))
 }
 
 // oracleConstraintDefinition reconstructs an ALTER TABLE ... ADD CONSTRAINT

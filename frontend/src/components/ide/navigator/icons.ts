@@ -34,6 +34,12 @@ export const NAVIGATOR_ICONS: Record<string, NavigatorIconStyle> = {
   extension: { icon: 'box', className: 'text-muted-foreground' },
   event: { icon: 'history', className: 'text-chart-5' },
   user: { icon: 'user-02', className: 'text-muted-foreground' },
+  role: { icon: 'user-group', className: 'text-muted-foreground' },
+  profile: { icon: 'user-lock-02', className: 'text-muted-foreground' },
+  package: { icon: 'briefcase-01', className: 'text-chart-1' },
+  queue: { icon: 'arrow-up-down', className: 'text-chart-5' },
+  synonym: { icon: 'copy-01', className: 'text-muted-foreground' },
+  extended_property: { icon: 'information-circle', className: 'text-muted-foreground' },
 }
 
 const FALLBACK: NavigatorIconStyle = { icon: 'box', className: 'text-muted-foreground' }

@@ -10,23 +10,26 @@ import (
 
 func TestSSHDocumentSealDecodeRoundTrip(t *testing.T) {
 	app := newTestApplication(t)
+	// The secret is long enough that random base64 ciphertext cannot contain it
+	// by chance.
+	const password = "plaintext-ssh-password-marker"
 	doc := sshConfigDocument{
 		Enabled: true, Host: "bastion.example", Port: 22, User: "jump",
-		AuthMethod: string(connection.SSHAuthPassword), Password: "pw",
+		AuthMethod: string(connection.SSHAuthPassword), Password: password,
 		Fingerprint: "SHA256:abc",
 	}
 	sealed, err := app.sealSSHDocument(doc)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if sealed == "" || strings.Contains(sealed, "pw") {
+	if sealed == "" || strings.Contains(sealed, password) {
 		t.Fatalf("sealed blob leaks plaintext or is empty: %q", sealed)
 	}
 	got, has, err := app.decodeSSHDocument(sealed)
 	if err != nil || !has {
 		t.Fatalf("decode: has=%v err=%v", has, err)
 	}
-	if got.Password != "pw" || got.Host != "bastion.example" {
+	if got.Password != password || got.Host != "bastion.example" {
 		t.Fatalf("round-trip mismatch: %+v", got)
 	}
 }

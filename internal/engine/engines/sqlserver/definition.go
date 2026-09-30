@@ -2,7 +2,6 @@ package sqlserver
 
 import (
 	"context"
-	"database/sql"
 	"fmt"
 	"strings"
 
@@ -15,7 +14,7 @@ import (
 // indexes. It does not cover CHECK constraints, partitioning, or storage
 // options — output stays valid SQL, but is not a full scripting-fidelity
 // reproduction. Returns ("", nil) if ref no longer exists.
-func sqlServerTableDDL(ctx context.Context, db *sql.DB, ref metadata.ObjectRef) (string, error) {
+func sqlServerTableDDL(ctx context.Context, db metadata.Querier, ref metadata.ObjectRef) (string, error) {
 	objects, err := RelationalObjects(ctx, db, []metadata.ObjectRef{ref})
 	if err != nil {
 		return "", err
