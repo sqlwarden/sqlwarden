@@ -72,11 +72,10 @@ ORDER BY owners.owner`)
 		if err := rows.Scan(&owner, &maintained); err != nil {
 			return nil, fmt.Errorf("oracle: discover schema: %w", err)
 		}
-		_, knownSystem := oracleSystemSchemas[owner]
 		nodes = append(nodes, metadata.ScopeNode{
 			Path:   metadata.NewScopePath(metadata.ScopeSegment{Kind: "schema", Name: owner}),
 			Groups: []metadata.ObjectGroup{}, Lazy: true,
-			System: maintained == "Y" || knownSystem || owner == "PUBLIC",
+			System: isOracleSystemSchema(owner, maintained),
 		})
 	}
 	return nodes, rows.Err()

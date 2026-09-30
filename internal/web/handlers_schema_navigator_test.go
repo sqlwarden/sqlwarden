@@ -18,7 +18,11 @@ import (
 	"github.com/sqlwarden/pkg/result"
 )
 
-const navTestEngine = "navtest"
+const (
+	navTestEngine  = "navtest"
+	navFlatEngine  = "navflat"
+	navPlainEngine = "navplain"
+)
 
 func init() {
 	engine.Register(engine.Registration{
@@ -29,7 +33,41 @@ func init() {
 			return d
 		},
 	})
+	engine.Register(engine.Registration{
+		ID: navFlatEngine, DisplayName: "Navigator Flat Test", Dialect: engine.DialectSQLite,
+		New: func() engine.Driver { return navFlatDriver{newNavTestDriver()} },
+	})
+	engine.Register(engine.Registration{
+		ID: navPlainEngine, DisplayName: "Navigator Plain Test", Dialect: engine.DialectSQLite,
+		New: func() engine.Driver { return navPlainDriver{} },
+	})
 }
+
+// navFlatDriver has a navigator without a database level.
+type navFlatDriver struct{ *navTestDriver }
+
+func (navFlatDriver) Tree() metadata.Tree {
+	return metadata.Tree{
+		Root: metadata.Node{Label: "Connection", Icon: "connection", Folders: []metadata.Folder{
+			{Kind: "tables", Label: "Tables", Child: "table", List: navTestLoader("tables")},
+		}},
+		Nodes: map[string]metadata.Node{"table": {Label: "Table", Icon: "table", Leaf: true}},
+	}
+}
+
+// navPlainDriver has no navigator.
+type navPlainDriver struct{}
+
+func (navPlainDriver) Connect(context.Context, engine.ConnectionConfig) error { return nil }
+func (navPlainDriver) Ping(context.Context) error                             { return nil }
+func (navPlainDriver) Close() error                                           { return nil }
+func (navPlainDriver) Query(context.Context, string, ...any) (*result.ResultSet, error) {
+	return &result.ResultSet{}, nil
+}
+func (navPlainDriver) Execute(context.Context, string, ...any) (*result.ResultSet, error) {
+	return &result.ResultSet{}, nil
+}
+func (navPlainDriver) Dialect() engine.Dialect { return engine.DialectSQLite }
 
 // navTestQuerier carries per-session catalog state so parallel tests sharing
 // the registered engine's static loaders stay isolated.
@@ -197,7 +235,7 @@ func TestSchemaTreeServesGrammarWithoutSession(t *testing.T) {
 
 func TestSchemaTreeUnsupportedDriver(t *testing.T) {
 	t.Parallel()
-	f := newNavFixture(t, "sqlite")
+	f := newNavFixture(t, navPlainEngine)
 	res := send(t, newAuthRequest(t, http.MethodGet, f.base+"/schema/tree", nil, f.tok), f.app.routes())
 	assert.Equal(t, res.StatusCode, http.StatusNotImplemented)
 }

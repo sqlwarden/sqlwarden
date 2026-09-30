@@ -26,16 +26,12 @@ func (n *Navigator) Refresh(ctx context.Context, conn Connection, tree metadata.
 		return nil, err
 	}
 	if root != "" {
-		parent := root.Parent()
-		if folder, ok := tree.FolderContaining(tree.NodeKindOf(parent), tree.NodeKindOf(root)); ok {
-			key := listingKey{parent: parent, folder: folder.Kind}
-			if _, included := previous[key]; !included {
-				items, err := n.cachedListingItems(ctx, conn, key)
-				if err != nil {
-					return nil, err
-				}
-				previous[key] = items
-			}
+		key, items, ok, err := n.containingListing(ctx, conn, tree, root)
+		if err != nil {
+			return nil, err
+		}
+		if ok {
+			previous[key] = items
 		}
 	}
 
@@ -109,6 +105,38 @@ func (n *Navigator) cachedWithin(ctx context.Context, conn Connection, root meta
 		}
 	}
 	return out, nil
+}
+
+// containingListing resolves the parent listing root was listed in. Several
+// folders under one parent may share a child kind, so the cached listing that
+// holds root wins; without one, the first declared folder is assumed.
+func (n *Navigator) containingListing(ctx context.Context, conn Connection, tree metadata.Tree, root metadata.ScopePath) (listingKey, []metadata.Child, bool, error) {
+	parent := root.Parent()
+	segment, ok := root.Last()
+	if !ok {
+		return listingKey{}, nil, false, nil
+	}
+	folders := tree.FoldersContaining(tree.NodeKindOf(parent), segment.Kind)
+	if len(folders) == 0 {
+		return listingKey{}, nil, false, nil
+	}
+	var fallback []metadata.Child
+	for i, folder := range folders {
+		key := listingKey{parent: parent, folder: folder.Kind}
+		items, err := n.cachedListingItems(ctx, conn, key)
+		if err != nil {
+			return listingKey{}, nil, false, err
+		}
+		if i == 0 {
+			fallback = items
+		}
+		for _, item := range items {
+			if item.Kind == segment.Kind && item.Name == segment.Name {
+				return key, items, true, nil
+			}
+		}
+	}
+	return listingKey{parent: parent, folder: folders[0].Kind}, fallback, true, nil
 }
 
 func (n *Navigator) cachedListingItems(ctx context.Context, conn Connection, key listingKey) ([]metadata.Child, error) {

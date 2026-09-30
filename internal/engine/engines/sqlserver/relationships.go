@@ -10,9 +10,7 @@ import (
 var _ metadata.RelationshipInspector = (*Driver)(nil)
 
 // InspectRelationshipsInScope reports foreign-key edges for the schema named
-// in scope. sys.foreign_keys/sys.foreign_key_columns are always scoped to the
-// connection's current database (see CatalogTables), so only the schema
-// level needs filtering here.
+// in scope, read from the scope's database.
 func (d *Driver) InspectRelationshipsInScope(ctx context.Context, scope metadata.ScopePath) (*metadata.RelationshipGraph, error) {
 	namespace := scope.Name("schema")
 	const q = `
@@ -27,7 +25,11 @@ JOIN sys.schemas rs ON rs.schema_id = ro.schema_id
 JOIN sys.columns rcol ON rcol.object_id = fkc.referenced_object_id AND rcol.column_id = fkc.referenced_column_id
 WHERE s.name = @p1
 ORDER BY s.name, o.name, fk.name, fkc.constraint_column_id`
-	rows, err := d.db.QueryContext(ctx, q, namespace)
+	querier, err := d.Querier(ctx, scope.Name("database"))
+	if err != nil {
+		return nil, err
+	}
+	rows, err := querier.QueryContext(ctx, q, namespace)
 	if err != nil {
 		return nil, fmt.Errorf("sqlserver: relationships: %w", err)
 	}

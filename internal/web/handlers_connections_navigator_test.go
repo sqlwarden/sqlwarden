@@ -49,7 +49,7 @@ func TestCreateConnectionAppliesShowAllDatabasesRule(t *testing.T) {
 		{"no default database forces on", map[string]any{"driver": navTestEngine, "dsn": "dsn", "show_all_databases": false}, true},
 		{"default database honours off", map[string]any{"driver": navTestEngine, "dsn": "dsn", "default_scope": reportsScope, "show_all_databases": false}, false},
 		{"default database honours on", map[string]any{"driver": navTestEngine, "dsn": "dsn", "default_scope": reportsScope, "show_all_databases": true}, true},
-		{"driver without a database level ignores it", map[string]any{"driver": "sqlite", "dsn": ":memory:", "show_all_databases": true}, false},
+		{"driver without a database level ignores it", map[string]any{"driver": navFlatEngine, "dsn": "dsn", "show_all_databases": true}, false},
 	}
 	for _, tc := range cases {
 		tc.body["name"] = tc.name

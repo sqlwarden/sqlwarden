@@ -114,8 +114,11 @@ func TestTreeLookups(t *testing.T) {
 	if tree.NodeKindOf(p) != "schema" || tree.NodeKindOf("") != "" {
 		t.Fatal("NodeKindOf failed")
 	}
-	if f, ok := tree.FolderContaining("schema", "procedure"); !ok || f.Kind != "functions" {
-		t.Fatal("FolderContaining must honor MixedKinds")
+	if f := tree.FoldersContaining("schema", "procedure"); len(f) != 1 || f[0].Kind != "functions" {
+		t.Fatal("FoldersContaining must honor MixedKinds")
+	}
+	if f := tree.FoldersContaining("schema", "column"); f != nil {
+		t.Fatalf("FoldersContaining returned %v for an undeclared child", f)
 	}
 }
 
