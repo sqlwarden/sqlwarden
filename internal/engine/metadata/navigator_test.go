@@ -3,6 +3,8 @@ package metadata
 import (
 	"context"
 	"encoding/json"
+	"errors"
+	"reflect"
 	"strings"
 	"testing"
 )
@@ -201,5 +203,37 @@ func TestTreeJSONOmitsLoadersAndSortsFolders(t *testing.T) {
 	}
 	if decoded.Nodes["schema"].Folders[0].Kind != "early" {
 		t.Fatalf("folders must serialize in Order: %s", text)
+	}
+}
+
+func TestMarkSystemFlagsMatchingChildrenOnly(t *testing.T) {
+	parent := NewScopePath(ScopeSegment{Kind: "database", Name: "app"})
+	base := func(context.Context, Querier, []ScopePath) (map[ScopePath][]Child, error) {
+		return map[ScopePath][]Child{parent: {
+			{Kind: "schema", Name: "public"},
+			{Kind: "schema", Name: "crdb_internal"},
+			{Kind: "schema", Name: "pg_catalog", System: true},
+		}}, nil
+	}
+	marked := MarkSystem(base, func(c Child) bool { return c.Name == "crdb_internal" })
+	out, err := marked(context.Background(), nil, []ScopePath{parent})
+	if err != nil {
+		t.Fatal(err)
+	}
+	got := map[string]bool{}
+	for _, c := range out[parent] {
+		got[c.Name] = c.System
+	}
+	want := map[string]bool{"public": false, "crdb_internal": true, "pg_catalog": true}
+	if !reflect.DeepEqual(got, want) {
+		t.Fatalf("system flags = %v, want %v", got, want)
+	}
+}
+
+func TestMarkSystemPropagatesLoaderError(t *testing.T) {
+	boom := errors.New("boom")
+	failing := func(context.Context, Querier, []ScopePath) (map[ScopePath][]Child, error) { return nil, boom }
+	if _, err := MarkSystem(failing, func(Child) bool { return true })(context.Background(), nil, nil); !errors.Is(err, boom) {
+		t.Fatalf("err = %v, want boom", err)
 	}
 }

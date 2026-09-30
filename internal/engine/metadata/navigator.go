@@ -245,3 +245,22 @@ func (t Tree) WithoutFolder(nodeKind, folderKind string) Tree {
 	node.Folders = slices.DeleteFunc(node.Folders, func(f Folder) bool { return f.Kind == folderKind })
 	return out.WithNode(nodeKind, node)
 }
+
+// MarkSystem wraps list so children matching system are flagged System. It
+// never clears a flag the wrapped loader already set.
+func MarkSystem(list Loader, system func(Child) bool) Loader {
+	return func(ctx context.Context, q Querier, parents []ScopePath) (map[ScopePath][]Child, error) {
+		out, err := list(ctx, q, parents)
+		if err != nil {
+			return nil, err
+		}
+		for _, children := range out {
+			for i := range children {
+				if system(children[i]) {
+					children[i].System = true
+				}
+			}
+		}
+		return out, nil
+	}
+}
