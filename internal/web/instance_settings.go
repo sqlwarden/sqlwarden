@@ -26,8 +26,6 @@ type effectiveRuntimeSettings struct {
 	QueryMaxResultBytes        int64
 	ExportsSyncMaxBytes        int64
 	ExportsBackgroundMaxBytes  int64
-	SchemaSnapshotFreshness    time.Duration
-	SchemaLazyThreshold        int
 	FileRevisionsEnabled       bool
 	FileRevisionsKeepLatest    int
 	ErrorNotificationEmail     string
@@ -112,9 +110,6 @@ func validateInstanceSettings(settings database.InstanceSettings) error {
 	if settings.ExportsBackgroundMaxBytes < 0 {
 		return fmt.Errorf("validate runtime settings: exports_background_max_bytes must be 0 or greater")
 	}
-	if settings.SchemaSnapshotFreshnessSeconds <= 0 || settings.SchemaSnapshotFreshnessSeconds > maxRuntimeDurationSeconds {
-		return fmt.Errorf("validate runtime settings: schema_snapshot_freshness_seconds is outside the supported range")
-	}
 	if settings.FileRevisionsKeepLatest < 0 {
 		return fmt.Errorf("validate runtime settings: file_revisions_keep_latest must be 0 or greater")
 	}
@@ -196,8 +191,6 @@ func effectiveSettingsFromInstance(settings database.InstanceSettings) effective
 		QueryMaxResultBytes:        settings.QueryMaxResultBytes,
 		ExportsSyncMaxBytes:        settings.ExportsSyncMaxBytes,
 		ExportsBackgroundMaxBytes:  settings.ExportsBackgroundMaxBytes,
-		SchemaSnapshotFreshness:    time.Duration(settings.SchemaSnapshotFreshnessSeconds) * time.Second,
-		SchemaLazyThreshold:        settings.SchemaLazyThreshold,
 		FileRevisionsEnabled:       settings.FileRevisionsEnabled,
 		FileRevisionsKeepLatest:    settings.FileRevisionsKeepLatest,
 		ErrorNotificationEmail:     settings.ErrorNotificationEmail,
@@ -245,12 +238,6 @@ func (s *runtimeSettingsService) effectiveForOrg(ctx context.Context, orgID *int
 			}
 		} else if *overrides.ExportsBackgroundMaxBytes > 0 && *overrides.ExportsBackgroundMaxBytes < effective.ExportsBackgroundMaxBytes {
 			effective.ExportsBackgroundMaxBytes = *overrides.ExportsBackgroundMaxBytes
-		}
-	}
-	if overrides.SchemaSnapshotFreshnessSeconds != nil {
-		override := time.Duration(*overrides.SchemaSnapshotFreshnessSeconds) * time.Second
-		if override > effective.SchemaSnapshotFreshness {
-			effective.SchemaSnapshotFreshness = override
 		}
 	}
 	if overrides.FileRevisionsEnabled != nil {
@@ -314,8 +301,6 @@ func (app *application) instanceSettingsResponse(settings database.InstanceSetti
 		"query_max_result_bytes":            settings.QueryMaxResultBytes,
 		"exports_sync_max_bytes":            settings.ExportsSyncMaxBytes,
 		"exports_background_max_bytes":      settings.ExportsBackgroundMaxBytes,
-		"schema_snapshot_freshness_seconds": settings.SchemaSnapshotFreshnessSeconds,
-		"schema_lazy_threshold":             settings.SchemaLazyThreshold,
 		"file_revisions_enabled":            settings.FileRevisionsEnabled,
 		"file_revisions_keep_latest":        settings.FileRevisionsKeepLatest,
 		"error_notification_email":          settings.ErrorNotificationEmail,

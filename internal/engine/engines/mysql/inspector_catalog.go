@@ -10,28 +10,6 @@ import (
 	"github.com/sqlwarden/internal/engine/metadata"
 )
 
-// CatalogEvents enumerates every scheduled event in database.
-func CatalogEvents(ctx context.Context, db *sql.DB, database string, add func(schema, name string)) error {
-	const q = `
-SELECT event_schema, event_name
-FROM information_schema.events
-WHERE event_schema = ?
-ORDER BY event_name`
-	rows, err := db.QueryContext(ctx, q, database)
-	if err != nil {
-		return err
-	}
-	defer rows.Close()
-	for rows.Next() {
-		var ns, name string
-		if err := rows.Scan(&ns, &name); err != nil {
-			return err
-		}
-		add(ns, name)
-	}
-	return rows.Err()
-}
-
 // EventObjects fetches schedule/status detail for events named in refs.
 func EventObjects(ctx context.Context, db *sql.DB, refs []metadata.ObjectRef) ([]metadata.Object, error) {
 	pairs, args := mysqlPairFilter(refs)
@@ -66,67 +44,8 @@ WHERE (event_schema, event_name) IN (` + pairs + `)`
 	return out, rows.Err()
 }
 
-// CatalogIndexes enumerates every secondary index (excluding PRIMARY) in
-// database, one entry per (table, index) pair — matching Oracle's
-// promotion of indexes to a first-class browsable kind.
-//
-// Unlike Postgres/Oracle where (schema, name) uniquely identifies an index,
-// MySQL index names are scoped per-table, so two different tables in the
-// same schema can share an index name. CatalogIndexes emits duplicate
-// (schema, name) refs that collapse to one tree entry — an accepted
-// limitation matching how CatalogFunctions collapses Postgres overloads
-// under one name. IndexObjects surfaces every table's instance below rather
-// than picking one arbitrarily.
-func CatalogIndexes(ctx context.Context, db *sql.DB, database string, add func(schema, name string)) error {
-	const q = `
-SELECT DISTINCT table_schema, index_name
-FROM information_schema.statistics
-WHERE table_schema = ? AND index_name <> 'PRIMARY'
-ORDER BY index_name`
-	rows, err := db.QueryContext(ctx, q, database)
-	if err != nil {
-		return err
-	}
-	defer rows.Close()
-	for rows.Next() {
-		var ns, name string
-		if err := rows.Scan(&ns, &name); err != nil {
-			return err
-		}
-		add(ns, name)
-	}
-	return rows.Err()
-}
-
-// CatalogConstraints enumerates every table constraint (PK/UNIQUE/FK/CHECK)
-// in database. Like CatalogIndexes, constraint names are scoped per-table in
-// MySQL, so (schema, name) can span multiple tables; see CatalogIndexes. The
-// DISTINCT is what collapses those to one entry: information_schema.
-// table_constraints has a row per (constraint, table), so without it every
-// table's PRIMARY constraint would be emitted as its own duplicate ref.
-func CatalogConstraints(ctx context.Context, db *sql.DB, database string, add func(schema, name string)) error {
-	const q = `
-SELECT DISTINCT table_schema, constraint_name
-FROM information_schema.table_constraints
-WHERE table_schema = ?
-ORDER BY constraint_name`
-	rows, err := db.QueryContext(ctx, q, database)
-	if err != nil {
-		return err
-	}
-	defer rows.Close()
-	for rows.Next() {
-		var ns, name string
-		if err := rows.Scan(&ns, &name); err != nil {
-			return err
-		}
-		add(ns, name)
-	}
-	return rows.Err()
-}
-
 // IndexObjects fetches column/uniqueness/table detail for indexes named in
-// refs. A name may span multiple tables (see CatalogIndexes); every table's
+// refs. A name may span multiple tables (see ListDatabaseIndexes); every table's
 // instance is rendered as its own descriptor.
 func IndexObjects(ctx context.Context, db *sql.DB, refs []metadata.ObjectRef) ([]metadata.Object, error) {
 	pairs, args := mysqlPairFilter(refs)
@@ -334,7 +253,7 @@ ORDER BY table_schema, table_name, partition_ordinal_position`
 
 // IndexDefinition reconstructs a CREATE INDEX statement for every table that
 // carries an index named by ref, joined by blank lines, or ("", nil) if ref
-// names no index. A name can span multiple tables (see CatalogIndexes); each
+// names no index. A name can span multiple tables (see ListDatabaseIndexes); each
 // gets its own statement. Prefix lengths, descending key parts, and
 // FULLTEXT/SPATIAL/HASH index types are reproduced; index options
 // (KEY_BLOCK_SIZE, WITH PARSER, visibility, comments) are not. functionalKeyParts
@@ -425,7 +344,7 @@ ORDER BY table_name, seq_in_index`, schema, ref.Name, ref.Scope.Name("table"), r
 // ConstraintDefinition reconstructs an ALTER TABLE ... ADD statement for every
 // table that carries a constraint named by ref, joined by blank lines, or
 // ("", nil) if ref names no constraint. A name can span multiple tables (see
-// CatalogConstraints); each gets its own statement. PRIMARY KEY, UNIQUE,
+// ListConstraints); each gets its own statement. PRIMARY KEY, UNIQUE,
 // FOREIGN KEY (with referential actions) and CHECK constraints are reproduced;
 // index prefix lengths on key columns and the MATCH clause are not.
 // checkTableColumn selects information_schema.check_constraints.table_name,

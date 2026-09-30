@@ -1,8 +1,7 @@
 // Package metadata is the engine metadata domain. It defines the
-// DirectoryInspector capability an engine implements to report its objects in two
-// tiers (a cheap Directory listing and on-demand Object detail), the data model
-// those reports use (objects, columns, keys, descriptors), the static SchemaSpec
-// describing which object kinds an engine exposes.
+// SchemaInspector capability an engine implements to expose its navigator Tree
+// (a static grammar of lazily loaded folders) and on-demand Object detail, and
+// the data model those reports use (objects, columns, keys, descriptors).
 package metadata
 
 import (

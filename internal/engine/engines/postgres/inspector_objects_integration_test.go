@@ -9,8 +9,8 @@ import (
 
 // TestPostgresInspectObjectsCoversNewKinds proves every new schema-object kind
 // added for Postgres/MySQL parity (type, domain, procedure, trigger,
-// partitioned tables, and foreign tables) shows up in both directory listing
-// and bulk object inspection against a live database.
+// partitioned tables, and foreign tables) is served by bulk object inspection
+// against a live database.
 func TestPostgresInspectObjectsCoversNewKinds(t *testing.T) {
 	d := newConnectedDriver(t)
 	ctx := context.Background()
@@ -44,24 +44,29 @@ func TestPostgresInspectObjectsCoversNewKinds(t *testing.T) {
 	mustExec(t, d, `CREATE USER MAPPING FOR CURRENT_USER SERVER inspect_loopback_pg_test OPTIONS (user 'testuser', password 'testpass')`)
 	mustExec(t, d, `CREATE FOREIGN TABLE inspect_foreign_pg_test (id int) SERVER inspect_loopback_pg_test OPTIONS (schema_name 'public', table_name 'inspect_foreign_target_pg_test')`)
 
-	dir, err := d.InspectDirectory(ctx, metadata.DirectoryOptions{})
-	if err != nil {
-		t.Fatalf("InspectDirectory: %v", err)
-	}
-	refs := dir.ObjectRefs()
-	byKind := map[string]bool{}
-	for _, ref := range refs {
-		byKind[ref.Kind] = true
-	}
-	for _, kind := range []string{"type", "domain", "procedure", "trigger", "table", "foreign_table"} {
-		if !byKind[kind] {
-			t.Errorf("expected directory to contain a %q ref", kind)
-		}
+	scope := pgTestScope("public")
+	refs := []metadata.ObjectRef{
+		{Scope: scope, Kind: "type", Name: "mood"},
+		{Scope: scope, Kind: "domain", Name: "positive_int"},
+		{Scope: scope, Kind: "table", Name: "widgets"},
+		{Scope: scope, Kind: "procedure", Name: "noop"},
+		{Scope: scope, Kind: "trigger", Name: "widgets_trg"},
+		{Scope: scope, Kind: "table", Name: "events_p"},
+		{Scope: scope, Kind: "foreign_table", Name: "inspect_foreign_pg_test"},
 	}
 
 	objs, err := d.InspectObjects(ctx, refs)
 	if err != nil {
 		t.Fatalf("InspectObjects: %v", err)
+	}
+	inspected := map[string]bool{}
+	for _, obj := range objs {
+		inspected[obj.Ref.Kind+"/"+obj.Ref.Name] = true
+	}
+	for _, ref := range refs {
+		if !inspected[ref.Kind+"/"+ref.Name] {
+			t.Errorf("InspectObjects returned no object for %s %q", ref.Kind, ref.Name)
+		}
 	}
 	var foundPartitions bool
 	for _, obj := range objs {

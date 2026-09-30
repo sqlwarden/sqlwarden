@@ -129,6 +129,7 @@ func TestOracleNavigator(t *testing.T) {
 			{NodeKind: "schema", Folder: "synonyms", Parents: []metadata.ScopePath{schema}},
 			{NodeKind: "schema", Folder: "schema_triggers", Parents: []metadata.ScopePath{schema}},
 			{NodeKind: "schema", Folder: "table_triggers", Parents: []metadata.ScopePath{schema}},
+			{NodeKind: "schema", Folder: "db_links", Parents: []metadata.ScopePath{schema}},
 			{NodeKind: "table", Folder: "columns", Parents: []metadata.ScopePath{parent, child}},
 			{NodeKind: "table", Folder: "constraints", Parents: []metadata.ScopePath{parent, child}},
 			{NodeKind: "table", Folder: "foreign_keys", Parents: []metadata.ScopePath{parent, child}},

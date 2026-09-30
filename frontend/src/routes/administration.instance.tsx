@@ -72,8 +72,6 @@ const dataSettingsFields = new Set<string>([
   'query_cursor_page_size',
   'exports_sync_max_bytes',
   'exports_background_max_bytes',
-  'schema_snapshot_freshness_seconds',
-  'schema_lazy_threshold',
   'file_revisions_enabled',
   'file_revisions_keep_latest',
   'sqlite_local_targets_enabled',
@@ -105,7 +103,6 @@ interface FormUnits {
   queryMaxResultBytes: ByteUnit
   exportsSyncMaxBytes: ByteUnit
   exportsBackgroundMaxBytes: ByteUnit
-  schemaSnapshotFreshness: DurationUnit
   jobsPollInterval: DurationUnit
   jobsClaimLease: DurationUnit
   jobsCompletedRetention: DurationUnit
@@ -124,8 +121,6 @@ const emptyForm: InstanceSettingsForm = {
   query_cursor_page_size: 200,
   exports_sync_max_bytes: 52_428_800,
   exports_background_max_bytes: 0,
-  schema_snapshot_freshness_seconds: 3_600,
-  schema_lazy_threshold: 500,
   file_revisions_enabled: false,
   file_revisions_keep_latest: 10,
   query_history_mode: 'backend',
@@ -194,7 +189,6 @@ function unitsFromSettings(settings: InstanceSettings): FormUnits {
     queryMaxResultBytes: bytesToSize(settings.query_max_result_bytes).unit,
     exportsSyncMaxBytes: bytesToSize(settings.exports_sync_max_bytes).unit,
     exportsBackgroundMaxBytes: bytesToSize(settings.exports_background_max_bytes).unit,
-    schemaSnapshotFreshness: secondsToDuration(settings.schema_snapshot_freshness_seconds).unit,
     jobsPollInterval: secondsToDuration(settings.jobs_poll_interval_seconds).unit,
     jobsClaimLease: secondsToDuration(settings.jobs_claim_lease_seconds).unit,
     jobsCompletedRetention: secondsToDuration(settings.jobs_completed_retention_seconds).unit,
@@ -608,65 +602,6 @@ function SettingsInstancePage() {
                     <FieldDescription>Set to 0 for no limit.</FieldDescription>
                   </Field>
                 </div>
-              </CardContent>
-            </Card>
-
-            <Card>
-              <CardHeader className="border-b border-border">
-                <CardTitle>Schema Snapshots</CardTitle>
-                <CardDescription>
-                  How often persisted schema snapshots are refreshed.
-                </CardDescription>
-              </CardHeader>
-              <CardContent>
-                <Field
-                  label="Snapshot freshness"
-                  error={fieldErrors.schema_snapshot_freshness_seconds}
-                >
-                  <UnitInputField
-                    label="Snapshot freshness"
-                    error={Boolean(fieldErrors.schema_snapshot_freshness_seconds)}
-                    amount={secondsInUnit(
-                      form.schema_snapshot_freshness_seconds,
-                      units.schemaSnapshotFreshness,
-                    )}
-                    unit={units.schemaSnapshotFreshness}
-                    options={durationUnitOptions}
-                    disabled={disabled}
-                    min={secondsInUnit(1, units.schemaSnapshotFreshness)}
-                    onAmountChange={(amount) =>
-                      updateField(
-                        'schema_snapshot_freshness_seconds',
-                        durationToSeconds(amount, units.schemaSnapshotFreshness),
-                      )
-                    }
-                    onUnitChange={(unit) =>
-                      setUnits((current) => ({ ...current, schemaSnapshotFreshness: unit }))
-                    }
-                  />
-                  <FieldDescription>
-                    Snapshots older than this are treated as stale and refreshed on next access.
-                  </FieldDescription>
-                </Field>
-                <Field label="Lazy load threshold" error={fieldErrors.schema_lazy_threshold}>
-                  <Input
-                    aria-label="Lazy load threshold"
-                    aria-invalid={Boolean(fieldErrors.schema_lazy_threshold) || undefined}
-                    type="number"
-                    min={1}
-                    step={1}
-                    value={form.schema_lazy_threshold}
-                    disabled={disabled}
-                    onChange={(event) => {
-                      const next = event.target.valueAsNumber
-                      updateField('schema_lazy_threshold', Number.isFinite(next) ? next : 0)
-                    }}
-                  />
-                  <FieldDescription>
-                    Schemas with more objects than this load names first; each object&apos;s columns
-                    and keys load only once you open it.
-                  </FieldDescription>
-                </Field>
               </CardContent>
             </Card>
 

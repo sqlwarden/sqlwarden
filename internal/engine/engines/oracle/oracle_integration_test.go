@@ -183,15 +183,6 @@ func descriptorByTitle(ds []metadata.Descriptor, title string) *metadata.Source 
 	return nil
 }
 
-func containsStr(s []string, v string) bool {
-	for _, x := range s {
-		if x == v {
-			return true
-		}
-	}
-	return false
-}
-
 func TestOracleConnect(t *testing.T) {
 	t.Run("valid DSN", func(t *testing.T) {
 		d := &oracleDriver{}
@@ -398,110 +389,6 @@ func TestOracleQueryCursorDoesNotMaterializeLargeResultSet(t *testing.T) {
 func TestOracleDialect(t *testing.T) {
 	if got := (&oracleDriver{}).Dialect(); got != engine.DialectOracle {
 		t.Fatalf("Dialect() = %q, want %q", got, engine.DialectOracle)
-	}
-}
-
-func TestOracleInspectDirectory(t *testing.T) {
-	d := newConnectedDriver(t)
-	ctx := context.Background()
-	t.Cleanup(func() {
-		dropQuietly(d,
-			"DROP MATERIALIZED VIEW dir_mv",
-			"DROP VIEW dir_v",
-			"DROP SEQUENCE dir_seq",
-			"DROP TABLE dir_users",
-			"DROP TABLE dir_orgs",
-		)
-	})
-	mustExec(t, d, `CREATE TABLE dir_orgs (id NUMBER PRIMARY KEY)`)
-	mustExec(t, d, `CREATE TABLE dir_users (id NUMBER PRIMARY KEY, org_id NUMBER REFERENCES dir_orgs(id))`)
-	mustExec(t, d, `INSERT INTO dir_users SELECT LEVEL, NULL FROM DUAL CONNECT BY LEVEL <= 5`)
-	mustExec(t, d, `CREATE VIEW dir_v AS SELECT id FROM dir_users`)
-	mustExec(t, d, `CREATE MATERIALIZED VIEW dir_mv AS SELECT id FROM dir_users`)
-	mustExec(t, d, `CREATE SEQUENCE dir_seq`)
-	// InspectDirectory reads ALL_TABLES.NUM_ROWS, which the optimizer only
-	// populates after stats are gathered.
-	mustExec(t, d, `BEGIN DBMS_STATS.GATHER_TABLE_STATS(USER, 'DIR_USERS'); END;`)
-
-	dir, err := d.InspectDirectory(ctx, metadata.DirectoryOptions{})
-	if err != nil {
-		t.Fatalf("InspectDirectory: %v", err)
-	}
-	if dir.Engine != "oracle" {
-		t.Fatalf("engine = %q", dir.Engine)
-	}
-
-	var node *metadata.ScopeNode
-	for _, n := range dir.ScopeNodes() {
-		if n.Path.Name("schema") == oracleITSchema {
-			copyNode := n
-			node = &copyNode
-		}
-	}
-	if node == nil {
-		t.Fatalf("scope %q not in directory", oracleITSchema)
-	}
-
-	byKind := map[string][]string{}
-	var tableGroup, viewGroup *metadata.ObjectGroup
-	for i := range node.Groups {
-		g := &node.Groups[i]
-		for _, ref := range g.Objects {
-			byKind[g.Kind] = append(byKind[g.Kind], ref.Name)
-		}
-		switch g.Kind {
-		case "table":
-			tableGroup = g
-		case "view":
-			viewGroup = g
-		}
-	}
-	if !containsStr(byKind["table"], "DIR_USERS") || !containsStr(byKind["table"], "DIR_ORGS") {
-		t.Errorf("tables = %v", byKind["table"])
-	}
-	if !containsStr(byKind["view"], "DIR_V") {
-		t.Errorf("views = %v", byKind["view"])
-	}
-	if !containsStr(byKind["materialized_view"], "DIR_MV") {
-		t.Errorf("materialized_views = %v", byKind["materialized_view"])
-	}
-	if !containsStr(byKind["sequence"], "DIR_SEQ") {
-		t.Errorf("sequences = %v", byKind["sequence"])
-	}
-	if tableGroup == nil || tableGroup.RowCounts["DIR_USERS"] != 5 {
-		t.Fatalf("DIR_USERS row count = %v, want 5", tableGroup)
-	}
-	if viewGroup != nil {
-		if _, ok := viewGroup.RowCounts["DIR_V"]; ok {
-			t.Fatalf("views must not report a row count: %+v", viewGroup.RowCounts)
-		}
-	}
-}
-
-func TestOracleDiscoverScopes(t *testing.T) {
-	d := newConnectedDriver(t)
-	ctx := context.Background()
-	t.Cleanup(func() { dropQuietly(d, "DROP TABLE ds_probe") })
-	mustExec(t, d, `CREATE TABLE ds_probe (id NUMBER)`)
-
-	got, err := d.DiscoverScopes(ctx, metadata.ScopeDiscoveryRequest{})
-	if err != nil {
-		t.Fatalf("DiscoverScopes: %v", err)
-	}
-	var names []string
-	for _, s := range got.Scopes {
-		names = append(names, s.Name("schema"))
-	}
-	if !containsStr(names, oracleITSchema) {
-		t.Fatalf("scopes %v missing %q", names, oracleITSchema)
-	}
-	for _, sys := range []string{"SYS", "SYSTEM", "XDB"} {
-		if containsStr(names, sys) {
-			t.Errorf("scopes leak Oracle-maintained schema %q: %v", sys, names)
-		}
-	}
-	if got.Current.Name("schema") != oracleITSchema {
-		t.Errorf("current scope = %q, want %q", got.Current.Name("schema"), oracleITSchema)
 	}
 }
 

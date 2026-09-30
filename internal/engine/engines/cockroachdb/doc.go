@@ -8,24 +8,14 @@
 //     engine.DialectPostgres, since CockroachDB's SQL surface diverges enough
 //     (different EXPLAIN grammar, catalog gaps) to need its own
 //     dialect identity rather than reusing Postgres's unmodified.
-//   - SchemaSpec/InspectDirectory drop the materialized_view kind.
-//   - InspectDirectory's row-count step uses a local attachRowCounts (catalog.go)
-//     instead of postgres.AttachRowCounts: CockroachDB's pg_class compatibility
-//     view reports pg_class.reltuples as NULL until a table has been scanned by
-//     its stats collector, which postgres.AttachRowCounts's non-nullable scan
-//     does not expect.
-//   - InspectDirectory and DiscoverScopes filter out systemSchemas
-//     (catalog.go) — crdb_internal and pg_extension. InspectDirectory still
-//     calls the shared postgres.Catalog* functions unmodified, but wraps each
-//     callback in a Go-side check rather than re-deriving their SQL, and
-//     DiscoverScopes delegates to postgres.Driver.DiscoverScopes and filters
-//     the resulting scopes. CockroachDB exposes crdb_internal and
-//     pg_extension as additional
-//     built-in virtual schemas with no PostgreSQL equivalent, and their
-//     pg_catalog compatibility rows are incomplete (e.g. NULL
-//     pg_get_function_arguments for crdb_internal's builtins), so they must
-//     be excluded from user-facing catalog listings and scope discovery the
-//     same way pg_catalog and information_schema already are.
+//   - Tree (navigator.go) drops the folders CockroachDB does not support
+//     (event triggers, extensions, foreign tables, aggregate functions,
+//     partitions, rules) and marks systemSchemas (catalog.go) —
+//     crdb_internal and pg_extension — as system schemas. CockroachDB exposes them as additional built-in virtual
+//     schemas with no PostgreSQL equivalent, and their pg_catalog
+//     compatibility rows are incomplete (e.g. NULL pg_get_function_arguments
+//     for crdb_internal's builtins), so they are hidden with the other system
+//     schemas unless the user asks for them.
 //   - InspectObjects and InspectDefinition route function and procedure refs
 //     to local functionObjects/functionDefinition (catalog.go) instead of
 //     their postgres.Function* counterparts: CockroachDB's
@@ -42,6 +32,5 @@
 // inspection (RelationalObjects, SequenceObjects, TableDDL, ViewDefinition)
 // — is inherited unmodified from postgres.Driver, since CockroachDB
 // implements the PostgreSQL wire protocol and enough of
-// pg_catalog/information_schema to satisfy those queries as-is once system
-// schemas are filtered out at enumeration time.
+// pg_catalog/information_schema to satisfy those queries as-is.
 package cockroachdb

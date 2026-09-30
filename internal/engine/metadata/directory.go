@@ -92,37 +92,3 @@ func (d *Directory) ObjectRefs() []ObjectRef {
 	}
 	return refs
 }
-
-// SchemaSpec is a driver's static declaration of the object kinds it
-// exposes, mirroring the permission model as the backend source of truth for
-// labels/ordering/flags. The frontend renders generically from it.
-type SchemaSpec struct {
-	Dialect      string             `json:"dialect"`
-	Kinds        []SchemaObjectKind `json:"kinds"`
-	BrowseScopes bool               `json:"browse_scopes,omitempty"`
-	// SystemSchemas is set when the driver marks built-in/system scopes via
-	// ScopeNode.System, so the connection-level "show system schemas" setting
-	// has an effect. Drivers that exclude system schemas at the query level
-	// instead of flagging them leave this unset.
-	SystemSchemas bool `json:"system_schemas,omitempty"`
-}
-
-// SchemaObjectKind describes one object kind an engine exposes: its labels and
-// display order, whether it is relational (has the typed column/key detail) or
-// supports an ER diagram, and how it is listed ("enumerated" up front, or
-// "searched" on demand).
-type SchemaObjectKind struct {
-	Kind            string `json:"kind"`
-	Label           string `json:"label"`
-	PluralLabel     string `json:"plural_label"`
-	Order           int    `json:"order"`
-	Relational      bool   `json:"relational"`
-	SupportsDiagram bool   `json:"supports_diagram"`
-	Listing         string `json:"listing"` // "enumerated" | "searched"
-	// HasDefinition marks a kind whose object detail carries a canonical DDL or
-	// definition text — either inlined by InspectObjects as a "source" descriptor
-	// or served on demand by InspectDefinition. The object viewer uses it to
-	// decide whether to offer a DDL tab, so a kind whose definition cannot be
-	// reconstructed (e.g. Postgres type/domain) does not show an empty one.
-	HasDefinition bool `json:"has_definition,omitempty"`
-}

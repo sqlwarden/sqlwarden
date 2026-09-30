@@ -44,7 +44,7 @@ describe('instance settings route', () => {
 
     await user.click(screen.getByRole('tab', { name: 'Data' }))
     expect(screen.getByRole('heading', { name: 'Query & Export Limits' })).toBeInTheDocument()
-    expect(screen.getByRole('heading', { name: 'Schema Snapshots' })).toBeInTheDocument()
+    expect(screen.queryByRole('heading', { name: 'Schema Snapshots' })).not.toBeInTheDocument()
     expect(screen.getByRole('heading', { name: 'File Revisions' })).toBeInTheDocument()
     expect(screen.getByRole('spinbutton', { name: 'Query cursor page size' })).toHaveValue(200)
 

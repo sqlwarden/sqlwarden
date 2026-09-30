@@ -10,82 +10,77 @@ import (
 )
 
 const (
-	DefaultJWTAccessTokenTTLSeconds       int64 = 86400
-	DefaultQueryMaxResultRows                   = 10000
-	DefaultQueryCursorPageSize                  = 200
-	DefaultQueryMaxResultBytes            int64 = 26214400
-	DefaultExportsSyncMaxBytes            int64 = 104857600
-	DefaultExportsBackgroundMaxBytes      int64 = 0
-	DefaultSchemaSnapshotFreshnessSeconds int64 = 86400
-	DefaultSchemaLazyThreshold                  = 500
-	DefaultFileRevisionsKeepLatest              = 50
-	DefaultJobsWorkerCount                      = 16
-	DefaultJobsPollIntervalSeconds        int64 = 1
-	DefaultJobsClaimLeaseSeconds          int64 = 300
-	DefaultJobsCompletedRetentionSeconds  int64 = 604800
-	DefaultSMTPPort                             = 25
-	DefaultQueryHistoryRetentionCount           = 500
-	DefaultQueryHistoryRetentionCountMax        = 5000
+	DefaultJWTAccessTokenTTLSeconds      int64 = 86400
+	DefaultQueryMaxResultRows                  = 10000
+	DefaultQueryCursorPageSize                 = 200
+	DefaultQueryMaxResultBytes           int64 = 26214400
+	DefaultExportsSyncMaxBytes           int64 = 104857600
+	DefaultExportsBackgroundMaxBytes     int64 = 0
+	DefaultFileRevisionsKeepLatest             = 50
+	DefaultJobsWorkerCount                     = 16
+	DefaultJobsPollIntervalSeconds       int64 = 1
+	DefaultJobsClaimLeaseSeconds         int64 = 300
+	DefaultJobsCompletedRetentionSeconds int64 = 604800
+	DefaultSMTPPort                            = 25
+	DefaultQueryHistoryRetentionCount          = 500
+	DefaultQueryHistoryRetentionCountMax       = 5000
 )
 
 type InstanceSettings struct {
-	ID                             int64     `bun:",pk" json:"-"`
-	InstanceName                   string    `json:"instance_name"`
-	InstanceDescription            string    `json:"instance_description"`
-	SupportEmail                   string    `json:"support_email"`
-	BaseURL                        string    `json:"base_url"`
-	PersonalSpacesEnabled          bool      `bun:",notnull" json:"personal_spaces_enabled"`
-	JWTAccessTokenTTLSeconds       int64     `bun:",notnull" json:"jwt_access_token_ttl_seconds"`
-	SessionsRevocationEnabled      bool      `bun:",notnull" json:"sessions_revocation_enabled"`
-	QueryMaxResultRows             int       `bun:",notnull" json:"query_max_result_rows"`
-	QueryCursorPageSize            int       `bun:",notnull" json:"query_cursor_page_size"`
-	QueryMaxResultBytes            int64     `bun:",notnull" json:"query_max_result_bytes"`
-	ExportsSyncMaxBytes            int64     `bun:",notnull" json:"exports_sync_max_bytes"`
-	ExportsBackgroundMaxBytes      int64     `bun:",notnull" json:"exports_background_max_bytes"`
-	SchemaSnapshotFreshnessSeconds int64     `bun:",notnull" json:"schema_snapshot_freshness_seconds"`
-	SchemaLazyThreshold            int       `bun:",notnull" json:"schema_lazy_threshold"`
-	FileRevisionsEnabled           bool      `bun:",notnull" json:"file_revisions_enabled"`
-	FileRevisionsKeepLatest        int       `bun:",notnull" json:"file_revisions_keep_latest"`
-	ErrorNotificationEmail         string    `bun:",notnull" json:"error_notification_email"`
-	LogLevel                       string    `bun:",notnull" json:"log_level"`
-	DatabaseQueryTracingEnabled    bool      `bun:",notnull" json:"database_query_tracing_enabled"`
-	AccessLogsEnabled              bool      `bun:",notnull" json:"access_logs_enabled"`
-	JobsWorkerCount                int       `bun:",notnull" json:"jobs_worker_count"`
-	JobsPollIntervalSeconds        int64     `bun:",notnull" json:"jobs_poll_interval_seconds"`
-	JobsClaimLeaseSeconds          int64     `bun:",notnull" json:"jobs_claim_lease_seconds"`
-	JobsCompletedRetentionSeconds  int64     `bun:",notnull" json:"jobs_completed_retention_seconds"`
-	SMTPEnabled                    bool      `bun:",notnull" json:"smtp_enabled"`
-	SMTPHost                       string    `bun:",notnull" json:"smtp_host"`
-	SMTPPort                       int       `bun:",notnull" json:"smtp_port"`
-	SMTPUsername                   string    `bun:",notnull" json:"smtp_username"`
-	SMTPPasswordEncrypted          string    `bun:",notnull" json:"-"`
-	SMTPFrom                       string    `bun:",notnull" json:"smtp_from"`
-	QueryHistoryMode               string    `bun:",notnull" json:"query_history_mode"`
-	QueryHistoryRetentionCount     int       `bun:",notnull" json:"query_history_retention_count"`
-	QueryHistoryRetentionCountMax  int       `bun:",notnull" json:"query_history_retention_count_max"`
-	QueryFavoritesMode             string    `bun:",notnull" json:"query_favorites_mode"`
-	SQLiteLocalTargetsEnabled      bool      `bun:"sqlite_local_targets_enabled,notnull" json:"sqlite_local_targets_enabled"`
-	SQLiteInMemoryTargetsEnabled   bool      `bun:"sqlite_memory_targets_enabled,notnull" json:"sqlite_memory_targets_enabled"`
-	CreatedAt                      time.Time `bun:",notnull" json:"created_at"`
-	UpdatedAt                      time.Time `bun:",notnull" json:"updated_at"`
+	ID                            int64     `bun:",pk" json:"-"`
+	InstanceName                  string    `json:"instance_name"`
+	InstanceDescription           string    `json:"instance_description"`
+	SupportEmail                  string    `json:"support_email"`
+	BaseURL                       string    `json:"base_url"`
+	PersonalSpacesEnabled         bool      `bun:",notnull" json:"personal_spaces_enabled"`
+	JWTAccessTokenTTLSeconds      int64     `bun:",notnull" json:"jwt_access_token_ttl_seconds"`
+	SessionsRevocationEnabled     bool      `bun:",notnull" json:"sessions_revocation_enabled"`
+	QueryMaxResultRows            int       `bun:",notnull" json:"query_max_result_rows"`
+	QueryCursorPageSize           int       `bun:",notnull" json:"query_cursor_page_size"`
+	QueryMaxResultBytes           int64     `bun:",notnull" json:"query_max_result_bytes"`
+	ExportsSyncMaxBytes           int64     `bun:",notnull" json:"exports_sync_max_bytes"`
+	ExportsBackgroundMaxBytes     int64     `bun:",notnull" json:"exports_background_max_bytes"`
+	FileRevisionsEnabled          bool      `bun:",notnull" json:"file_revisions_enabled"`
+	FileRevisionsKeepLatest       int       `bun:",notnull" json:"file_revisions_keep_latest"`
+	ErrorNotificationEmail        string    `bun:",notnull" json:"error_notification_email"`
+	LogLevel                      string    `bun:",notnull" json:"log_level"`
+	DatabaseQueryTracingEnabled   bool      `bun:",notnull" json:"database_query_tracing_enabled"`
+	AccessLogsEnabled             bool      `bun:",notnull" json:"access_logs_enabled"`
+	JobsWorkerCount               int       `bun:",notnull" json:"jobs_worker_count"`
+	JobsPollIntervalSeconds       int64     `bun:",notnull" json:"jobs_poll_interval_seconds"`
+	JobsClaimLeaseSeconds         int64     `bun:",notnull" json:"jobs_claim_lease_seconds"`
+	JobsCompletedRetentionSeconds int64     `bun:",notnull" json:"jobs_completed_retention_seconds"`
+	SMTPEnabled                   bool      `bun:",notnull" json:"smtp_enabled"`
+	SMTPHost                      string    `bun:",notnull" json:"smtp_host"`
+	SMTPPort                      int       `bun:",notnull" json:"smtp_port"`
+	SMTPUsername                  string    `bun:",notnull" json:"smtp_username"`
+	SMTPPasswordEncrypted         string    `bun:",notnull" json:"-"`
+	SMTPFrom                      string    `bun:",notnull" json:"smtp_from"`
+	QueryHistoryMode              string    `bun:",notnull" json:"query_history_mode"`
+	QueryHistoryRetentionCount    int       `bun:",notnull" json:"query_history_retention_count"`
+	QueryHistoryRetentionCountMax int       `bun:",notnull" json:"query_history_retention_count_max"`
+	QueryFavoritesMode            string    `bun:",notnull" json:"query_favorites_mode"`
+	SQLiteLocalTargetsEnabled     bool      `bun:"sqlite_local_targets_enabled,notnull" json:"sqlite_local_targets_enabled"`
+	SQLiteInMemoryTargetsEnabled  bool      `bun:"sqlite_memory_targets_enabled,notnull" json:"sqlite_memory_targets_enabled"`
+	CreatedAt                     time.Time `bun:",notnull" json:"created_at"`
+	UpdatedAt                     time.Time `bun:",notnull" json:"updated_at"`
 }
 
 type OrganizationRuntimeSettings struct {
 	bun.BaseModel `bun:"table:organization_runtime_settings"`
 
-	OrgID                          int64     `bun:",pk" json:"-"`
-	QueryMaxResultRows             *int      `json:"query_max_result_rows"`
-	QueryMaxResultBytes            *int64    `json:"query_max_result_bytes"`
-	ExportsSyncMaxBytes            *int64    `json:"exports_sync_max_bytes"`
-	ExportsBackgroundMaxBytes      *int64    `json:"exports_background_max_bytes"`
-	SchemaSnapshotFreshnessSeconds *int64    `json:"schema_snapshot_freshness_seconds"`
-	FileRevisionsEnabled           *bool     `json:"file_revisions_enabled"`
-	FileRevisionsKeepLatest        *int      `json:"file_revisions_keep_latest"`
-	QueryHistoryMode               *string   `json:"query_history_mode"`
-	QueryHistoryRetentionCount     *int      `json:"query_history_retention_count"`
-	QueryFavoritesMode             *string   `json:"query_favorites_mode"`
-	CreatedAt                      time.Time `bun:",notnull" json:"created_at"`
-	UpdatedAt                      time.Time `bun:",notnull" json:"updated_at"`
+	OrgID                      int64     `bun:",pk" json:"-"`
+	QueryMaxResultRows         *int      `json:"query_max_result_rows"`
+	QueryMaxResultBytes        *int64    `json:"query_max_result_bytes"`
+	ExportsSyncMaxBytes        *int64    `json:"exports_sync_max_bytes"`
+	ExportsBackgroundMaxBytes  *int64    `json:"exports_background_max_bytes"`
+	FileRevisionsEnabled       *bool     `json:"file_revisions_enabled"`
+	FileRevisionsKeepLatest    *int      `json:"file_revisions_keep_latest"`
+	QueryHistoryMode           *string   `json:"query_history_mode"`
+	QueryHistoryRetentionCount *int      `json:"query_history_retention_count"`
+	QueryFavoritesMode         *string   `json:"query_favorites_mode"`
+	CreatedAt                  time.Time `bun:",notnull" json:"created_at"`
+	UpdatedAt                  time.Time `bun:",notnull" json:"updated_at"`
 }
 
 func DefaultInstanceSettings() InstanceSettings {
@@ -94,29 +89,27 @@ func DefaultInstanceSettings() InstanceSettings {
 		InstanceName: "SQLWarden",
 		// Personal spaces has backend support but no finished frontend
 		// surface yet; default new instances to off until that lands.
-		PersonalSpacesEnabled:          false,
-		JWTAccessTokenTTLSeconds:       DefaultJWTAccessTokenTTLSeconds,
-		SessionsRevocationEnabled:      true,
-		QueryMaxResultRows:             DefaultQueryMaxResultRows,
-		QueryCursorPageSize:            DefaultQueryCursorPageSize,
-		QueryMaxResultBytes:            DefaultQueryMaxResultBytes,
-		ExportsSyncMaxBytes:            DefaultExportsSyncMaxBytes,
-		ExportsBackgroundMaxBytes:      DefaultExportsBackgroundMaxBytes,
-		SchemaSnapshotFreshnessSeconds: DefaultSchemaSnapshotFreshnessSeconds,
-		SchemaLazyThreshold:            DefaultSchemaLazyThreshold,
-		FileRevisionsEnabled:           true,
-		FileRevisionsKeepLatest:        DefaultFileRevisionsKeepLatest,
-		LogLevel:                       "info",
-		JobsWorkerCount:                DefaultJobsWorkerCount,
-		JobsPollIntervalSeconds:        DefaultJobsPollIntervalSeconds,
-		JobsClaimLeaseSeconds:          DefaultJobsClaimLeaseSeconds,
-		JobsCompletedRetentionSeconds:  DefaultJobsCompletedRetentionSeconds,
-		SMTPPort:                       DefaultSMTPPort,
-		QueryHistoryMode:               "backend",
-		QueryHistoryRetentionCount:     DefaultQueryHistoryRetentionCount,
-		QueryHistoryRetentionCountMax:  DefaultQueryHistoryRetentionCountMax,
-		QueryFavoritesMode:             "backend",
-		SQLiteLocalTargetsEnabled:      true,
+		PersonalSpacesEnabled:         false,
+		JWTAccessTokenTTLSeconds:      DefaultJWTAccessTokenTTLSeconds,
+		SessionsRevocationEnabled:     true,
+		QueryMaxResultRows:            DefaultQueryMaxResultRows,
+		QueryCursorPageSize:           DefaultQueryCursorPageSize,
+		QueryMaxResultBytes:           DefaultQueryMaxResultBytes,
+		ExportsSyncMaxBytes:           DefaultExportsSyncMaxBytes,
+		ExportsBackgroundMaxBytes:     DefaultExportsBackgroundMaxBytes,
+		FileRevisionsEnabled:          true,
+		FileRevisionsKeepLatest:       DefaultFileRevisionsKeepLatest,
+		LogLevel:                      "info",
+		JobsWorkerCount:               DefaultJobsWorkerCount,
+		JobsPollIntervalSeconds:       DefaultJobsPollIntervalSeconds,
+		JobsClaimLeaseSeconds:         DefaultJobsClaimLeaseSeconds,
+		JobsCompletedRetentionSeconds: DefaultJobsCompletedRetentionSeconds,
+		SMTPPort:                      DefaultSMTPPort,
+		QueryHistoryMode:              "backend",
+		QueryHistoryRetentionCount:    DefaultQueryHistoryRetentionCount,
+		QueryHistoryRetentionCountMax: DefaultQueryHistoryRetentionCountMax,
+		QueryFavoritesMode:            "backend",
+		SQLiteLocalTargetsEnabled:     true,
 	}
 }
 
@@ -159,8 +152,6 @@ func (db *DB) UpsertInstanceSettings(ctx context.Context, settings InstanceSetti
 		Set("query_max_result_bytes = EXCLUDED.query_max_result_bytes").
 		Set("exports_sync_max_bytes = EXCLUDED.exports_sync_max_bytes").
 		Set("exports_background_max_bytes = EXCLUDED.exports_background_max_bytes").
-		Set("schema_snapshot_freshness_seconds = EXCLUDED.schema_snapshot_freshness_seconds").
-		Set("schema_lazy_threshold = EXCLUDED.schema_lazy_threshold").
 		Set("file_revisions_enabled = EXCLUDED.file_revisions_enabled").
 		Set("file_revisions_keep_latest = EXCLUDED.file_revisions_keep_latest").
 		Set("error_notification_email = EXCLUDED.error_notification_email").
@@ -251,7 +242,6 @@ func (db *DB) UpsertOrganizationRuntimeSettings(ctx context.Context, settings Or
 		Set("query_max_result_bytes = EXCLUDED.query_max_result_bytes").
 		Set("exports_sync_max_bytes = EXCLUDED.exports_sync_max_bytes").
 		Set("exports_background_max_bytes = EXCLUDED.exports_background_max_bytes").
-		Set("schema_snapshot_freshness_seconds = EXCLUDED.schema_snapshot_freshness_seconds").
 		Set("file_revisions_enabled = EXCLUDED.file_revisions_enabled").
 		Set("file_revisions_keep_latest = EXCLUDED.file_revisions_keep_latest").
 		Set("query_history_mode = EXCLUDED.query_history_mode").

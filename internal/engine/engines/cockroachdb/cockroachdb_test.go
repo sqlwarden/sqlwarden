@@ -83,7 +83,7 @@ func TestDescribeReportsOwnIdentityAndInheritedCapabilities(t *testing.T) {
 	}
 	postgresCaps, _ := engine.Describe("postgres")
 	for _, capID := range []engine.Capability{
-		engine.CapabilitySchemaDirectory, engine.CapabilitySchemaObjects, engine.CapabilityDDL,
+		engine.CapabilitySchemaNavigator, engine.CapabilitySchemaObjects, engine.CapabilityDDL,
 		engine.CapabilitySQLParse, engine.CapabilitySQLClassify, engine.CapabilitySQLComplete,
 		engine.CapabilitySQLSafetyCheck, engine.CapabilityTLS, engine.CapabilitySSHTunnel,
 	} {
@@ -97,142 +97,6 @@ func TestConnect(t *testing.T) {
 	d := connect(t)
 	if err := d.Ping(context.Background()); err != nil {
 		t.Fatalf("Ping: %v", err)
-	}
-}
-
-func TestSchemaSpecOmitsMaterializedView(t *testing.T) {
-	d := &driver{}
-	spec := d.SchemaSpec()
-	if spec.Dialect != "cockroachdb" {
-		t.Fatalf("Dialect = %q, want cockroachdb", spec.Dialect)
-	}
-	for _, kind := range spec.Kinds {
-		if kind.Kind == "materialized_view" {
-			t.Fatalf("materialized_view must not be reported for cockroachdb: %+v", spec.Kinds)
-		}
-	}
-}
-
-func TestInspectDirectoryOmitsMaterializedView(t *testing.T) {
-	d := connect(t)
-	ctx := context.Background()
-	exec := func(stmt string) {
-		t.Helper()
-		if _, err := d.Execute(ctx, stmt); err != nil {
-			t.Fatalf("exec %q: %v", stmt, err)
-		}
-	}
-	exec("DROP TABLE IF EXISTS crdb_directory_test")
-	t.Cleanup(func() { exec("DROP TABLE IF EXISTS crdb_directory_test") })
-	exec("CREATE TABLE crdb_directory_test (id INT PRIMARY KEY)")
-
-	directory, err := d.InspectDirectory(ctx, metadata.DirectoryOptions{})
-	if err != nil {
-		t.Fatalf("InspectDirectory: %v", err)
-	}
-	for _, ref := range directory.ObjectRefs() {
-		if ref.Kind == "materialized_view" {
-			t.Fatalf("directory must not contain a materialized_view ref: %+v", ref)
-		}
-	}
-	var found bool
-	for _, ref := range directory.ObjectRefs() {
-		if ref.Kind == "table" && ref.Name == "crdb_directory_test" {
-			found = true
-		}
-	}
-	if !found {
-		t.Fatalf("directory missing crdb_directory_test: %+v", directory.Roots)
-	}
-}
-
-func TestInspectDirectoryExcludesSystemSchemas(t *testing.T) {
-	d := connect(t)
-	ctx := context.Background()
-	directory, err := d.InspectDirectory(ctx, metadata.DirectoryOptions{})
-	if err != nil {
-		t.Fatalf("InspectDirectory: %v", err)
-	}
-	for _, ref := range directory.ObjectRefs() {
-		schema := ref.Scope.Name("schema")
-		if schema == "crdb_internal" || schema == "pg_extension" {
-			t.Fatalf("directory must not contain refs from system schema %q: %+v", schema, ref)
-		}
-	}
-}
-
-func TestInspectDirectoryWithRootScopesToOneSchema(t *testing.T) {
-	d := connect(t)
-	ctx := context.Background()
-	exec := func(stmt string) {
-		t.Helper()
-		if _, err := d.Execute(ctx, stmt); err != nil {
-			t.Fatalf("exec %q: %v", stmt, err)
-		}
-	}
-	exec("DROP TABLE IF EXISTS crdb_root_scope_users")
-	exec("DROP SCHEMA IF EXISTS crdb_root_scope_other CASCADE")
-	t.Cleanup(func() {
-		exec("DROP TABLE IF EXISTS crdb_root_scope_users")
-		exec("DROP SCHEMA IF EXISTS crdb_root_scope_other CASCADE")
-	})
-	exec("CREATE TABLE crdb_root_scope_users (id INT PRIMARY KEY)")
-	exec("CREATE SCHEMA crdb_root_scope_other")
-	exec("CREATE TABLE crdb_root_scope_other.widgets (id INT PRIMARY KEY)")
-
-	full, err := d.InspectDirectory(ctx, metadata.DirectoryOptions{})
-	if err != nil {
-		t.Fatalf("InspectDirectory: %v", err)
-	}
-	database := full.Roots[0].Path
-	publicScope := database.Child(metadata.ScopeSegment{Kind: "schema", Name: "public"})
-
-	scoped, err := d.InspectDirectory(ctx, metadata.DirectoryOptions{Root: publicScope})
-	if err != nil {
-		t.Fatalf("InspectDirectory with Root: %v", err)
-	}
-	if len(scoped.Roots) != 1 || scoped.Roots[0].Path != publicScope {
-		t.Fatalf("expected a single root at %v, got %+v", publicScope, scoped.Roots)
-	}
-	for _, node := range scoped.ScopeNodes() {
-		if node.Path.Name("schema") == "crdb_root_scope_other" {
-			t.Fatalf("crdb_root_scope_other must not appear when scoped to public: %+v", scoped.Roots)
-		}
-	}
-	var found bool
-	for _, ref := range scoped.ObjectRefs() {
-		if ref.Kind == "table" && ref.Name == "crdb_root_scope_users" {
-			found = true
-		}
-	}
-	if !found {
-		t.Fatalf("missing crdb_root_scope_users in scoped directory: %+v", scoped.Roots)
-	}
-}
-
-func TestDiscoverScopesExcludesSystemSchemas(t *testing.T) {
-	d := connect(t)
-	ctx := context.Background()
-
-	discovery, err := d.DiscoverScopes(ctx, metadata.ScopeDiscoveryRequest{
-		Parent: metadata.NewScopePath(metadata.ScopeSegment{Kind: "database", Name: "defaultdb"}),
-	})
-	if err != nil {
-		t.Fatal(err)
-	}
-
-	foundPublic := false
-	for _, scope := range discovery.Scopes {
-		name := scope.Name("schema")
-		if name == "crdb_internal" || name == "pg_extension" {
-			t.Fatalf("discovered system schema %q", name)
-		}
-		if name == "public" {
-			foundPublic = true
-		}
-	}
-	if !foundPublic {
-		t.Fatal("expected public schema to be discoverable")
 	}
 }
 
@@ -308,30 +172,6 @@ func TestInspectObjectsAndDefinitionForTable(t *testing.T) {
 	}
 }
 
-func TestInspectDirectoryReportsSequence(t *testing.T) {
-	d := connect(t)
-	ctx := context.Background()
-	scope := metadata.NewScopePath(metadata.ScopeSegment{Kind: "database", Name: "defaultdb"}).
-		Child(metadata.ScopeSegment{Kind: "schema", Name: "public"})
-	exec := func(stmt string) {
-		t.Helper()
-		if _, err := d.Execute(ctx, stmt); err != nil {
-			t.Fatalf("exec %q: %v", stmt, err)
-		}
-	}
-	exec("DROP SEQUENCE IF EXISTS crdb_seq_test")
-	t.Cleanup(func() { exec("DROP SEQUENCE IF EXISTS crdb_seq_test") })
-	exec("CREATE SEQUENCE crdb_seq_test START 1 INCREMENT 1")
-
-	directory, err := d.InspectDirectory(ctx, metadata.DirectoryOptions{})
-	if err != nil {
-		t.Fatalf("InspectDirectory: %v", err)
-	}
-	if !directoryHasRef(directory, metadata.ObjectRef{Scope: scope, Kind: "sequence", Name: "crdb_seq_test"}) {
-		t.Fatalf("directory missing sequence: %+v", directory.Roots)
-	}
-}
-
 func TestExplainUsesCockroachDBGrammar(t *testing.T) {
 	d := &driver{}
 	plain, err := d.Explain("SELECT 1", explain.ModePlain)
@@ -385,13 +225,4 @@ func TestMalformedDSNRejected(t *testing.T) {
 	if err := d.Connect(context.Background(), engine.ConnectionConfig{DSN: "not a dsn", Driver: "cockroachdb"}); err == nil {
 		t.Fatal("expected Connect to reject a malformed DSN")
 	}
-}
-
-func directoryHasRef(directory *metadata.Directory, ref metadata.ObjectRef) bool {
-	for _, got := range directory.ObjectRefs() {
-		if got == ref {
-			return true
-		}
-	}
-	return false
 }

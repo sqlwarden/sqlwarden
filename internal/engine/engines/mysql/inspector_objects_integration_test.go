@@ -8,9 +8,9 @@ import (
 )
 
 // TestMySQLInspectObjectsCoversNewKinds proves every new schema-object kind
-// added for Postgres/MySQL parity (event, index, constraint) shows up in both
-// directory listing and bulk object inspection against a live database, and
-// that a partitioned table carries a Partitions descriptor.
+// added for Postgres/MySQL parity (event, index, constraint) is served by bulk
+// object inspection against a live database, and that a partitioned table
+// carries a Partitions descriptor.
 func TestMySQLInspectObjectsCoversNewKinds(t *testing.T) {
 	d := newConnectedDriver(t)
 	ctx := context.Background()
@@ -30,24 +30,27 @@ PARTITION BY RANGE (YEAR(created_at)) (
   PARTITION p2026 VALUES LESS THAN (2027)
 )`)
 
-	dir, err := d.InspectDirectory(ctx, metadata.DirectoryOptions{})
-	if err != nil {
-		t.Fatalf("InspectDirectory: %v", err)
-	}
-	refs := dir.ObjectRefs()
-	byKind := map[string]bool{}
-	for _, ref := range refs {
-		byKind[ref.Kind] = true
-	}
-	for _, kind := range []string{"event", "index", "constraint", "table"} {
-		if !byKind[kind] {
-			t.Errorf("expected directory to contain a %q ref", kind)
-		}
+	scope := mysqlTestScope()
+	refs := []metadata.ObjectRef{
+		{Scope: scope, Kind: "table", Name: "widgets"},
+		{Scope: scope, Kind: "index", Name: "widgets_label_idx"},
+		{Scope: scope, Kind: "constraint", Name: "PRIMARY"},
+		{Scope: scope, Kind: "event", Name: "test_event"},
+		{Scope: scope, Kind: "table", Name: "events_p"},
 	}
 
 	objs, err := d.InspectObjects(ctx, refs)
 	if err != nil {
 		t.Fatalf("InspectObjects: %v", err)
+	}
+	inspected := map[string]bool{}
+	for _, obj := range objs {
+		inspected[obj.Ref.Kind+"/"+obj.Ref.Name] = true
+	}
+	for _, ref := range refs {
+		if !inspected[ref.Kind+"/"+ref.Name] {
+			t.Errorf("InspectObjects returned no object for %s %q", ref.Kind, ref.Name)
+		}
 	}
 	var foundPartitions bool
 	for _, obj := range objs {

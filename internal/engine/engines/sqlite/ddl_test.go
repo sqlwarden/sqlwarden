@@ -3,6 +3,7 @@ package sqlite
 import (
 	"context"
 	"path/filepath"
+	"slices"
 	"testing"
 
 	"github.com/sqlwarden/internal/engine"
@@ -29,11 +30,15 @@ func TestSQLiteDDLsRoundTrip(t *testing.T) {
 			t.Fatalf("%s: %v", request.Operation, err)
 		}
 	}
-	directory, err := driver.InspectDirectory(context.Background(), metadata.DirectoryOptions{Root: scope})
+	q, err := driver.Querier(context.Background(), "main")
 	if err != nil {
 		t.Fatal(err)
 	}
-	if refs := directory.ObjectRefs(); len(refs) != 0 {
-		t.Fatalf("objects after drop = %+v", refs)
+	tables, err := ListTables(context.Background(), q, []metadata.ScopePath{scope})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if slices.ContainsFunc(tables[scope], func(c metadata.Child) bool { return c.Name == table.Name }) {
+		t.Fatalf("tables after drop = %+v", tables[scope])
 	}
 }

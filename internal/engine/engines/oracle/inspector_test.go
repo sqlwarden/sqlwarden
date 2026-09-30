@@ -33,31 +33,6 @@ func TestOracleColumnType(t *testing.T) {
 	}
 }
 
-func TestOracleSchemaSpec(t *testing.T) {
-	spec := (&oracleDriver{}).SchemaSpec()
-	if spec.Dialect != "oracle" {
-		t.Fatalf("dialect = %q", spec.Dialect)
-	}
-	got := map[string]metadata.SchemaObjectKind{}
-	for _, k := range spec.Kinds {
-		got[k.Kind] = k
-	}
-	for _, want := range []string{"table", "view", "materialized_view", "sequence", "function", "procedure", "package", "package_body", "trigger", "type", "type_body", "synonym", "db_link", "index", "constraint", "queue"} {
-		if _, ok := got[want]; !ok {
-			t.Errorf("SchemaSpec missing kind %q", want)
-		}
-	}
-	if !got["table"].Relational || !got["table"].SupportsDiagram {
-		t.Errorf("table kind flags wrong: %+v", got["table"])
-	}
-	if got["sequence"].Relational {
-		t.Errorf("sequence must not be relational")
-	}
-	if !got["materialized_view"].Relational || !got["materialized_view"].SupportsDiagram {
-		t.Errorf("materialized_view must be relational and support diagrams")
-	}
-}
-
 func TestOraclePairFilter(t *testing.T) {
 	refs := []metadata.ObjectRef{
 		{Scope: oracleSchemaScope("HR"), Kind: "table", Name: "EMP"},

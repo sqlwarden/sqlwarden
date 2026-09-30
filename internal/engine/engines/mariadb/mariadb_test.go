@@ -82,7 +82,7 @@ func TestDescribeReportsOwnIdentityAndInheritedCapabilities(t *testing.T) {
 	}
 	mysqlCaps, _ := engine.Describe("mysql")
 	for _, capID := range []engine.Capability{
-		engine.CapabilitySchemaDirectory, engine.CapabilitySchemaObjects, engine.CapabilityDDL,
+		engine.CapabilitySchemaNavigator, engine.CapabilitySchemaObjects, engine.CapabilityDDL,
 		engine.CapabilitySQLParse, engine.CapabilitySQLClassify, engine.CapabilitySQLComplete,
 		engine.CapabilitySQLSafetyCheck, engine.CapabilityTLS, engine.CapabilitySSHTunnel,
 	} {
@@ -96,57 +96,6 @@ func TestConnect(t *testing.T) {
 	d := connect(t)
 	if err := d.Ping(context.Background()); err != nil {
 		t.Fatalf("Ping: %v", err)
-	}
-}
-
-func TestSchemaSpecIncludesSequence(t *testing.T) {
-	d := &driver{}
-	spec := d.SchemaSpec()
-	if spec.Dialect != "mariadb" {
-		t.Fatalf("Dialect = %q, want mariadb", spec.Dialect)
-	}
-	var found bool
-	for _, kind := range spec.Kinds {
-		if kind.Kind == "sequence" {
-			found = true
-		}
-	}
-	if !found {
-		t.Fatalf("expected a sequence kind in schema spec: %+v", spec.Kinds)
-	}
-}
-
-func TestInspectDirectoryClassifiesSequencesSeparately(t *testing.T) {
-	d := connect(t)
-	ctx := context.Background()
-	exec := func(stmt string) {
-		t.Helper()
-		if _, err := d.Execute(ctx, stmt); err != nil {
-			t.Fatalf("exec %q: %v", stmt, err)
-		}
-	}
-	exec("DROP SEQUENCE IF EXISTS seq_orders")
-	exec("DROP TABLE IF EXISTS seq_table_test")
-	t.Cleanup(func() {
-		exec("DROP SEQUENCE IF EXISTS seq_orders")
-		exec("DROP TABLE IF EXISTS seq_table_test")
-	})
-	exec("CREATE SEQUENCE seq_orders START WITH 1 INCREMENT BY 1")
-	exec("CREATE TABLE seq_table_test (id INT PRIMARY KEY)")
-
-	directory, err := d.InspectDirectory(ctx, metadata.DirectoryOptions{})
-	if err != nil {
-		t.Fatalf("InspectDirectory: %v", err)
-	}
-	scope := metadata.NewScopePath(metadata.ScopeSegment{Kind: "database", Name: "testdb"})
-	if !directoryHasRef(directory, metadata.ObjectRef{Scope: scope, Kind: "sequence", Name: "seq_orders"}) {
-		t.Fatalf("directory missing sequence: %+v", directory.Roots)
-	}
-	if directoryHasRef(directory, metadata.ObjectRef{Scope: scope, Kind: "table", Name: "seq_orders"}) {
-		t.Fatal("sequence must not also be reported as a table")
-	}
-	if !directoryHasRef(directory, metadata.ObjectRef{Scope: scope, Kind: "table", Name: "seq_table_test"}) {
-		t.Fatalf("directory missing regular table: %+v", directory.Roots)
 	}
 }
 
@@ -185,7 +134,7 @@ func TestInspectObjectsAndDefinitionForSequence(t *testing.T) {
 	}
 }
 
-func TestInspectDirectoryAndDefinitionForIndexAndConstraint(t *testing.T) {
+func TestInspectDefinitionForIndexAndConstraint(t *testing.T) {
 	d := connect(t)
 	ctx := context.Background()
 	scope := metadata.NewScopePath(metadata.ScopeSegment{Kind: "database", Name: "testdb"})
@@ -216,21 +165,6 @@ func TestInspectDirectoryAndDefinitionForIndexAndConstraint(t *testing.T) {
 		CONSTRAINT ic_fk FOREIGN KEY (parent_id) REFERENCES ic_parent (id) ON DELETE CASCADE,
 		CONSTRAINT ic_chk CHECK (qty > 0)
 	)`)
-
-	directory, err := d.InspectDirectory(ctx, metadata.DirectoryOptions{})
-	if err != nil {
-		t.Fatalf("InspectDirectory: %v", err)
-	}
-	for _, ref := range []metadata.ObjectRef{
-		{Scope: scope, Kind: "index", Name: "ic_ix"},
-		{Scope: scope, Kind: "constraint", Name: "ic_uq"},
-		{Scope: scope, Kind: "constraint", Name: "ic_fk"},
-		{Scope: scope, Kind: "constraint", Name: "ic_chk"},
-	} {
-		if !directoryHasRef(directory, ref) {
-			t.Fatalf("directory missing %s %q: %+v", ref.Kind, ref.Name, directory.Roots)
-		}
-	}
 
 	for _, rt := range []struct{ kind, name, want, drop string }{
 		{"index", "ic_ix", "CREATE INDEX `IC_IX`", "ALTER TABLE ic_child DROP INDEX ic_ix"},
@@ -314,13 +248,4 @@ func TestConnectionContract(t *testing.T) {
 	if _, err := d.Query(ctx, "SELECT 1"); err != nil {
 		t.Fatalf("Query: %v", err)
 	}
-}
-
-func directoryHasRef(directory *metadata.Directory, ref metadata.ObjectRef) bool {
-	for _, got := range directory.ObjectRefs() {
-		if got == ref {
-			return true
-		}
-	}
-	return false
 }

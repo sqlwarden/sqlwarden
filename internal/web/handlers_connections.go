@@ -249,13 +249,7 @@ func connectionSafetyChecker(driverName string) safety.Checker {
 
 func driverSupportsSystemSchemas(driverName string) bool {
 	set, ok := engine.Describe(driverName)
-	if !ok {
-		return false
-	}
-	if set.Tree != nil {
-		return set.Tree.SystemObjects
-	}
-	return set.Schema != nil && set.Schema.SystemSchemas
+	return ok && set.Tree != nil && set.Tree.SystemObjects
 }
 
 // resolveShowAllDatabases forces the setting on when the connection names no
@@ -864,13 +858,6 @@ func (app *application) testConnection(w http.ResponseWriter, r *http.Request) {
 	}
 	if inspector, ok := d.(metadata.SchemaInspector); ok {
 		discovery, discoveryErr := schemaapp.DiscoverScopes(ctx, inspector, input.ParentScope)
-		if discoveryErr == nil {
-			payload["scope_discovery"] = discovery
-		} else {
-			payload["scope_discovery_error"] = discoveryErr.Error()
-		}
-	} else if discoverer, ok := d.(metadata.ScopeDiscoverer); ok {
-		discovery, discoveryErr := discoverer.DiscoverScopes(ctx, metadata.ScopeDiscoveryRequest{Parent: input.ParentScope})
 		if discoveryErr == nil {
 			payload["scope_discovery"] = discovery
 		} else {

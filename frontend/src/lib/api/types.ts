@@ -400,8 +400,6 @@ export interface InstanceSettings {
   query_cursor_page_size: number
   exports_sync_max_bytes: number
   exports_background_max_bytes: number
-  schema_snapshot_freshness_seconds: number
-  schema_lazy_threshold: number
   file_revisions_enabled: boolean
   file_revisions_keep_latest: number
   query_history_mode: QueryHistoryMode
@@ -455,7 +453,6 @@ export interface OrganizationRuntimeOverrideValues {
   query_max_result_bytes: number | null
   exports_sync_max_bytes: number | null
   exports_background_max_bytes: number | null
-  schema_snapshot_freshness_seconds: number | null
   file_revisions_enabled: boolean | null
   file_revisions_keep_latest: number | null
   query_history_mode: QueryHistoryMode | null
@@ -468,7 +465,6 @@ export interface OrganizationRuntimeEffectiveValues {
   query_max_result_bytes: number
   exports_sync_max_bytes: number
   exports_background_max_bytes: number
-  schema_snapshot_freshness_seconds: number
   file_revisions_enabled: boolean
   file_revisions_keep_latest: number
   query_history_mode: QueryHistoryMode
@@ -481,7 +477,6 @@ export interface OrganizationRuntimeConstraints {
   query_max_result_bytes_max: number
   exports_sync_max_bytes_max: number
   exports_background_max_bytes_max: number
-  schema_snapshot_freshness_seconds_min: number
   file_revisions_available: boolean
   file_revisions_keep_latest_max: number
   query_history_retention_count_max: number

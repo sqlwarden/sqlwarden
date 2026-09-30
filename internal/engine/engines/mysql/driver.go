@@ -41,14 +41,6 @@ func (d *Driver) DB() *sql.DB {
 	return d.db
 }
 
-// DefaultScope returns the connection's configured default scope (e.g. the
-// selected database). Compatible engines that override InspectDirectory or
-// InspectObjects need this to reproduce the same default-scope resolution
-// the embedded implementation performs.
-func (d *Driver) DefaultScope() metadata.ScopePath {
-	return d.defaultScope
-}
-
 // applyTLS registers a process-unique *tls.Config with the mysql driver and
 // rewrites the DSN to reference it by name. The name is recorded on the driver
 // so releaseTLS (called from Close) can deregister it. A nil or "disable"

@@ -20,11 +20,8 @@ type Capability string
 // The capability keys an engine may report. Each corresponds to an optional
 // interface the engine type implements (see CapabilitySet and capabilitiesOf).
 const (
-	// CapabilitySchemaDirectory provides a cheap hierarchy and object-name
-	// listing through metadata.DirectoryInspector.InspectDirectory.
-	CapabilitySchemaDirectory Capability = "schema.directory"
 	// CapabilitySchemaObjects provides on-demand columns, keys, indexes, and
-	// descriptors through metadata.DirectoryInspector.InspectObjects.
+	// descriptors through metadata.SchemaInspector.InspectObjects.
 	CapabilitySchemaObjects Capability = "schema.objects"
 	// CapabilitySchemaNavigator provides the lazy navigator grammar and folder
 	// loaders through metadata.SchemaInspector.
@@ -83,8 +80,6 @@ type CapabilitySet struct {
 	Capabilities map[Capability]bool `json:"capabilities"`
 	// Tree accompanies schema.navigator. Serialized by the schema API, not /engines.
 	Tree *metadata.Tree `json:"-"`
-	// Schema accompanies schema.directory/schema.objects.
-	Schema *metadata.SchemaSpec `json:"schema,omitempty"`
 	// DDL accompanies schema.edit.
 	DDL *ddl.Spec `json:"schema_edit,omitempty"`
 	// Statements accompanies sql.generate.
@@ -103,7 +98,6 @@ type CapabilitySet struct {
 func capabilitiesOf(reg Registration) CapabilitySet {
 	probe := reg.New()
 	set := CapabilitySet{Capabilities: map[Capability]bool{
-		CapabilitySchemaDirectory: false,
 		CapabilitySchemaObjects:   false,
 		CapabilitySchemaNavigator: false,
 		CapabilityDDL:             false,
@@ -119,12 +113,6 @@ func capabilitiesOf(reg Registration) CapabilitySet {
 		caps[CapabilitySchemaObjects] = true
 		tree := si.Tree()
 		set.Tree = &tree
-	}
-	if di, ok := probe.(metadata.DirectoryInspector); ok {
-		caps[CapabilitySchemaDirectory] = true
-		caps[CapabilitySchemaObjects] = true
-		s := di.SchemaSpec()
-		set.Schema = &s
 	}
 	if executor, ok := probe.(ddl.Executor); ok {
 		caps[CapabilityDDL] = true

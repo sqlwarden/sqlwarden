@@ -12,7 +12,6 @@ import (
 	"github.com/testcontainers/testcontainers-go/wait"
 
 	"github.com/sqlwarden/internal/engine"
-	"github.com/sqlwarden/internal/engine/metadata"
 )
 
 // testDSN targets the "yugabyte" database YugabyteDB provisions by default.
@@ -100,7 +99,7 @@ func TestDescribeReportsOwnIdentityAndInheritedCapabilities(t *testing.T) {
 	}
 	postgresCaps, _ := engine.Describe("postgres")
 	for _, capID := range []engine.Capability{
-		engine.CapabilitySchemaDirectory, engine.CapabilitySchemaObjects, engine.CapabilityDDL,
+		engine.CapabilitySchemaNavigator, engine.CapabilitySchemaObjects, engine.CapabilityDDL,
 		engine.CapabilitySQLClassify, engine.CapabilitySQLComplete, engine.CapabilitySQLSafetyCheck,
 		engine.CapabilitySQLExplain, engine.CapabilityTLS, engine.CapabilitySSHTunnel,
 	} {
@@ -124,30 +123,6 @@ func TestMalformedDSNRejected(t *testing.T) {
 	}
 }
 
-func TestInspectDirectoryReportsTable(t *testing.T) {
-	d := connect(t)
-	ctx := context.Background()
-	exec := func(stmt string) {
-		t.Helper()
-		if _, err := d.Execute(ctx, stmt); err != nil {
-			t.Fatalf("exec %q: %v", stmt, err)
-		}
-	}
-	exec("DROP TABLE IF EXISTS yb_directory_test")
-	t.Cleanup(func() { exec("DROP TABLE IF EXISTS yb_directory_test") })
-	exec("CREATE TABLE yb_directory_test (id INT PRIMARY KEY)")
-
-	directory, err := d.InspectDirectory(ctx, metadata.DirectoryOptions{})
-	if err != nil {
-		t.Fatalf("InspectDirectory: %v", err)
-	}
-	scope := metadata.NewScopePath(metadata.ScopeSegment{Kind: "database", Name: "yugabyte"}).
-		Child(metadata.ScopeSegment{Kind: "schema", Name: "public"})
-	if !directoryHasRef(directory, metadata.ObjectRef{Scope: scope, Kind: "table", Name: "yb_directory_test"}) {
-		t.Fatalf("directory missing yb_directory_test: %+v", directory.Roots)
-	}
-}
-
 func TestConnectionContract(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer cancel()
@@ -162,13 +137,4 @@ func TestConnectionContract(t *testing.T) {
 	if _, err := d.Query(ctx, "SELECT 1"); err != nil {
 		t.Fatalf("Query: %v", err)
 	}
-}
-
-func directoryHasRef(directory *metadata.Directory, ref metadata.ObjectRef) bool {
-	for _, got := range directory.ObjectRefs() {
-		if got == ref {
-			return true
-		}
-	}
-	return false
 }

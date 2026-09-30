@@ -29,11 +29,6 @@ func (d *Driver) DB() *sql.DB {
 	return d.db
 }
 
-// DefaultScope returns the connection's configured default scope (database).
-func (d *Driver) DefaultScope() metadata.ScopePath {
-	return d.defaultScope
-}
-
 type execer interface {
 	QueryContext(ctx context.Context, query string, args ...any) (*sql.Rows, error)
 	ExecContext(ctx context.Context, query string, args ...any) (sql.Result, error)

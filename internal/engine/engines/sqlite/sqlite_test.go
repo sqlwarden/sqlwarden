@@ -71,7 +71,7 @@ func TestSQLiteDriver(t *testing.T) {
 	}
 }
 
-func TestInspectDirectoryAndObjects(t *testing.T) {
+func TestInspectObjects(t *testing.T) {
 	d := &sqliteDriver{}
 	ctx := context.Background()
 
@@ -105,26 +105,7 @@ func TestInspectDirectoryAndObjects(t *testing.T) {
 		t.Fatalf("create trigger: %v", err)
 	}
 
-	spec := d.SchemaSpec()
-	if spec.Dialect != "sqlite" || len(spec.Kinds) != 3 {
-		t.Fatalf("unexpected schema spec: %+v", spec)
-	}
-
-	directory, err := d.InspectDirectory(ctx, metadata.DirectoryOptions{})
-	if err != nil {
-		t.Fatalf("InspectDirectory: %v", err)
-	}
 	scope := metadata.NewScopePath(metadata.ScopeSegment{Kind: "database", Name: "main"})
-	if !directoryHasRef(directory, metadata.ObjectRef{Scope: scope, Kind: "table", Name: "introspect_child"}) {
-		t.Fatalf("directory missing child table: %+v", directory.Roots)
-	}
-	if !directoryHasRef(directory, metadata.ObjectRef{Scope: scope, Kind: "view", Name: "introspect_child_view"}) {
-		t.Fatalf("directory missing child view: %+v", directory.Roots)
-	}
-	if !directoryHasRef(directory, metadata.ObjectRef{Scope: scope, Kind: "trigger", Name: "introspect_child_ai"}) {
-		t.Fatalf("directory missing child trigger: %+v", directory.Roots)
-	}
-
 	objects, err := d.InspectObjects(ctx, []metadata.ObjectRef{{Scope: scope, Kind: "table", Name: "introspect_child"}})
 	if err != nil {
 		t.Fatalf("InspectObjects: %v", err)
@@ -389,15 +370,6 @@ func TestSQLiteInspectRelationships(t *testing.T) {
 	}
 }
 
-func directoryHasRef(directory *metadata.Directory, ref metadata.ObjectRef) bool {
-	for _, got := range directory.ObjectRefs() {
-		if got == ref {
-			return true
-		}
-	}
-	return false
-}
-
 func hasIndex(indexes []metadata.SecondaryIndex, name, column string) bool {
 	for _, ix := range indexes {
 		if ix.Name == name && slices.Contains(ix.Columns, column) {
@@ -414,14 +386,19 @@ func TestSQLiteSchemaBackedCompletionRoundTrip(t *testing.T) {
 	)
 	ctx := context.Background()
 
-	directory, err := d.InspectDirectory(ctx, metadata.DirectoryOptions{})
-	if err != nil {
-		t.Fatalf("InspectDirectory: %v", err)
+	scope := metadata.NewScopePath(metadata.ScopeSegment{Kind: "database", Name: "main"})
+	refs := []metadata.ObjectRef{
+		{Scope: scope, Kind: "table", Name: "users"},
+		{Scope: scope, Kind: "table", Name: "orders"},
 	}
-	objects, err := d.InspectObjects(ctx, directory.ObjectRefs())
+	objects, err := d.InspectObjects(ctx, refs)
 	if err != nil {
 		t.Fatalf("InspectObjects: %v", err)
 	}
+	directory := &metadata.Directory{DefaultScope: scope, Roots: []metadata.ScopeNode{{
+		Path:   scope,
+		Groups: []metadata.ObjectGroup{{Kind: "table", Objects: refs}},
+	}}}
 	schema := &metadata.MetadataSet{Directory: directory, Objects: objects, Version: "snapshot-1"}
 
 	columnSQL := "SELECT  FROM users"

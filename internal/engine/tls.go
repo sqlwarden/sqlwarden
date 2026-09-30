@@ -107,7 +107,7 @@ func (c *TLSConfig) Build() (*tls.Config, error) {
 
 // TLSCapable is implemented by drivers that accept structured TLS material.
 // Resolved by type assertion on an unconnected probe, like
-// metadata.DirectoryInspector.
+// metadata.SchemaInspector.
 type TLSCapable interface {
 	TLSSpec() TLSSpec
 }

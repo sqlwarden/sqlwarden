@@ -5,7 +5,7 @@
 // implemented as one Go type that satisfies the required Driver interface
 // (connection: Connect/Ping/Close/Query/Execute/Dialect) plus whichever optional
 // capability interfaces it supports — classifier.Classifier, parser.Parser,
-// rewriter.Rewriter, completer.Completer, metadata.DirectoryInspector,
+// rewriter.Rewriter, completer.Completer, metadata.SchemaInspector,
 // cursor.QueryCursorDriver, ddl.Executor, and statement.Generator. Capabilities
 // are resolved by type assertion, so an engine advertises a feature simply by
 // implementing its interface; there is no separate declaration to keep in sync.

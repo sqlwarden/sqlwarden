@@ -68,7 +68,7 @@ func TestDescribeReportsOwnIdentityAndInheritedCapabilities(t *testing.T) {
 	}
 	postgresCaps, _ := engine.Describe("postgres")
 	for _, capID := range []engine.Capability{
-		engine.CapabilitySchemaDirectory, engine.CapabilitySchemaObjects, engine.CapabilityDDL,
+		engine.CapabilitySchemaNavigator, engine.CapabilitySchemaObjects, engine.CapabilityDDL,
 		engine.CapabilitySQLClassify, engine.CapabilitySQLComplete, engine.CapabilitySQLSafetyCheck,
 		engine.CapabilitySQLExplain, engine.CapabilityTLS, engine.CapabilitySSHTunnel,
 	} {

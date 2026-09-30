@@ -138,7 +138,6 @@ func TestMigrateUpAddsQueryCursorPageSizeAfterVersion29(t *testing.T) {
 		ALTER TABLE instance_settings DROP COLUMN query_favorites_mode;
 		ALTER TABLE instance_settings DROP COLUMN sqlite_local_targets_enabled;
 		ALTER TABLE instance_settings DROP COLUMN sqlite_memory_targets_enabled;
-		ALTER TABLE instance_settings DROP COLUMN schema_lazy_threshold;
 		ALTER TABLE organization_runtime_settings DROP COLUMN query_history_mode;
 		ALTER TABLE organization_runtime_settings DROP COLUMN query_history_retention_count;
 		ALTER TABLE organization_runtime_settings DROP COLUMN query_favorites_mode;
@@ -151,6 +150,8 @@ func TestMigrateUpAddsQueryCursorPageSizeAfterVersion29(t *testing.T) {
 		DROP TABLE schema_nodes;
 		DROP TABLE schema_objects;
 		DROP TABLE schema_relationships;
+		ALTER TABLE instance_settings ADD COLUMN schema_snapshot_freshness_seconds INTEGER NOT NULL DEFAULT 86400;
+		ALTER TABLE organization_runtime_settings ADD COLUMN schema_snapshot_freshness_seconds INTEGER;
 	`)
 	assert.Nil(t, err)
 	_, err = db.ExecContext(context.Background(), "UPDATE schema_migrations SET version = 29, dirty = 0")

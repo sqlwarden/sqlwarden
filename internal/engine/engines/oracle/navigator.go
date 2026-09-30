@@ -74,6 +74,7 @@ var navigatorTree = metadata.Tree{
 			folder("synonyms", "Synonyms", "synonym", 110, ListSynonyms),
 			folder("schema_triggers", "Schema Triggers", "trigger", 120, ListSchemaTriggers),
 			folder("table_triggers", "Table Triggers", "trigger", 130, ListSchemaTableTriggers),
+			folder("db_links", "Database Links", "db_link", 140, ListDBLinks),
 		}},
 		"table": {Label: "Table", Icon: "table", Relational: true, SupportsDiagram: true, HasDefinition: true, Folders: []metadata.Folder{
 			columnsFolder, constraintsFolder, foreignKeysFolder, referencesFolder, triggersFolder, indexesFolder, dependenciesFolder,
@@ -97,6 +98,7 @@ var navigatorTree = metadata.Tree{
 		"procedure":   definedLeaf("Procedure", "procedure"),
 		"function":    definedLeaf("Function", "function"),
 		"synonym":     definedLeaf("Synonym", "synonym"),
+		"db_link":     definedLeaf("Database Link", "db_link"),
 		"trigger":     definedLeaf("Trigger", "trigger"),
 		"user":        leaf("User", "user"),
 		"role":        leaf("Role", "role"),
@@ -175,6 +177,17 @@ func listInSchema(ctx context.Context, q metadata.Querier, parents []metadata.Sc
 func isMissingDictionaryView(err error) bool {
 	var oraErr *network.OracleError
 	return errors.As(err, &oraErr) && (oraErr.ErrCode == 942 || oraErr.ErrCode == 1031)
+}
+
+// oracleSystemSchemas supplements ALL_USERS.ORACLE_MAINTAINED on releases
+// that predate the flag.
+var oracleSystemSchemas = map[string]struct{}{
+	"SYS": {}, "SYSTEM": {}, "XDB": {}, "CTXSYS": {}, "MDSYS": {}, "OUTLN": {},
+	"DBSNMP": {}, "APPQOSSYS": {}, "GSMADMIN_INTERNAL": {}, "AUDSYS": {},
+	"LBACSYS": {}, "DVSYS": {}, "ORDSYS": {}, "ORDDATA": {}, "WMSYS": {},
+	"OJVMSYS": {}, "DBSFWUSER": {}, "REMOTE_SCHEDULER_AGENT": {}, "SYS$UMF": {},
+	"ANONYMOUS": {}, "APEX_PUBLIC_USER": {}, "FLOWS_FILES": {}, "OLAPSYS": {},
+	"SI_INFORMTN_SCHEMA": {}, "DIP": {}, "ORACLE_OCM": {}, "XS$NULL": {},
 }
 
 // isOracleSystemSchema classifies a schema as Oracle-supplied, either by the
@@ -478,6 +491,23 @@ func ListSynonyms(ctx context.Context, q metadata.Querier, parents []metadata.Sc
 			target += "@" + link.String
 		}
 		return metadata.Child{Kind: "synonym", Name: name, Attributes: map[string]any{"target": target}}, nil
+	})
+}
+
+const listDBLinksSQL = `
+SELECT l.db_link, l.username, l.host
+FROM all_db_links l
+WHERE l.owner = :1
+ORDER BY l.db_link`
+
+func ListDBLinks(ctx context.Context, q metadata.Querier, parents []metadata.ScopePath) (map[metadata.ScopePath][]metadata.Child, error) {
+	return listInSchema(ctx, q, parents, "database links", listDBLinksSQL, func(rows *sql.Rows) (metadata.Child, error) {
+		var name string
+		var username, host sql.NullString
+		if err := rows.Scan(&name, &username, &host); err != nil {
+			return metadata.Child{}, err
+		}
+		return metadata.Child{Kind: "db_link", Name: name, Attributes: map[string]any{"username": username.String, "host": host.String}}, nil
 	})
 }
 

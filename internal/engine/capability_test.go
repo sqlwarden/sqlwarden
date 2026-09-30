@@ -16,11 +16,9 @@ import (
 // can assert derivation turns them into capabilities.
 type capabilityDriver struct{ fakeDriver }
 
-func (capabilityDriver) SchemaSpec() metadata.SchemaSpec {
-	return metadata.SchemaSpec{Dialect: "postgres", Kinds: []metadata.SchemaObjectKind{{Kind: "table"}}}
-}
-func (capabilityDriver) InspectDirectory(context.Context, metadata.DirectoryOptions) (*metadata.Directory, error) {
-	return &metadata.Directory{}, nil
+func (capabilityDriver) Tree() metadata.Tree { return metadata.Tree{SystemObjects: true} }
+func (capabilityDriver) Querier(context.Context, string) (metadata.Querier, error) {
+	return nil, nil
 }
 func (capabilityDriver) InspectObjects(context.Context, []metadata.ObjectRef) ([]metadata.Object, error) {
 	return nil, nil
@@ -65,7 +63,7 @@ func TestCapabilitiesDerivedFromInterfaces(t *testing.T) {
 	if set.Engine.ID != "postgres" {
 		t.Fatalf("descriptor ID = %q", set.Engine.ID)
 	}
-	if !set.Capabilities[CapabilitySchemaDirectory] || !set.Capabilities[CapabilitySchemaObjects] {
+	if !set.Capabilities[CapabilitySchemaNavigator] || !set.Capabilities[CapabilitySchemaObjects] {
 		t.Errorf("schema caps should be true: %+v", set.Capabilities)
 	}
 	if !set.Capabilities[CapabilityQueryCursor] {
@@ -83,8 +81,8 @@ func TestCapabilitiesDerivedFromInterfaces(t *testing.T) {
 	if !set.Capabilities[CapabilitySQLExplain] || set.Explain == nil || !set.Explain.SupportsAnalyze {
 		t.Errorf("sql.explain and its spec should be derived from Explainer: %+v", set)
 	}
-	if set.Schema == nil || len(set.Schema.Kinds) != 1 {
-		t.Errorf("schema spec should be populated from SchemaSpec(): %+v", set.Schema)
+	if set.Tree == nil || !set.Tree.SystemObjects {
+		t.Errorf("navigator tree should be populated from Tree(): %+v", set.Tree)
 	}
 	// SQL features are derived from interfaces too: this fake implements none.
 	if set.Capabilities[CapabilitySQLClassify] || set.Capabilities[CapabilitySQLParse] || set.Capabilities[CapabilitySQLRewrite] {
@@ -103,7 +101,7 @@ func TestCapabilitiesAbsentWhenInterfacesNotImplemented(t *testing.T) {
 	registerFake("plain", DialectPostgres) // fakeDriver implements neither schema nor cursor
 	set, _ := Describe("plain")
 
-	if set.Capabilities[CapabilitySchemaDirectory] || set.Capabilities[CapabilityQueryCursor] {
+	if set.Capabilities[CapabilitySchemaNavigator] || set.Capabilities[CapabilityQueryCursor] {
 		t.Errorf("plain driver must not report schema/cursor caps: %+v", set.Capabilities)
 	}
 	if set.Capabilities[CapabilitySQLSafetyCheck] {
@@ -118,7 +116,21 @@ func TestCapabilitiesAbsentWhenInterfacesNotImplemented(t *testing.T) {
 	if set.Capabilities[CapabilitySSHTunnel] {
 		t.Errorf("plain driver must not report connection.ssh_tunnel: %+v", set.Capabilities)
 	}
-	if set.Schema != nil {
-		t.Errorf("plain driver must not carry a schema spec: %+v", set.Schema)
+	if set.Tree != nil {
+		t.Errorf("plain driver must not carry a navigator tree: %+v", set.Tree)
+	}
+}
+
+func TestCapabilitiesOmitSchemaDirectory(t *testing.T) {
+	resetRegistry(t)
+	Register(Registration{
+		ID: "postgres", DisplayName: "PostgreSQL", Dialect: DialectPostgres,
+		New: func() Driver { return capabilityDriver{} },
+	})
+	registerFake("plain", DialectPostgres)
+	for _, set := range Engines() {
+		if _, ok := set.Capabilities["schema.directory"]; ok {
+			t.Fatalf("%s reports schema.directory", set.Engine.ID)
+		}
 	}
 }

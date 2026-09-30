@@ -54,7 +54,7 @@ describe('organization general settings runtime tab', () => {
     expect(
       await screen.findByText(/fixed number is the instance-wide maximum/i),
     ).toBeInTheDocument()
-    expect(screen.getByText('1 hour')).toBeInTheDocument()
+    expect(screen.queryByText('Snapshot freshness')).not.toBeInTheDocument()
     expect(screen.queryByText(/Inherits instance default:/)).not.toBeInTheDocument()
   })
 

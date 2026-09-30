@@ -16,6 +16,20 @@ func TestNavigatorTreeValid(t *testing.T) {
 	}
 }
 
+func TestNavigatorSchemaListsDatabaseLinks(t *testing.T) {
+	links, ok := navigatorTree.Folder("schema", "db_links")
+	if !ok {
+		t.Fatal("schema has no db_links folder")
+	}
+	if links.Child != "db_link" || links.Label != "Database Links" {
+		t.Fatalf("db_links folder = %+v", links)
+	}
+	node, ok := navigatorTree.Node("db_link")
+	if !ok || !node.Leaf || !node.HasDefinition || node.Icon != "db_link" {
+		t.Fatalf("db_link node = %+v, %v", node, ok)
+	}
+}
+
 func TestMergeDependencies(t *testing.T) {
 	dep := func(name, direction string) metadata.Child {
 		return metadata.Child{Kind: "dependency", Name: name, Attributes: map[string]any{"direction": direction}}
