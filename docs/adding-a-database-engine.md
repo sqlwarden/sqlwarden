@@ -56,7 +56,8 @@ Create `internal/engine/engines/<name>/` and mirror the file layout of
 | `ddl.go` | visual DDL operations + column-type palette | `ddl.Executor` |
 | `cursor.go` | forward-only result paging over a live session | `cursor.QueryCursorDriver` |
 | `transaction.go` | begin/commit/rollback + savepoints | `transaction.SavepointController` |
-| `inspector.go` | schema directory + object detail + scope discovery + lazy definition | `metadata.SchemaInspector`, `metadata.ScopeDiscoverer`, `metadata.DefinitionInspector` |
+| `navigator.go` | navigator grammar (`Tree()`) + folder loaders | `metadata.SchemaInspector` |
+| `inspector.go` | database-scoped `Querier` + object detail + lazy definition | `metadata.SchemaInspector`, `metadata.DefinitionInspector` |
 | `relationships.go` | foreign-key graph per scope | `metadata.RelationshipInspector` |
 | `completer.go` | autocomplete + keyword vocabulary + catalog invalidation | `completer.Completer`, `completer.VocabularyProvider`, `completer.CatalogInvalidator` |
 
@@ -133,27 +134,40 @@ if the engine has common alternate names.
   If the engine auto-commits on DDL, say so — it drives the frontend
   `manualTransactionWarning`.
 
-## 7. Schema introspection (`inspector.go`, `relationships.go`)
+## 7. Schema introspection (`navigator.go`, `inspector.go`, `relationships.go`)
 
-- `SchemaSpec()` is pure and static: declare each object kind with label,
-  order, `Relational`, `SupportsDiagram`, and `Listing` (`"enumerated"` vs
-  `"searched"` for high-cardinality kinds).
-- `InspectDirectory(opts.Root)` — cheap names+kinds listing, scoped to a root.
-  Populate `RowCounts` only when it is free alongside the listing query.
-- `InspectObjects(refs)` — detail for requested refs only; push the filter
-  into the query, never fetch-all-then-filter.
+The schema tree is a lazy navigator: nothing loads until a user expands a
+node. Implement `metadata.SchemaInspector`:
+
+- `Tree()` returns a static `metadata.Tree`: a root `Node`, a map of node kinds,
+  and each node's `Folder`s. It must not touch the target database.
+  `Tree.Validate` enforces the rules: folder kinds are unique per node, every
+  folder child kind is declared, leaves declare no folders, and every icon is
+  in `metadata.KnownIcons`. `KnownIcons` is mirrored in
+  `frontend/src/components/ide/navigator/icons.ts`; add a new icon to both.
+- `Querier(ctx, database)` returns a `metadata.Querier` scoped to `database`
+  (`""` means the connection default).
+- `InspectObjects(refs)` returns detail for requested refs only; push the
+  filter into the query, never fetch-all-then-filter.
+
+Each `Folder` has a `Loader`. A loader receives a batch of parents that share a
+node kind and a database, and returns children grouped per parent path; one
+query should serve the whole batch. Loaders set `System` on vendor/system
+objects (prefer a runtime flag over a static list) and `Current` on the
+connection's current database or schema. Set `Tree.SystemObjects` when the
+engine can distinguish system objects.
+
+Keep the grammar and every loader in one `navigator.go`, so the query behind
+any folder (for example, indexes) is found in one place. Compatible engines
+derive their tree from the parent engine's through `Tree.WithNode`,
+`Tree.WithFolder`, and `Tree.WithoutFolder` overrides instead of copying it
+(see `mariadb`, `supabase`).
+
 - `DefinitionInspector.InspectDefinition(ref)` — lazy single-object DDL text.
   Implement this instead of embedding a "DDL" source descriptor in bulk
   `InspectObjects` when producing the definition per object is expensive.
-- `ScopeDiscoverer.DiscoverScopes` — cheap connection-time hierarchy (list
-  schemas/databases only, no object inspection).
-- Exclude vendor/system schemas; prefer a runtime "system object" flag with a
-  static fallback list.
-- **Directory loading strategy:** the default sync is eager (full crawl,
-  cached). For cloud data warehouses see `docs/sqlwarden-architecture.md` →
-  *Directory Loading Strategy* — a lazy strategy is planned behind a
-  `SchemaSpec` capability flag; new warehouse engines should expect to opt into
-  it rather than eager-crawling millions of objects.
+- Test the grammar and loaders with `enginetest.RunNavigatorContract`, plus a
+  per-driver integration test against a testcontainers database.
 
 ## 8. Completion (`completer.go`)
 
@@ -239,8 +253,9 @@ the bastion. Host-key verification is mandatory (no default
 - Add `<name>_integration_test.go` with `//go:build integration`.
 - Start the database with `testcontainers` (see Oracle's
   `gvenzl/oracle-free` setup) and exercise: connect, query, cursor paging,
-  classify, DDL executor, transaction + savepoint, directory + object
-  inspection, relationships, EXPLAIN (plain and analyze).
+  classify, DDL executor, transaction + savepoint, navigator loaders via
+  `enginetest.RunNavigatorContract`, object inspection, relationships,
+  EXPLAIN (plain and analyze).
 - If the engine advertises cursor support, add the heap-materialization guard
   test (fetching a small page from a large generated result must not grow Go
   heap proportionally) — required per the architecture doc.
@@ -251,12 +266,15 @@ the bastion. Host-key verification is mandatory (no default
 ## 14. Definition-of-done checklist
 
 - [ ] `go.mod` updated; `make tidy`, `make audit` clean.
-- [ ] All 13 capability files present or a documented reason for each omission.
+- [ ] Every capability file in the section 2 table present or a documented reason for each omission.
 - [ ] `engine.Register` in `<name>.go`; blank import in `internal/web/drivers.go`.
 - [ ] Dialect constant + `NormalizeName` alias in `internal/engine/driver.go`.
 - [ ] Colocated unit tests for every capability file; `make test` green.
 - [ ] Build-tagged integration test covering every capability; passes locally
       against a container.
+- [ ] `Tree()` passes `Tree.Validate`; every folder loader is covered by
+      `enginetest.RunNavigatorContract`; new icons added to `KnownIcons` and
+      `navigator/icons.ts`.
 - [ ] Frontend engine registered in `engines/registry.ts`; dialect, connection
       driver, object-detail hooks, real brand icon added.
 - [ ] `make frontend/format/check`, `make frontend/lint`,
