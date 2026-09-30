@@ -279,9 +279,9 @@ Important tables:
 - `auth_sessions`
 - `org_access_sessions`
 - `refresh_tokens`
-- `schema_snapshots`
-- `schema_snapshot_objects`
-- `schema_snapshot_relationships`
+- `schema_nodes`
+- `schema_objects`
+- `schema_relationships`
 
 Entity IDs are database integer IDs for relational resources. Refresh tokens and live database session IDs use ULIDs.
 
@@ -733,68 +733,81 @@ Future:
 
 ## Schema Introspection
 
-Implemented schema introspection includes:
+The schema tree is a lazy, DBeaver-style navigator: nothing is listed until a
+user expands a node, and each expansion loads exactly one folder of one parent.
 
-- Engine-level schema capability for cheap catalog listing and on-demand object detail.
-- Immutable, compressed schema generations in the SQLWarden metadata database. Publication atomically swaps the active generation and retains the immediately previous generation.
-- Organization policy enabled by default, with a connection-level `inherit|disabled` override that can only tighten the organization policy.
-- Immediate snapshot deletion and queued/running refresh cancellation when persistence is disabled.
-- A singleton background `schema_sync` job scheduled after a successful connection when metadata is missing or older than the configured freshness interval, and after successful DDL.
-- API access to persisted catalog, object, and relationship metadata without a live target-database session.
-- A compliance fallback that stores metadata only in the bounded process-local cache while a live session exists. Disconnected schema browsing and semantic autocomplete are unavailable in this mode; syntax-only completion remains possible.
-- Request-aware logs for schema session validation, unsupported engine capability, refresh requests, and response summaries. Snapshot jobs log only operational counts and dialect information, never DSNs or object contents.
+### Driver Grammar
 
-The metadata database is the synchronization boundary for multiple SQLWarden
-replicas: singleton job keys deduplicate refresh work and immutable snapshot IDs
-avoid partial reads. Redis is not required. Live database sessions and query
-cursors remain process-local and therefore still require sticky routing until a
-separate distributed session design is introduced. Completion should consume
-the same snapshot reader through a transport-neutral service; WebSocket/LSP
-transport can be added later for collaboration without changing snapshot
-storage.
+Each engine implements `metadata.SchemaInspector` (`internal/engine/metadata`):
 
-### Directory Loading Strategy (eager vs. lazy)
+- `Tree()` returns a static `metadata.Tree` grammar of node kinds and their
+  folders. It never touches the target database. `GET /schema/tree` serves
+  it so the frontend renders structure from the backend instead of
+  duplicating per-driver layout rules.
+- Each `metadata.Folder` carries a `Loader` that lists children for a batch of
+  parents sharing a node kind and database, run against the `Querier` returned
+  by `Querier(ctx, database)`.
+- `InspectObjects` returns detail only for requested object refs.
 
-The current `schema_sync` orchestration is **eager**: one job crawls the full
-directory, calls `InspectObjects` for every ref, inspects all relationships,
-and publishes a complete generation. For PostgreSQL, MySQL, Oracle, and SQLite
-this is the right trade — a single crawl buys an instant object tree, an
-offline-capable catalog, and full schema-aware autocomplete that never pays
-per-keystroke latency.
+The capability is reported as `schema.navigator`.
 
-For cloud data warehouses (Snowflake, BigQuery, Redshift) the eager crawl does
-not scale:
+### Navigator Service
 
-- `INFORMATION_SCHEMA` access is slow and metered (warehouse credits are billed
-  for the crawl itself).
-- Accounts routinely hold thousands of schemas and objects, so a full crawl is
-  minutes-to-hours and recurs on every freshness interval.
-- Metadata churn is unpredictable, so periodic full re-sync is largely wasted
-  spend.
+`internal/schema.Navigator` owns caching and loading:
 
-The metadata interfaces are already lazy-capable — `InspectDirectory` accepts a
-`Root` scope, `InspectObjects` filters to requested refs, `DefinitionInspector`
-defers DDL text, and `SchemaObjectKind.Listing = "searched"` marks kinds that
-must not be enumerated. What is eager is only the orchestration. The planned
-direction is a **per-engine strategy selected by a capability flag on
-`SchemaSpec`** (e.g. `directory_loading: "eager" | "lazy"`), not a driver-name
-branch:
+- Listings are addressed by (parent path, folder kind). Lookup order is the
+  process-local memory cache, then the persisted store, then a live load
+  through the connection's session. Concurrent loads of the same listing are
+  coalesced.
+- An uncached listing without a live session returns `ErrSessionRequired`,
+  surfaced as HTTP 409 `session_required`. The navigator never opens a target
+  connection on its own; the UI shows cached data and a connect call to action.
+- `Refresh` reloads every cached listing at or below a path, batched by parent
+  node kind, folder, and database. Children that vanished have their cached
+  subtrees, objects, and relationships deleted.
+- Memory for a connection is dropped when its last live session closes
+  (`ForgetConnection`) and when its persisted cache is purged.
 
-1. Lazy sync performs a shallow crawl only — scopes via `ScopeDiscoverer`,
-   optionally top-level object names per scope, no object detail, no
-   relationships.
-2. The frontend tree fetches a scope's children on expand via
-   `InspectDirectory{Root: scope}`; object detail loads on open through the
-   existing `InspectObjects` path.
-3. High-cardinality kinds are marked `Listing: "searched"` and backed by a
-   "search objects in scope" endpoint (the flag exists; the endpoint does not
-   yet).
-4. Autocomplete is the main cost of lazy loading: the completion catalog is
-   partial until objects are visited. Mitigation is on-demand hydration for
-   touched scopes plus an optional rate/credit-budgeted background fill crawl
-   that hydrates the completion index progressively. Pure lazy (as in DBeaver)
-   is cheaper but incompatible with catalog-wide completion, so cloud-warehouse
-   engines need the hybrid.
+### Persistence
+
+Loaded listings, objects, and relationships are upserted into `schema_nodes`,
+`schema_objects`, and `schema_relationships` (migration `000040`) as the user
+expands the tree. Persistence is governed by the organization
+`schema_snapshots_enabled` setting and the connection `schema_snapshot_policy`
+(`inherit|disabled`), which can only tighten the organization policy. When
+persistence is off, metadata lives only in the navigator memory cache while a
+live session exists, and disabling it deletes the connection's persisted
+metadata immediately.
+
+### Databases And Scopes
+
+For engines whose grammar has a database level, `show_all_databases` controls
+whether the database folder lists every database or only the connection's
+default database. It is forced on when the connection names no default
+database. The default scope's database is marked current and is always
+present in the listing.
+
+### Routes
+
+Connection-scoped schema routes:
+
+- `GET /schema/tree`: the driver grammar plus DDL editor and statement specs.
+- `GET /schema/nodes`: one folder listing for a parent path.
+- `POST /schema/refresh`: refresh cached listings at or below a path.
+- `GET /schema/relationships`: relationship graph for a scope.
+- `POST /schema/objects`: object detail for requested refs.
+- `GET /schema/object/definition`: object DDL text.
+- `GET /schema/completion-index`: completion metadata.
+
+Handlers and the navigator log session validation, unsupported capabilities,
+and refresh summaries, never DSNs or object contents.
+
+### Completion
+
+Completion builds its index from whatever the navigator has cached for the
+connection, synthesizing relation columns from cached column listings when
+object detail is absent. It still consumes the legacy `metadata.Directory`
+shape until completion moves to on-demand loading (SQLW-191).
 
 ## Frontend Architecture
 
