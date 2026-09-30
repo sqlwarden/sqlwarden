@@ -207,7 +207,7 @@ func (d *Driver) InspectDefinition(ctx context.Context, ref metadata.ObjectRef) 
 		}
 		return SourceDescriptor("DDL", def), nil
 	case "constraint":
-		def, err := ConstraintDefinition(ctx, d.db, ref)
+		def, err := ConstraintDefinition(ctx, d.db, ref, false)
 		if err != nil {
 			return nil, err
 		}

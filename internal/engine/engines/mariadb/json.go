@@ -19,7 +19,7 @@ var jsonCheckPattern = regexp.MustCompile("(?i)json_valid\\(`?([A-Za-z0-9_$]+)`?
 
 // jsonColumns returns the set of (schema, table, column) triples backed by a
 // MariaDB auto-JSON check constraint, keyed by "schema\x00table\x00column".
-func jsonColumns(ctx context.Context, db *sql.DB, refs []metadata.ObjectRef) (map[string]bool, error) {
+func jsonColumns(ctx context.Context, db metadata.Querier, refs []metadata.ObjectRef) (map[string]bool, error) {
 	pairs, args := mariadbPairFilter(refs)
 	q := `
 SELECT tc.table_schema, tc.table_name, cc.check_clause
