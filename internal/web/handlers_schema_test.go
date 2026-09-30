@@ -33,26 +33,6 @@ func (schemaFakeDriver) Execute(context.Context, string, ...any) (*result.Result
 }
 func (schemaFakeDriver) Dialect() engine.Dialect { return engine.DialectSQLite }
 
-func (schemaFakeDriver) SchemaSpec() metadata.SchemaSpec {
-	return metadata.SchemaSpec{
-		Dialect: "sqlite",
-		Kinds: []metadata.SchemaObjectKind{{
-			Kind: "table", Label: "Table", PluralLabel: "Tables", Order: 1,
-			Relational: true, SupportsDiagram: true, Listing: "enumerated",
-		}},
-	}
-}
-
-func (schemaFakeDriver) InspectDirectory(context.Context, metadata.DirectoryOptions) (*metadata.Directory, error) {
-	scope := metadata.NewScopePath(metadata.ScopeSegment{Kind: "database", Name: "main"})
-	return &metadata.Directory{
-		Engine: "sqlite", DefaultScope: scope,
-		Roots: []metadata.ScopeNode{{Path: scope, Groups: []metadata.ObjectGroup{{
-			Kind: "table", Objects: []metadata.ObjectRef{{Scope: scope, Kind: "table", Name: "widgets"}},
-		}}}},
-	}, nil
-}
-
 func (schemaFakeDriver) InspectObjects(_ context.Context, refs []metadata.ObjectRef) ([]metadata.Object, error) {
 	out := make([]metadata.Object, 0, len(refs))
 	for _, ref := range refs {

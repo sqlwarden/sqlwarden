@@ -170,6 +170,21 @@ func TestTestConnectionValidationAndSuccess(t *testing.T) {
 		t.Fatalf("scope_discovery = %#v, want object", successRes.BodyFields["scope_discovery"])
 	}
 	assert.Equal[any](t, discovery["current"], []any{map[string]any{"kind": "database", "name": "main"}})
+	if errText, present := successRes.BodyFields["scope_discovery_error"]; present {
+		t.Fatalf("scope_discovery_error = %v", errText)
+	}
+}
+
+func TestEveryEngineImplementsSchemaInspector(t *testing.T) {
+	t.Parallel()
+	for _, set := range engine.Engines() {
+		if set.Engine.ID == navPlainEngine {
+			continue
+		}
+		if set.Tree == nil {
+			t.Errorf("%s has no navigator tree", set.Engine.ID)
+		}
+	}
 }
 
 func TestTestConnectionSuccessLogsOutcome(t *testing.T) {

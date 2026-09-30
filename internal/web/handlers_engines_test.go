@@ -47,7 +47,7 @@ func TestListEngines(t *testing.T) {
 	}
 	assert.Equal(t, pg["display_name"], "PostgreSQL")
 	caps := pg["capabilities"].(map[string]any)
-	assert.Equal(t, caps["schema.directory"], true)
+	assert.Equal(t, caps["schema.navigator"], true)
 	assert.Equal(t, caps["query.cursor"], true)
 	assert.Equal(t, caps["sql.complete"], true)
 	assert.Equal(t, byID["mysql"]["capabilities"].(map[string]any)["sql.complete"], true)
@@ -99,7 +99,7 @@ func TestListEngines(t *testing.T) {
 	assert.Equal(t, neon["display_name"], "Neon")
 	assert.Equal(t, neon["dialect"], "postgres")
 	neonCaps := neon["capabilities"].(map[string]any)
-	for _, capID := range []string{"schema.directory", "schema.objects", "sql.complete", "sql.explain", "connection.tls", "connection.ssh_tunnel"} {
+	for _, capID := range []string{"schema.navigator", "schema.objects", "sql.complete", "sql.explain", "connection.tls", "connection.ssh_tunnel"} {
 		assert.Equal(t, neonCaps[capID], caps[capID])
 	}
 
@@ -110,7 +110,7 @@ func TestListEngines(t *testing.T) {
 	assert.Equal(t, supabase["display_name"], "Supabase")
 	assert.Equal(t, supabase["dialect"], "postgres")
 	supabaseCaps := supabase["capabilities"].(map[string]any)
-	for _, capID := range []string{"schema.directory", "schema.objects", "sql.complete", "sql.explain", "connection.tls", "connection.ssh_tunnel"} {
+	for _, capID := range []string{"schema.navigator", "schema.objects", "sql.complete", "sql.explain", "connection.tls", "connection.ssh_tunnel"} {
 		assert.Equal(t, supabaseCaps[capID], caps[capID])
 	}
 }
@@ -291,5 +291,36 @@ func TestGetEngineOracleCompletionVocabulary(t *testing.T) {
 	}
 	if !foundSelect {
 		t.Fatal("oracle vocabulary missing SELECT keyword")
+	}
+}
+
+func TestListEnginesReportsNavigatorFlagsWithoutSchemaSpec(t *testing.T) {
+	t.Parallel()
+	app := newTestApp(t)
+	_, tok, _ := seedOrgOwner(t, app, uniqueEmail(t, "engine-navigator"), "Navigator", "Navigator Org")
+
+	res := send(t, newAuthRequest(t, http.MethodGet, "/api/v1/engines", nil, tok), app.routes())
+	assert.Equal(t, res.StatusCode, http.StatusOK)
+
+	byID := make(map[string]map[string]any)
+	for _, e := range res.BodyFields["engines"].([]any) {
+		m := e.(map[string]any)
+		byID[m["id"].(string)] = m
+	}
+	for _, set := range engine.Engines() {
+		view := byID[string(set.Engine.ID)]
+		if view == nil {
+			t.Fatalf("%s missing from engines response", set.Engine.ID)
+		}
+		if _, present := view["schema"]; present {
+			t.Errorf("%s still reports a schema spec", set.Engine.ID)
+		}
+		wantSystem, wantAll := false, false
+		if set.Tree != nil {
+			wantSystem = set.Tree.SystemObjects
+			wantAll = set.Tree.DatabaseKind() != ""
+		}
+		assert.Equal(t, view["supports_system_objects"], any(wantSystem))
+		assert.Equal(t, view["show_all_databases"], any(wantAll))
 	}
 }

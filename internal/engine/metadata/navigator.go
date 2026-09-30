@@ -88,7 +88,8 @@ var KnownIcons = map[string]bool{
 	"partition": true, "trigger": true, "rule": true, "policy": true, "function": true,
 	"procedure": true, "sequence": true, "type": true, "domain": true, "aggregate": true,
 	"event_trigger": true, "extension": true, "event": true, "user": true, "role": true,
-	"profile": true, "package": true, "queue": true, "synonym": true, "extended_property": true,
+	"profile": true, "package": true, "queue": true, "synonym": true, "db_link": true,
+	"extended_property": true,
 }
 
 func (t Tree) Node(kind string) (Node, bool) {

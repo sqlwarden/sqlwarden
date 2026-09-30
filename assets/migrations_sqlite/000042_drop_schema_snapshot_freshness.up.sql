@@ -1,0 +1,2 @@
+ALTER TABLE instance_settings DROP COLUMN schema_snapshot_freshness_seconds;
+ALTER TABLE organization_runtime_settings DROP COLUMN schema_snapshot_freshness_seconds;

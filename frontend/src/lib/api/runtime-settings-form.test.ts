@@ -18,7 +18,6 @@ function settingsFixture(
       query_max_result_bytes: null,
       exports_sync_max_bytes: null,
       exports_background_max_bytes: null,
-      schema_snapshot_freshness_seconds: null,
       file_revisions_enabled: null,
       file_revisions_keep_latest: null,
       query_history_mode: null,
@@ -31,7 +30,6 @@ function settingsFixture(
       query_max_result_bytes: 10_485_760,
       exports_sync_max_bytes: 52_428_800,
       exports_background_max_bytes: 0,
-      schema_snapshot_freshness_seconds: 3_600,
       file_revisions_enabled: true,
       file_revisions_keep_latest: 10,
       query_history_mode: 'backend',
@@ -43,7 +41,6 @@ function settingsFixture(
       query_max_result_bytes_max: 104_857_600,
       exports_sync_max_bytes_max: 209_715_200,
       exports_background_max_bytes_max: 0,
-      schema_snapshot_freshness_seconds_min: 900,
       file_revisions_available: true,
       file_revisions_keep_latest_max: 50,
       query_history_retention_count_max: 5_000,
@@ -121,13 +118,23 @@ describe('buildRuntimeSettingsPatch', () => {
     const settings = settingsFixture({ exports_sync_max_bytes: 1_000 })
     const form = runtimeSettingsFormState(settings)
     form.exportsSyncMaxBytes.overridden = false // reset to inherit
-    form.schemaSnapshotFreshnessSeconds = { overridden: true, value: 1_800 } // new override
+    form.queryHistoryRetentionCount = { overridden: true, value: 250 } // new override
     form.fileRevisionsKeepLatest = { overridden: true, value: 5 } // new override
 
     expect(buildRuntimeSettingsPatch(form, settings.overrides)).toEqual({
       exports_sync_max_bytes: null,
-      schema_snapshot_freshness_seconds: 1_800,
       file_revisions_keep_latest: 5,
+      query_history_retention_count: 250,
     })
+  })
+
+  it('never serializes a schema snapshot freshness override', () => {
+    const settings = settingsFixture()
+    const form = runtimeSettingsFormState(settings)
+    for (const field of Object.values(form)) field.overridden = true
+
+    expect(buildRuntimeSettingsPatch(form, settings.overrides)).not.toHaveProperty(
+      'schema_snapshot_freshness_seconds',
+    )
   })
 })

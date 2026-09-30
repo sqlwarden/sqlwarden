@@ -9,60 +9,6 @@ import (
 	"github.com/sqlwarden/internal/engine/metadata"
 )
 
-// CatalogTables enumerates every table and view in database, invoking add
-// once per object with its schema, name, and resolved kind ("table" or
-// "view"). Unlike mysql.CatalogTables, it excludes TiDB's native SEQUENCE
-// objects — information_schema.tables.table_type reports them as "SEQUENCE",
-// a value MySQL's table_type never produces — so callers must combine this
-// with CatalogSequences rather than mysql.CatalogTables to avoid misreporting
-// sequences as plain tables.
-func CatalogTables(ctx context.Context, db *sql.DB, database string, add func(schema, name, kind string)) error {
-	const q = `
-SELECT table_schema, table_name, table_type
-FROM information_schema.tables
-WHERE table_schema = ? AND table_type <> 'SEQUENCE'
-ORDER BY table_schema, table_name`
-	rows, err := db.QueryContext(ctx, q, database)
-	if err != nil {
-		return err
-	}
-	defer rows.Close()
-	for rows.Next() {
-		var ns, name, tableType string
-		if err := rows.Scan(&ns, &name, &tableType); err != nil {
-			return err
-		}
-		kind := "table"
-		if tableType == "VIEW" {
-			kind = "view"
-		}
-		add(ns, name, kind)
-	}
-	return rows.Err()
-}
-
-// CatalogSequences enumerates every native TiDB sequence in database.
-func CatalogSequences(ctx context.Context, db *sql.DB, database string, add func(schema, name string)) error {
-	const q = `
-SELECT table_schema, table_name
-FROM information_schema.tables
-WHERE table_schema = ? AND table_type = 'SEQUENCE'
-ORDER BY table_schema, table_name`
-	rows, err := db.QueryContext(ctx, q, database)
-	if err != nil {
-		return err
-	}
-	defer rows.Close()
-	for rows.Next() {
-		var ns, name string
-		if err := rows.Scan(&ns, &name); err != nil {
-			return err
-		}
-		add(ns, name)
-	}
-	return rows.Err()
-}
-
 func tidbPairFilter(refs []metadata.ObjectRef) (string, []any) {
 	var sb strings.Builder
 	args := make([]any, 0, len(refs)*2)

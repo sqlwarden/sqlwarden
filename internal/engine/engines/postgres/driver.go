@@ -36,14 +36,6 @@ func (d *Driver) DB() *sql.DB {
 	return d.db
 }
 
-// DefaultScope returns the connection's configured default scope (e.g. the
-// selected schema). Compatible engines that override InspectDirectory or
-// InspectObjects need this to reproduce the same default-scope resolution
-// the embedded implementation performs.
-func (d *Driver) DefaultScope() metadata.ScopePath {
-	return d.defaultScope
-}
-
 // execer is satisfied by both *sql.DB and *sql.Tx, letting every statement
 // path resolve through the same accessor whether or not a transaction is open.
 type execer interface {

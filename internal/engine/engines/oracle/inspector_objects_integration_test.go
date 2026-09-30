@@ -32,23 +32,6 @@ func TestOracleInspectSourceObjectKinds(t *testing.T) {
 		{Scope: itScope(), Kind: "type", Name: "SOURCE_TYPE"},
 		{Scope: itScope(), Kind: "type_body", Name: "SOURCE_TYPE"},
 	}
-	directory, err := d.InspectDirectory(context.Background(), metadata.DirectoryOptions{})
-	if err != nil {
-		t.Fatal(err)
-	}
-	listed := map[metadata.ObjectRef]bool{}
-	for _, scope := range directory.ScopeNodes() {
-		for _, group := range scope.Groups {
-			for _, ref := range group.Objects {
-				listed[ref] = true
-			}
-		}
-	}
-	for _, ref := range refs {
-		if !listed[ref] {
-			t.Errorf("directory is missing %+v", ref)
-		}
-	}
 	for _, dict := range []oracleDict{{}, {user: true}} {
 		objects, err := d.inspectRoutines(context.Background(), dict, refs)
 		if err != nil {
@@ -98,10 +81,6 @@ func TestOracleInspectCatalogObjectKinds(t *testing.T) {
 	} {
 		mustExec(t, d, sql)
 	}
-	directory, err := d.InspectDirectory(context.Background(), metadata.DirectoryOptions{})
-	if err != nil {
-		t.Fatal(err)
-	}
 	refs := []metadata.ObjectRef{
 		{Scope: itScope(), Kind: "synonym", Name: "CATALOG_ALIAS"},
 		{Scope: itScope(), Kind: "index", Name: "catalog'index"},
@@ -109,26 +88,28 @@ func TestOracleInspectCatalogObjectKinds(t *testing.T) {
 		{Scope: itScope(), Kind: "constraint", Name: "CATALOG_CHECK"},
 		{Scope: itScope(), Kind: "queue", Name: "CATALOG_QUEUE"},
 	}
-	listed := map[metadata.ObjectRef]bool{}
-	for _, scope := range directory.ScopeNodes() {
-		for _, group := range scope.Groups {
-			for _, ref := range group.Objects {
-				listed[ref] = true
-				// Oracle can append DB_DOMAIN to the database link name.
-				if ref.Kind == "db_link" && strings.HasPrefix(ref.Name, "CATALOG_LINK") {
-					refs = append(refs, ref)
-				}
+	q, err := d.Querier(context.Background(), "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	links, err := ListDBLinks(context.Background(), q, []metadata.ScopePath{itScope()})
+	if err != nil {
+		t.Fatal(err)
+	}
+	// Oracle can append DB_DOMAIN to the database link name.
+	var link string
+	for _, child := range links[itScope()] {
+		if child.Kind == "db_link" && strings.HasPrefix(child.Name, "CATALOG_LINK") {
+			link = child.Name
+			if child.Attributes["username"] != "REMOTE_USER" {
+				t.Errorf("db link username = %v, want REMOTE_USER", child.Attributes["username"])
 			}
 		}
 	}
-	if len(refs) != 6 {
-		t.Fatal("database link was not listed")
+	if link == "" {
+		t.Fatalf("database link was not listed: %+v", links[itScope()])
 	}
-	for _, ref := range refs {
-		if !listed[ref] {
-			t.Errorf("directory is missing %+v", ref)
-		}
-	}
+	refs = append(refs, metadata.ObjectRef{Scope: itScope(), Kind: "db_link", Name: link})
 	objects, err := d.InspectObjects(context.Background(), refs)
 	if err != nil {
 		t.Fatal(err)

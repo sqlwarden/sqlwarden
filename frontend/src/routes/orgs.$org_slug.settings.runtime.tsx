@@ -26,15 +26,9 @@ import {
   bytesInUnit,
   bytesToSize,
   byteUnitOptions,
-  durationToSeconds,
-  durationUnitOptions,
   formatBytesValue,
-  formatDuration,
-  secondsInUnit,
-  secondsToDuration,
   sizeToBytes,
   type ByteUnit,
-  type DurationUnit,
 } from '#/lib/units'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '#/components/ui/card'
 import { Input } from '#/components/ui/input'
@@ -102,7 +96,6 @@ interface RuntimeUnits {
   queryMaxResultBytes: ByteUnit
   exportsSyncMaxBytes: ByteUnit
   exportsBackgroundMaxBytes: ByteUnit
-  schemaSnapshotFreshnessSeconds: DurationUnit
 }
 
 function unitsFromForm(form: RuntimeSettingsFormState): RuntimeUnits {
@@ -110,8 +103,6 @@ function unitsFromForm(form: RuntimeSettingsFormState): RuntimeUnits {
     queryMaxResultBytes: bytesToSize(form.queryMaxResultBytes.value).unit,
     exportsSyncMaxBytes: bytesToSize(form.exportsSyncMaxBytes.value).unit,
     exportsBackgroundMaxBytes: bytesToSize(form.exportsBackgroundMaxBytes.value).unit,
-    schemaSnapshotFreshnessSeconds: secondsToDuration(form.schemaSnapshotFreshnessSeconds.value)
-      .unit,
   }
 }
 
@@ -444,61 +435,6 @@ export function OrganizationRuntimeSettingsPanel({
 
         <Card>
           <CardHeader className="border-b border-border">
-            <CardTitle>Schema Snapshots</CardTitle>
-            <CardDescription>
-              How often persisted schema snapshots refresh for this organization.
-            </CardDescription>
-          </CardHeader>
-          <CardContent>
-            <OverrideField
-              label="Snapshot freshness"
-              description="Minimum interval between snapshot refreshes. Can only be made less frequent than the instance interval."
-              overridden={form.schemaSnapshotFreshnessSeconds.overridden}
-              disabled={disabled}
-              onReset={() =>
-                updateForm('schemaSnapshotFreshnessSeconds', {
-                  ...form.schemaSnapshotFreshnessSeconds,
-                  overridden: false,
-                  value: constraints.schema_snapshot_freshness_seconds_min,
-                })
-              }
-              limitText={formatDuration(constraints.schema_snapshot_freshness_seconds_min)}
-              limitDescription="This fixed value is the instance-wide minimum refresh interval. The organization can refresh less frequently, but not more frequently."
-              error={fieldErrors.schema_snapshot_freshness_seconds}
-            >
-              <UnitInputField
-                label="Snapshot freshness"
-                error={Boolean(fieldErrors.schema_snapshot_freshness_seconds)}
-                amount={secondsInUnit(
-                  form.schemaSnapshotFreshnessSeconds.value,
-                  units.schemaSnapshotFreshnessSeconds,
-                )}
-                unit={units.schemaSnapshotFreshnessSeconds}
-                options={durationUnitOptions}
-                disabled={disabled}
-                min={secondsInUnit(
-                  constraints.schema_snapshot_freshness_seconds_min,
-                  units.schemaSnapshotFreshnessSeconds,
-                )}
-                onAmountChange={(amount) =>
-                  updateForm('schemaSnapshotFreshnessSeconds', {
-                    ...form.schemaSnapshotFreshnessSeconds,
-                    overridden: true,
-                    value: durationToSeconds(amount, units.schemaSnapshotFreshnessSeconds),
-                  })
-                }
-                onUnitChange={(unit) =>
-                  setUnits((current) =>
-                    current ? { ...current, schemaSnapshotFreshnessSeconds: unit } : current,
-                  )
-                }
-              />
-            </OverrideField>
-          </CardContent>
-        </Card>
-
-        <Card>
-          <CardHeader className="border-b border-border">
             <CardTitle>File Revisions</CardTitle>
             <CardDescription>
               Keep prior revisions of saved workspace files for this organization.
@@ -788,7 +724,6 @@ const runtimeFormFieldToApiField: Record<
   queryMaxResultBytes: 'query_max_result_bytes',
   exportsSyncMaxBytes: 'exports_sync_max_bytes',
   exportsBackgroundMaxBytes: 'exports_background_max_bytes',
-  schemaSnapshotFreshnessSeconds: 'schema_snapshot_freshness_seconds',
   fileRevisionsEnabled: 'file_revisions_enabled',
   fileRevisionsKeepLatest: 'file_revisions_keep_latest',
   queryHistoryMode: 'query_history_mode',

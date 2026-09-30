@@ -18,17 +18,16 @@ func TestInstanceRuntimeSettingsAPI(t *testing.T) {
 	adminToken := setupInstance(t, app, "runtime-admin@example.com", "Runtime Admin", "securepass99")
 
 	res := send(t, newAuthRequest(t, http.MethodPatch, "/api/v1/instance/settings", map[string]any{
-		"jwt_access_token_ttl_seconds":      1800,
-		"sessions_revocation_enabled":       false,
-		"query_max_result_rows":             2000,
-		"query_cursor_page_size":            250,
-		"query_max_result_bytes":            4096,
-		"exports_sync_max_bytes":            8192,
-		"exports_background_max_bytes":      0,
-		"schema_snapshot_freshness_seconds": 7200,
-		"file_revisions_enabled":            true,
-		"file_revisions_keep_latest":        10,
-		"error_notification_email":          "errors@example.com",
+		"jwt_access_token_ttl_seconds": 1800,
+		"sessions_revocation_enabled":  false,
+		"query_max_result_rows":        2000,
+		"query_cursor_page_size":       250,
+		"query_max_result_bytes":       4096,
+		"exports_sync_max_bytes":       8192,
+		"exports_background_max_bytes": 0,
+		"file_revisions_enabled":       true,
+		"file_revisions_keep_latest":   10,
+		"error_notification_email":     "errors@example.com",
 	}, adminToken), app.routes())
 	assert.Equal(t, res.StatusCode, http.StatusOK)
 	assert.Equal(t, res.BodyFields["jwt_access_token_ttl_seconds"], any(float64(1800)))
@@ -134,15 +133,13 @@ func TestInstanceRuntimeSettingsValidationIsAtomic(t *testing.T) {
 	adminToken := setupInstance(t, app, "runtime-validation@example.com", "Runtime Admin", "securepass99")
 
 	res := send(t, newAuthRequest(t, http.MethodPatch, "/api/v1/instance/settings", map[string]any{
-		"query_max_result_rows":             0,
-		"query_cursor_page_size":            0,
-		"schema_snapshot_freshness_seconds": -1,
-		"error_notification_email":          "invalid",
+		"query_max_result_rows":    0,
+		"query_cursor_page_size":   0,
+		"error_notification_email": "invalid",
 	}, adminToken), app.routes())
 	assert.Equal(t, res.StatusCode, http.StatusUnprocessableEntity)
 	assertValidationField(t, res, "query_max_result_rows")
 	assertValidationField(t, res, "query_cursor_page_size")
-	assertValidationField(t, res, "schema_snapshot_freshness_seconds")
 	assertValidationField(t, res, "error_notification_email")
 
 	settings, err := app.instanceSettings(context.Background())
@@ -272,12 +269,11 @@ func TestOrganizationRuntimeSettingsInheritanceAndClear(t *testing.T) {
 	assert.Equal(t, effective["query_max_result_rows"], any(float64(database.DefaultQueryMaxResultRows)))
 
 	res = send(t, newAuthRequest(t, http.MethodPatch, "/api/v1/orgs/"+org.Slug+"/runtime-settings", map[string]any{
-		"query_max_result_rows":             100,
-		"query_max_result_bytes":            1024,
-		"exports_sync_max_bytes":            4096,
-		"schema_snapshot_freshness_seconds": 172800,
-		"file_revisions_enabled":            false,
-		"file_revisions_keep_latest":        0,
+		"query_max_result_rows":      100,
+		"query_max_result_bytes":     1024,
+		"exports_sync_max_bytes":     4096,
+		"file_revisions_enabled":     false,
+		"file_revisions_keep_latest": 0,
 	}, token), app.routes())
 	assert.Equal(t, res.StatusCode, http.StatusOK)
 	effective = res.BodyFields["effective"].(map[string]any)
@@ -303,19 +299,50 @@ func TestOrganizationRuntimeSettingsInheritanceAndClear(t *testing.T) {
 	assert.Equal(t, effective["query_max_result_rows"], any(float64(50)))
 }
 
+func TestRuntimeSettingsOmitSchemaSnapshotFreshness(t *testing.T) {
+	t.Parallel()
+	app, org, _, token := setupWorkspaceOwner(t)
+	orgURL := "/api/v1/orgs/" + org.Slug + "/runtime-settings"
+
+	res := send(t, newAuthRequest(t, http.MethodPatch, orgURL, map[string]any{"query_max_result_rows": 100}, token), app.routes())
+	assert.Equal(t, res.StatusCode, http.StatusOK)
+
+	res = send(t, newAuthRequest(t, http.MethodGet, orgURL, nil, token), app.routes())
+	assert.Equal(t, res.StatusCode, http.StatusOK)
+	for _, section := range []string{"overrides", "effective", "constraints"} {
+		fields := res.BodyFields[section].(map[string]any)
+		for _, key := range []string{"schema_snapshot_freshness_seconds", "schema_snapshot_freshness_seconds_min"} {
+			if _, present := fields[key]; present {
+				t.Errorf("org runtime settings %s still report %s", section, key)
+			}
+		}
+	}
+
+	res = send(t, newAuthRequest(t, http.MethodGet, "/api/v1/instance/settings", nil, token), app.routes())
+	assert.Equal(t, res.StatusCode, http.StatusOK)
+	if _, present := res.BodyFields["schema_snapshot_freshness_seconds"]; present {
+		t.Errorf("instance settings still report schema_snapshot_freshness_seconds")
+	}
+
+	for _, url := range []string{orgURL, "/api/v1/instance/settings"} {
+		unknownRes := send(t, newAuthRequest(t, http.MethodPatch, url, map[string]any{"not_a_setting": 7200}, token), app.routes())
+		res = send(t, newAuthRequest(t, http.MethodPatch, url, map[string]any{"schema_snapshot_freshness_seconds": 7200}, token), app.routes())
+		assert.Equal(t, res.StatusCode, unknownRes.StatusCode)
+		assert.NotEqual(t, res.StatusCode, http.StatusInternalServerError)
+	}
+}
+
 func TestOrganizationRuntimeSettingsCannotWeakenInstancePolicy(t *testing.T) {
 	t.Parallel()
 	app, org, _, token := setupWorkspaceOwner(t)
 
 	res := send(t, newAuthRequest(t, http.MethodPatch, "/api/v1/orgs/"+org.Slug+"/runtime-settings", map[string]any{
-		"query_max_result_rows":             database.DefaultQueryMaxResultRows + 1,
-		"exports_background_max_bytes":      0,
-		"schema_snapshot_freshness_seconds": 1,
-		"file_revisions_keep_latest":        database.DefaultFileRevisionsKeepLatest + 1,
+		"query_max_result_rows":        database.DefaultQueryMaxResultRows + 1,
+		"exports_background_max_bytes": 0,
+		"file_revisions_keep_latest":   database.DefaultFileRevisionsKeepLatest + 1,
 	}, token), app.routes())
 	assert.Equal(t, res.StatusCode, http.StatusUnprocessableEntity)
 	assertValidationField(t, res, "query_max_result_rows")
-	assertValidationField(t, res, "schema_snapshot_freshness_seconds")
 	assertValidationField(t, res, "file_revisions_keep_latest")
 }
 

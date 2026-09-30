@@ -74,38 +74,35 @@ func (app *application) getOrganizationRuntimeSettings(w http.ResponseWriter, r 
 func organizationRuntimeSettingsResponse(overrides database.OrganizationRuntimeSettings, effective effectiveRuntimeSettings, instance database.InstanceSettings) map[string]any {
 	return map[string]any{
 		"overrides": map[string]any{
-			"query_max_result_rows":             overrides.QueryMaxResultRows,
-			"query_max_result_bytes":            overrides.QueryMaxResultBytes,
-			"exports_sync_max_bytes":            overrides.ExportsSyncMaxBytes,
-			"exports_background_max_bytes":      overrides.ExportsBackgroundMaxBytes,
-			"schema_snapshot_freshness_seconds": overrides.SchemaSnapshotFreshnessSeconds,
-			"file_revisions_enabled":            overrides.FileRevisionsEnabled,
-			"file_revisions_keep_latest":        overrides.FileRevisionsKeepLatest,
-			"query_history_mode":                overrides.QueryHistoryMode,
-			"query_history_retention_count":     overrides.QueryHistoryRetentionCount,
-			"query_favorites_mode":              overrides.QueryFavoritesMode,
+			"query_max_result_rows":         overrides.QueryMaxResultRows,
+			"query_max_result_bytes":        overrides.QueryMaxResultBytes,
+			"exports_sync_max_bytes":        overrides.ExportsSyncMaxBytes,
+			"exports_background_max_bytes":  overrides.ExportsBackgroundMaxBytes,
+			"file_revisions_enabled":        overrides.FileRevisionsEnabled,
+			"file_revisions_keep_latest":    overrides.FileRevisionsKeepLatest,
+			"query_history_mode":            overrides.QueryHistoryMode,
+			"query_history_retention_count": overrides.QueryHistoryRetentionCount,
+			"query_favorites_mode":          overrides.QueryFavoritesMode,
 		},
 		"effective": map[string]any{
-			"query_max_result_rows":             effective.QueryMaxResultRows,
-			"query_max_result_bytes":            effective.QueryMaxResultBytes,
-			"exports_sync_max_bytes":            effective.ExportsSyncMaxBytes,
-			"exports_background_max_bytes":      effective.ExportsBackgroundMaxBytes,
-			"schema_snapshot_freshness_seconds": int64(effective.SchemaSnapshotFreshness.Seconds()),
-			"file_revisions_enabled":            effective.FileRevisionsEnabled,
-			"file_revisions_keep_latest":        effective.FileRevisionsKeepLatest,
-			"query_history_mode":                effective.QueryHistoryMode,
-			"query_history_retention_count":     effective.QueryHistoryRetentionCount,
-			"query_favorites_mode":              effective.QueryFavoritesMode,
+			"query_max_result_rows":         effective.QueryMaxResultRows,
+			"query_max_result_bytes":        effective.QueryMaxResultBytes,
+			"exports_sync_max_bytes":        effective.ExportsSyncMaxBytes,
+			"exports_background_max_bytes":  effective.ExportsBackgroundMaxBytes,
+			"file_revisions_enabled":        effective.FileRevisionsEnabled,
+			"file_revisions_keep_latest":    effective.FileRevisionsKeepLatest,
+			"query_history_mode":            effective.QueryHistoryMode,
+			"query_history_retention_count": effective.QueryHistoryRetentionCount,
+			"query_favorites_mode":          effective.QueryFavoritesMode,
 		},
 		"constraints": map[string]any{
-			"query_max_result_rows_max":             instance.QueryMaxResultRows,
-			"query_max_result_bytes_max":            instance.QueryMaxResultBytes,
-			"exports_sync_max_bytes_max":            instance.ExportsSyncMaxBytes,
-			"exports_background_max_bytes_max":      instance.ExportsBackgroundMaxBytes,
-			"schema_snapshot_freshness_seconds_min": instance.SchemaSnapshotFreshnessSeconds,
-			"file_revisions_available":              instance.FileRevisionsEnabled,
-			"file_revisions_keep_latest_max":        instance.FileRevisionsKeepLatest,
-			"query_history_retention_count_max":     instance.QueryHistoryRetentionCountMax,
+			"query_max_result_rows_max":         instance.QueryMaxResultRows,
+			"query_max_result_bytes_max":        instance.QueryMaxResultBytes,
+			"exports_sync_max_bytes_max":        instance.ExportsSyncMaxBytes,
+			"exports_background_max_bytes_max":  instance.ExportsBackgroundMaxBytes,
+			"file_revisions_available":          instance.FileRevisionsEnabled,
+			"file_revisions_keep_latest_max":    instance.FileRevisionsKeepLatest,
+			"query_history_retention_count_max": instance.QueryHistoryRetentionCountMax,
 		},
 	}
 }
@@ -113,17 +110,16 @@ func organizationRuntimeSettingsResponse(overrides database.OrganizationRuntimeS
 func (app *application) updateOrganizationRuntimeSettings(w http.ResponseWriter, r *http.Request) {
 	org := contextGetOrg(r)
 	var input struct {
-		QueryMaxResultRows             nullablePatch[int]    `json:"query_max_result_rows"`
-		QueryMaxResultBytes            nullablePatch[int64]  `json:"query_max_result_bytes"`
-		ExportsSyncMaxBytes            nullablePatch[int64]  `json:"exports_sync_max_bytes"`
-		ExportsBackgroundMaxBytes      nullablePatch[int64]  `json:"exports_background_max_bytes"`
-		SchemaSnapshotFreshnessSeconds nullablePatch[int64]  `json:"schema_snapshot_freshness_seconds"`
-		FileRevisionsEnabled           nullablePatch[bool]   `json:"file_revisions_enabled"`
-		FileRevisionsKeepLatest        nullablePatch[int]    `json:"file_revisions_keep_latest"`
-		QueryHistoryMode               nullablePatch[string] `json:"query_history_mode"`
-		QueryHistoryRetentionCount     nullablePatch[int]    `json:"query_history_retention_count"`
-		QueryFavoritesMode             nullablePatch[string] `json:"query_favorites_mode"`
-		V                              validator.Validator   `json:"-"`
+		QueryMaxResultRows         nullablePatch[int]    `json:"query_max_result_rows"`
+		QueryMaxResultBytes        nullablePatch[int64]  `json:"query_max_result_bytes"`
+		ExportsSyncMaxBytes        nullablePatch[int64]  `json:"exports_sync_max_bytes"`
+		ExportsBackgroundMaxBytes  nullablePatch[int64]  `json:"exports_background_max_bytes"`
+		FileRevisionsEnabled       nullablePatch[bool]   `json:"file_revisions_enabled"`
+		FileRevisionsKeepLatest    nullablePatch[int]    `json:"file_revisions_keep_latest"`
+		QueryHistoryMode           nullablePatch[string] `json:"query_history_mode"`
+		QueryHistoryRetentionCount nullablePatch[int]    `json:"query_history_retention_count"`
+		QueryFavoritesMode         nullablePatch[string] `json:"query_favorites_mode"`
+		V                          validator.Validator   `json:"-"`
 	}
 	if err := request.DecodeJSON(w, r, &input); err != nil {
 		app.badRequest(w, r, err)
@@ -131,7 +127,7 @@ func (app *application) updateOrganizationRuntimeSettings(w http.ResponseWriter,
 	}
 	hasPatch := input.QueryMaxResultRows.Set || input.QueryMaxResultBytes.Set ||
 		input.ExportsSyncMaxBytes.Set || input.ExportsBackgroundMaxBytes.Set ||
-		input.SchemaSnapshotFreshnessSeconds.Set || input.FileRevisionsEnabled.Set ||
+		input.FileRevisionsEnabled.Set ||
 		input.FileRevisionsKeepLatest.Set || input.QueryHistoryMode.Set ||
 		input.QueryHistoryRetentionCount.Set || input.QueryFavoritesMode.Set
 	input.V.Check(hasPatch, "At least one setting is required.")
@@ -157,9 +153,6 @@ func (app *application) updateOrganizationRuntimeSettings(w http.ResponseWriter,
 	}
 	if input.ExportsBackgroundMaxBytes.Set {
 		settings.ExportsBackgroundMaxBytes = input.ExportsBackgroundMaxBytes.Value
-	}
-	if input.SchemaSnapshotFreshnessSeconds.Set {
-		settings.SchemaSnapshotFreshnessSeconds = input.SchemaSnapshotFreshnessSeconds.Value
 	}
 	if input.FileRevisionsEnabled.Set {
 		settings.FileRevisionsEnabled = input.FileRevisionsEnabled.Value
@@ -247,10 +240,6 @@ func validateOrganizationRuntimeSettings(v *validator.Validator, settings databa
 			valid = valid && *settings.ExportsBackgroundMaxBytes > 0 && *settings.ExportsBackgroundMaxBytes <= instance.ExportsBackgroundMaxBytes
 		}
 		v.CheckField(valid, "exports_background_max_bytes", "Background export limit must not exceed the instance limit; 0 is allowed only when the instance is unlimited.")
-	}
-	if settings.SchemaSnapshotFreshnessSeconds != nil {
-		v.CheckField(*settings.SchemaSnapshotFreshnessSeconds >= instance.SchemaSnapshotFreshnessSeconds && *settings.SchemaSnapshotFreshnessSeconds <= maxRuntimeDurationSeconds,
-			"schema_snapshot_freshness_seconds", "Schema snapshot freshness must be at least the instance interval.")
 	}
 	if settings.FileRevisionsEnabled != nil {
 		v.CheckField(!*settings.FileRevisionsEnabled || instance.FileRevisionsEnabled,

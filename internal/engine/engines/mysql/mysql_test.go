@@ -122,7 +122,7 @@ func TestConnect(t *testing.T) {
 		}
 	})
 
-	t.Run("no database still supports an empty directory", func(t *testing.T) {
+	t.Run("no database still lists databases", func(t *testing.T) {
 		config, err := mysqlconfig.ParseDSN(testDSN)
 		if err != nil {
 			t.Fatal(err)
@@ -135,12 +135,16 @@ func TestConnect(t *testing.T) {
 			t.Fatal(err)
 		}
 		t.Cleanup(func() { _ = d.Close() })
-		directory, err := d.InspectDirectory(context.Background(), metadata.DirectoryOptions{})
+		q, err := d.Querier(context.Background(), "")
 		if err != nil {
 			t.Fatal(err)
 		}
-		if directory.DefaultScope != "" || len(directory.Roots) != 0 {
-			t.Fatalf("directory without a selected database = %+v", directory)
+		databases, err := ListDatabases(context.Background(), q, []metadata.ScopePath{""})
+		if err != nil {
+			t.Fatal(err)
+		}
+		if !slices.ContainsFunc(databases[""], func(c metadata.Child) bool { return c.Name == "testdb" }) {
+			t.Fatalf("databases without a selected database = %+v", databases[""])
 		}
 	})
 
@@ -363,7 +367,7 @@ func TestExecute_DML(t *testing.T) {
 	}
 }
 
-func TestInspectDirectoryAndObjects(t *testing.T) {
+func TestInspectObjects(t *testing.T) {
 	d := newConnectedDriver(t)
 	ctx := context.Background()
 
@@ -414,35 +418,7 @@ func TestInspectDirectoryAndObjects(t *testing.T) {
 		t.Fatalf("create trigger: %v", err)
 	}
 
-	spec := d.SchemaSpec()
-	if spec.Dialect != "mysql" || len(spec.Kinds) != 8 {
-		t.Fatalf("unexpected schema spec: %+v", spec)
-	}
-
-	directory, err := d.InspectDirectory(ctx, metadata.DirectoryOptions{})
-	if err != nil {
-		t.Fatalf("InspectDirectory: %v", err)
-	}
 	scope := metadata.NewScopePath(metadata.ScopeSegment{Kind: "database", Name: "testdb"})
-	if directory.Engine != "mysql" || directory.DefaultScope != scope {
-		t.Fatalf("unexpected directory header: %+v", directory)
-	}
-	if !directoryHasRef(directory, metadata.ObjectRef{Scope: scope, Kind: "table", Name: "introspect_child"}) {
-		t.Fatalf("directory missing child table: %+v", directory.Roots)
-	}
-	if !directoryHasRef(directory, metadata.ObjectRef{Scope: scope, Kind: "view", Name: "introspect_child_view"}) {
-		t.Fatalf("directory missing child view: %+v", directory.Roots)
-	}
-	for _, ref := range []metadata.ObjectRef{
-		{Scope: scope, Kind: "function", Name: "introspect_double"},
-		{Scope: scope, Kind: "procedure", Name: "introspect_noop"},
-		{Scope: scope, Kind: "trigger", Name: "introspect_child_bi"},
-	} {
-		if !directoryHasRef(directory, ref) {
-			t.Fatalf("directory missing %s %s: %+v", ref.Kind, ref.Name, directory.Roots)
-		}
-	}
-
 	objects, err := d.InspectObjects(ctx, []metadata.ObjectRef{{Scope: scope, Kind: "table", Name: "introspect_child"}})
 	if err != nil {
 		t.Fatalf("InspectObjects: %v", err)
@@ -580,51 +556,6 @@ func TestToValue(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			tc.check(t, cursor.NormalizeValue(tc.input))
 		})
-	}
-}
-
-func TestInspectDirectoryReportsTableRowCounts(t *testing.T) {
-	d := newConnectedDriver(t)
-	ctx := context.Background()
-	t.Cleanup(func() {
-		_, _ = d.Execute(ctx, "DROP VIEW IF EXISTS rc_v")
-		_, _ = d.Execute(ctx, "DROP TABLE IF EXISTS rc_users")
-	})
-	if _, err := d.Execute(ctx, `CREATE TABLE rc_users (id INT PRIMARY KEY)`); err != nil {
-		t.Fatalf("create table: %v", err)
-	}
-	if _, err := d.Execute(ctx, `INSERT INTO rc_users VALUES (1),(2),(3),(4),(5)`); err != nil {
-		t.Fatalf("insert: %v", err)
-	}
-	if _, err := d.Execute(ctx, `ANALYZE TABLE rc_users`); err != nil {
-		t.Fatalf("analyze: %v", err)
-	}
-	if _, err := d.Execute(ctx, `CREATE VIEW rc_v AS SELECT id FROM rc_users`); err != nil {
-		t.Fatalf("create view: %v", err)
-	}
-
-	directory, err := d.InspectDirectory(ctx, metadata.DirectoryOptions{})
-	if err != nil {
-		t.Fatalf("InspectDirectory: %v", err)
-	}
-	var tableGroup, viewGroup *metadata.ObjectGroup
-	for _, node := range directory.ScopeNodes() {
-		for i := range node.Groups {
-			switch node.Groups[i].Kind {
-			case "table":
-				tableGroup = &node.Groups[i]
-			case "view":
-				viewGroup = &node.Groups[i]
-			}
-		}
-	}
-	if tableGroup == nil || tableGroup.RowCounts["rc_users"] != 5 {
-		t.Fatalf("rc_users row count = %+v, want 5", tableGroup)
-	}
-	if viewGroup != nil {
-		if _, ok := viewGroup.RowCounts["rc_v"]; ok {
-			t.Fatalf("views must not report a row count, got %+v", viewGroup.RowCounts)
-		}
 	}
 }
 
@@ -871,15 +802,6 @@ func descriptorByTitle(ds []metadata.Descriptor, title string) *metadata.Source 
 		}
 	}
 	return nil
-}
-
-func directoryHasRef(directory *metadata.Directory, ref metadata.ObjectRef) bool {
-	for _, got := range directory.ObjectRefs() {
-		if got == ref {
-			return true
-		}
-	}
-	return false
 }
 
 func hasIndex(indexes []metadata.SecondaryIndex, name, column string) bool {

@@ -371,43 +371,41 @@ func (app *application) getInstanceSettings(w http.ResponseWriter, r *http.Reque
 
 func (app *application) updateInstanceSettings(w http.ResponseWriter, r *http.Request) {
 	var input struct {
-		InstanceName                   *string               `json:"instance_name"`
-		InstanceDescription            *string               `json:"instance_description"`
-		SupportEmail                   *string               `json:"support_email"`
-		BaseURL                        *string               `json:"base_url"`
-		PersonalSpacesEnabled          *bool                 `json:"personal_spaces_enabled"`
-		JWTAccessTokenTTLSeconds       *int64                `json:"jwt_access_token_ttl_seconds"`
-		SessionsRevocationEnabled      *bool                 `json:"sessions_revocation_enabled"`
-		QueryMaxResultRows             *int                  `json:"query_max_result_rows"`
-		QueryCursorPageSize            *int                  `json:"query_cursor_page_size"`
-		QueryMaxResultBytes            *int64                `json:"query_max_result_bytes"`
-		ExportsSyncMaxBytes            *int64                `json:"exports_sync_max_bytes"`
-		ExportsBackgroundMaxBytes      *int64                `json:"exports_background_max_bytes"`
-		SchemaSnapshotFreshnessSeconds *int64                `json:"schema_snapshot_freshness_seconds"`
-		SchemaLazyThreshold            *int                  `json:"schema_lazy_threshold"`
-		FileRevisionsEnabled           *bool                 `json:"file_revisions_enabled"`
-		FileRevisionsKeepLatest        *int                  `json:"file_revisions_keep_latest"`
-		ErrorNotificationEmail         *string               `json:"error_notification_email"`
-		LogLevel                       *string               `json:"log_level"`
-		DatabaseQueryTracingEnabled    *bool                 `json:"database_query_tracing_enabled"`
-		AccessLogsEnabled              *bool                 `json:"access_logs_enabled"`
-		JobsWorkerCount                *int                  `json:"jobs_worker_count"`
-		JobsPollIntervalSeconds        *int64                `json:"jobs_poll_interval_seconds"`
-		JobsClaimLeaseSeconds          *int64                `json:"jobs_claim_lease_seconds"`
-		JobsCompletedRetentionSeconds  *int64                `json:"jobs_completed_retention_seconds"`
-		SMTPEnabled                    *bool                 `json:"smtp_enabled"`
-		SMTPHost                       *string               `json:"smtp_host"`
-		SMTPPort                       *int                  `json:"smtp_port"`
-		SMTPUsername                   *string               `json:"smtp_username"`
-		SMTPPassword                   nullablePatch[string] `json:"smtp_password"`
-		SMTPFrom                       *string               `json:"smtp_from"`
-		QueryHistoryMode               *string               `json:"query_history_mode"`
-		QueryHistoryRetentionCount     *int                  `json:"query_history_retention_count"`
-		QueryHistoryRetentionCountMax  *int                  `json:"query_history_retention_count_max"`
-		QueryFavoritesMode             *string               `json:"query_favorites_mode"`
-		SQLiteLocalTargetsEnabled      *bool                 `json:"sqlite_local_targets_enabled"`
-		SQLiteInMemoryTargetsEnabled   *bool                 `json:"sqlite_memory_targets_enabled"`
-		V                              validator.Validator   `json:"-"`
+		InstanceName                  *string               `json:"instance_name"`
+		InstanceDescription           *string               `json:"instance_description"`
+		SupportEmail                  *string               `json:"support_email"`
+		BaseURL                       *string               `json:"base_url"`
+		PersonalSpacesEnabled         *bool                 `json:"personal_spaces_enabled"`
+		JWTAccessTokenTTLSeconds      *int64                `json:"jwt_access_token_ttl_seconds"`
+		SessionsRevocationEnabled     *bool                 `json:"sessions_revocation_enabled"`
+		QueryMaxResultRows            *int                  `json:"query_max_result_rows"`
+		QueryCursorPageSize           *int                  `json:"query_cursor_page_size"`
+		QueryMaxResultBytes           *int64                `json:"query_max_result_bytes"`
+		ExportsSyncMaxBytes           *int64                `json:"exports_sync_max_bytes"`
+		ExportsBackgroundMaxBytes     *int64                `json:"exports_background_max_bytes"`
+		FileRevisionsEnabled          *bool                 `json:"file_revisions_enabled"`
+		FileRevisionsKeepLatest       *int                  `json:"file_revisions_keep_latest"`
+		ErrorNotificationEmail        *string               `json:"error_notification_email"`
+		LogLevel                      *string               `json:"log_level"`
+		DatabaseQueryTracingEnabled   *bool                 `json:"database_query_tracing_enabled"`
+		AccessLogsEnabled             *bool                 `json:"access_logs_enabled"`
+		JobsWorkerCount               *int                  `json:"jobs_worker_count"`
+		JobsPollIntervalSeconds       *int64                `json:"jobs_poll_interval_seconds"`
+		JobsClaimLeaseSeconds         *int64                `json:"jobs_claim_lease_seconds"`
+		JobsCompletedRetentionSeconds *int64                `json:"jobs_completed_retention_seconds"`
+		SMTPEnabled                   *bool                 `json:"smtp_enabled"`
+		SMTPHost                      *string               `json:"smtp_host"`
+		SMTPPort                      *int                  `json:"smtp_port"`
+		SMTPUsername                  *string               `json:"smtp_username"`
+		SMTPPassword                  nullablePatch[string] `json:"smtp_password"`
+		SMTPFrom                      *string               `json:"smtp_from"`
+		QueryHistoryMode              *string               `json:"query_history_mode"`
+		QueryHistoryRetentionCount    *int                  `json:"query_history_retention_count"`
+		QueryHistoryRetentionCountMax *int                  `json:"query_history_retention_count_max"`
+		QueryFavoritesMode            *string               `json:"query_favorites_mode"`
+		SQLiteLocalTargetsEnabled     *bool                 `json:"sqlite_local_targets_enabled"`
+		SQLiteInMemoryTargetsEnabled  *bool                 `json:"sqlite_memory_targets_enabled"`
+		V                             validator.Validator   `json:"-"`
 	}
 
 	err := request.DecodeJSON(w, r, &input)
@@ -428,8 +426,6 @@ func (app *application) updateInstanceSettings(w http.ResponseWriter, r *http.Re
 		input.QueryMaxResultBytes != nil ||
 		input.ExportsSyncMaxBytes != nil ||
 		input.ExportsBackgroundMaxBytes != nil ||
-		input.SchemaSnapshotFreshnessSeconds != nil ||
-		input.SchemaLazyThreshold != nil ||
 		input.FileRevisionsEnabled != nil ||
 		input.FileRevisionsKeepLatest != nil ||
 		input.ErrorNotificationEmail != nil || input.LogLevel != nil ||
@@ -477,12 +473,6 @@ func (app *application) updateInstanceSettings(w http.ResponseWriter, r *http.Re
 	}
 	if input.ExportsBackgroundMaxBytes != nil {
 		input.V.CheckField(*input.ExportsBackgroundMaxBytes >= 0, "exports_background_max_bytes", "Background export limit must be 0 or greater.")
-	}
-	if input.SchemaSnapshotFreshnessSeconds != nil {
-		input.V.CheckField(*input.SchemaSnapshotFreshnessSeconds > 0 && *input.SchemaSnapshotFreshnessSeconds <= maxRuntimeDurationSeconds, "schema_snapshot_freshness_seconds", "Schema snapshot freshness is outside the supported range.")
-	}
-	if input.SchemaLazyThreshold != nil {
-		input.V.CheckField(*input.SchemaLazyThreshold > 0, "schema_lazy_threshold", "Schema lazy threshold must be greater than 0.")
 	}
 	if input.FileRevisionsKeepLatest != nil {
 		input.V.CheckField(*input.FileRevisionsKeepLatest >= 0, "file_revisions_keep_latest", "Revision retention must be 0 or greater.")
@@ -584,12 +574,6 @@ func (app *application) updateInstanceSettings(w http.ResponseWriter, r *http.Re
 	}
 	if input.ExportsBackgroundMaxBytes != nil {
 		nextSettings.ExportsBackgroundMaxBytes = *input.ExportsBackgroundMaxBytes
-	}
-	if input.SchemaSnapshotFreshnessSeconds != nil {
-		nextSettings.SchemaSnapshotFreshnessSeconds = *input.SchemaSnapshotFreshnessSeconds
-	}
-	if input.SchemaLazyThreshold != nil {
-		nextSettings.SchemaLazyThreshold = *input.SchemaLazyThreshold
 	}
 	if input.FileRevisionsEnabled != nil {
 		nextSettings.FileRevisionsEnabled = *input.FileRevisionsEnabled

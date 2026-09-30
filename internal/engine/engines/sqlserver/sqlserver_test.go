@@ -144,40 +144,6 @@ func TestTransactionSavepointRollback(t *testing.T) {
 	}
 }
 
-func TestCatalogTables(t *testing.T) {
-	d := newConnectedDriver(t)
-	ctx := context.Background()
-
-	if _, err := d.Execute(ctx, "CREATE TABLE dbo.warden_catalog_t (id INT)"); err != nil {
-		t.Fatalf("create table: %v", err)
-	}
-	t.Cleanup(func() { _, _ = d.Execute(context.Background(), "DROP TABLE dbo.warden_catalog_t") })
-	if _, err := d.Execute(ctx, "CREATE VIEW dbo.warden_catalog_v AS SELECT id FROM dbo.warden_catalog_t"); err != nil {
-		t.Fatalf("create view: %v", err)
-	}
-	t.Cleanup(func() { _, _ = d.Execute(context.Background(), "DROP VIEW dbo.warden_catalog_v") })
-
-	found := map[string]string{}
-	err := CatalogTables(ctx, d.DB(), "", func(schema, name, kind string) {
-		found[schema+"."+name] = kind
-	})
-	if err != nil {
-		t.Fatalf("CatalogTables: %v", err)
-	}
-	if found["dbo.warden_catalog_t"] != "table" {
-		t.Fatalf("want table entry, got %+v", found)
-	}
-	if found["dbo.warden_catalog_v"] != "view" {
-		t.Fatalf("want view entry, got %+v", found)
-	}
-	for key := range found {
-		schema := strings.SplitN(key, ".", 2)[0]
-		if strings.EqualFold(schema, "INFORMATION_SCHEMA") {
-			t.Fatalf("want no INFORMATION_SCHEMA entries, got %+v", found)
-		}
-	}
-}
-
 func TestRelationalObjectsColumnsAndIdentity(t *testing.T) {
 	d := newConnectedDriver(t)
 	ctx := context.Background()
@@ -288,7 +254,7 @@ func TestRelationalObjectsEmptyRefsReturnsNilWithoutQuerying(t *testing.T) {
 	}
 }
 
-func TestInspectDirectoryAndObjects(t *testing.T) {
+func TestInspectObjectsTable(t *testing.T) {
 	d := newConnectedDriver(t)
 	ctx := context.Background()
 
@@ -297,171 +263,18 @@ func TestInspectDirectoryAndObjects(t *testing.T) {
 	}
 	t.Cleanup(func() { _, _ = d.Execute(context.Background(), "DROP TABLE dbo.warden_dir") })
 
-	dir, err := d.InspectDirectory(ctx, metadata.DirectoryOptions{})
-	if err != nil {
-		t.Fatalf("InspectDirectory: %v", err)
-	}
-	var tableRef *metadata.ObjectRef
-	for _, ref := range dir.ObjectRefs() {
-		if ref.Name == "warden_dir" {
-			r := ref
-			tableRef = &r
-		}
-	}
-	if tableRef == nil {
-		t.Fatalf("warden_dir not found in directory: %+v", dir)
+	tableRef := metadata.ObjectRef{
+		Scope: metadata.NewScopePath(metadata.ScopeSegment{Kind: "schema", Name: "dbo"}),
+		Kind:  "table",
+		Name:  "warden_dir",
 	}
 
-	objs, err := d.InspectObjects(ctx, []metadata.ObjectRef{*tableRef})
+	objs, err := d.InspectObjects(ctx, []metadata.ObjectRef{tableRef})
 	if err != nil {
 		t.Fatalf("InspectObjects: %v", err)
 	}
 	if len(objs) != 1 || len(objs[0].Relational.Columns) != 1 {
 		t.Fatalf("want 1 object with 1 column, got %+v", objs)
-	}
-}
-
-func TestInspectDirectoryUsesOptsRootAsDefaultScope(t *testing.T) {
-	d := newConnectedDriver(t)
-	ctx := context.Background()
-
-	var database string
-	if err := d.db.QueryRowContext(ctx, `SELECT DB_NAME()`).Scan(&database); err != nil {
-		t.Fatalf("DB_NAME: %v", err)
-	}
-
-	dirNoOpts, err := d.InspectDirectory(ctx, metadata.DirectoryOptions{})
-	if err != nil {
-		t.Fatalf("InspectDirectory: %v", err)
-	}
-	wantDefault := metadata.NewScopePath(
-		metadata.ScopeSegment{Kind: "database", Name: database},
-	).Child(metadata.ScopeSegment{Kind: "schema", Name: "dbo"})
-	if d.DefaultScope() == "" && dirNoOpts.DefaultScope != wantDefault {
-		t.Fatalf("want DefaultScope %q derived from the connected database/schema without opts.Root or a configured default scope, got %q", wantDefault, dirNoOpts.DefaultScope)
-	}
-
-	root := metadata.NewScopePath(metadata.ScopeSegment{Kind: "schema", Name: "warden_root_override"})
-	dir, err := d.InspectDirectory(ctx, metadata.DirectoryOptions{Root: root})
-	if err != nil {
-		t.Fatalf("InspectDirectory with Root: %v", err)
-	}
-	if dir.DefaultScope != root {
-		t.Fatalf("want DefaultScope %q from opts.Root, got %q", root, dir.DefaultScope)
-	}
-}
-
-func TestInspectDirectoryWithRootScopesToOneSchema(t *testing.T) {
-	d := newConnectedDriver(t)
-	ctx := context.Background()
-
-	if _, err := d.Execute(ctx, "CREATE SCHEMA root_scope_other"); err != nil {
-		t.Fatalf("create schema: %v", err)
-	}
-	t.Cleanup(func() { _, _ = d.Execute(context.Background(), "DROP SCHEMA root_scope_other") })
-	if _, err := d.Execute(ctx, "CREATE TABLE dbo.root_scope_users (id INT PRIMARY KEY)"); err != nil {
-		t.Fatalf("create table: %v", err)
-	}
-	t.Cleanup(func() { _, _ = d.Execute(context.Background(), "DROP TABLE dbo.root_scope_users") })
-	if _, err := d.Execute(ctx, "CREATE TABLE root_scope_other.widgets (id INT PRIMARY KEY)"); err != nil {
-		t.Fatalf("create table: %v", err)
-	}
-	t.Cleanup(func() { _, _ = d.Execute(context.Background(), "DROP TABLE root_scope_other.widgets") })
-
-	full, err := d.InspectDirectory(ctx, metadata.DirectoryOptions{})
-	if err != nil {
-		t.Fatalf("InspectDirectory: %v", err)
-	}
-	database := full.Roots[0].Path
-	dboScope := database.Child(metadata.ScopeSegment{Kind: "schema", Name: "dbo"})
-
-	scoped, err := d.InspectDirectory(ctx, metadata.DirectoryOptions{Root: dboScope})
-	if err != nil {
-		t.Fatalf("InspectDirectory with Root: %v", err)
-	}
-	if len(scoped.Roots) != 1 || scoped.Roots[0].Path != dboScope {
-		t.Fatalf("expected a single root at %v, got %+v", dboScope, scoped.Roots)
-	}
-	for _, node := range scoped.ScopeNodes() {
-		if node.Path.Name("schema") == "root_scope_other" {
-			t.Fatalf("root_scope_other must not appear when scoped to dbo: %+v", scoped.Roots)
-		}
-	}
-	var found bool
-	for _, g := range scoped.Roots[0].Groups {
-		if g.Kind != "table" {
-			continue
-		}
-		for _, ref := range g.Objects {
-			if ref.Name == "root_scope_users" {
-				found = true
-			}
-		}
-	}
-	if !found {
-		t.Fatalf("missing root_scope_users in scoped directory: %+v", scoped.Roots[0])
-	}
-}
-
-func TestDiscoverScopesExcludesSystemSchemas(t *testing.T) {
-	d := newConnectedDriver(t)
-	ctx := context.Background()
-
-	if _, err := d.Execute(ctx, "CREATE SCHEMA warden_scope_test"); err != nil {
-		t.Fatalf("create schema: %v", err)
-	}
-	t.Cleanup(func() { _, _ = d.Execute(context.Background(), "DROP SCHEMA warden_scope_test") })
-
-	var database string
-	if err := d.db.QueryRowContext(ctx, `SELECT DB_NAME()`).Scan(&database); err != nil {
-		t.Fatalf("DB_NAME: %v", err)
-	}
-
-	discovery, err := d.DiscoverScopes(ctx, metadata.ScopeDiscoveryRequest{})
-	if err != nil {
-		t.Fatalf("DiscoverScopes: %v", err)
-	}
-	wantCurrent := metadata.NewScopePath(
-		metadata.ScopeSegment{Kind: "database", Name: database},
-	).Child(metadata.ScopeSegment{Kind: "schema", Name: "dbo"})
-	if discovery.Current != wantCurrent {
-		t.Fatalf("want Current %q, got %q", wantCurrent, discovery.Current)
-	}
-	found := false
-	for _, scope := range discovery.Scopes {
-		if scope.Name("database") != database {
-			t.Fatalf("want every scope nested under database %q, got %+v", database, discovery.Scopes)
-		}
-		if scope.Name("schema") == "warden_scope_test" {
-			found = true
-		}
-		if scope.Name("schema") == "sys" || scope.Name("schema") == "INFORMATION_SCHEMA" {
-			t.Fatalf("want no system schema in scopes, got %+v", discovery.Scopes)
-		}
-	}
-	if !found {
-		t.Fatalf("want warden_scope_test in scopes, got %+v", discovery.Scopes)
-	}
-
-	databaseRoot := metadata.NewScopePath(metadata.ScopeSegment{Kind: "database", Name: database})
-	nested, err := d.DiscoverScopes(ctx, metadata.ScopeDiscoveryRequest{
-		Parent: databaseRoot.Child(metadata.ScopeSegment{Kind: "schema", Name: "dbo"}),
-	})
-	if err != nil {
-		t.Fatalf("DiscoverScopes with parent: %v", err)
-	}
-	if len(nested.Scopes) != 0 {
-		t.Fatalf("want no scopes below a schema, got %+v", nested.Scopes)
-	}
-
-	otherDatabase, err := d.DiscoverScopes(ctx, metadata.ScopeDiscoveryRequest{
-		Parent: metadata.NewScopePath(metadata.ScopeSegment{Kind: "database", Name: database + "_other"}),
-	})
-	if err != nil {
-		t.Fatalf("DiscoverScopes with other database parent: %v", err)
-	}
-	if len(otherDatabase.Scopes) != 0 {
-		t.Fatalf("want no scopes for a different database, got %+v", otherDatabase.Scopes)
 	}
 }
 
@@ -536,7 +349,7 @@ CREATE TABLE dbo.warden_def_t2 (
 	}
 }
 
-func TestInspectModulesDirectoryObjectsAndDefinition(t *testing.T) {
+func TestInspectModulesObjectsAndDefinition(t *testing.T) {
 	d := newConnectedDriver(t)
 	ctx := context.Background()
 
@@ -560,26 +373,12 @@ DROP TABLE dbo.warden_mod_t`)
 		t.Fatalf("create trigger: %v", err)
 	}
 
-	dir, err := d.InspectDirectory(ctx, metadata.DirectoryOptions{})
-	if err != nil {
-		t.Fatalf("InspectDirectory: %v", err)
+	dbo := metadata.NewScopePath(metadata.ScopeSegment{Kind: "schema", Name: "dbo"})
+	refs := []metadata.ObjectRef{
+		{Scope: dbo, Kind: "procedure", Name: "warden_mod_proc"},
+		{Scope: dbo, Kind: "function", Name: "warden_mod_fn"},
+		{Scope: dbo, Kind: "trigger", Name: "warden_mod_trg"},
 	}
-	want := map[string]string{
-		"warden_mod_proc": "procedure",
-		"warden_mod_fn":   "function",
-		"warden_mod_trg":  "trigger",
-	}
-	found := map[string]metadata.ObjectRef{}
-	for _, ref := range dir.ObjectRefs() {
-		if kind, ok := want[ref.Name]; ok && ref.Kind == kind {
-			found[ref.Name] = ref
-		}
-	}
-	if len(found) != len(want) {
-		t.Fatalf("want %v in directory, found %+v", want, found)
-	}
-
-	refs := []metadata.ObjectRef{found["warden_mod_proc"], found["warden_mod_fn"], found["warden_mod_trg"]}
 	objs, err := d.InspectObjects(ctx, refs)
 	if err != nil {
 		t.Fatalf("InspectObjects: %v", err)

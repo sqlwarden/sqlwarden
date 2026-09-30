@@ -2,118 +2,11 @@ package mysql
 
 import (
 	"context"
-	"database/sql"
-	"fmt"
 
 	"github.com/sqlwarden/internal/engine/metadata"
-	build "github.com/sqlwarden/internal/engine/metadata/build"
 )
 
-var _ metadata.DirectoryInspector = (*Driver)(nil)
-var _ metadata.ScopeDiscoverer = (*Driver)(nil)
 var _ metadata.DefinitionInspector = (*Driver)(nil)
-
-func (d *Driver) SchemaSpec() metadata.SchemaSpec {
-	return metadata.SchemaSpec{
-		Dialect: "mysql",
-		Kinds: []metadata.SchemaObjectKind{
-			{Kind: "table", Label: "Table", PluralLabel: "Tables", Order: 1, Relational: true, SupportsDiagram: true, Listing: "enumerated", HasDefinition: true},
-			{Kind: "view", Label: "View", PluralLabel: "Views", Order: 2, Relational: true, SupportsDiagram: true, Listing: "enumerated", HasDefinition: true},
-			{Kind: "function", Label: "Function", PluralLabel: "Functions", Order: 3, Relational: false, SupportsDiagram: false, Listing: "enumerated", HasDefinition: true},
-			{Kind: "procedure", Label: "Procedure", PluralLabel: "Procedures", Order: 4, Relational: false, SupportsDiagram: false, Listing: "enumerated", HasDefinition: true},
-			{Kind: "trigger", Label: "Trigger", PluralLabel: "Triggers", Order: 5, Relational: false, SupportsDiagram: false, Listing: "enumerated", HasDefinition: true},
-			{Kind: "event", Label: "Event", PluralLabel: "Events", Order: 6, Relational: false, SupportsDiagram: false, Listing: "enumerated", HasDefinition: true},
-			{Kind: "index", Label: "Index", PluralLabel: "Indexes", Order: 7, Relational: false, SupportsDiagram: false, Listing: "enumerated", HasDefinition: true},
-			{Kind: "constraint", Label: "Constraint", PluralLabel: "Constraints", Order: 8, Relational: false, SupportsDiagram: false, Listing: "enumerated", HasDefinition: true},
-		},
-	}
-}
-
-// InspectDirectory composes CatalogTables, AttachRowCounts, CatalogRoutines,
-// and CatalogTriggers from catalog.go. A compatible engine that needs a
-// different combination (e.g. no triggers) overrides this method entirely.
-func (d *Driver) InspectDirectory(ctx context.Context, opts metadata.DirectoryOptions) (*metadata.Directory, error) {
-	database := opts.Root.Name("database")
-	if database == "" {
-		database = d.defaultScope.Name("database")
-	}
-	if database == "" {
-		var current sql.NullString
-		if err := d.db.QueryRowContext(ctx, `SELECT DATABASE()`).Scan(&current); err != nil {
-			return nil, fmt.Errorf("mysql: directory database name: %w", err)
-		}
-		database = current.String
-	}
-	if database == "" {
-		return &metadata.Directory{Engine: "mysql"}, nil
-	}
-
-	scope := metadata.NewScopePath(metadata.ScopeSegment{Kind: "database", Name: database})
-	b := build.NewDirectory()
-	b.DeclareKind("table")
-	b.DeclareKind("view")
-	b.DeclareKind("function")
-	b.DeclareKind("procedure")
-	b.DeclareKind("trigger")
-	b.DeclareKind("event")
-	b.DeclareKind("index")
-	b.DeclareKind("constraint")
-
-	if err := CatalogTables(ctx, d.db, database, func(ns, name, kind string) { b.AddRef(scope, kind, name) }); err != nil {
-		return nil, fmt.Errorf("mysql: catalog tables: %w", err)
-	}
-	if err := AttachRowCounts(ctx, d.db, database, func(name string, count int64) { b.SetRowCount(scope, "table", name, count) }); err != nil {
-		return nil, fmt.Errorf("mysql: catalog row counts: %w", err)
-	}
-	if err := CatalogRoutines(ctx, d.db, database, func(ns, name, kind string) { b.AddRef(scope, kind, name) }); err != nil {
-		return nil, fmt.Errorf("mysql: catalog routines: %w", err)
-	}
-	if err := CatalogTriggers(ctx, d.db, database, func(ns, name string) { b.AddRef(scope, "trigger", name) }); err != nil {
-		return nil, fmt.Errorf("mysql: catalog triggers: %w", err)
-	}
-	if err := CatalogEvents(ctx, d.db, database, func(ns, name string) { b.AddRef(scope, "event", name) }); err != nil {
-		return nil, fmt.Errorf("mysql: catalog events: %w", err)
-	}
-	if err := CatalogIndexes(ctx, d.db, database, func(ns, name string) { b.AddRef(scope, "index", name) }); err != nil {
-		return nil, fmt.Errorf("mysql: catalog indexes: %w", err)
-	}
-	if err := CatalogConstraints(ctx, d.db, database, func(ns, name string) { b.AddRef(scope, "constraint", name) }); err != nil {
-		return nil, fmt.Errorf("mysql: catalog constraints: %w", err)
-	}
-
-	return b.Build("", "mysql", scope), nil
-}
-
-func (d *Driver) DiscoverScopes(ctx context.Context, request metadata.ScopeDiscoveryRequest) (*metadata.ScopeDiscovery, error) {
-	var current sql.NullString
-	if err := d.db.QueryRowContext(ctx, `SELECT DATABASE()`).Scan(&current); err != nil {
-		return nil, fmt.Errorf("mysql: discover current database: %w", err)
-	}
-	result := &metadata.ScopeDiscovery{Scopes: []metadata.ScopePath{}}
-	if current.Valid {
-		result.Current = metadata.NewScopePath(metadata.ScopeSegment{Kind: "database", Name: current.String})
-	}
-	if request.Parent != "" {
-		return result, nil
-	}
-	rows, err := d.db.QueryContext(ctx, `
-SELECT schema_name
-FROM information_schema.schemata
-WHERE schema_name NOT IN ('information_schema', 'mysql', 'performance_schema', 'sys')
-ORDER BY schema_name`)
-	if err != nil {
-		return nil, fmt.Errorf("mysql: discover databases: %w", err)
-	}
-	defer rows.Close()
-	for rows.Next() {
-		var name string
-		if err := rows.Scan(&name); err != nil {
-			return nil, err
-		}
-		result.Scopes = append(result.Scopes, metadata.NewScopePath(metadata.ScopeSegment{Kind: "database", Name: name}))
-	}
-	return result, rows.Err()
-}
 
 // InspectObjects buckets refs by kind and composes RelationalObjects,
 // RoutineObjects, TriggerObjects, and EventObjects from catalog.go. A compatible engine

@@ -39,6 +39,7 @@ export const NAVIGATOR_ICONS: Record<string, NavigatorIconStyle> = {
   package: { icon: 'briefcase-01', className: 'text-chart-1' },
   queue: { icon: 'arrow-up-down', className: 'text-chart-5' },
   synonym: { icon: 'copy-01', className: 'text-muted-foreground' },
+  db_link: { icon: 'server-stack-01', className: 'text-chart-2' },
   extended_property: { icon: 'information-circle', className: 'text-muted-foreground' },
 }
 

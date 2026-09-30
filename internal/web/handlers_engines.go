@@ -19,20 +19,12 @@ type engineView struct {
 	DisplayName           string                     `json:"display_name"`
 	Dialect               string                     `json:"dialect"`
 	Capabilities          map[engine.Capability]bool `json:"capabilities"`
-	Schema                *schemaSpecPayload         `json:"schema,omitempty"`
 	DDL                   *ddl.Spec                  `json:"schema_edit,omitempty"`
 	Statements            *statement.Spec            `json:"statements,omitempty"`
 	Explain               *explain.Spec              `json:"explain,omitempty"`
 	TLS                   *engine.TLSSpec            `json:"connection_tls,omitempty"`
 	SupportsSystemObjects bool                       `json:"supports_system_objects"`
 	ShowAllDatabases      bool                       `json:"show_all_databases"`
-}
-
-// schemaSpecPayload mirrors schema.SchemaSpec but lives here so the engines API
-// owns its own serialization shape and does not leak engine internals.
-type schemaSpecPayload struct {
-	Dialect string `json:"dialect"`
-	Kinds   any    `json:"kinds"`
 }
 
 type enginesResponse struct {
@@ -53,11 +45,6 @@ func engineToView(set engine.CapabilitySet) engineView {
 	if set.Tree != nil {
 		v.SupportsSystemObjects = set.Tree.SystemObjects
 		v.ShowAllDatabases = set.Tree.DatabaseKind() != ""
-	} else if set.Schema != nil {
-		v.SupportsSystemObjects = set.Schema.SystemSchemas
-	}
-	if set.Schema != nil {
-		v.Schema = &schemaSpecPayload{Dialect: set.Schema.Dialect, Kinds: set.Schema.Kinds}
 	}
 	return v
 }

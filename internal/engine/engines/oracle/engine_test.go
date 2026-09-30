@@ -22,7 +22,7 @@ func TestOracleEngineContract(t *testing.T) {
 		t.Errorf("Dialect = %q, want %q", set.Engine.Dialect, engine.DialectOracle)
 	}
 	for _, capability := range []engine.Capability{
-		engine.CapabilitySchemaDirectory,
+		engine.CapabilitySchemaNavigator,
 		engine.CapabilitySchemaObjects,
 		engine.CapabilityDDL,
 		engine.CapabilityQueryCursor,

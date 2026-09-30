@@ -896,33 +896,23 @@ func TestAddedInstanceAdminCanCreateOrg(t *testing.T) {
 	assert.Equal(t, orgRes.StatusCode, http.StatusCreated)
 }
 
-func TestUpdateInstanceSettingsSchemaLazyThreshold(t *testing.T) {
+func TestInstanceSettingsOmitSchemaLazyThreshold(t *testing.T) {
 	t.Parallel()
 	app := newTestApp(t)
 	adminTok := setupInstance(t, app, "admin@example.com", "Admin", "securepass99")
 
 	getRes := send(t, newAuthRequest(t, http.MethodGet, "/api/v1/instance/settings", nil, adminTok), app.routes())
 	assert.Equal(t, getRes.StatusCode, http.StatusOK)
-	assert.Equal(t, getRes.BodyFields["schema_lazy_threshold"], any(float64(500)))
+	if _, present := getRes.BodyFields["schema_lazy_threshold"]; present {
+		t.Fatalf("instance settings still report schema_lazy_threshold: %v", getRes.BodyFields["schema_lazy_threshold"])
+	}
 
+	unknownRes := send(t, newAuthRequest(t, http.MethodPatch, "/api/v1/instance/settings", map[string]any{
+		"not_a_setting": 250,
+	}, adminTok), app.routes())
 	res := send(t, newAuthRequest(t, http.MethodPatch, "/api/v1/instance/settings", map[string]any{
 		"schema_lazy_threshold": 250,
 	}, adminTok), app.routes())
-	assert.Equal(t, res.StatusCode, http.StatusOK)
-	assert.Equal(t, res.BodyFields["schema_lazy_threshold"], any(float64(250)))
-
-	reGetRes := send(t, newAuthRequest(t, http.MethodGet, "/api/v1/instance/settings", nil, adminTok), app.routes())
-	assert.Equal(t, reGetRes.StatusCode, http.StatusOK)
-	assert.Equal(t, reGetRes.BodyFields["schema_lazy_threshold"], any(float64(250)))
-}
-
-func TestUpdateInstanceSettingsSchemaLazyThresholdRejectsZero(t *testing.T) {
-	t.Parallel()
-	app := newTestApp(t)
-	adminTok := setupInstance(t, app, "admin@example.com", "Admin", "securepass99")
-
-	res := send(t, newAuthRequest(t, http.MethodPatch, "/api/v1/instance/settings", map[string]any{
-		"schema_lazy_threshold": 0,
-	}, adminTok), app.routes())
-	assert.Equal(t, res.StatusCode, http.StatusUnprocessableEntity)
+	assert.Equal(t, res.StatusCode, unknownRes.StatusCode)
+	assert.NotEqual(t, res.StatusCode, http.StatusInternalServerError)
 }

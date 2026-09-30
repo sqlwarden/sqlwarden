@@ -12,7 +12,6 @@ import (
 
 // knownCapabilities is the closed set of capability keys an engine may report.
 var knownCapabilities = map[engine.Capability]bool{
-	engine.CapabilitySchemaDirectory: true,
 	engine.CapabilitySchemaObjects:   true,
 	engine.CapabilitySchemaNavigator: true,
 	engine.CapabilityDDL:             true,
@@ -46,12 +45,6 @@ func RunCapabilityContract(t *testing.T, name string) {
 		if !knownCapabilities[capability] {
 			t.Fatalf("engine reports unknown capability key %q", capability)
 		}
-	}
-	if set.Capabilities[engine.CapabilitySchemaDirectory] && set.Schema == nil {
-		t.Fatal("schema.directory capability set but Schema spec is nil")
-	}
-	if !set.Capabilities[engine.CapabilitySchemaDirectory] && set.Schema != nil {
-		t.Fatal("Schema spec present but schema.directory capability is false")
 	}
 	if set.Capabilities[engine.CapabilitySchemaNavigator] != (set.Tree != nil) {
 		t.Fatal("schema.navigator capability and tree disagree")

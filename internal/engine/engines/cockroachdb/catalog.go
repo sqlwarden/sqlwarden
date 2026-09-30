@@ -11,11 +11,8 @@ import (
 )
 
 // systemSchemas are CockroachDB's built-in virtual schemas that are not user
-// data and must be excluded from catalog listings and scope discovery.
-// Callers filter postgres's shared catalog.go functions in Go rather than
-// re-deriving their SQL. crdb_internal and pg_extension have no PostgreSQL
-// equivalent; pg_catalog and information_schema are already excluded inside
-// the shared functions themselves.
+// data. crdb_internal and pg_extension have no PostgreSQL equivalent;
+// postgres's own loaders already classify pg_catalog and information_schema.
 var systemSchemas = map[string]bool{
 	"crdb_internal": true,
 	"pg_extension":  true,
@@ -32,16 +29,6 @@ func languageFromDefinition(def string) string {
 		return ""
 	}
 	return strings.ToLower(m[1])
-}
-
-// schemaFilterArg returns nil (renders as SQL NULL, matched via an "IS NULL
-// OR" clause) for an unrestricted catalog query, or schema to narrow it to
-// one namespace — a local copy of postgres's unexported schemaFilterArg.
-func schemaFilterArg(schema string) any {
-	if schema == "" {
-		return nil
-	}
-	return schema
 }
 
 // functionPairFilter builds a "($n,$n+1),($n+2,$n+3),…" tuple list plus the
@@ -187,38 +174,4 @@ ORDER BY p.oid`, ref.Scope.Name("schema"), ref.Name, routineKinds[ref.Kind])
 		fmt.Fprintf(&sb, "-- Overload %d of %d\n%s", i+1, len(defs), def)
 	}
 	return language, sb.String(), nil
-}
-
-// attachRowCounts reports the approximate row count (pg_class.reltuples) for
-// every table. CockroachDB's pg_class compatibility view returns NULL for
-// reltuples until a table has been scanned by its stats collector, whereas
-// PostgreSQL always reports a real (possibly zero) value — so unlike
-// postgres.AttachRowCounts, this scans reltuples as a nullable column and
-// simply omits the row count for a table that hasn't been analyzed yet.
-// System-schema exclusion is left to the caller (inspector.go), matching how
-// postgres.AttachRowCounts itself only excludes pg_catalog/information_schema.
-// schema narrows the scan to one namespace; "" scans every namespace.
-func attachRowCounts(ctx context.Context, db *sql.DB, schema string, set func(schema, name string, count int64)) error {
-	const q = `
-SELECT n.nspname, c.relname, c.reltuples
-FROM pg_class c JOIN pg_namespace n ON n.oid = c.relnamespace
-WHERE c.relkind = 'r' AND n.nspname NOT IN ('pg_catalog', 'information_schema')
-  AND ($1::text IS NULL OR n.nspname = $1)`
-	rows, err := db.QueryContext(ctx, q, schemaFilterArg(schema))
-	if err != nil {
-		return err
-	}
-	defer rows.Close()
-	for rows.Next() {
-		var ns, name string
-		var reltuples sql.NullFloat64
-		if err := rows.Scan(&ns, &name, &reltuples); err != nil {
-			return err
-		}
-		if !reltuples.Valid || reltuples.Float64 < 0 {
-			continue
-		}
-		set(ns, name, int64(reltuples.Float64))
-	}
-	return rows.Err()
 }

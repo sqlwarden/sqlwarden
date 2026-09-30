@@ -16,7 +16,6 @@ export interface RuntimeSettingsFormState {
   queryMaxResultBytes: OverrideFieldState<number>
   exportsSyncMaxBytes: OverrideFieldState<number>
   exportsBackgroundMaxBytes: OverrideFieldState<number>
-  schemaSnapshotFreshnessSeconds: OverrideFieldState<number>
   fileRevisionsEnabled: OverrideFieldState<boolean>
   fileRevisionsKeepLatest: OverrideFieldState<number>
   queryHistoryMode: OverrideFieldState<QueryHistoryMode>
@@ -47,10 +46,6 @@ export function runtimeSettingsFormState(
     exportsBackgroundMaxBytes: fieldState(
       settings.overrides.exports_background_max_bytes,
       settings.effective.exports_background_max_bytes,
-    ),
-    schemaSnapshotFreshnessSeconds: fieldState(
-      settings.overrides.schema_snapshot_freshness_seconds,
-      settings.effective.schema_snapshot_freshness_seconds,
     ),
     fileRevisionsEnabled: fieldState(
       settings.overrides.file_revisions_enabled,
@@ -116,14 +111,6 @@ export function buildRuntimeSettingsPatch(
     }
   } else if (original.exports_background_max_bytes !== null) {
     patch.exports_background_max_bytes = null
-  }
-
-  if (form.schemaSnapshotFreshnessSeconds.overridden) {
-    if (original.schema_snapshot_freshness_seconds !== form.schemaSnapshotFreshnessSeconds.value) {
-      patch.schema_snapshot_freshness_seconds = form.schemaSnapshotFreshnessSeconds.value
-    }
-  } else if (original.schema_snapshot_freshness_seconds !== null) {
-    patch.schema_snapshot_freshness_seconds = null
   }
 
   if (form.fileRevisionsEnabled.overridden) {

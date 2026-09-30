@@ -8,11 +8,10 @@
 //     mysql.Driver already returns): TiDB targets the MySQL SQL surface for
 //     every statement form SQLWarden parses, classifies, or completes, so it
 //     needs no dialect identity of its own.
-//   - SchemaSpec/InspectDirectory/InspectObjects/InspectDefinition drop the
-//     function, procedure, and trigger kinds — TiDB has no stored routine or
-//     trigger support — and add TiDB's native sequence object kind
-//     (CatalogSequences, SequenceObjects in catalog.go), the same catalog
-//     divergence MariaDB has from plain MySQL.
+//   - Tree/InspectObjects/InspectDefinition drop the function, procedure,
+//     trigger, and event kinds — TiDB has no stored routine, trigger, or event
+//     support — and add TiDB's native sequence object kind (SequenceObjects in
+//     catalog.go), the same catalog divergence MariaDB has from plain MySQL.
 //
 // Everything else — connection handling, TLS, SSH tunneling, DDL, parsing,
 // classification, safety checking, completion — is inherited unchanged via
