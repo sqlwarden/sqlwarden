@@ -14,6 +14,7 @@ import (
 var knownCapabilities = map[engine.Capability]bool{
 	engine.CapabilitySchemaDirectory: true,
 	engine.CapabilitySchemaObjects:   true,
+	engine.CapabilitySchemaNavigator: true,
 	engine.CapabilityDDL:             true,
 	engine.CapabilityQueryCursor:     true,
 	engine.CapabilitySQLParse:        true,
@@ -51,6 +52,14 @@ func RunCapabilityContract(t *testing.T, name string) {
 	}
 	if !set.Capabilities[engine.CapabilitySchemaDirectory] && set.Schema != nil {
 		t.Fatal("Schema spec present but schema.directory capability is false")
+	}
+	if set.Capabilities[engine.CapabilitySchemaNavigator] != (set.Tree != nil) {
+		t.Fatal("schema.navigator capability and tree disagree")
+	}
+	if set.Tree != nil {
+		if err := set.Tree.Validate(); err != nil {
+			t.Fatalf("navigator tree invalid: %v", err)
+		}
 	}
 	if set.Capabilities[engine.CapabilityDDL] != (set.DDL != nil) {
 		t.Fatal("schema.edit capability and schema edit spec disagree")

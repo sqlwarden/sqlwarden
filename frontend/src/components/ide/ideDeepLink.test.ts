@@ -11,6 +11,7 @@ function connection(id: number, environmentId: number): Connection {
     driver: 'postgres',
     access_mode: 'open',
     show_system_schemas: false,
+    show_all_databases: false,
     created_at: '',
     updated_at: '',
   }

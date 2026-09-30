@@ -3,6 +3,7 @@ package postgres
 import (
 	"context"
 	"database/sql"
+	"errors"
 	"fmt"
 	"strings"
 
@@ -21,6 +22,8 @@ import (
 // never through the field directly.
 type Driver struct {
 	db           *sql.DB
+	config       *pgx.ConnConfig
+	pools        *databasePools
 	currentTx    *sql.Tx
 	scanOptions  cursor.ScanOptions
 	defaultScope metadata.ScopePath
@@ -66,6 +69,9 @@ func buildPgxConfig(cfg engine.ConnectionConfig) (*pgx.ConnConfig, error) {
 	if err != nil {
 		return nil, fmt.Errorf("postgres: parse config: %w", err)
 	}
+	if selectedDatabase := cfg.DefaultScope.Name("database"); selectedDatabase != "" {
+		config.Database = selectedDatabase
+	}
 	if selectedSchema := cfg.DefaultScope.Name("schema"); selectedSchema != "" {
 		// search_path is a PostgreSQL identifier list, not a query parameter.
 		// Quote it as one identifier so punctuation cannot alter the path.
@@ -108,6 +114,8 @@ func (d *Driver) Connect(ctx context.Context, cfg engine.ConnectionConfig) error
 		return fmt.Errorf("postgres: ping: %w", err)
 	}
 	d.db = db
+	d.config = config
+	d.pools = &databasePools{pools: map[string]*sql.DB{}}
 	d.scanOptions = cursor.ScanOptions{MaxRows: cfg.MaxResultRows, MaxBytes: cfg.MaxResultBytes}
 	d.defaultScope = cfg.DefaultScope
 	return nil
@@ -118,7 +126,7 @@ func (d *Driver) Ping(ctx context.Context) error {
 }
 
 func (d *Driver) Close() error {
-	return d.db.Close()
+	return errors.Join(d.pools.close(), d.db.Close())
 }
 
 func (d *Driver) Query(ctx context.Context, query string, args ...any) (*result.ResultSet, error) {

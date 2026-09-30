@@ -1,5 +1,5 @@
 // Package metadata is the engine metadata domain. It defines the
-// SchemaInspector capability an engine implements to report its objects in two
+// DirectoryInspector capability an engine implements to report its objects in two
 // tiers (a cheap Directory listing and on-demand Object detail), the data model
 // those reports use (objects, columns, keys, descriptors), the static SchemaSpec
 // describing which object kinds an engine exposes.
@@ -129,6 +129,41 @@ func (p ScopePath) With(kind, name string) ScopePath {
 	return NewScopePath(append(segments, ScopeSegment{Kind: kind, Name: name})...)
 }
 
+// Parent returns the path without its last segment; the root's parent is the root.
+func (p ScopePath) Parent() ScopePath {
+	index := strings.LastIndex(string(p), "/")
+	if index < 0 {
+		return ""
+	}
+	return p[:index]
+}
+
+func (p ScopePath) Depth() int {
+	if p == "" {
+		return 0
+	}
+	return strings.Count(string(p), "/") + 1
+}
+
+// Within reports whether p equals ancestor or lies beneath it. Names are
+// path-escaped, so a "/" in the encoded string is always a segment boundary.
+func (p ScopePath) Within(ancestor ScopePath) bool {
+	if ancestor == "" || p == ancestor {
+		return true
+	}
+	return strings.HasPrefix(string(p), string(ancestor)+"/")
+}
+
+// Prefixes returns every proper ancestor of p, root first.
+func (p ScopePath) Prefixes() []ScopePath {
+	prefixes := []ScopePath{}
+	for current := p; current != ""; {
+		current = current.Parent()
+		prefixes = append([]ScopePath{current}, prefixes...)
+	}
+	return prefixes
+}
+
 // ObjectRef is the qualified, addressable identity of a database object. It
 // replaces bare name strings wherever an object is referenced (including
 // foreign-key targets), which is what makes cross-schema references and
@@ -137,6 +172,20 @@ type ObjectRef struct {
 	Scope ScopePath `json:"scope"`
 	Kind  string    `json:"kind"` // table, view, collection, key, function, …
 	Name  string    `json:"name"`
+}
+
+func (r ObjectRef) Path() ScopePath {
+	return r.Scope.Child(ScopeSegment{Kind: r.Kind, Name: r.Name})
+}
+
+// ObjectRefOf maps a navigator object path to the ref that object detail,
+// definition, and DDL APIs address.
+func ObjectRefOf(path ScopePath) (ObjectRef, bool) {
+	last, ok := path.Last()
+	if !ok {
+		return ObjectRef{}, false
+	}
+	return ObjectRef{Scope: path.Parent(), Kind: last.Kind, Name: last.Name}, true
 }
 
 // Object is the on-demand detail for a single database object. Known relational

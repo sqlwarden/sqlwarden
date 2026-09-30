@@ -5,63 +5,10 @@ import (
 	"net/http"
 	"strconv"
 	"testing"
-	"time"
 
 	"github.com/sqlwarden/internal/assert"
 	"github.com/sqlwarden/internal/database"
-	"github.com/sqlwarden/internal/engine/metadata"
 )
-
-func TestCompleteConnectionSQLFromPersistentSnapshot(t *testing.T) {
-	t.Parallel()
-	app := newTestApp(t)
-	owner, token, org := seedOrgOwner(t, app, uniqueEmail(t, "completion"), "Completion", "Completion Org")
-	ws := seedWorkspaceForAccount(t, app, org, owner, "Completion WS", "")
-	envID := defaultEnvironmentID(t, app, ws.ID)
-	conn := seedConnection(t, app, ws.ID, &envID, org.ID, "postgres", "Completion DB", "open")
-
-	scope := metadata.NewScopePath(metadata.ScopeSegment{Kind: "database", Name: "app"}, metadata.ScopeSegment{Kind: "schema", Name: "public"})
-	directory := &metadata.Directory{
-		Engine: "postgres", DefaultScope: scope, GeneratedAt: time.Now(),
-		Roots: []metadata.ScopeNode{{
-			Path: scope,
-			Groups: []metadata.ObjectGroup{{
-				Kind: "table",
-				Objects: []metadata.ObjectRef{
-					{Scope: scope, Kind: "table", Name: "widgets"},
-				},
-			}},
-		}},
-	}
-	snapshot, err := app.schemaSnapshots.Begin(context.Background(), conn.ID, &org.ID, directory)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if err := app.schemaSnapshots.PutObjects(context.Background(), snapshot.ID, []metadata.Object{{
-		Ref: metadata.ObjectRef{Scope: scope, Kind: "table", Name: "widgets"},
-		Relational: &metadata.RelationalDetail{Columns: []metadata.Column{
-			{Name: "widget_name", DataType: "text", Ordinal: 1},
-		}},
-	}}); err != nil {
-		t.Fatal(err)
-	}
-	if err := app.schemaSnapshots.Publish(context.Background(), snapshot.ID); err != nil {
-		t.Fatal(err)
-	}
-
-	sql := "SELECT * FROM wid"
-	req := newAuthRequest(t, http.MethodPost,
-		orgConnectionURL(org.Slug, ws.ID, envID, strconv.FormatInt(conn.ID, 10))+"/completion",
-		map[string]any{"sql": sql, "cursor_offset": len(sql)}, token)
-	res := send(t, req, app.routes())
-	assert.Equal(t, res.StatusCode, http.StatusOK)
-	assert.Equal(t, res.BodyFields["mode"], "persistent")
-	assert.Equal(t, res.BodyFields["metadata_available"], true)
-	assert.Equal(t, res.BodyFields["snapshot_id"], any(snapshot.ID))
-	if !responseHasCompletionLabel(res.BodyFields, "widgets") {
-		t.Fatalf("expected widgets completion, got %s", res.BodyBytes)
-	}
-}
 
 func TestCompleteConnectionSQLKeywordOnlyWithoutEphemeralSession(t *testing.T) {
 	t.Parallel()
@@ -97,31 +44,6 @@ func TestCompleteConnectionSQLKeywordOnlyWithoutEphemeralSession(t *testing.T) {
 	assert.Equal(t, len(suggestions), 10)
 	if responseHasCompletionLabel(automaticRes.BodyFields, "ALTER") {
 		t.Fatalf("automatic bare SELECT leaked unrelated grammar candidates: %s", automaticRes.BodyBytes)
-	}
-}
-
-func TestCompleteConnectionSQLFromEphemeralSessionMetadata(t *testing.T) {
-	t.Parallel()
-	app := newTestApp(t)
-	owner, token, org := seedOrgOwner(t, app, uniqueEmail(t, "completion-ephemeral-ready"), "Completion", "Completion Org")
-	ws := seedWorkspaceForAccount(t, app, org, owner, "Completion WS", "")
-	envID := defaultEnvironmentID(t, app, ws.ID)
-	conn := seedConnection(t, app, ws.ID, &envID, org.ID, "postgres", "Completion DB", "open")
-	session := openSchemaSession(t, app, owner.ID, conn.ID, schemaFakeDriver{})
-
-	sql := "SELECT * FROM wid"
-	req := newAuthRequest(t, http.MethodPost,
-		orgConnectionURL(org.Slug, ws.ID, envID, strconv.FormatInt(conn.ID, 10))+"/completion",
-		map[string]any{"sql": sql, "cursor_offset": len(sql)}, token)
-	req.Header.Set("X-Warden-Session", session.ID)
-	res := send(t, req, app.routes())
-
-	assert.Equal(t, res.StatusCode, http.StatusOK)
-	assert.Equal(t, res.BodyFields["mode"], "ephemeral")
-	assert.Equal(t, res.BodyFields["metadata_available"], true)
-	assert.Equal(t, res.BodyFields["metadata_status"], "ready")
-	if !responseHasCompletionLabel(res.BodyFields, "widgets") {
-		t.Fatalf("expected widgets completion from ephemeral metadata, got %s", res.BodyBytes)
 	}
 }
 

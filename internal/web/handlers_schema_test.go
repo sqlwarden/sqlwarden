@@ -6,7 +6,6 @@ import (
 	"maps"
 	"net/http"
 	"net/url"
-	"path/filepath"
 	"strconv"
 	"strings"
 	"sync"
@@ -21,8 +20,6 @@ import (
 	"github.com/sqlwarden/pkg/result"
 )
 
-// schemaFakeDriver implements metadata.SchemaInspector without requiring a live
-// target database, keeping schema handler tests focused on HTTP behavior.
 type schemaFakeDriver struct{}
 
 func (schemaFakeDriver) Connect(context.Context, engine.ConnectionConfig) error { return nil }
@@ -40,13 +37,8 @@ func (schemaFakeDriver) SchemaSpec() metadata.SchemaSpec {
 	return metadata.SchemaSpec{
 		Dialect: "sqlite",
 		Kinds: []metadata.SchemaObjectKind{{
-			Kind:            "table",
-			Label:           "Table",
-			PluralLabel:     "Tables",
-			Order:           1,
-			Relational:      true,
-			SupportsDiagram: true,
-			Listing:         "enumerated",
+			Kind: "table", Label: "Table", PluralLabel: "Tables", Order: 1,
+			Relational: true, SupportsDiagram: true, Listing: "enumerated",
 		}},
 	}
 }
@@ -55,13 +47,9 @@ func (schemaFakeDriver) InspectDirectory(context.Context, metadata.DirectoryOpti
 	scope := metadata.NewScopePath(metadata.ScopeSegment{Kind: "database", Name: "main"})
 	return &metadata.Directory{
 		Engine: "sqlite", DefaultScope: scope,
-		Roots: []metadata.ScopeNode{{
-			Path: scope,
-			Groups: []metadata.ObjectGroup{{
-				Kind:    "table",
-				Objects: []metadata.ObjectRef{{Scope: scope, Kind: "table", Name: "widgets"}},
-			}},
-		}},
+		Roots: []metadata.ScopeNode{{Path: scope, Groups: []metadata.ObjectGroup{{
+			Kind: "table", Objects: []metadata.ObjectRef{{Scope: scope, Kind: "table", Name: "widgets"}},
+		}}}},
 	}, nil
 }
 
@@ -69,47 +57,11 @@ func (schemaFakeDriver) InspectObjects(_ context.Context, refs []metadata.Object
 	out := make([]metadata.Object, 0, len(refs))
 	for _, ref := range refs {
 		out = append(out, metadata.Object{
-			Ref: ref,
-			Relational: &metadata.RelationalDetail{
-				Columns: []metadata.Column{{Name: "id", DataType: "INTEGER", Ordinal: 1}},
-			},
+			Ref:        ref,
+			Relational: &metadata.RelationalDetail{Columns: []metadata.Column{{Name: "id", DataType: "INTEGER", Ordinal: 1}}},
 		})
 	}
 	return out, nil
-}
-
-// schemaRelDriver is schemaFakeDriver plus the optional RelationshipInspector
-// capability, used to exercise the relationships endpoint. schemaFakeDriver
-// deliberately does NOT implement it, so it drives the 501 path.
-type schemaRelDriver struct{ schemaFakeDriver }
-
-func (schemaRelDriver) InspectRelationshipsInScope(_ context.Context, scope metadata.ScopePath) (*metadata.RelationshipGraph, error) {
-	return &metadata.RelationshipGraph{
-		Scope: scope,
-		Relationships: []metadata.Relationship{{
-			Name:              "orders_user_fk",
-			Source:            metadata.ObjectRef{Scope: scope, Kind: "table", Name: "orders"},
-			Columns:           []string{"user_id"},
-			References:        metadata.ObjectRef{Scope: scope, Kind: "table", Name: "users"},
-			ReferencedColumns: []string{"id"},
-		}},
-	}, nil
-}
-
-// schemaDefDriver is schemaFakeDriver plus the optional DefinitionInspector
-// capability. schemaFakeDriver deliberately omits it so the plain driver drives
-// the 501 path for the definition endpoint.
-type schemaDefDriver struct{ schemaFakeDriver }
-
-func (schemaDefDriver) InspectDefinition(_ context.Context, ref metadata.ObjectRef) (*metadata.Descriptor, error) {
-	if ref.Kind != "table" {
-		return nil, nil
-	}
-	return &metadata.Descriptor{
-		Kind:   "source",
-		Title:  "DDL",
-		Source: &metadata.Source{Language: "sql", Body: "CREATE TABLE " + ref.Name + " (id INTEGER)"},
-	}, nil
 }
 
 type ddlFakeDriver struct {
@@ -134,176 +86,6 @@ func (d *ddlFakeDriver) ApplyDDL(_ context.Context, request ddl.Request) error {
 	return nil
 }
 
-func TestGetConnectionSchemaRelationships(t *testing.T) {
-	t.Parallel()
-	app := newTestApp(t)
-	owner, tok, org := seedOrgOwner(t, app, uniqueEmail(t, "schema-rel"), "Schema Rel", "Schema Rel Org")
-	ws := seedWorkspaceForAccount(t, app, org, owner, "Schema WS", "")
-	envID := defaultEnvironmentID(t, app, ws.ID)
-	conn := seedConnection(t, app, ws.ID, &envID, org.ID, "sqlite", "Schema Conn", "open")
-	sess := openSchemaSession(t, app, owner.ID, conn.ID, schemaRelDriver{})
-
-	req := newAuthRequest(t, http.MethodGet,
-		orgConnectionURL(org.Slug, ws.ID, envID, strconv.FormatInt(conn.ID, 10))+"/schema/relationships?scope="+schemaScopeParam(metadata.NewScopePath(metadata.ScopeSegment{Kind: "schema", Name: "public"})), nil, tok)
-	req.Header.Set("X-Warden-Session", sess.ID)
-	res := send(t, req, app.routes())
-	assert.Equal(t, res.StatusCode, http.StatusOK)
-
-	graph, ok := res.BodyFields["graph"].(map[string]any)
-	if !ok {
-		t.Fatalf("expected graph object, got %v", res.BodyFields)
-	}
-	rels, ok := graph["relationships"].([]any)
-	if !ok || len(rels) != 1 {
-		t.Fatalf("expected one relationship, got %v", graph)
-	}
-	first := rels[0].(map[string]any)
-	refObj := first["references"].(map[string]any)
-	assert.Equal(t, refObj["name"], "users")
-}
-
-func TestGetConnectionSchemaRelationships_Unsupported(t *testing.T) {
-	t.Parallel()
-	app := newTestApp(t)
-	owner, tok, org := seedOrgOwner(t, app, uniqueEmail(t, "schema-rel-unsup"), "Schema Rel U", "Schema Rel U Org")
-	ws := seedWorkspaceForAccount(t, app, org, owner, "Schema WS", "")
-	envID := defaultEnvironmentID(t, app, ws.ID)
-	conn := seedConnection(t, app, ws.ID, &envID, org.ID, "sqlite", "Schema Conn", "open")
-	sess := openSchemaSession(t, app, owner.ID, conn.ID, schemaFakeDriver{})
-
-	req := newAuthRequest(t, http.MethodGet,
-		orgConnectionURL(org.Slug, ws.ID, envID, strconv.FormatInt(conn.ID, 10))+"/schema/relationships?scope="+schemaScopeParam(metadata.NewScopePath(metadata.ScopeSegment{Kind: "schema", Name: "public"})), nil, tok)
-	req.Header.Set("X-Warden-Session", sess.ID)
-	res := send(t, req, app.routes())
-	assert.Equal(t, res.StatusCode, http.StatusNotImplemented)
-}
-
-func TestGetConnectionDirectory_RequiresSession(t *testing.T) {
-	t.Parallel()
-	app := newTestApp(t)
-	owner, tok, org := seedOrgOwner(t, app, uniqueEmail(t, "schema-owner"), "Schema Owner", "Schema Org")
-	ws := seedWorkspaceForAccount(t, app, org, owner, "Schema WS", "")
-	envID := defaultEnvironmentID(t, app, ws.ID)
-	conn := seedConnection(t, app, ws.ID, &envID, org.ID, "sqlite", "Schema Conn", "open")
-	disableSchemaSnapshots(t, app, conn.ID)
-
-	req := newAuthRequest(t, http.MethodGet,
-		orgConnectionURL(org.Slug, ws.ID, envID, strconv.FormatInt(conn.ID, 10))+"/schema/directory", nil, tok)
-	res := send(t, req, app.routes())
-	assert.Equal(t, res.StatusCode, http.StatusBadRequest)
-}
-
-func TestGetConnectionDirectory_InspectsAndCaches(t *testing.T) {
-	t.Parallel()
-	app := newTestApp(t)
-	owner, tok, org := seedOrgOwner(t, app, uniqueEmail(t, "schema-owner2"), "Schema Owner2", "Schema Org2")
-	ws := seedWorkspaceForAccount(t, app, org, owner, "Schema WS", "")
-	envID := defaultEnvironmentID(t, app, ws.ID)
-	conn := seedConnection(t, app, ws.ID, &envID, org.ID, "sqlite", "Schema Conn", "open")
-	sess := openSchemaSession(t, app, owner.ID, conn.ID, schemaFakeDriver{})
-
-	req := newAuthRequest(t, http.MethodGet,
-		orgConnectionURL(org.Slug, ws.ID, envID, strconv.FormatInt(conn.ID, 10))+"/schema/directory", nil, tok)
-	req.Header.Set("X-Warden-Session", sess.ID)
-	res := send(t, req, app.routes())
-	assert.Equal(t, res.StatusCode, http.StatusOK)
-
-	directoryField, ok := res.BodyFields["directory"].(map[string]any)
-	if !ok {
-		t.Fatalf("expected directory object, got %v", res.BodyFields)
-	}
-	assert.Equal(t, directoryField["engine"], "sqlite")
-	roots, ok := directoryField["roots"].([]any)
-	if !ok || len(roots) != 1 {
-		t.Fatalf("expected one root, got %v", directoryField)
-	}
-	firstRoot := roots[0].(map[string]any)
-	groups := firstRoot["groups"].([]any)
-	firstGroup := groups[0].(map[string]any)
-	objects := firstGroup["objects"].([]any)
-	firstObject := objects[0].(map[string]any)
-	assert.Equal(t, firstObject["name"], "widgets")
-}
-
-func TestEphemeralSchemaDirectoryMarksLargeScopesLazy(t *testing.T) {
-	t.Parallel()
-	app := newTestApp(t)
-	owner, tok, org := seedOrgOwner(t, app, uniqueEmail(t, "ephemeral-lazy"), "Ephemeral Lazy", "Ephemeral Lazy Org")
-	ws := seedWorkspaceForAccount(t, app, org, owner, "Schema WS", "")
-	envID := defaultEnvironmentID(t, app, ws.ID)
-	conn := seedConnection(t, app, ws.ID, &envID, org.ID, "sqlite", "Schema Conn", "open")
-	updateInstanceSettingsForTest(t, app, func(s *database.InstanceSettings) {
-		s.SchemaLazyThreshold = 1
-	})
-	sess := openSchemaSession(t, app, owner.ID, conn.ID, schemaTwoObjectDriver{})
-
-	endpoint := orgConnectionURL(org.Slug, ws.ID, envID, strconv.FormatInt(conn.ID, 10)) + "/schema/directory"
-	req := newAuthRequest(t, http.MethodGet, endpoint, nil, tok)
-	req.Header.Set("X-Warden-Session", sess.ID)
-	res := send(t, req, app.routes())
-	assert.Equal(t, res.StatusCode, http.StatusOK)
-
-	directory, ok := res.BodyFields["directory"].(map[string]any)
-	if !ok {
-		t.Fatalf("missing directory: %+v", res.BodyFields)
-	}
-	roots, ok := directory["roots"].([]any)
-	if !ok || len(roots) != 1 {
-		t.Fatalf("missing roots: %+v", directory)
-	}
-	root, ok := roots[0].(map[string]any)
-	if !ok || root["lazy"] != true {
-		t.Fatalf("expected root scope to be marked lazy: %+v", root)
-	}
-}
-
-type schemaTwoObjectDriver struct{ schemaFakeDriver }
-
-func (schemaTwoObjectDriver) InspectDirectory(_ context.Context, _ metadata.DirectoryOptions) (*metadata.Directory, error) {
-	scope := metadata.NewScopePath(metadata.ScopeSegment{Kind: "database", Name: "main"})
-	return &metadata.Directory{
-		Engine: "sqlite", DefaultScope: scope,
-		Roots: []metadata.ScopeNode{{
-			Path: scope,
-			Groups: []metadata.ObjectGroup{{
-				Kind: "table",
-				Objects: []metadata.ObjectRef{
-					{Scope: scope, Kind: "table", Name: "widgets"},
-					{Scope: scope, Kind: "table", Name: "gadgets"},
-				},
-			}},
-		}},
-	}, nil
-}
-
-func TestGetConnectionSchemaSpec(t *testing.T) {
-	t.Parallel()
-	app := newTestApp(t)
-	owner, tok, org := seedOrgOwner(t, app, uniqueEmail(t, "schema-spec"), "Schema Spec", "Schema Spec Org")
-	ws := seedWorkspaceForAccount(t, app, org, owner, "Schema WS", "")
-	envID := defaultEnvironmentID(t, app, ws.ID)
-	conn := seedConnection(t, app, ws.ID, &envID, org.ID, "sqlite", "Schema Conn", "open")
-	sess := openSchemaSession(t, app, owner.ID, conn.ID, schemaFakeDriver{})
-
-	req := newAuthRequest(t, http.MethodGet,
-		orgConnectionURL(org.Slug, ws.ID, envID, strconv.FormatInt(conn.ID, 10))+"/schema/spec", nil, tok)
-	req.Header.Set("X-Warden-Session", sess.ID)
-	res := send(t, req, app.routes())
-	assert.Equal(t, res.StatusCode, http.StatusOK)
-
-	spec := res.BodyFields["spec"].(map[string]any)
-	kinds := spec["kinds"].([]any)
-	table := kinds[0].(map[string]any)
-	assert.Equal(t, table["kind"], "table")
-	assert.Equal(t, table["listing"], "enumerated")
-	if _, ok := res.BodyFields["editor"].(map[string]any); !ok {
-		t.Fatalf("expected schema editor spec, got %v", res.BodyFields["editor"])
-	}
-	if _, ok := res.BodyFields["statements"].(map[string]any); !ok {
-		t.Fatalf("expected statement generator spec, got %v", res.BodyFields["statements"])
-	}
-}
-
 func TestGenerateConnectionStatement(t *testing.T) {
 	t.Parallel()
 	app := newTestApp(t)
@@ -317,9 +99,9 @@ func TestGenerateConnectionStatement(t *testing.T) {
 		"kind":  "table",
 		"name":  "widgets",
 	}
-	url := orgConnectionURL(org.Slug, ws.ID, envID, strconv.FormatInt(conn.ID, 10)) + "/schema/statements"
+	endpoint := orgConnectionURL(org.Slug, ws.ID, envID, strconv.FormatInt(conn.ID, 10)) + "/schema/statements"
 
-	tests := []struct {
+	for _, test := range []struct {
 		operation string
 		contains  string
 	}{
@@ -327,10 +109,9 @@ func TestGenerateConnectionStatement(t *testing.T) {
 		{operation: "insert", contains: "VALUES (\n  ?\n);"},
 		{operation: "update", contains: "WHERE 1 = 0;"},
 		{operation: "delete", contains: "DELETE FROM \"main\".\"widgets\"\nWHERE 1 = 0;"},
-	}
-	for _, test := range tests {
+	} {
 		t.Run(test.operation, func(t *testing.T) {
-			req := newAuthRequest(t, http.MethodPost, url, map[string]any{"operation": test.operation, "ref": ref}, tok)
+			req := newAuthRequest(t, http.MethodPost, endpoint, map[string]any{"operation": test.operation, "ref": ref}, tok)
 			req.Header.Set("X-Warden-Session", sess.ID)
 			res := send(t, req, app.routes())
 			assert.Equal(t, res.StatusCode, http.StatusOK)
@@ -343,15 +124,15 @@ func TestGenerateConnectionStatement(t *testing.T) {
 
 	viewRef := maps.Clone(ref)
 	viewRef["kind"] = "view"
-	req := newAuthRequest(t, http.MethodPost, url, map[string]any{"operation": "delete", "ref": viewRef}, tok)
+	req := newAuthRequest(t, http.MethodPost, endpoint, map[string]any{"operation": "delete", "ref": viewRef}, tok)
 	req.Header.Set("X-Warden-Session", sess.ID)
 	res := send(t, req, app.routes())
 	assert.Equal(t, res.StatusCode, http.StatusUnprocessableEntity)
 	assert.Equal(t, res.BodyFields["error"].(map[string]any)["code"], "statement_generation_failed")
 
-	req = newAuthRequest(t, http.MethodPost, url, map[string]any{"operation": "select", "ref": ref}, tok)
+	req = newAuthRequest(t, http.MethodPost, endpoint, map[string]any{"operation": "select", "ref": ref}, tok)
 	res = send(t, req, app.routes())
-	assert.Equal(t, res.StatusCode, http.StatusBadRequest)
+	assert.Equal(t, res.StatusCode, http.StatusOK)
 }
 
 func TestApplyConnectionDDL(t *testing.T) {
@@ -372,8 +153,7 @@ func TestApplyConnectionDDL(t *testing.T) {
 	res := send(t, req, app.routes())
 	assert.Equal(t, res.StatusCode, http.StatusOK)
 	assert.Equal(t, res.BodyFields["applied"], true)
-	schemaStatus := res.BodyFields["schema"].(map[string]any)
-	assert.Equal(t, schemaStatus["mode"], "ephemeral")
+	assert.Equal(t, res.BodyFields["schema"].(map[string]any)["mode"], "ephemeral")
 
 	driver.mu.Lock()
 	defer driver.mu.Unlock()
@@ -402,189 +182,6 @@ func TestApplyConnectionDDLRejectsInvalidInput(t *testing.T) {
 	if len(driver.applied) != 0 {
 		t.Fatalf("invalid edit reached driver: %+v", driver.applied)
 	}
-}
-
-func TestPostConnectionObjects(t *testing.T) {
-	t.Parallel()
-	app := newTestApp(t)
-	owner, tok, org := seedOrgOwner(t, app, uniqueEmail(t, "schema-objects"), "Schema Objects", "Schema Objects Org")
-	ws := seedWorkspaceForAccount(t, app, org, owner, "Schema WS", "")
-	envID := defaultEnvironmentID(t, app, ws.ID)
-	conn := seedConnection(t, app, ws.ID, &envID, org.ID, "sqlite", "Schema Conn", "open")
-	sess := openSchemaSession(t, app, owner.ID, conn.ID, schemaFakeDriver{})
-
-	req := newAuthRequest(t, http.MethodPost,
-		orgConnectionURL(org.Slug, ws.ID, envID, strconv.FormatInt(conn.ID, 10))+"/schema/objects",
-		map[string]any{"refs": []map[string]any{{"scope": []map[string]any{{"kind": "database", "name": "main"}}, "kind": "table", "name": "widgets"}}},
-		tok)
-	req.Header.Set("X-Warden-Session", sess.ID)
-	res := send(t, req, app.routes())
-	assert.Equal(t, res.StatusCode, http.StatusOK)
-
-	objects := res.BodyFields["objects"].([]any)
-	first := objects[0].(map[string]any)
-	ref := first["ref"].(map[string]any)
-	assert.Equal(t, ref["name"], "widgets")
-	rel := first["relational"].(map[string]any)
-	columns := rel["columns"].([]any)
-	column := columns[0].(map[string]any)
-	assert.Equal(t, column["name"], "id")
-}
-
-func TestGetConnectionSchemaObjectDefinition_Ephemeral(t *testing.T) {
-	t.Parallel()
-	app := newTestApp(t)
-	owner, tok, org := seedOrgOwner(t, app, uniqueEmail(t, "schema-def"), "Schema Def", "Schema Def Org")
-	ws := seedWorkspaceForAccount(t, app, org, owner, "Schema WS", "")
-	envID := defaultEnvironmentID(t, app, ws.ID)
-	conn := seedConnection(t, app, ws.ID, &envID, org.ID, "sqlite", "Schema Conn", "open")
-	sess := openSchemaSession(t, app, owner.ID, conn.ID, schemaDefDriver{})
-
-	scope := metadata.NewScopePath(metadata.ScopeSegment{Kind: "database", Name: "main"})
-	req := newAuthRequest(t, http.MethodGet,
-		orgConnectionURL(org.Slug, ws.ID, envID, strconv.FormatInt(conn.ID, 10))+
-			"/schema/object/definition?scope="+schemaScopeParam(scope)+"&kind=table&name=widgets",
-		nil, tok)
-	req.Header.Set("X-Warden-Session", sess.ID)
-	res := send(t, req, app.routes())
-	assert.Equal(t, res.StatusCode, http.StatusOK)
-
-	descriptor := res.BodyFields["descriptor"].(map[string]any)
-	assert.Equal(t, descriptor["title"], "DDL")
-	source := descriptor["source"].(map[string]any)
-	if body, _ := source["body"].(string); !strings.Contains(body, "CREATE TABLE widgets") {
-		t.Fatalf("unexpected definition body: %v", source["body"])
-	}
-}
-
-func TestGetConnectionSchemaObjectDefinition_MissingParams(t *testing.T) {
-	t.Parallel()
-	app := newTestApp(t)
-	owner, tok, org := seedOrgOwner(t, app, uniqueEmail(t, "schema-def-bad"), "Schema Def Bad", "Schema Def Bad Org")
-	ws := seedWorkspaceForAccount(t, app, org, owner, "Schema WS", "")
-	envID := defaultEnvironmentID(t, app, ws.ID)
-	conn := seedConnection(t, app, ws.ID, &envID, org.ID, "sqlite", "Schema Conn", "open")
-	sess := openSchemaSession(t, app, owner.ID, conn.ID, schemaDefDriver{})
-
-	scope := metadata.NewScopePath(metadata.ScopeSegment{Kind: "database", Name: "main"})
-	req := newAuthRequest(t, http.MethodGet,
-		orgConnectionURL(org.Slug, ws.ID, envID, strconv.FormatInt(conn.ID, 10))+
-			"/schema/object/definition?scope="+schemaScopeParam(scope)+"&kind=table",
-		nil, tok)
-	req.Header.Set("X-Warden-Session", sess.ID)
-	res := send(t, req, app.routes())
-	assert.Equal(t, res.StatusCode, http.StatusBadRequest)
-}
-
-func TestGetConnectionSchemaObjectDefinition_Unsupported(t *testing.T) {
-	t.Parallel()
-	app := newTestApp(t)
-	owner, tok, org := seedOrgOwner(t, app, uniqueEmail(t, "schema-def-501"), "Schema Def 501", "Schema Def 501 Org")
-	ws := seedWorkspaceForAccount(t, app, org, owner, "Schema WS", "")
-	envID := defaultEnvironmentID(t, app, ws.ID)
-	conn := seedConnection(t, app, ws.ID, &envID, org.ID, "sqlite", "Schema Conn", "open")
-	sess := openSchemaSession(t, app, owner.ID, conn.ID, schemaFakeDriver{})
-
-	scope := metadata.NewScopePath(metadata.ScopeSegment{Kind: "database", Name: "main"})
-	req := newAuthRequest(t, http.MethodGet,
-		orgConnectionURL(org.Slug, ws.ID, envID, strconv.FormatInt(conn.ID, 10))+
-			"/schema/object/definition?scope="+schemaScopeParam(scope)+"&kind=table&name=widgets",
-		nil, tok)
-	req.Header.Set("X-Warden-Session", sess.ID)
-	res := send(t, req, app.routes())
-	assert.Equal(t, res.StatusCode, http.StatusNotImplemented)
-}
-
-func TestRefreshConnectionSchema(t *testing.T) {
-	t.Parallel()
-	app := newTestApp(t)
-	owner, tok, org := seedOrgOwner(t, app, uniqueEmail(t, "schema-refresh"), "Schema Refresh", "Schema Refresh Org")
-	ws := seedWorkspaceForAccount(t, app, org, owner, "Schema WS", "")
-	envID := defaultEnvironmentID(t, app, ws.ID)
-	conn := seedConnection(t, app, ws.ID, &envID, org.ID, "sqlite", "Schema Conn", "open")
-	sess := openSchemaSession(t, app, owner.ID, conn.ID, schemaFakeDriver{})
-
-	req := newAuthRequest(t, http.MethodPost,
-		orgConnectionURL(org.Slug, ws.ID, envID, strconv.FormatInt(conn.ID, 10))+"/schema/refresh", nil, tok)
-	req.Header.Set("X-Warden-Session", sess.ID)
-	res := send(t, req, app.routes())
-	assert.Equal(t, res.StatusCode, http.StatusOK)
-	assert.Equal(t, res.BodyFields["status"], "ok")
-
-	req = newAuthRequest(t, http.MethodPost,
-		orgConnectionURL(org.Slug, ws.ID, envID, strconv.FormatInt(conn.ID, 10))+"/schema/refresh",
-		map[string]any{"ref": map[string]any{"scope": []map[string]any{{"kind": "database", "name": "main"}}, "kind": "table", "name": "widgets"}},
-		tok)
-	req.Header.Set("X-Warden-Session", sess.ID)
-	res = send(t, req, app.routes())
-	assert.Equal(t, res.StatusCode, http.StatusOK)
-	assert.Equal(t, res.BodyFields["status"], "ok")
-}
-
-func TestGetConnectionDirectory_SessionExpired(t *testing.T) {
-	t.Parallel()
-	app := newTestApp(t)
-	owner, tok, org := seedOrgOwner(t, app, uniqueEmail(t, "schema-expired"), "Schema Expired", "Schema Expired Org")
-	ws := seedWorkspaceForAccount(t, app, org, owner, "Schema WS", "")
-	envID := defaultEnvironmentID(t, app, ws.ID)
-	conn := seedConnection(t, app, ws.ID, &envID, org.ID, "sqlite", "Schema Conn", "open")
-	disableSchemaSnapshots(t, app, conn.ID)
-
-	req := newAuthRequest(t, http.MethodGet,
-		orgConnectionURL(org.Slug, ws.ID, envID, strconv.FormatInt(conn.ID, 10))+"/schema/directory", nil, tok)
-	req.Header.Set("X-Warden-Session", "nonexistent-session-id")
-	res := send(t, req, app.routes())
-	assert.Equal(t, res.StatusCode, http.StatusGone)
-}
-
-func TestGetConnectionDirectory_SessionConnectionMismatch(t *testing.T) {
-	t.Parallel()
-	app := newTestApp(t)
-	owner, tok, org := seedOrgOwner(t, app, uniqueEmail(t, "schema-mismatch"), "Schema Mismatch", "Schema Mismatch Org")
-	ws := seedWorkspaceForAccount(t, app, org, owner, "Schema WS", "")
-	envID := defaultEnvironmentID(t, app, ws.ID)
-	connA := seedConnection(t, app, ws.ID, &envID, org.ID, "sqlite", "Conn A", "open")
-	connB := seedConnection(t, app, ws.ID, &envID, org.ID, "sqlite", "Conn B", "open")
-	disableSchemaSnapshots(t, app, connA.ID)
-	sess := openSchemaSession(t, app, owner.ID, connB.ID, schemaFakeDriver{})
-
-	req := newAuthRequest(t, http.MethodGet,
-		orgConnectionURL(org.Slug, ws.ID, envID, strconv.FormatInt(connA.ID, 10))+"/schema/directory", nil, tok)
-	req.Header.Set("X-Warden-Session", sess.ID)
-	res := send(t, req, app.routes())
-	assert.Equal(t, res.StatusCode, http.StatusForbidden)
-}
-
-// nonSchemaInspectableDriver exercises the 501 unsupported-driver path.
-type nonSchemaInspectableDriver struct{}
-
-func (nonSchemaInspectableDriver) Connect(context.Context, engine.ConnectionConfig) error {
-	return nil
-}
-func (nonSchemaInspectableDriver) Ping(context.Context) error { return nil }
-func (nonSchemaInspectableDriver) Close() error               { return nil }
-func (nonSchemaInspectableDriver) Query(context.Context, string, ...any) (*result.ResultSet, error) {
-	return &result.ResultSet{}, nil
-}
-func (nonSchemaInspectableDriver) Execute(context.Context, string, ...any) (*result.ResultSet, error) {
-	return &result.ResultSet{}, nil
-}
-func (nonSchemaInspectableDriver) Dialect() engine.Dialect { return engine.DialectSQLite }
-
-func TestGetConnectionDirectory_UnsupportedDriver(t *testing.T) {
-	t.Parallel()
-	app := newTestApp(t)
-	owner, tok, org := seedOrgOwner(t, app, uniqueEmail(t, "schema-unsupported"), "Schema Unsupported", "Schema Unsupported Org")
-	ws := seedWorkspaceForAccount(t, app, org, owner, "Schema WS", "")
-	envID := defaultEnvironmentID(t, app, ws.ID)
-	conn := seedConnection(t, app, ws.ID, &envID, org.ID, "sqlite", "Schema Conn", "open")
-	sess := openSchemaSession(t, app, owner.ID, conn.ID, nonSchemaInspectableDriver{})
-
-	req := newAuthRequest(t, http.MethodGet,
-		orgConnectionURL(org.Slug, ws.ID, envID, strconv.FormatInt(conn.ID, 10))+"/schema/directory", nil, tok)
-	req.Header.Set("X-Warden-Session", sess.ID)
-	res := send(t, req, app.routes())
-	assert.Equal(t, res.StatusCode, http.StatusNotImplemented)
 }
 
 func schemaScopeParam(scope metadata.ScopePath) string {
@@ -663,73 +260,5 @@ func TestApplyConnectionTableEditPayloads(t *testing.T) {
 	index := driver.applied[2]
 	if !index.Unique || len(index.IndexColumns) != 2 || index.IndexColumns[0].Name != "count" || !index.IndexColumns[0].Descending || index.IndexColumns[1].Name != "id" {
 		t.Fatalf("index payload: %+v", index)
-	}
-}
-
-func TestLoadConnectionSchemaScopeFillsDetailForALazyScope(t *testing.T) {
-	t.Parallel()
-	app := newTestApp(t)
-	owner, tok, org := seedOrgOwner(t, app, uniqueEmail(t, "load-scope"), "Load Scope", "Load Scope Org")
-	ws := seedWorkspaceForAccount(t, app, org, owner, "Snapshot WS", "")
-	envID := defaultEnvironmentID(t, app, ws.ID)
-
-	dsn := filepath.Join(t.TempDir(), "target.db")
-	driver, err := engine.New("sqlite")
-	if err != nil {
-		t.Fatal(err)
-	}
-	if err := driver.Connect(context.Background(), engine.ConnectionConfig{DSN: dsn}); err != nil {
-		t.Fatal(err)
-	}
-	if _, err := driver.Execute(context.Background(), "CREATE TABLE widgets (id INTEGER PRIMARY KEY)"); err != nil {
-		t.Fatal(err)
-	}
-	if _, err := driver.Execute(context.Background(), "CREATE TABLE gadgets (id INTEGER PRIMARY KEY)"); err != nil {
-		t.Fatal(err)
-	}
-	if err := driver.Close(); err != nil {
-		t.Fatal(err)
-	}
-
-	updateInstanceSettingsForTest(t, app, func(s *database.InstanceSettings) {
-		s.SchemaLazyThreshold = 1
-	})
-
-	created := send(t, newAuthRequest(t, http.MethodPost, orgEnvConnectionsURL(org.Slug, ws.ID, envID),
-		map[string]any{"name": "Target", "driver": "sqlite", "dsn": dsn}, tok), app.routes())
-	if created.StatusCode != http.StatusCreated {
-		t.Fatalf("create target connection: status=%d body=%s", created.StatusCode, created.BodyBytes)
-	}
-	connectionID := int64(created.BodyFields["id"].(float64))
-	connIDStr := strconv.FormatInt(connectionID, 10)
-
-	res := send(t, newAuthRequest(t, http.MethodPost,
-		orgConnectionURL(org.Slug, ws.ID, envID, connIDStr)+"/schema/refresh", nil, tok), app.routes())
-	assert.Equal(t, res.StatusCode, http.StatusOK)
-
-	_, directory, found, err := app.schemaSnapshots.Active(context.Background(), connectionID)
-	if err != nil || !found {
-		t.Fatalf("expected active snapshot: found=%v err=%v", found, err)
-	}
-	if !directory.Roots[0].Lazy {
-		t.Fatalf("expected the 2-object scope over threshold 1 to be lazy: %+v", directory.Roots[0])
-	}
-	scope := directory.Roots[0].Path
-
-	loadRes := send(t, newAuthRequest(t, http.MethodPost,
-		orgConnectionURL(org.Slug, ws.ID, envID, connIDStr)+"/schema/scope/load",
-		map[string]any{"scope": scope}, tok), app.routes())
-	assert.Equal(t, loadRes.StatusCode, http.StatusOK)
-
-	snapshot, _, found, err := app.schemaSnapshots.Active(context.Background(), connectionID)
-	if err != nil || !found {
-		t.Fatalf("expected active snapshot: found=%v err=%v", found, err)
-	}
-	stored, err := app.schemaSnapshots.AllObjects(context.Background(), snapshot.ID)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if len(stored) != 2 {
-		t.Fatalf("expected both objects in the lazy scope to now have detail, got %d", len(stored))
 	}
 }

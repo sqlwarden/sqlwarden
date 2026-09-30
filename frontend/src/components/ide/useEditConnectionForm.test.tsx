@@ -18,6 +18,7 @@ const connection: Connection = {
   driver: 'postgres',
   access_mode: 'open',
   show_system_schemas: false,
+  show_all_databases: true,
   created_at: '',
   updated_at: '',
 }
@@ -39,6 +40,22 @@ function sshRevealHandler(body: Record<string, unknown> = disabledSshReveal) {
   return http.get('/api/v1/orgs/acme/workspaces/3/connections/7/ssh', () => HttpResponse.json(body))
 }
 
+function stubEngine(overrides: Record<string, unknown> = {}) {
+  server.use(
+    http.get('/api/v1/engines/:engine', ({ params }) =>
+      HttpResponse.json({
+        id: params.engine,
+        display_name: String(params.engine),
+        dialect: String(params.engine),
+        capabilities: {},
+        supports_system_objects: false,
+        show_all_databases: false,
+        ...overrides,
+      }),
+    ),
+  )
+}
+
 describe('useEditConnectionForm DSN reveal', () => {
   const queryClient = createTestQueryClient()
   let onOpenChange: ReturnType<typeof vi.fn>
@@ -47,6 +64,7 @@ describe('useEditConnectionForm DSN reveal', () => {
     queryClient.clear()
     onOpenChange = vi.fn()
     server.use(sshRevealHandler())
+    stubEngine()
   })
 
   function wrapper({ children }: PropsWithChildren) {
@@ -591,5 +609,44 @@ describe('useEditConnectionForm DSN reveal', () => {
     await waitFor(() => expect(result.current.sshConfigured).toBe(false))
     expect(result.current.ssh.host).toBe('')
     expect(result.current.ssh.enabled).toBe(false)
+  })
+
+  it('hydrates show all databases and sends the edited value', async () => {
+    stubEngine({ show_all_databases: true })
+    server.use(
+      http.get('/api/v1/orgs/acme', () =>
+        HttpResponse.json({
+          id: 1,
+          slug: 'acme',
+          name: 'Acme',
+          mask_connection_credentials_on_edit: false,
+          created_at: '',
+          updated_at: '',
+        }),
+      ),
+    )
+    let body: Record<string, unknown> = {}
+    server.use(
+      http.patch('/api/v1/orgs/acme/workspaces/3/connections/7', async ({ request }) => {
+        body = (await request.json()) as Record<string, unknown>
+        return HttpResponse.json({ id: 7 })
+      }),
+    )
+    const { result } = renderForm(false)
+    await waitFor(() => expect(result.current.showAllDatabasesSupported).toBe(true))
+    act(() => {
+      result.current.changeName('analytics-pg')
+      for (const field of result.current.driver.fields.filter((f) => f.required)) {
+        result.current.changeField(field.key, field.default ?? `${field.key}-value`)
+      }
+      result.current.changeField('database', 'analytics')
+    })
+    expect(result.current.showAllDatabases).toBe(true)
+
+    act(() => result.current.changeShowAllDatabases(false))
+    act(() => result.current.submit())
+
+    await waitFor(() => expect(onOpenChange).toHaveBeenCalledWith(false))
+    expect(body.show_all_databases).toBe(false)
   })
 })

@@ -2,11 +2,11 @@ package metadata
 
 import "context"
 
-// SchemaInspector is the metadata-domain interface a driver implements to report
+// DirectoryInspector is the legacy metadata-domain interface a driver implements to report
 // its objects in two tiers: a cheap Directory listing, and on-demand detail for
 // specific objects. It is satisfied implicitly (Go structural typing); drivers
 // need not import this interface, only the metadata types they return.
-type SchemaInspector interface {
+type DirectoryInspector interface {
 	// SchemaSpec is pure/static and must not touch the target database.
 	SchemaSpec() SchemaSpec
 	// InspectDirectory lists objects (names + kinds) without columns/keys.
@@ -22,7 +22,7 @@ type SchemaInspector interface {
 // whose bulk InspectObjects already embeds a "DDL"/"Definition" source descriptor
 // do not need it; engines that omit the definition from bulk inspection because
 // producing it per object is expensive expose it here for lazy retrieval. Callers
-// report 501 via the same type-assertion path used for SchemaInspector.
+// report 501 via the same type-assertion path used for DirectoryInspector.
 type DefinitionInspector interface {
 	// InspectDefinition returns a single "source" descriptor for the object, or
 	// nil when no definition is available (unsupported kind, insufficient
@@ -33,9 +33,24 @@ type DefinitionInspector interface {
 // RelationshipInspector is the OPTIONAL capability to report a scope's
 // foreign-key edges cheaply (no column detail). Relational engines implement it;
 // engines without a foreign-key concept do not, and callers report 501 via the
-// same type-assertion path used for SchemaInspector.
+// same type-assertion path used for DirectoryInspector.
 type RelationshipInspector interface {
 	InspectRelationshipsInScope(ctx context.Context, scope ScopePath) (*RelationshipGraph, error)
+}
+
+// SchemaInspector is the navigator capability: a static grammar whose folder
+// loaders run against a database-scoped Querier, plus on-demand object detail.
+type SchemaInspector interface {
+	// Tree is static and must not touch the target database.
+	Tree() Tree
+	// Querier returns a handle scoped to database ("" = connection default).
+	Querier(ctx context.Context, database string) (Querier, error)
+	// InspectObjects returns detail only for the requested refs.
+	InspectObjects(ctx context.Context, refs []ObjectRef) ([]Object, error)
+}
+
+type ObjectInspector interface {
+	InspectObjects(ctx context.Context, refs []ObjectRef) ([]Object, error)
 }
 
 // DirectoryOptions optionally limits inspection to one hierarchy root.

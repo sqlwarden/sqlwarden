@@ -1,14 +1,11 @@
 package web
 
 import (
-	"context"
 	"net/http"
 	"strconv"
 	"testing"
-	"time"
 
 	"github.com/sqlwarden/internal/assert"
-	"github.com/sqlwarden/internal/engine/metadata"
 )
 
 func completionIndexURL(org string, wsID, envID, connID int64) string {
@@ -66,93 +63,6 @@ func hasString(values any, want string) bool {
 	return false
 }
 
-func TestCompletionIndexReturnsProjectedSchema(t *testing.T) {
-	t.Parallel()
-	app := newTestApp(t)
-	owner, token, org := seedOrgOwner(t, app, uniqueEmail(t, "completion-index"), "Index", "Index Org")
-	ws := seedWorkspaceForAccount(t, app, org, owner, "Index WS", "")
-	envID := defaultEnvironmentID(t, app, ws.ID)
-	conn := seedConnection(t, app, ws.ID, &envID, org.ID, "postgres", "Index DB", "open")
-
-	scope := metadata.NewScopePath(
-		metadata.ScopeSegment{Kind: "database", Name: "app"},
-		metadata.ScopeSegment{Kind: "schema", Name: "public"},
-	)
-	directory := &metadata.Directory{
-		Engine: "postgres", DefaultScope: scope, GeneratedAt: time.Now(),
-		Roots: []metadata.ScopeNode{{
-			Path: scope,
-			Groups: []metadata.ObjectGroup{{
-				Kind: "table",
-				Objects: []metadata.ObjectRef{
-					{Scope: scope, Kind: "table", Name: "orders"},
-					{Scope: scope, Kind: "view", Name: "active_orders"},
-				},
-			}},
-		}},
-	}
-	snapshot, err := app.schemaSnapshots.Begin(context.Background(), conn.ID, &org.ID, directory)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if err := app.schemaSnapshots.PutObjects(context.Background(), snapshot.ID, []metadata.Object{
-		{
-			Ref: metadata.ObjectRef{Scope: scope, Kind: "table", Name: "orders"},
-			Relational: &metadata.RelationalDetail{Columns: []metadata.Column{
-				{Name: "id", DataType: "int8", Nullable: false, Ordinal: 1},
-				{Name: "total", DataType: "numeric", Nullable: true, Ordinal: 2},
-			}},
-		},
-		{
-			Ref:        metadata.ObjectRef{Scope: scope, Kind: "view", Name: "active_orders"},
-			Relational: &metadata.RelationalDetail{Columns: []metadata.Column{{Name: "id", DataType: "int8", Ordinal: 1}}},
-		},
-	}); err != nil {
-		t.Fatal(err)
-	}
-	if err := app.schemaSnapshots.Publish(context.Background(), snapshot.ID); err != nil {
-		t.Fatal(err)
-	}
-
-	req := newAuthRequest(t, http.MethodGet, completionIndexURL(org.Slug, ws.ID, envID, conn.ID), nil, token)
-	res := send(t, req, app.routes())
-
-	assert.Equal(t, res.StatusCode, http.StatusOK)
-	assert.Equal(t, res.BodyFields["version"], any(snapshot.ID))
-	assert.Equal(t, res.BodyFields["default_schema"], "public")
-	if !hasString(res.BodyFields["schemas"], "public") {
-		t.Fatalf("schemas missing public: %s", res.BodyBytes)
-	}
-	objects := completionIndexObjects(res.BodyFields)
-	if !hasIndexObject(objects, "public", "orders", "table") {
-		t.Fatalf("objects missing public.orders table: %s", res.BodyBytes)
-	}
-	if !hasIndexObject(objects, "public", "active_orders", "view") {
-		t.Fatalf("objects missing public.active_orders view: %s", res.BodyBytes)
-	}
-	columns := completionIndexColumns(res.BodyFields)
-	if !hasIndexColumn(columns, "public", "orders", "id", "int8", false) {
-		t.Fatalf("columns missing orders.id int8 NOT NULL: %s", res.BodyBytes)
-	}
-	if !hasIndexColumn(columns, "public", "orders", "total", "numeric", true) {
-		t.Fatalf("columns missing orders.total numeric NULL: %s", res.BodyBytes)
-	}
-}
-
-func TestCompletionIndexPendingSnapshotReturns202(t *testing.T) {
-	t.Parallel()
-	app := newTestApp(t)
-	owner, token, org := seedOrgOwner(t, app, uniqueEmail(t, "completion-index-pending"), "Index", "Index Org")
-	ws := seedWorkspaceForAccount(t, app, org, owner, "Index WS", "")
-	envID := defaultEnvironmentID(t, app, ws.ID)
-	conn := seedConnection(t, app, ws.ID, &envID, org.ID, "postgres", "Index DB", "open")
-
-	req := newAuthRequest(t, http.MethodGet, completionIndexURL(org.Slug, ws.ID, envID, conn.ID), nil, token)
-	res := send(t, req, app.routes())
-
-	assert.Equal(t, res.StatusCode, http.StatusAccepted)
-}
-
 func TestCompletionIndexRejectsForeignSession(t *testing.T) {
 	t.Parallel()
 	app := newTestApp(t)
@@ -169,30 +79,4 @@ func TestCompletionIndexRejectsForeignSession(t *testing.T) {
 	res := send(t, req, app.routes())
 
 	assert.Equal(t, res.StatusCode, http.StatusForbidden)
-}
-
-func TestEphemeralCompletionIndexOnlyUsesCachedObjectDetail(t *testing.T) {
-	t.Parallel()
-	app := newTestApp(t)
-	owner, tok, org := seedOrgOwner(t, app, uniqueEmail(t, "completion-lazy"), "Completion Lazy", "Completion Lazy Org")
-	ws := seedWorkspaceForAccount(t, app, org, owner, "Schema WS", "")
-	envID := defaultEnvironmentID(t, app, ws.ID)
-	conn := seedConnection(t, app, ws.ID, &envID, org.ID, "sqlite", "Schema Conn", "open")
-	sess := openSchemaSession(t, app, owner.ID, conn.ID, schemaFakeDriver{})
-
-	endpoint := completionIndexURL(org.Slug, ws.ID, envID, conn.ID)
-	req := newAuthRequest(t, http.MethodGet, endpoint, nil, tok)
-	req.Header.Set("X-Warden-Session", sess.ID)
-	res := send(t, req, app.routes())
-	if res.StatusCode != http.StatusOK {
-		t.Fatalf("completion index: %d %+v", res.StatusCode, res.BodyFields)
-	}
-	objects := completionIndexObjects(res.BodyFields)
-	if !hasIndexObject(objects, "", "widgets", "table") {
-		t.Fatalf("expected the object name to still be listed, got %+v", res.BodyFields)
-	}
-	columns := completionIndexColumns(res.BodyFields)
-	if hasIndexColumn(columns, "", "widgets", "id", "INTEGER", false) {
-		t.Fatalf("expected no column detail without a prior object fetch, got %+v", res.BodyFields)
-	}
 }

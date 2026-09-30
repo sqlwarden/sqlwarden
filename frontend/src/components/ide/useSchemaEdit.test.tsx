@@ -3,11 +3,9 @@ import { QueryClientProvider } from '@tanstack/react-query'
 import { act, renderHook, waitFor } from '@testing-library/react'
 import { http, HttpResponse } from 'msw'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
-import {
-  connectionDirectoryQueryKey,
-  connectionObjectQueryKey,
-  connectionRelationshipsQueryKey,
-} from '#/lib/api/query'
+import { queryKeys } from '#/lib/api/query-keys'
+import type { NavigatorListing } from '#/lib/api/types'
+import { connectionObjectQueryKey, connectionRelationshipsQueryKey } from '#/lib/api/query'
 import { createTestQueryClient } from '#/test/render'
 import { server } from '#/test/server'
 import { useSchemaEdit } from './useSchemaEdit'
@@ -43,16 +41,14 @@ describe('useSchemaEdit', () => {
           receivedHeader = request.headers.get('X-Warden-Session')
           return HttpResponse.json({
             applied: true,
-            schema: { status: 'ok', mode: 'persistent' },
+            schema: { status: 'available', mode: 'persistent' },
             transaction: { mode: 'auto', open: false, pending_statements: 0 },
           })
         },
       ),
     )
-    const directoryKey = connectionDirectoryQueryKey('acme', 3, 7)
     const objectKey = connectionObjectQueryKey('acme', 3, 7, baseRef)
     const relationshipsKey = connectionRelationshipsQueryKey('acme', 3, 7, baseRef.scope)
-    queryClient.setQueryData(directoryKey, { directory: {} })
     queryClient.setQueryData(objectKey, { ref: baseRef })
     queryClient.setQueryData(relationshipsKey, { relationships: [] })
 
@@ -72,7 +68,6 @@ describe('useSchemaEdit', () => {
     await waitFor(() => expect(result.current.isSuccess).toBe(true))
 
     expect(receivedHeader).toBe('session-7')
-    expect(queryClient.getQueryState(directoryKey)?.isInvalidated).toBe(true)
     expect(queryClient.getQueryState(objectKey)?.isInvalidated).toBe(true)
     expect(queryClient.getQueryState(relationshipsKey)?.isInvalidated).toBe(true)
     expect(toastWarning).not.toHaveBeenCalled()
@@ -98,7 +93,7 @@ describe('useSchemaEdit', () => {
     await waitFor(() => expect(result.current.isSuccess).toBe(true))
 
     expect(toastWarning).toHaveBeenCalledWith(
-      'Change applied, but refreshing the schema snapshot failed. Use Refresh to see the update.',
+      'Change applied, but refreshing the schema failed. Use Refresh to see the update.',
     )
   })
 
@@ -130,6 +125,59 @@ describe('useSchemaEdit', () => {
     act(() => result.current.mutate({ operation: 'drop_object', ref: baseRef }))
     await waitFor(() => expect(result.current.isError).toBe(true))
     expect(toastError).toHaveBeenCalledWith('Table already exists.')
+  })
+
+  it('writes the refreshed listings returned with a successful mutation', async () => {
+    const schemaPath = [
+      { kind: 'database', name: 'app' },
+      { kind: 'schema', name: 'public' },
+    ]
+    const refreshed: NavigatorListing = {
+      path: schemaPath,
+      folder: 'tables',
+      items: [
+        {
+          kind: 'table',
+          name: 'orders',
+          path: [...schemaPath, { kind: 'table', name: 'orders' }],
+          system: false,
+          current: false,
+        },
+      ],
+      fetched_at: '2026-09-29T00:00:00Z',
+      source: 'live',
+    }
+    server.use(
+      http.post('/api/v1/orgs/acme/workspaces/3/connections/7/schema/mutations', () =>
+        HttpResponse.json({
+          applied: true,
+          schema: { status: 'available', mode: 'persistent' },
+          transaction: { mode: 'auto', open: false, pending_statements: 0 },
+          listings: [refreshed],
+        }),
+      ),
+    )
+    const tablesKey = queryKeys.connectionSchemaNodes('acme', 3, 7, schemaPath, 'tables')
+    queryClient.setQueryData(tablesKey, { ...refreshed, items: [] })
+
+    const { result } = renderHook(
+      () =>
+        useSchemaEdit({ orgSlug: 'acme', workspaceId: 3, connectionId: 7, sessionId: 'session-7' }),
+      { wrapper },
+    )
+    act(() =>
+      result.current.mutate({
+        operation: 'create_table',
+        scope: schemaPath,
+        name: 'orders',
+        columns: [{ name: 'id', data_type: 'integer', nullable: false, primary_key: true }],
+      }),
+    )
+    await waitFor(() => expect(result.current.isSuccess).toBe(true))
+
+    expect(
+      queryClient.getQueryData<NavigatorListing>(tablesKey)?.items.map((item) => item.name),
+    ).toEqual(['orders'])
   })
 })
 

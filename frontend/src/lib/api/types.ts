@@ -132,6 +132,8 @@ export interface EngineView {
   dialect: string
   capabilities: Record<string, boolean>
   explain?: EngineExplainSpec
+  supports_system_objects?: boolean
+  show_all_databases?: boolean
 }
 
 export interface TransactionStatusResponse {
@@ -175,6 +177,7 @@ export interface Connection {
   default_scope?: ScopePath
   schema_snapshot_policy?: 'inherit' | 'disabled'
   show_system_schemas: boolean
+  show_all_databases: boolean
   created_at: string
   updated_at: string
 }
@@ -540,47 +543,6 @@ export interface ObjectRef {
   name: string
 }
 
-export interface ScopeNode {
-  path: ScopePath
-  groups: ObjectGroup[]
-  children?: ScopeNode[]
-  lazy?: boolean
-  system?: boolean
-}
-
-export interface ObjectGroup {
-  kind: string
-  objects: ObjectRef[]
-  /** Approximate row count per object name, keyed by name. Only present for
-   *  kinds the driver can report cheaply (e.g. table, materialized_view). */
-  row_counts?: Record<string, number>
-}
-
-export interface SchemaDirectory {
-  connection: string
-  engine: string
-  default_scope: ScopePath
-  generated_at: string
-  roots: ScopeNode[]
-}
-
-export interface SchemaObjectKind {
-  kind: string
-  label: string
-  plural_label: string
-  order: number
-  relational: boolean
-  supports_diagram: boolean
-  listing: 'enumerated' | 'searched'
-  has_definition?: boolean
-}
-
-export interface SchemaSpec {
-  dialect: string
-  kinds: SchemaObjectKind[]
-  browse_scopes?: boolean
-}
-
 export interface DbColumn {
   name: string
   data_type: string
@@ -640,13 +602,6 @@ export interface ObjectDetail {
   attributes?: Record<string, unknown>
 }
 
-export interface DirectoryResponse {
-  directory?: SchemaDirectory
-  status?: 'pending'
-  mode?: 'persistent' | 'ephemeral'
-  job_id?: string
-}
-
 export interface SchemaSnapshotStatus {
   status: 'ready' | 'pending' | 'disabled'
   mode: 'persistent' | 'ephemeral'
@@ -661,6 +616,60 @@ export interface SchemaRefreshResponse {
   mode: 'persistent' | 'ephemeral'
   snapshot_id?: string
   generated_at?: string
+}
+
+export interface NavigatorFolder {
+  kind: string
+  label: string
+  child: string
+  mixed_kinds?: string[]
+  order: number
+}
+
+/** One node kind in a driver's navigator grammar. `icon` is a token resolved by the navigator icon registry. */
+export interface NavigatorNode {
+  label: string
+  icon: string
+  leaf: boolean
+  folders: NavigatorFolder[]
+  scope: boolean
+  relational: boolean
+  supports_diagram: boolean
+  has_definition: boolean
+  show_all_databases: boolean
+  column: boolean
+}
+
+export interface NavigatorTree {
+  root: NavigatorNode
+  nodes: Record<string, NavigatorNode>
+  system_objects: boolean
+}
+
+export interface SchemaTreeResponse extends NavigatorTree {
+  editor?: SchemaEditSpec
+  statements?: StatementSpec
+}
+
+export interface NavigatorItem {
+  kind: string
+  name: string
+  path: ScopePath
+  attributes?: Record<string, unknown>
+  system: boolean
+  current: boolean
+}
+
+export interface NavigatorListing {
+  path: ScopePath
+  folder: string
+  items: NavigatorItem[]
+  fetched_at: string
+  source: 'memory' | 'store' | 'live'
+}
+
+export interface NavigatorRefreshResponse {
+  items: NavigatorListing[]
 }
 
 export type StatementOperation = 'select' | 'insert' | 'update' | 'delete'
@@ -753,29 +762,17 @@ export interface SchemaEditRequest {
 export interface SchemaEditStatus {
   status: 'available' | 'refresh_failed'
   mode: 'persistent' | 'ephemeral'
-  snapshot_id?: string
-  generated_at?: string
-  stale?: boolean
 }
 
 export interface SchemaEditResponse {
   applied: boolean
   schema: SchemaEditStatus
   transaction: TransactionStatusResponse
-}
-
-export interface SchemaSpecResponse {
-  spec: SchemaSpec
-  editor?: SchemaEditSpec
-  statements?: StatementSpec
+  listings?: NavigatorListing[]
 }
 
 export interface ObjectsResponse {
   objects?: ObjectDetail[]
-  pending_connection?: ObjectRef[]
-  status?: 'pending'
-  mode?: 'persistent' | 'ephemeral'
-  job_id?: string
 }
 
 export interface ObjectDefinitionResponse {
@@ -797,9 +794,6 @@ export interface RelationshipGraph {
 
 export interface RelationshipsResponse {
   graph?: RelationshipGraph
-  status?: 'pending'
-  mode?: 'persistent' | 'ephemeral'
-  job_id?: string
 }
 
 export type JobStatus = 'queued' | 'running' | 'succeeded' | 'failed' | 'cancelled'

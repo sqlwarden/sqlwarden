@@ -29,6 +29,22 @@ const environments: Environment[] = [
   },
 ]
 
+function stubEngine(overrides: Record<string, unknown> = {}) {
+  server.use(
+    http.get('/api/v1/engines/:engine', ({ params }) =>
+      HttpResponse.json({
+        id: params.engine,
+        display_name: String(params.engine),
+        dialect: String(params.engine),
+        capabilities: {},
+        supports_system_objects: false,
+        show_all_databases: false,
+        ...overrides,
+      }),
+    ),
+  )
+}
+
 describe('useConnectionForm', () => {
   const queryClient = createTestQueryClient()
   let onOpenChange: ReturnType<typeof vi.fn>
@@ -36,6 +52,7 @@ describe('useConnectionForm', () => {
   beforeEach(() => {
     queryClient.clear()
     onOpenChange = vi.fn()
+    stubEngine()
   })
 
   function wrapper({ children }: PropsWithChildren) {
@@ -276,5 +293,46 @@ describe('useConnectionForm', () => {
 
     expect(result.current.defaultScope).toEqual([])
     expect(result.current.fields.database).toBe('')
+  })
+
+  it('forces show all databases until a database is chosen and sends the effective value', async () => {
+    stubEngine({ show_all_databases: true, supports_system_objects: true })
+    let body: Record<string, unknown> = {}
+    server.use(
+      http.post('/api/v1/orgs/acme/workspaces/3/connections', async ({ request }) => {
+        body = (await request.json()) as Record<string, unknown>
+        return HttpResponse.json({ id: 7 }, { status: 201 })
+      }),
+    )
+    const { result } = renderForm()
+    await waitFor(() => expect(result.current.environmentId).toBe('4'))
+    act(() => result.current.pickDriver('postgres'))
+    await waitFor(() => expect(result.current.showAllDatabasesSupported).toBe(true))
+    expect(result.current.systemObjectsSupported).toBe(true)
+    fillRequiredFields(result)
+    act(() => result.current.changeField('database', ''))
+
+    expect(result.current.showAllDatabasesForced).toBe(true)
+    expect(result.current.showAllDatabases).toBe(true)
+
+    act(() => result.current.changeField('database', 'app'))
+    expect(result.current.showAllDatabasesForced).toBe(false)
+    expect(result.current.showAllDatabases).toBe(false)
+
+    act(() => result.current.changeShowAllDatabases(true))
+    act(() => result.current.submit())
+
+    await waitFor(() => expect(onOpenChange).toHaveBeenCalledWith(false))
+    expect(body.show_all_databases).toBe(true)
+    expect(body.default_scope).toEqual([{ kind: 'database', name: 'app' }])
+  })
+
+  it('hides navigator options the engine does not report', async () => {
+    const { result } = renderForm()
+    act(() => result.current.pickDriver('postgres'))
+    await waitFor(() => expect(result.current.stage).toBe('form'))
+
+    expect(result.current.showAllDatabasesSupported).toBe(false)
+    expect(result.current.systemObjectsSupported).toBe(false)
   })
 })

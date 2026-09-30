@@ -1,42 +1,28 @@
 import { queryOptions, type QueryClient } from '@tanstack/react-query'
 import { api } from '#/lib/api/client'
+import { isSessionRequired } from '#/lib/api/errors'
 import type {
-  DirectoryResponse,
   EngineView,
   GenerateStatementResponse,
+  NavigatorListing,
+  NavigatorRefreshResponse,
   ObjectDefinitionResponse,
   ObjectDescriptor,
   ObjectDetail,
   ObjectRef,
+  ScopeSegment,
   ScopePath,
   ObjectsResponse,
   RelationshipsResponse,
   ResultSet,
   SchemaEditRequest,
   SchemaEditResponse,
-  SchemaRefreshResponse,
-  SchemaSpecResponse,
+  SchemaTreeResponse,
   StatementOperation,
   TransactionMode,
   TransactionStatusResponse,
 } from '#/lib/api/types'
 import { queryKeys } from '#/lib/api/query-keys'
-
-export function connectionDirectoryQueryKey(
-  slug: string,
-  workspaceId: string | number,
-  connectionId: string | number,
-) {
-  return ['connection-directory', slug, String(workspaceId), String(connectionId)] as const
-}
-
-export function connectionSchemaSpecQueryKey(
-  slug: string,
-  workspaceId: string | number,
-  connectionId: string | number,
-) {
-  return ['connection-schema-spec', slug, String(workspaceId), String(connectionId)] as const
-}
 
 function schemaBase(slug: string, workspaceId: string | number, connectionId: string | number) {
   return `/api/v1/orgs/${slug}/workspaces/${workspaceId}/connections/${connectionId}/schema`
@@ -164,49 +150,110 @@ export function engineDetailQueryOptions(driver: string) {
   })
 }
 
-export function orgConnectionDirectoryQueryOptions(
+function sameSegment(a: ScopeSegment, b: ScopeSegment) {
+  return a.kind === b.kind && a.name === b.name
+}
+
+export function scopePathWithin(path: ScopePath, ancestor: ScopePath) {
+  return ancestor.length <= path.length && ancestor.every((seg, i) => sameSegment(seg, path[i]))
+}
+
+export function objectRefPath(ref: ObjectRef): ScopePath {
+  return [...ref.scope, { kind: ref.kind, name: ref.name }]
+}
+
+/** The driver's static navigator grammar; it never touches the target database. */
+export function schemaTreeQueryOptions(
   slug: string,
   workspaceId: string | number,
   connectionId: string | number,
-  sessionId?: string,
-  scope?: ScopePath,
 ) {
-  const key = connectionDirectoryQueryKey(slug, workspaceId, connectionId)
-  const suffix = scope ? `?${new URLSearchParams({ scope: JSON.stringify(scope) })}` : ''
-  // Keys on session presence so a session change never reuses another session's cached response.
-  const sessionKeyPart = sessionId ?? 'no-session'
   return queryOptions({
-    queryKey: scope ? [...key, JSON.stringify(scope), sessionKeyPart] : [...key, sessionKeyPart],
+    queryKey: queryKeys.connectionSchemaTree(slug, workspaceId, connectionId),
     queryFn: () =>
-      api.get<DirectoryResponse>(
-        `${schemaBase(slug, workspaceId, connectionId)}/directory${suffix}`,
-        schemaRequestOptions(sessionId),
-      ),
-    staleTime: 60_000,
-    // Persistent snapshots are prepared asynchronously. Keep checking only
-    // while the server reports that work is still in progress, then stop as
-    // soon as a directory (or any terminal response) is available.
-    refetchInterval: (query) => (query.state.data?.status === 'pending' ? 1_000 : false),
+      api.get<SchemaTreeResponse>(`${schemaBase(slug, workspaceId, connectionId)}/tree`),
+    staleTime: Infinity,
   })
 }
 
-export function orgConnectionSchemaSpecQueryOptions(
+/**
+ * One folder listing under `path`. Listings are addressed by absolute path, so
+ * the key omits the session: the same listing is valid before and after
+ * connecting. A session_required error is terminal until the user connects;
+ * invalidateConnectionSchemaQueries resets it on connect.
+ */
+export function schemaNodesQueryOptions(
   slug: string,
   workspaceId: string | number,
   connectionId: string | number,
+  path: ScopePath,
+  folder: string,
   sessionId?: string,
 ) {
+  const params = new URLSearchParams({ folder })
+  if (path.length > 0) params.set('path', JSON.stringify(path))
   return queryOptions({
-    queryKey: [
-      ...connectionSchemaSpecQueryKey(slug, workspaceId, connectionId),
-      sessionId ?? 'no-session',
-    ],
+    queryKey: queryKeys.connectionSchemaNodes(slug, workspaceId, connectionId, path, folder),
     queryFn: () =>
-      api.get<SchemaSpecResponse>(
-        `${schemaBase(slug, workspaceId, connectionId)}/spec`,
+      api.get<NavigatorListing>(
+        `${schemaBase(slug, workspaceId, connectionId)}/nodes?${params.toString()}`,
         schemaRequestOptions(sessionId),
       ),
-    staleTime: 5 * 60_000,
+    staleTime: Infinity,
+    retry: (failureCount, error) => !isSessionRequired(error) && failureCount < 2,
+  })
+}
+
+export function refreshSchemaNodes(
+  slug: string,
+  workspaceId: string | number,
+  connectionId: string | number,
+  path: ScopePath,
+  sessionId?: string,
+) {
+  return api.post<NavigatorRefreshResponse>(
+    `${schemaBase(slug, workspaceId, connectionId)}/refresh`,
+    { path },
+    schemaRequestOptions(sessionId),
+  )
+}
+
+/**
+ * Writes listings returned by a refresh or mutation into the node cache. With
+ * `prune`, cached listings at or below that path that the server did not
+ * return are removed: the server returns every listing it still has cached
+ * beneath a refreshed node, so anything missing belongs to an object that no
+ * longer exists.
+ */
+export function applyNavigatorListings(
+  queryClient: QueryClient,
+  slug: string,
+  workspaceId: string | number,
+  connectionId: string | number,
+  listings: NavigatorListing[],
+  prune?: ScopePath,
+) {
+  const returned = new Set<string>()
+  for (const listing of listings) {
+    const key = queryKeys.connectionSchemaNodes(
+      slug,
+      workspaceId,
+      connectionId,
+      listing.path,
+      listing.folder,
+    )
+    returned.add(JSON.stringify(key))
+    queryClient.setQueryData(key, listing)
+  }
+  if (!prune) return
+  queryClient.removeQueries({
+    queryKey: queryKeys.connectionSchemaNodesScope(slug, workspaceId, connectionId),
+    predicate: (query) => {
+      if (returned.has(JSON.stringify(query.queryKey))) return false
+      const pathPart = query.queryKey[5]
+      if (typeof pathPart !== 'string') return false
+      return scopePathWithin(JSON.parse(pathPart) as ScopePath, prune)
+    },
   })
 }
 
@@ -248,7 +295,6 @@ export function orgConnectionRelationshipsQueryOptions(
         schemaRequestOptions(sessionId),
       ),
     staleTime: 3 * 60_000,
-    refetchInterval: (query) => (query.state.data?.status === 'pending' ? 1_000 : false),
   })
 }
 
@@ -267,10 +313,7 @@ export function connectionObjectQueryKey(
   ref: ObjectRef,
   sessionId?: string,
 ) {
-  // Keys on session presence so a session change never reuses another
-  // session's cached response — notably a pending_connection result cached
-  // while disconnected, which would otherwise sit stale for its full
-  // staleTime with nothing to trigger a refetch until the next remount.
+  // Keys on session presence so a response fetched without a session (served from cache or rejected with 409) is not reused once a session exists.
   const sessionKeyPart = sessionId ?? 'no-session'
   return [
     ...connectionObjectsQueryKeyPrefix(slug, workspaceId, connectionId),
@@ -283,8 +326,6 @@ export function connectionObjectQueryKey(
 
 export interface ObjectDetailResult {
   detail: ObjectDetail | null
-  pendingConnection: boolean
-  snapshotPending: boolean
 }
 
 export function orgConnectionObjectQueryOptions(
@@ -304,12 +345,9 @@ export function orgConnectionObjectQueryOptions(
       )
       return {
         detail: res.objects?.[0] ?? null,
-        pendingConnection: (res.pending_connection?.length ?? 0) > 0,
-        snapshotPending: res.status === 'pending',
       }
     },
     staleTime: 3 * 60_000,
-    refetchInterval: (query) => (query.state.data?.snapshotPending ? 1_000 : false),
   })
 }
 
@@ -355,7 +393,6 @@ export function orgConnectionObjectsQueryOptions(
         schemaRequestOptions(sessionId),
       ),
     staleTime: 3 * 60_000,
-    refetchInterval: (query) => (query.state.data?.status === 'pending' ? 1_000 : false),
   })
 }
 
@@ -629,34 +666,6 @@ export function closeConnectionQueryCursor(
   )
 }
 
-export function refreshConnectionSchema(
-  slug: string,
-  workspaceId: string | number,
-  connectionId: string | number,
-  sessionId?: string,
-  ref?: ObjectRef,
-) {
-  return api.post<SchemaRefreshResponse>(
-    `${schemaBase(slug, workspaceId, connectionId)}/refresh`,
-    ref ? { ref } : undefined,
-    schemaRequestOptions(sessionId),
-  )
-}
-
-export function loadSchemaScope(
-  slug: string,
-  workspaceId: string | number,
-  connectionId: string | number,
-  scope: ScopePath,
-  sessionId?: string,
-) {
-  return api.post<SchemaRefreshResponse>(
-    `${schemaBase(slug, workspaceId, connectionId)}/scope/load`,
-    { scope },
-    schemaRequestOptions(sessionId),
-  )
-}
-
 /** Applies a structured schema change. Requires a live session: the backend
  *  authorizes mutations against the session's connection and rejects the
  *  request without X-Warden-Session. */
@@ -677,7 +686,7 @@ export function applyConnectionSchemaEdit(
 /**
  * Invalidates a connection's cached schema after a whole-connection refresh:
  * the directory and every lazily-fetched object detail. The server drops both on
- * refresh, so expanded object nodes must refetch — not just the directory. This
+ * refresh, so expanded object nodes must refetch — not just the node listings. This
  * includes the standalone object-definition query the DDL view falls back to
  * (engines that omit source text from bulk object inspection, e.g. Oracle, and
  * any non-relational kind served through it) — without it, the DDL tab keeps
@@ -697,8 +706,9 @@ export async function invalidateConnectionSchemaQueries(
 ) {
   const objectsPrefix = connectionObjectsQueryKeyPrefix(slug, workspaceId, connectionId)
   await Promise.all([
-    queryClient.invalidateQueries({
-      queryKey: connectionDirectoryQueryKey(slug, workspaceId, connectionId),
+    queryClient.resetQueries({
+      queryKey: queryKeys.connectionSchemaNodesScope(slug, workspaceId, connectionId),
+      predicate: (query) => query.state.status === 'error',
     }),
     queryClient.invalidateQueries({ queryKey: objectsPrefix, refetchType: 'none' }),
     queryClient.invalidateQueries({

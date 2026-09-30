@@ -1,7 +1,7 @@
 import { describe, it, expect, vi } from 'vitest'
 import { QueryClient, QueryObserver } from '@tanstack/react-query'
+import { queryKeys } from '#/lib/api/query-keys'
 import {
-  connectionDirectoryQueryKey,
   connectionObjectDefinitionQueryKey,
   connectionObjectQueryKey,
   connectionRelationshipsQueryKey,
@@ -19,10 +19,9 @@ const ref: ObjectRef = {
 }
 
 describe('invalidateConnectionSchemaQueries', () => {
-  it('invalidates directory, object, and relationship data while leaving other connections untouched', async () => {
+  it('invalidates object and relationship data while leaving other connections untouched', async () => {
     const qc = new QueryClient()
 
-    qc.setQueryData(connectionDirectoryQueryKey(slug, workspaceId, connectionId), { directory: {} })
     qc.setQueryData(connectionObjectQueryKey(slug, workspaceId, connectionId, ref), { ref })
     qc.setQueryData(connectionObjectDefinitionQueryKey(slug, workspaceId, connectionId, ref), {
       descriptor: null,
@@ -39,9 +38,6 @@ describe('invalidateConnectionSchemaQueries', () => {
 
     await invalidateConnectionSchemaQueries(qc, slug, workspaceId, connectionId)
 
-    expect(
-      qc.getQueryState(connectionDirectoryQueryKey(slug, workspaceId, connectionId))?.isInvalidated,
-    ).toBe(true)
     expect(
       qc.getQueryState(connectionObjectQueryKey(slug, workspaceId, connectionId, ref))
         ?.isInvalidated,
@@ -134,5 +130,29 @@ describe('invalidateConnectionSchemaQueries', () => {
       ).toBe(false)
     }
     unsubscribes.forEach((u) => u())
+  })
+})
+
+describe('invalidateConnectionSchemaQueries navigator listings', () => {
+  it('resets session_required listing errors so they retry after connecting', async () => {
+    const qc = new QueryClient({ defaultOptions: { queries: { retry: false } } })
+    const failedKey = queryKeys.connectionSchemaNodes(
+      slug,
+      workspaceId,
+      connectionId,
+      [],
+      'databases',
+    )
+    const cachedKey = queryKeys.connectionSchemaNodes(slug, workspaceId, connectionId, [], 'roles')
+    await qc
+      .fetchQuery({ queryKey: failedKey, queryFn: () => Promise.reject(new Error('nope')) })
+      .catch(() => undefined)
+    qc.setQueryData(cachedKey, { items: [] })
+
+    await invalidateConnectionSchemaQueries(qc, slug, workspaceId, connectionId)
+
+    expect(qc.getQueryState(failedKey)?.status).toBe('pending')
+    expect(qc.getQueryState(cachedKey)?.status).toBe('success')
+    expect(qc.getQueryState(cachedKey)?.isInvalidated).toBe(false)
   })
 })

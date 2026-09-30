@@ -21,7 +21,11 @@ JOIN information_schema.constraint_column_usage ccu
   ON ccu.constraint_name = tc.constraint_name AND ccu.table_schema = tc.table_schema
 WHERE tc.constraint_type = 'FOREIGN KEY' AND tc.table_schema = $1
 ORDER BY tc.table_schema, tc.table_name, tc.constraint_name, kcu.ordinal_position`
-	rows, err := d.db.QueryContext(ctx, q, namespace)
+	db, err := d.databaseFor(ctx, scope.Name("database"))
+	if err != nil {
+		return nil, err
+	}
+	rows, err := db.QueryContext(ctx, q, namespace)
 	if err != nil {
 		return nil, fmt.Errorf("postgres: relationships: %w", err)
 	}

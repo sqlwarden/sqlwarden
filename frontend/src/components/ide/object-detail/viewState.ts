@@ -1,5 +1,5 @@
 import { errorMessage } from '#/lib/api/errors'
-import { isApiError } from '#/lib/api/errors'
+import { isApiError, isSessionRequired } from '#/lib/api/errors'
 
 export type ObjectViewState =
   | { kind: 'no-session' }
@@ -29,6 +29,7 @@ export function resolveObjectViewState({
   if (!hasSession) return { kind: 'no-session' }
   if (hasData) return { kind: 'ready' }
   if (error) {
+    if (isSessionRequired(error)) return { kind: 'no-session' }
     if (isApiError(error)) {
       if (error.status === 501) return { kind: 'unsupported' }
       if (error.status === 403) return { kind: 'forbidden' }

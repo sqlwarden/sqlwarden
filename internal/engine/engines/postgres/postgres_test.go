@@ -3,6 +3,7 @@ package postgres
 import (
 	"context"
 	"fmt"
+	"net/url"
 	"os"
 	"runtime"
 	"strings"
@@ -440,6 +441,16 @@ func mustExec(t *testing.T, d engine.Driver, sql string) {
 	if _, err := d.Execute(context.Background(), sql); err != nil {
 		t.Fatalf("exec %q: %v", sql, err)
 	}
+}
+
+func replaceDSNUser(t *testing.T, dsn, user, password string) string {
+	t.Helper()
+	u, err := url.Parse(dsn)
+	if err != nil {
+		t.Fatal(err)
+	}
+	u.User = url.UserPassword(user, password)
+	return u.String()
 }
 
 func TestPostgresViewDefinitionAndComments(t *testing.T) {

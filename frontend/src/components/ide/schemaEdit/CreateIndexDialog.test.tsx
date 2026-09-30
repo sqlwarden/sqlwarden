@@ -7,7 +7,6 @@ import { CreateIndexDialog } from './CreateIndexDialog'
 const queryFn = vi.hoisted(() =>
   vi.fn(async () => ({
     detail: { relational: { columns: [{ name: 'ID' }, { name: 'LABEL' }] } },
-    pendingConnection: false,
   })),
 )
 vi.mock('#/lib/api/query', () => ({

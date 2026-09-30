@@ -10,7 +10,7 @@ import (
 	build "github.com/sqlwarden/internal/engine/metadata/build"
 )
 
-var _ metadata.SchemaInspector = (*driver)(nil)
+var _ metadata.DirectoryInspector = (*driver)(nil)
 
 // SchemaSpec matches postgres.Driver.SchemaSpec minus materialized_view:
 // CockroachDB has no CREATE MATERIALIZED VIEW support.

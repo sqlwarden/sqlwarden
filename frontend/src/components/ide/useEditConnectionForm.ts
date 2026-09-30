@@ -17,6 +17,7 @@ import { emptyTlsState, type TlsFormState } from './ConnectionTlsFields'
 import { sshRevealToState, sshStateToPayload } from './connectionSshPayload'
 import { tlsRevealToState, tlsStateToPayload } from './connectionTlsPayload'
 import { findFrontendEngine } from './engines/registry'
+import { useEngineNavigatorOptions } from './useEngineNavigatorOptions'
 import {
   scopeSegmentName,
   type ConnectionTestState,
@@ -58,8 +59,13 @@ export function useEditConnectionForm({
   const [showSystemSchemas, setShowSystemSchemas] = useState(false)
   const tlsSpec = findFrontendEngine(connection?.driver ?? '')?.tls
   const sshSupported = findFrontendEngine(connection?.driver ?? '')?.sshTunnel ?? false
-  const systemSchemaVisibilitySupported =
-    findFrontendEngine(connection?.driver ?? '')?.systemSchemaVisibility ?? false
+  const [showAllDatabases, setShowAllDatabases] = useState(false)
+  const { systemObjectsSupported, showAllDatabasesSupported } = useEngineNavigatorOptions(
+    connection?.driver ?? '',
+    open && connection !== undefined,
+  )
+  const showAllDatabasesForced = defaultScope.length === 0
+  const effectiveShowAllDatabases = showAllDatabasesForced || showAllDatabases
 
   const org = useQuery({ ...orgQueryOptions(orgSlug), enabled: open })
   const revealDsnAllowed =
@@ -92,6 +98,7 @@ export function useEditConnectionForm({
     setTls(emptyTlsState)
     setSsh(emptySshState)
     setShowSystemSchemas(connection.show_system_schemas)
+    setShowAllDatabases(connection.show_all_databases)
     // eslint-disable-next-line react-hooks/exhaustive-deps -- reset only when the dialog opens for a given connection
   }, [open, connection?.id])
 
@@ -123,6 +130,10 @@ export function useEditConnectionForm({
     if (key === 'database') {
       setDefaultScope(value ? [{ kind: 'database', name: value }] : [])
     }
+  }
+
+  function changeShowAllDatabases(value: boolean) {
+    setShowAllDatabases(value)
   }
 
   function changeName(value: string) {
@@ -157,6 +168,7 @@ export function useEditConnectionForm({
     setTls(emptyTlsState)
     setSsh(emptySshState)
     setShowSystemSchemas(false)
+    setShowAllDatabases(false)
     if (connection) {
       queryClient.removeQueries({
         queryKey: queryKeys.connectionDsn(orgSlug, workspaceId, connection.id),
@@ -280,6 +292,7 @@ export function useEditConnectionForm({
         access_mode: connection?.access_mode ?? 'open',
         default_scope: defaultScope,
         show_system_schemas: showSystemSchemas,
+        show_all_databases: effectiveShowAllDatabases,
         tls: tlsStateToPayload(tls),
         ssh: sshStateToPayload(ssh),
         force,
@@ -392,7 +405,11 @@ export function useEditConnectionForm({
     removeSsh,
     updateConnection,
     showSystemSchemas,
-    systemSchemaVisibilitySupported,
+    systemObjectsSupported,
+    showAllDatabases: effectiveShowAllDatabases,
+    showAllDatabasesForced,
+    showAllDatabasesSupported,
+    changeShowAllDatabases,
     changeShowSystemSchemas,
   }
 }

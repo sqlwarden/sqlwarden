@@ -39,6 +39,7 @@ const connection: Connection = {
   driver: 'postgres',
   access_mode: 'open',
   show_system_schemas: false,
+  show_all_databases: false,
   created_at: '',
   updated_at: '',
 }
@@ -83,7 +84,7 @@ describe('useConnectionActions', () => {
     )
   })
 
-  it('invalidates schema object queries on connect so a stale pending_connection result refetches', async () => {
+  it('invalidates schema object queries on connect so results fetched without a session refetch', async () => {
     server.use(
       http.post('/api/v1/orgs/acme/workspaces/3/connections/7/connect', () =>
         HttpResponse.json({ session_id: 'session-7', reused: false }),

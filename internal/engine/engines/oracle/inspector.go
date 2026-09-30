@@ -12,7 +12,7 @@ import (
 )
 
 var (
-	_ metadata.SchemaInspector     = (*oracleDriver)(nil)
+	_ metadata.DirectoryInspector  = (*oracleDriver)(nil)
 	_ metadata.ScopeDiscoverer     = (*oracleDriver)(nil)
 	_ metadata.DefinitionInspector = (*oracleDriver)(nil)
 )

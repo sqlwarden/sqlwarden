@@ -5,6 +5,8 @@ import (
 	"testing"
 
 	"github.com/sqlwarden/internal/assert"
+	"github.com/sqlwarden/internal/engine"
+	"github.com/sqlwarden/internal/engine/metadata"
 
 	_ "github.com/sqlwarden/internal/engine/engines/mysql"
 	_ "github.com/sqlwarden/internal/engine/engines/neon"
@@ -13,6 +15,16 @@ import (
 	_ "github.com/sqlwarden/internal/engine/engines/sqlite"
 	_ "github.com/sqlwarden/internal/engine/engines/supabase"
 )
+
+func TestEngineToViewReportsShowAllDatabases(t *testing.T) {
+	tree := metadata.Tree{Nodes: map[string]metadata.Node{
+		"database": {ShowAllDatabases: true},
+	}}
+	view := engineToView(engine.CapabilitySet{Tree: &tree})
+	if !view.ShowAllDatabases {
+		t.Fatal("navigator database node should enable show_all_databases")
+	}
+}
 
 func TestListEngines(t *testing.T) {
 	t.Parallel()

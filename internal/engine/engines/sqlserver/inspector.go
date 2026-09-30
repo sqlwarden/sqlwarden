@@ -10,7 +10,7 @@ import (
 )
 
 var (
-	_ metadata.SchemaInspector     = (*Driver)(nil)
+	_ metadata.DirectoryInspector  = (*Driver)(nil)
 	_ metadata.ScopeDiscoverer     = (*Driver)(nil)
 	_ metadata.DefinitionInspector = (*Driver)(nil)
 )

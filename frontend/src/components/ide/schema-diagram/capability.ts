@@ -1,11 +1,19 @@
-import type { SchemaSpec } from '#/lib/api/types'
+import type { NavigatorFolder, NavigatorTree, ScopePath } from '#/lib/api/types'
 
-/** True when the connection exposes at least one diagram-capable object kind. */
-export function diagramSupported(spec: SchemaSpec | undefined): boolean {
-  return Boolean(spec?.kinds?.some((k) => k.supports_diagram))
+export function diagramSupported(tree: NavigatorTree | undefined): boolean {
+  return Boolean(tree && Object.values(tree.nodes).some((node) => node.supports_diagram))
 }
 
-/** True when a specific object kind supports a per-object diagram. */
-export function diagramSupportedForKind(spec: SchemaSpec | undefined, kind: string): boolean {
-  return Boolean(spec?.kinds?.some((k) => k.kind === kind && k.supports_diagram))
+export function diagramSupportedForKind(tree: NavigatorTree | undefined, kind: string): boolean {
+  return tree?.nodes[kind]?.supports_diagram === true
+}
+
+/** Folders directly under the object at `scope` whose children can appear on a diagram. */
+export function diagramFolders(
+  tree: NavigatorTree | undefined,
+  scope: ScopePath,
+): NavigatorFolder[] {
+  if (!tree) return []
+  const owner = scope.length === 0 ? tree.root : tree.nodes[scope[scope.length - 1].kind]
+  return (owner?.folders ?? []).filter((folder) => tree.nodes[folder.child]?.supports_diagram)
 }

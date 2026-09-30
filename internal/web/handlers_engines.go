@@ -15,15 +15,17 @@ import (
 )
 
 type engineView struct {
-	ID           string                     `json:"id"`
-	DisplayName  string                     `json:"display_name"`
-	Dialect      string                     `json:"dialect"`
-	Capabilities map[engine.Capability]bool `json:"capabilities"`
-	Schema       *schemaSpecPayload         `json:"schema,omitempty"`
-	DDL          *ddl.Spec                  `json:"schema_edit,omitempty"`
-	Statements   *statement.Spec            `json:"statements,omitempty"`
-	Explain      *explain.Spec              `json:"explain,omitempty"`
-	TLS          *engine.TLSSpec            `json:"connection_tls,omitempty"`
+	ID                    string                     `json:"id"`
+	DisplayName           string                     `json:"display_name"`
+	Dialect               string                     `json:"dialect"`
+	Capabilities          map[engine.Capability]bool `json:"capabilities"`
+	Schema                *schemaSpecPayload         `json:"schema,omitempty"`
+	DDL                   *ddl.Spec                  `json:"schema_edit,omitempty"`
+	Statements            *statement.Spec            `json:"statements,omitempty"`
+	Explain               *explain.Spec              `json:"explain,omitempty"`
+	TLS                   *engine.TLSSpec            `json:"connection_tls,omitempty"`
+	SupportsSystemObjects bool                       `json:"supports_system_objects"`
+	ShowAllDatabases      bool                       `json:"show_all_databases"`
 }
 
 // schemaSpecPayload mirrors schema.SchemaSpec but lives here so the engines API
@@ -47,6 +49,12 @@ func engineToView(set engine.CapabilitySet) engineView {
 		Statements:   set.Statements,
 		Explain:      set.Explain,
 		TLS:          set.TLS,
+	}
+	if set.Tree != nil {
+		v.SupportsSystemObjects = set.Tree.SystemObjects
+		v.ShowAllDatabases = set.Tree.DatabaseKind() != ""
+	} else if set.Schema != nil {
+		v.SupportsSystemObjects = set.Schema.SystemSchemas
 	}
 	if set.Schema != nil {
 		v.Schema = &schemaSpecPayload{Dialect: set.Schema.Dialect, Kinds: set.Schema.Kinds}

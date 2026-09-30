@@ -45,6 +45,16 @@ describe('resolveObjectViewState', () => {
       }),
     ).toEqual({ kind: 'no-session' })
   })
+  it('409 session_required -> no-session', () => {
+    expect(
+      resolveObjectViewState({
+        hasSession: true,
+        isLoading: false,
+        error: new ApiError('Connect first.', 409, { code: 'session_required' }),
+        hasData: false,
+      }),
+    ).toEqual({ kind: 'no-session' })
+  })
   it('other error -> error with message', () => {
     expect(
       resolveObjectViewState({

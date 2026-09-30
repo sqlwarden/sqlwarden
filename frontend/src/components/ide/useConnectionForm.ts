@@ -11,6 +11,7 @@ import { emptyTlsState, type TlsFormState } from './ConnectionTlsFields'
 import { sshStateToPayload } from './connectionSshPayload'
 import { tlsStateToPayload } from './connectionTlsPayload'
 import { findFrontendEngine } from './engines/registry'
+import { useEngineNavigatorOptions } from './useEngineNavigatorOptions'
 
 export type ConnectionFormStage = 'driver' | 'form'
 export type ScopeDiscovery = {
@@ -61,8 +62,13 @@ export function useConnectionForm({
   const currentDriver = driverMap.get(driverId) ?? drivers[0]
   const tlsSpec = findFrontendEngine(driverId)?.tls
   const sshSupported = findFrontendEngine(driverId)?.sshTunnel ?? false
-  const systemSchemaVisibilitySupported =
-    findFrontendEngine(driverId)?.systemSchemaVisibility ?? false
+  const [showAllDatabases, setShowAllDatabases] = useState(false)
+  const { systemObjectsSupported, showAllDatabasesSupported } = useEngineNavigatorOptions(
+    driverId,
+    open && stage === 'form',
+  )
+  const showAllDatabasesForced = defaultScope.length === 0
+  const effectiveShowAllDatabases = showAllDatabasesForced || showAllDatabases
 
   useEffect(() => {
     if (!open) return
@@ -85,6 +91,7 @@ export function useConnectionForm({
       setTls(emptyTlsState)
       setSsh(emptySshState)
       setShowSystemSchemas(false)
+      setShowAllDatabases(false)
     }
     setDriverId(nextDriverId)
     setStage('form')
@@ -117,6 +124,10 @@ export function useConnectionForm({
     setShowSystemSchemas(value)
   }
 
+  function changeShowAllDatabases(value: boolean) {
+    setShowAllDatabases(value)
+  }
+
   function changeName(value: string) {
     setName(value)
     setErrors((current) => ({ ...current, name: undefined }))
@@ -146,6 +157,7 @@ export function useConnectionForm({
     setTls(emptyTlsState)
     setSsh(emptySshState)
     setShowSystemSchemas(false)
+    setShowAllDatabases(false)
   }
 
   function handleOpenChange(nextOpen: boolean) {
@@ -263,6 +275,7 @@ export function useConnectionForm({
         access_mode: 'open',
         default_scope: defaultScope,
         show_system_schemas: showSystemSchemas,
+        show_all_databases: effectiveShowAllDatabases,
         tls: tlsStateToPayload(tls),
         ssh: sshStateToPayload(ssh),
       }),
@@ -330,7 +343,11 @@ export function useConnectionForm({
     sshSupported,
     changeSsh,
     showSystemSchemas,
-    systemSchemaVisibilitySupported,
+    systemObjectsSupported,
+    showAllDatabases: effectiveShowAllDatabases,
+    showAllDatabasesForced,
+    showAllDatabasesSupported,
+    changeShowAllDatabases,
     changeShowSystemSchemas,
   }
 }

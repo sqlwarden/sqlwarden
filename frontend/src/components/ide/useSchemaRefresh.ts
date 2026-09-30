@@ -1,56 +1,69 @@
 import { useMutation, useQueryClient } from '@tanstack/react-query'
 import { toast } from 'sonner'
 import { errorMessage } from '#/lib/api/errors'
-import type { ObjectRef } from '#/lib/api/types'
+import type { NavigatorRefreshResponse, ScopePath } from '#/lib/api/types'
 import {
-  connectionObjectDefinitionQueryKey,
-  connectionObjectQueryKey,
-  connectionObjectsBatchContainingPredicate,
-  invalidateConnectionSchemaQueries,
-  refreshConnectionSchema,
+  applyNavigatorListings,
+  connectionObjectDefinitionQueryKeyPrefix,
+  connectionObjectsQueryKeyPrefix,
+  connectionRelationshipsQueryKeyPrefix,
+  refreshSchemaNodes,
 } from '#/lib/api/query'
 import { invalidateCompletionIndex } from './completion'
 
+/**
+ * Refreshes whatever the server has cached at and beneath a path, replaces
+ * those listings in place, and drops listings for objects that disappeared.
+ * `mutate()` targets the hook's `path` (the connection root when omitted);
+ * `mutate(target)` targets another path. Object details are invalidated rather
+ * than rewritten because the refresh response carries listings only.
+ */
 export function useSchemaRefresh({
   orgSlug,
   workspaceId,
   connectionId,
   sessionId,
-  ref,
+  path = [],
 }: {
   orgSlug: string
   workspaceId: string | number
   connectionId: string | number
   sessionId?: string
-  ref?: ObjectRef
+  path?: ScopePath
 }) {
   const queryClient = useQueryClient()
+  const targetOf = (target: ScopePath | void) => (Array.isArray(target) ? target : path)
 
-  return useMutation({
-    mutationKey: ['refresh-connection-schema', orgSlug, String(workspaceId), String(connectionId)],
-    mutationFn: () =>
-      refreshConnectionSchema(orgSlug, workspaceId, connectionId, sessionId ?? '', ref),
-    onSuccess: async () => {
-      if (ref) {
-        await Promise.all([
-          queryClient.invalidateQueries({
-            queryKey: connectionObjectQueryKey(orgSlug, workspaceId, connectionId, ref, sessionId),
-          }),
-          queryClient.invalidateQueries({
-            queryKey: connectionObjectDefinitionQueryKey(orgSlug, workspaceId, connectionId, ref),
-          }),
-          queryClient.invalidateQueries({
-            predicate: connectionObjectsBatchContainingPredicate(
-              orgSlug,
-              workspaceId,
-              connectionId,
-              ref,
-            ),
-          }),
-        ])
-      } else {
-        await invalidateConnectionSchemaQueries(queryClient, orgSlug, workspaceId, connectionId)
-      }
+  return useMutation<NavigatorRefreshResponse, Error, ScopePath | void>({
+    mutationKey: [
+      'refresh-connection-schema',
+      orgSlug,
+      String(workspaceId),
+      String(connectionId),
+      JSON.stringify(path),
+    ],
+    mutationFn: (target) =>
+      refreshSchemaNodes(orgSlug, workspaceId, connectionId, targetOf(target), sessionId),
+    onSuccess: async (result, target) => {
+      applyNavigatorListings(
+        queryClient,
+        orgSlug,
+        workspaceId,
+        connectionId,
+        result.items,
+        targetOf(target),
+      )
+      await Promise.all([
+        queryClient.invalidateQueries({
+          queryKey: connectionObjectsQueryKeyPrefix(orgSlug, workspaceId, connectionId),
+        }),
+        queryClient.invalidateQueries({
+          queryKey: connectionObjectDefinitionQueryKeyPrefix(orgSlug, workspaceId, connectionId),
+        }),
+        queryClient.invalidateQueries({
+          queryKey: connectionRelationshipsQueryKeyPrefix(orgSlug, workspaceId, connectionId),
+        }),
+      ])
       invalidateCompletionIndex(Number(connectionId))
       toast.success('Schema refreshed')
     },

@@ -16,15 +16,13 @@ export function isRelational(detail: ObjectDetail): boolean {
   return Boolean(detail.relational)
 }
 
-/** Whether the object's kind carries a reconstructable DDL/definition. Driven by
- *  the engine's SchemaSpec so kinds an engine cannot define (e.g. Postgres
- *  type/domain) do not get an empty DDL tab. Defaults to true when the spec or
- *  the kind entry is unavailable, preserving the pre-flag behavior. */
+/** Whether the object's kind carries a reconstructable DDL/definition, per the
+ *  driver grammar, so kinds an engine cannot define (e.g. Postgres type/domain)
+ *  do not get an empty DDL tab. Defaults to true when the grammar or the kind
+ *  is unavailable. */
 function kindHasDefinition(vm: ObjectViewModel): boolean {
-  const kinds = vm.spec?.kinds
-  if (!kinds) return true
-  const entry = kinds.find((k) => k.kind === vm.detail.ref.kind)
-  return entry ? entry.has_definition === true : true
+  const node = vm.tree?.nodes[vm.detail.ref.kind]
+  return node ? node.has_definition : true
 }
 
 const ddlSection: SectionDef = {

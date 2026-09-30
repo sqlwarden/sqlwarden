@@ -25,7 +25,12 @@ import { drivers, driverBrands } from './connection-drivers/index'
 import { TestStatusIndicator } from './ConnectionTestStatus'
 import { ConnectionSshFields } from './ConnectionSshFields'
 import { ConnectionTlsFields } from './ConnectionTlsFields'
-import { DriverFields, FormField, ShowSystemSchemasField } from './ConnectionFormFields'
+import {
+  DriverFields,
+  FormField,
+  ShowAllDatabasesField,
+  ShowSystemSchemasField,
+} from './ConnectionFormFields'
 import { DriverBadge } from './DriverBadge'
 import { useConnectionForm } from './useConnectionForm'
 
@@ -167,7 +172,17 @@ export function ConnectionDialog({
                         onSchemaChange={form.selectSchema}
                       />
 
-                      {form.systemSchemaVisibilitySupported ? (
+                      {form.showAllDatabasesSupported ? (
+                        <div className="col-span-6">
+                          <ShowAllDatabasesField
+                            checked={form.showAllDatabases}
+                            disabled={isPending || form.showAllDatabasesForced}
+                            onChange={form.changeShowAllDatabases}
+                          />
+                        </div>
+                      ) : null}
+
+                      {form.systemObjectsSupported ? (
                         <div className="col-span-6">
                           <ShowSystemSchemasField
                             checked={form.showSystemSchemas}

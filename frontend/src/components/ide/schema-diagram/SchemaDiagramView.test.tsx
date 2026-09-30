@@ -39,6 +39,52 @@ const tab: EditorTab = {
   diagramTarget: { kind: 'scope', scope: [{ kind: 'schema', name: 'public' }] },
 }
 
+const scope = [{ kind: 'schema', name: 'public' }]
+
+function navigatorTree(supportsDiagram = true) {
+  const node = (overrides: Record<string, unknown>) => ({
+    label: '',
+    icon: 'box',
+    leaf: false,
+    folders: [],
+    scope: false,
+    relational: false,
+    supports_diagram: false,
+    has_definition: false,
+    show_all_databases: false,
+    column: false,
+    ...overrides,
+  })
+  return {
+    system_objects: false,
+    root: node({ folders: [{ kind: 'schemas', label: 'Schemas', child: 'schema', order: 10 }] }),
+    nodes: {
+      schema: node({
+        label: 'Schema',
+        scope: true,
+        folders: [{ kind: 'tables', label: 'Tables', child: 'table', order: 10 }],
+      }),
+      table: node({ label: 'Table', relational: true, supports_diagram: supportsDiagram }),
+    },
+  }
+}
+
+function tablesListing(refs: Array<{ name: string }>) {
+  return {
+    path: scope,
+    folder: 'tables',
+    items: refs.map((ref) => ({
+      kind: 'table',
+      name: ref.name,
+      path: [...scope, { kind: 'table', name: ref.name }],
+      system: false,
+      current: false,
+    })),
+    fetched_at: '2026-09-29T00:00:00Z',
+    source: 'live',
+  }
+}
+
 describe('SchemaDiagramView', () => {
   let store: ReturnType<typeof createIdeStore>
 
@@ -64,47 +110,14 @@ describe('SchemaDiagramView', () => {
   function schemaHandlers(options: { supportsDiagram?: boolean; forbidden?: boolean } = {}) {
     const base = '/api/v1/orgs/acme/workspaces/3/connections/7/schema'
     server.use(
-      http.get(`${base}/spec`, () =>
+      http.get(`${base}/tree`, () =>
         options.forbidden
           ? HttpResponse.json({ error: { message: 'Forbidden' } }, { status: 403 })
-          : HttpResponse.json({
-              spec: {
-                dialect: 'postgres',
-                kinds:
-                  options.supportsDiagram === false
-                    ? []
-                    : [
-                        {
-                          kind: 'table',
-                          label: 'Table',
-                          plural_label: 'Tables',
-                          order: 1,
-                          relational: true,
-                          supports_diagram: true,
-                          listing: 'enumerated',
-                        },
-                      ],
-              },
-            }),
+          : HttpResponse.json(navigatorTree(options.supportsDiagram !== false)),
       ),
-      http.get(`${base}/directory`, () =>
-        HttpResponse.json({
-          directory: {
-            generated_at: '',
-            roots: [
-              {
-                segment: { kind: 'schema', name: 'public' },
-                path: [{ kind: 'schema', name: 'public' }],
-                groups: [],
-              },
-            ],
-          },
-        }),
-      ),
+      http.get(`${base}/nodes`, () => HttpResponse.json(tablesListing([]))),
       http.get(`${base}/relationships`, () =>
-        HttpResponse.json({
-          graph: { scope: [{ kind: 'schema', name: 'public' }], relationships: [] },
-        }),
+        HttpResponse.json({ graph: { scope, relationships: [] } }),
       ),
     )
   }
@@ -180,23 +193,12 @@ describe('SchemaDiagramView', () => {
   it('refreshes the backing schema through the backend endpoint', async () => {
     store.getState().setSession(7, 'session-7')
     schemaHandlers()
-    const scope = [{ kind: 'schema', name: 'public' }]
     const customer = { scope, kind: 'table', name: 'customer' }
     let refreshes = 0
+    let refreshBody: unknown
     server.use(
-      http.get('/api/v1/orgs/acme/workspaces/3/connections/7/schema/directory', () =>
-        HttpResponse.json({
-          directory: {
-            generated_at: '',
-            roots: [
-              {
-                segment: scope[0],
-                path: scope,
-                groups: [{ kind: 'table', objects: [customer] }],
-              },
-            ],
-          },
-        }),
+      http.get('/api/v1/orgs/acme/workspaces/3/connections/7/schema/nodes', () =>
+        HttpResponse.json(tablesListing([customer])),
       ),
       http.post('/api/v1/orgs/acme/workspaces/3/connections/7/schema/objects', () =>
         HttpResponse.json({
@@ -208,44 +210,32 @@ describe('SchemaDiagramView', () => {
           ],
         }),
       ),
-      http.post('/api/v1/orgs/acme/workspaces/3/connections/7/schema/refresh', () => {
-        refreshes++
-        return HttpResponse.json({
-          status: 'ok',
-          mode: 'persistent',
-          snapshot_id: 'snapshot-2',
-          generated_at: '2026-08-06T00:00:00Z',
-        })
-      }),
+      http.post(
+        '/api/v1/orgs/acme/workspaces/3/connections/7/schema/refresh',
+        async ({ request }) => {
+          refreshes++
+          refreshBody = await request.json()
+          return HttpResponse.json({ items: [tablesListing([customer])] })
+        },
+      ),
     )
     const { user } = renderDiagram()
 
     await user.click(await screen.findByRole('button', { name: 'Refresh schema' }))
 
     await waitFor(() => expect(refreshes).toBe(1))
+    expect(refreshBody).toEqual({ path: scope })
   })
 
   it('reconciles a renamed column after refreshing the schema', async () => {
     store.getState().setSession(7, 'session-7')
     schemaHandlers()
-    const scope = [{ kind: 'schema', name: 'public' }]
     const customer = { scope, kind: 'table', name: 'customer' }
     let refreshes = 0
     let renamed = false
     server.use(
-      http.get('/api/v1/orgs/acme/workspaces/3/connections/7/schema/directory', () =>
-        HttpResponse.json({
-          directory: {
-            generated_at: '',
-            roots: [
-              {
-                segment: scope[0],
-                path: scope,
-                groups: [{ kind: 'table', objects: [customer] }],
-              },
-            ],
-          },
-        }),
+      http.get('/api/v1/orgs/acme/workspaces/3/connections/7/schema/nodes', () =>
+        HttpResponse.json(tablesListing([customer])),
       ),
       http.post('/api/v1/orgs/acme/workspaces/3/connections/7/schema/objects', () =>
         HttpResponse.json({
@@ -272,12 +262,7 @@ describe('SchemaDiagramView', () => {
       http.post('/api/v1/orgs/acme/workspaces/3/connections/7/schema/refresh', () => {
         refreshes++
         renamed = true
-        return HttpResponse.json({
-          status: 'ok',
-          mode: 'persistent',
-          snapshot_id: 'snapshot-2',
-          generated_at: '2026-08-06T00:00:00Z',
-        })
+        return HttpResponse.json({ items: [tablesListing([customer])] })
       }),
     )
     const { user } = renderDiagram()
@@ -293,7 +278,6 @@ describe('SchemaDiagramView', () => {
   })
 
   it('restores a persisted relationship diagram without attaching missing handles', async () => {
-    const scope = [{ kind: 'schema', name: 'public' }]
     const customer = { scope, kind: 'table', name: 'customer' }
     const storeRef = { scope, kind: 'table', name: 'store' }
     const reactFlowErrors: unknown[][] = []
@@ -315,41 +299,8 @@ describe('SchemaDiagramView', () => {
     )
     const base = '/api/v1/orgs/acme/workspaces/3/connections/7/schema'
     server.use(
-      http.get(`${base}/spec`, () =>
-        HttpResponse.json({
-          spec: {
-            dialect: 'postgres',
-            kinds: [
-              {
-                kind: 'table',
-                label: 'Table',
-                plural_label: 'Tables',
-                order: 1,
-                relational: true,
-                supports_diagram: true,
-                listing: 'enumerated',
-              },
-            ],
-          },
-        }),
-      ),
-      http.get(`${base}/directory`, () =>
-        HttpResponse.json({
-          directory: {
-            connection: 'test',
-            dialect: 'postgres',
-            database: 'test',
-            generated_at: '',
-            roots: [
-              {
-                segment: scope[0],
-                path: scope,
-                groups: [{ kind: 'table', objects: [customer, storeRef] }],
-              },
-            ],
-          },
-        }),
-      ),
+      http.get(`${base}/tree`, () => HttpResponse.json(navigatorTree())),
+      http.get(`${base}/nodes`, () => HttpResponse.json(tablesListing([customer, storeRef]))),
       http.get(`${base}/relationships`, () =>
         HttpResponse.json({
           graph: {
@@ -413,5 +364,22 @@ describe('SchemaDiagramView', () => {
     } finally {
       errorSpy.mockRestore()
     }
+  })
+
+  it('lists diagram tables from the scope listing without touching other scopes', async () => {
+    store.getState().setSession(7, 'session-7')
+    schemaHandlers()
+    const requested: string[] = []
+    server.use(
+      http.get('/api/v1/orgs/acme/workspaces/3/connections/7/schema/nodes', ({ request }) => {
+        const url = new URL(request.url)
+        requested.push(`${url.searchParams.get('path')}|${url.searchParams.get('folder')}`)
+        return HttpResponse.json(tablesListing([]))
+      }),
+    )
+    renderDiagram()
+
+    expect(await screen.findByText('No tables to diagram in this schema.')).toBeInTheDocument()
+    expect(requested).toEqual([`${JSON.stringify(scope)}|tables`])
   })
 })

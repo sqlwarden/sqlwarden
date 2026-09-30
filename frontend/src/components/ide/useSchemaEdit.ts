@@ -2,7 +2,11 @@ import { useMutation, useQueryClient } from '@tanstack/react-query'
 import { toast } from 'sonner'
 import { errorMessage } from '#/lib/api/errors'
 import type { SchemaEditRequest } from '#/lib/api/types'
-import { applyConnectionSchemaEdit, invalidateConnectionSchemaQueries } from '#/lib/api/query'
+import {
+  applyConnectionSchemaEdit,
+  applyNavigatorListings,
+  invalidateConnectionSchemaQueries,
+} from '#/lib/api/query'
 import { toTransactionState } from './transactionState'
 import { useIde } from './useIdeStore'
 
@@ -37,10 +41,11 @@ export function useSchemaEdit({
     },
     onSuccess: async (result) => {
       setTransactionState(Number(connectionId), toTransactionState(result.transaction))
+      applyNavigatorListings(queryClient, orgSlug, workspaceId, connectionId, result.listings ?? [])
       await invalidateConnectionSchemaQueries(queryClient, orgSlug, workspaceId, connectionId)
       if (result.schema.status === 'refresh_failed') {
         toast.warning(
-          'Change applied, but refreshing the schema snapshot failed. Use Refresh to see the update.',
+          'Change applied, but refreshing the schema failed. Use Refresh to see the update.',
         )
       }
     },
