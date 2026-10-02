@@ -24,6 +24,17 @@ function baseTheme(fontFamily: string, fontSize: EditorFontSize): Extension {
   })
 }
 
+/** Source text inset in the panel surface, keeping code on the editor background. */
+export function SourcePane({ value }: { value: string }) {
+  return (
+    <div className="h-full min-h-0 p-3">
+      <div className="h-full overflow-hidden rounded-md border border-border bg-editor">
+        <ReadOnlySqlView value={value} />
+      </div>
+    </div>
+  )
+}
+
 /** A read-only SQL viewer that reuses the user's editor theme/font preferences
  *  and SQL syntax highlighting, so a DDL/definition reads like the editor. */
 export function ReadOnlySqlView({

@@ -57,7 +57,8 @@ export interface FolderRequest {
 
 export interface FlattenInput {
   tree: NavigatorTree
-  isExpanded: (key: string) => boolean
+  /** `defaultOpen` applies only until the user explicitly toggles the node. */
+  isExpanded: (key: string, defaultOpen: boolean) => boolean
   listing: (parent: ScopePath, folder: string) => ListingState | undefined
   filter?: string
 }
@@ -121,7 +122,7 @@ export function flattenNavigator({ tree, isExpanded, listing, filter = '' }: Fla
   function visitFolders(parent: ScopePath, node: NavigatorNode, depth: number, query: string) {
     for (const folder of node.folders) {
       const key = folderKey(parent, folder.kind)
-      const userExpanded = isExpanded(key)
+      const userExpanded = isExpanded(key, tree.nodes[folder.child]?.column === true)
       if (query !== '' && !folderHasMatch(parent, folder, query)) continue
       const expanded = userExpanded || query !== ''
       const state = expanded ? listing(parent, folder.kind) : undefined
@@ -182,7 +183,7 @@ export function flattenNavigator({ tree, isExpanded, listing, filter = '' }: Fla
     }
     const key = objectKey(item.path)
     const childQuery = query !== '' && nameMatches(item, query) ? '' : query
-    const expanded = isExpanded(key) || (childQuery !== '' && itemMatches(item, childQuery))
+    const expanded = isExpanded(key, false) || (childQuery !== '' && itemMatches(item, childQuery))
     rows.push({ type: 'object', key: uniqueKey(key), depth, item, node, folder, expanded })
     if (expanded) visitFolders(item.path, node, depth + 1, childQuery)
   }

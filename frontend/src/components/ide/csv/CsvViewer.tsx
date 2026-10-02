@@ -1,14 +1,14 @@
-import { useDeferredValue, useEffect, useMemo, useState } from 'react'
+import { useDeferredValue, useEffect, useMemo, useRef, useState } from 'react'
 import type * as Y from 'yjs'
 import { Icon } from '#/lib/icons'
 import { Button } from '#/components/ui/button'
 import { Input } from '#/components/ui/input'
-import { Textarea } from '#/components/ui/textarea'
 import { ToggleGroup, ToggleGroupItem } from '#/components/ui/toggle-group'
 import { cn } from '#/lib/utils'
 import type { ResultColumn, ResultValue } from '#/lib/api/types'
 import { CsvParseError, parseCsv, type CsvDocument } from './parseCsv'
 import { DataGrid } from '../dataGrid/DataGrid'
+import { CsvRawEditor, type CsvRawViewState } from './CsvRawEditor'
 
 type CsvViewMode = 'table' | 'raw'
 
@@ -42,10 +42,11 @@ type CsvViewerProps = {
   className?: string
 }
 
-/** Read-only, virtualized CSV viewer for the editor group. */
+/** Virtualized read-only table plus an editable raw-text view of a CSV file. */
 export function CsvViewer({ doc, className }: CsvViewerProps) {
   const source = useYText(doc)
   const [viewMode, setViewMode] = useState<CsvViewMode>('table')
+  const rawViewState = useRef<CsvRawViewState | null>(null)
   const [search, setSearch] = useState('')
   const deferredSearch = useDeferredValue(search)
 
@@ -82,8 +83,8 @@ export function CsvViewer({ doc, className }: CsvViewerProps) {
     parsed.doc.rows.length > 0
 
   return (
-    <div className={cn('flex h-full min-h-0 flex-col bg-editor', className)}>
-      <div className="flex h-9 shrink-0 items-center gap-2 border-b border-border bg-background px-2">
+    <div className={cn('flex h-full min-h-0 flex-col bg-panel', className)}>
+      <div className="flex h-9 shrink-0 items-center gap-2 border-b border-border bg-panel-tab-strip px-2">
         <ToggleGroup
           aria-label="CSV view"
           value={[viewMode]}
@@ -149,14 +150,7 @@ export function CsvViewer({ doc, className }: CsvViewerProps) {
 
       <div className="min-h-0 flex-1 overflow-hidden">
         {viewMode === 'raw' ? (
-          <Textarea
-            aria-label="Raw CSV"
-            value={source}
-            readOnly
-            wrap="off"
-            spellCheck={false}
-            className="field-sizing-fixed h-full min-h-0 resize-none rounded-none border-0 bg-editor p-3 font-mono text-xs leading-5 whitespace-pre focus-visible:border-transparent focus-visible:ring-0"
-          />
+          <CsvRawEditor doc={doc} viewState={rawViewState} />
         ) : parsed?.error ? (
           <CsvErrorState error={parsed.error} />
         ) : isEmpty ? (

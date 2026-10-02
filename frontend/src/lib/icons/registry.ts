@@ -65,6 +65,7 @@ export type AppIcon =
   | 'plus-sign'
   | 'policy'
   | 'robotic'
+  | 'schema'
   | 'search-01'
   | 'select-all-01'
   | 'server-stack-01'

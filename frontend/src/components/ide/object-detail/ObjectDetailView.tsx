@@ -121,7 +121,7 @@ export function ObjectDetailView({
   }
 
   return (
-    <div className="flex h-full min-h-0 flex-col bg-editor">
+    <div className="flex h-full min-h-0 flex-col bg-panel">
       <Header
         objectRef={ref}
         driver={driver}
@@ -193,7 +193,7 @@ function Header({
   onViewInDiagram?: () => void
 }) {
   return (
-    <div className="flex h-10 shrink-0 items-center gap-2 border-b border-border px-3">
+    <div className="flex h-10 shrink-0 items-center gap-2 border-b border-border bg-panel-tab-strip px-3">
       <span className="truncate font-heading text-sm font-medium tracking-tight text-foreground">
         {objectRef.scope.length > 0 ? `${scopeLabel(objectRef.scope)}.` : ''}
         {objectRef.name}

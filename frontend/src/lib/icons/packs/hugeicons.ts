@@ -67,6 +67,7 @@ const icons: Record<AppIcon, string> = {
   'plus-sign': 'hugeicons:plus-sign',
   policy: 'hugeicons:policy',
   robotic: 'hugeicons:robotic',
+  schema: 'hugeicons:shapes',
   'search-01': 'hugeicons:search-01',
   'select-all-01': 'hugeicons:text-select',
   'server-stack-01': 'hugeicons:server-stack-01',

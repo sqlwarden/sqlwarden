@@ -9,7 +9,7 @@ import type { ObjectViewModel } from '../registry'
 import { DdlSection } from './DdlSection'
 
 vi.mock('../ReadOnlySqlView', () => ({
-  ReadOnlySqlView: ({ value }: { value: string }) => <pre data-testid="sql">{value}</pre>,
+  SourcePane: ({ value }: { value: string }) => <pre data-testid="sql">{value}</pre>,
 }))
 
 const ref: ObjectRef = {

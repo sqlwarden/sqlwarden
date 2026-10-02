@@ -67,6 +67,7 @@ const icons: Record<AppIcon, string> = {
   'plus-sign': 'lucide:plus',
   policy: 'lucide:shield-check',
   robotic: 'lucide:bot',
+  schema: 'lucide:shapes',
   'search-01': 'lucide:search',
   'select-all-01': 'lucide:text-select',
   'server-stack-01': 'lucide:server',

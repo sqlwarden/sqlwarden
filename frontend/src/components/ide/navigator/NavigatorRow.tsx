@@ -3,7 +3,7 @@ import { ContextMenu } from '#/components/ui/context-menu'
 import { Icon } from '#/lib/icons'
 import { cn } from '#/lib/utils'
 import type { ObjectRef, ScopePath } from '#/lib/api/types'
-import { columnTypeIcon, columnTypeIconColor } from '../columnTypeIcon'
+import { columnTypeIcon } from '../columnTypeIcon'
 import { formatRelativeTime } from '../relativeTime'
 import { OBJECT_REF_DND_MIME } from '../schema-diagram/dnd'
 import { IDENTIFIER_DND_MIME } from '../sqlDialect'
@@ -12,6 +12,7 @@ import { refOfPath, type NavigatorRow } from './model'
 import {
   columnOf,
   isObjectLevel,
+  isObjectLevelFolder,
   navigatorMenu,
   refreshPathOf,
   type NavigatorActions,
@@ -57,16 +58,18 @@ function FolderRow({
   onToggle,
 }: RowProps & { row: Extract<NavigatorRow, { type: 'folder' }> }) {
   const child = actions.tree.nodes[row.folder.child]
+  const objectLevel = isObjectLevelFolder(actions.tree, row.parent)
   return (
     <RowShell
       depth={row.depth}
       chevron={row.expanded}
-      icon={navigatorIcon(child?.icon ?? row.folder.child)}
+      section={!objectLevel}
+      icon={navigatorIcon(child?.icon ?? row.folder.child, objectLevel)}
       label={row.folder.label}
       title={row.listing ? `Loaded ${formatRelativeTime(row.listing.fetched_at)}` : undefined}
       badge={
         row.listing ? (
-          <span className="shrink-0 tabular-nums text-[10px] text-muted-foreground/60">
+          <span className="shrink-0 font-normal tabular-nums text-[10px] text-muted-foreground/60">
             {row.listing.items.length}
           </span>
         ) : null
@@ -85,11 +88,13 @@ function ObjectRow({
 }: RowProps & { row: Extract<NavigatorRow, { type: 'object' }> }) {
   const ref = refOfPath(row.item.path)
   const rowCount = row.item.attributes?.row_count
+  const objectLevel = isObjectLevel(actions.tree, row.item.path)
   return (
     <RowShell
       depth={row.depth}
       chevron={row.expanded}
-      icon={navigatorIcon(row.node.icon)}
+      compact={!objectLevel}
+      icon={navigatorIcon(row.node.icon, objectLevel)}
       label={row.item.name}
       bold={row.item.current && row.node.scope}
       dimmed={row.item.system}
@@ -121,9 +126,10 @@ function LeafRow({
     return (
       <RowShell
         depth={row.depth}
+        compact
         icon={{
           icon: typeIcon,
-          className: columnTypeIconColor[typeIcon] ?? 'text-muted-foreground',
+          className: 'text-muted-foreground',
         }}
         label={row.item.name}
         dimmed={row.item.system}
@@ -139,7 +145,8 @@ function LeafRow({
   return (
     <RowShell
       depth={row.depth}
-      icon={navigatorIcon(row.node?.icon ?? row.item.kind)}
+      compact={!objectLevel}
+      icon={navigatorIcon(row.node?.icon ?? row.item.kind, objectLevel)}
       label={row.item.name}
       dimmed={row.item.system}
       drag={
@@ -211,6 +218,8 @@ function startDrag(event: DragEvent, text: string, ref?: ObjectRef) {
 function RowShell({
   depth,
   chevron,
+  section,
+  compact,
   icon,
   label,
   bold,
@@ -225,6 +234,8 @@ function RowShell({
 }: {
   depth: number
   chevron?: boolean
+  section?: boolean
+  compact?: boolean
   icon: NavigatorIconStyle
   label: string
   bold?: boolean
@@ -265,21 +276,38 @@ function RowShell({
       }}
       style={{ paddingLeft: depth * INDENT + 4 }}
       className={cn(
-        'group mx-1 flex h-6 cursor-pointer items-center gap-1.5 rounded-md pr-1 text-left text-xs transition-colors hover:bg-sidebar-accent hover:text-sidebar-accent-foreground',
+        'group relative mx-1 flex h-6 cursor-pointer items-center gap-1.5 rounded-md pr-1 text-left text-xs transition-colors hover:bg-sidebar-accent hover:text-sidebar-accent-foreground',
         dimmed && 'text-muted-foreground',
+        compact && 'text-[11px]',
+        section &&
+          'text-[10px] font-semibold uppercase tracking-wider text-muted-foreground/80 hover:text-foreground',
         drag && 'active:cursor-grabbing',
       )}
     >
+      {Array.from({ length: depth }, (_, level) => (
+        <span
+          key={level}
+          aria-hidden="true"
+          style={{ left: level * INDENT + 9 }}
+          className="pointer-events-none absolute inset-y-0 w-px bg-sidebar-border"
+        />
+      ))}
       {chevron === undefined ? (
         <span className="size-[11px] shrink-0" aria-hidden="true" />
       ) : (
         <Icon
           name={chevron ? 'chevron-down' : 'chevron-right'}
-          size={11}
+          size={section ? 10 : 11}
           className="shrink-0 text-muted-foreground/70"
         />
       )}
-      <Icon name={icon.icon} size={13} className={cn('shrink-0', icon.className)} />
+      {section ? null : (
+        <Icon
+          name={icon.icon}
+          size={compact ? 12 : 13}
+          className={cn('shrink-0', icon.className)}
+        />
+      )}
       <span className={cn('min-w-0 flex-1 truncate', bold && 'font-semibold')}>{label}</span>
       {badge}
       {meta ? (
@@ -307,9 +335,7 @@ function KeyBadge({ kind }: { kind: 'PK' | 'FK' }) {
     <span
       className={cn(
         'shrink-0 rounded px-1 text-[9px] font-semibold tracking-wide',
-        kind === 'PK'
-          ? 'bg-amber-500/15 text-amber-600 dark:text-amber-400'
-          : 'bg-sky-500/15 text-sky-600 dark:text-sky-400',
+        kind === 'PK' ? 'bg-primary/15 text-primary' : 'bg-muted text-muted-foreground',
       )}
     >
       {kind}

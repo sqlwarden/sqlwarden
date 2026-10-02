@@ -131,6 +131,13 @@ const schemaDropHandler = EditorView.domEventHandlers({
   },
 })
 
+/** The app-styled find/replace panel. The owning editor must also supply `findPanelHost`
+ *  and portal `<FindPanel>` into the host it announces. */
+export const sqlwardenFindPanel: Extension = [
+  search({ top: true, createPanel: createFindPanel }),
+  sqlwardenSearchTheme,
+]
+
 export const sqlwardenBasicSetup: Extension = [
   lineNumbers(),
   highlightActiveLineGutter(),
@@ -148,8 +155,7 @@ export const sqlwardenBasicSetup: Extension = [
   crosshairCursor(),
   highlightActiveLineWhenCollapsed,
   highlightSelectionMatches(),
-  search({ top: true, createPanel: createFindPanel }),
-  sqlwardenSearchTheme,
+  sqlwardenFindPanel,
   // Active-block guide is a stronger shade of the same neutral, not a brand
   // accent — VS Code's indent guides stay grayscale even when highlighted.
   indentationMarkers({

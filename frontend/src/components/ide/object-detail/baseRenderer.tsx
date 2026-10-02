@@ -4,7 +4,7 @@ import { ColumnsSection } from './sections/ColumnsSection'
 import { DescriptorList, KeysSection } from './sections/KeysSection'
 import { DdlSection } from './sections/DdlSection'
 import { ObjectDataPreview } from './ObjectDataPreview'
-import { ReadOnlySqlView } from './ReadOnlySqlView'
+import { SourcePane } from './ReadOnlySqlView'
 
 /** Returns a "source" descriptor's body by title (e.g. "DDL", "Definition"). */
 export function sourceDescriptor(detail: ObjectDetail, title: string): string | null {
@@ -95,11 +95,7 @@ export function buildBaseSections(vm: ObjectViewModel, hooks: DriverHooks): Sect
       id: `source-${i}`,
       label: d.title || 'Source',
       icon: 'terminal',
-      render: () => (
-        <div className="h-full min-h-0">
-          <ReadOnlySqlView value={body} />
-        </div>
-      ),
+      render: () => <SourcePane value={body} />,
     })
   })
   if (inlineSources.length === 0 && showDdl) {

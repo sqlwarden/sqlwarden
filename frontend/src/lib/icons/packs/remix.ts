@@ -67,6 +67,7 @@ const icons: Record<AppIcon, string> = {
   'plus-sign': 'ri:add-line',
   policy: 'ri:shield-check-line',
   robotic: 'ri:robot-line',
+  schema: 'ri:shapes-line',
   'search-01': 'ri:search-line',
   'select-all-01': 'ri:checkbox-multiple-line',
   'server-stack-01': 'ri:server-line',
