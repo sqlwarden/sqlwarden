@@ -12,17 +12,11 @@ import (
 	"github.com/sqlwarden/internal/engine/completer"
 	"github.com/sqlwarden/internal/engine/completioncore"
 	oraclecompletion "github.com/sqlwarden/internal/engine/completioncore/oracle"
-	"github.com/sqlwarden/internal/engine/metadata"
 )
-
-const preparedCompletionIndexes = 32
 
 var (
 	_ completer.Completer          = (*oracleDriver)(nil)
 	_ completer.VocabularyProvider = (*oracleDriver)(nil)
-	_ completer.CatalogInvalidator = (*oracleDriver)(nil)
-
-	oracleSchemaIndexCache = completer.NewPreparedCache[*metadata.Index](preparedCompletionIndexes)
 
 	oracleVocabularyOnce sync.Once
 	oracleVocabulary     completer.Vocabulary
@@ -36,25 +30,14 @@ func (d *oracleDriver) Complete(ctx context.Context, req completer.Request) (com
 		return completer.Result{}, err
 	}
 
-	var resolver completioncore.MetadataResolver
-	if req.Schema != nil && req.Schema.Directory != nil {
-		var index *metadata.Index
-		key := oracleCompletionKey(req.ConnectionID, req.Schema.Version)
-		if key == "" {
-			index = metadata.NewIndex(*req.Schema)
-		} else {
-			built, err := oracleSchemaIndexCache.GetOrBuild(ctx, key, func() (*metadata.Index, error) {
-				return metadata.NewIndex(*req.Schema), nil
-			})
-			if err != nil {
-				return completer.Result{}, err
-			}
-			index = built
-		}
-		resolver = completioncore.NewSchemaResolver(index, index.DefaultScope().Name("schema"))
+	var resolver *completioncore.SchemaResolver
+	var metadataResolver completioncore.MetadataResolver
+	if req.Metadata != nil {
+		resolver = completioncore.NewSchemaResolver(req.Metadata, req.Metadata.DefaultScope().Name("schema"))
+		metadataResolver = resolver
 	}
 
-	candidates, cursorContext, err := oraclecompletion.Complete(ctx, req.SQL, req.CursorOffset, resolver)
+	candidates, cursorContext, err := oraclecompletion.Complete(ctx, req.SQL, req.CursorOffset, metadataResolver)
 	if err != nil {
 		return completer.Result{}, err
 	}
@@ -62,7 +45,7 @@ func (d *oracleDriver) Complete(ctx context.Context, req completer.Request) (com
 	start, end, prefix, _ := oraclecompletion.CursorWord(req.SQL, req.CursorOffset)
 	suggestions := make([]completer.Suggestion, 0, len(candidates))
 	for _, candidate := range candidates {
-		kind, score := oracleCandidateKind(candidate.Type)
+		kind := oracleCandidateKind(candidate.Type)
 		insertText := candidate.Text
 		if candidate.InsertText != "" {
 			insertText = candidate.InsertText
@@ -77,7 +60,7 @@ func (d *oracleDriver) Complete(ctx context.Context, req completer.Request) (com
 			InsertText:   insertText,
 			ReplaceStart: start,
 			ReplaceEnd:   end,
-			Score:        score,
+			Score:        completer.KindScore(kind),
 		})
 	}
 	oracleSortSuggestions(suggestions, prefix)
@@ -86,7 +69,11 @@ func (d *oracleDriver) Complete(ctx context.Context, req completer.Request) (com
 	if position == "" {
 		position = completioncore.PositionAny
 	}
-	return completer.Result{Suggestions: suggestions, Context: position}, ctx.Err()
+	result := completer.Result{Suggestions: suggestions, Context: position}
+	if resolver != nil {
+		result.Demands = resolver.Demands()
+	}
+	return result, ctx.Err()
 }
 
 func (d *oracleDriver) CompletionVocabulary() completer.Vocabulary {
@@ -112,46 +99,35 @@ func (d *oracleDriver) CompletionVocabulary() completer.Vocabulary {
 			items = append(items, completer.Suggestion{Label: name, Kind: "type", Score: 35})
 		}
 		for _, function := range oraclecompletion.BuiltinFunctions() {
-			items = append(items, completer.Suggestion{Label: function.Name, InsertText: function.Name, Detail: function.Detail, Kind: "function", Score: 45})
+			items = append(items, completer.Suggestion{Label: function.Name, InsertText: function.Name, Detail: function.Detail, Kind: "function", Score: completer.KindScore("function")})
 		}
 		oracleVocabulary = completer.NewVocabulary("oracle", items)
 	})
 	return oracleVocabulary
 }
 
-func (d *oracleDriver) InvalidateCompletionCatalog(connectionID string) {
-	oracleSchemaIndexCache.InvalidatePrefix(connectionID + ":")
-}
-
-func oracleCompletionKey(connectionID, version string) string {
-	if connectionID == "" || version == "" {
-		return ""
-	}
-	return connectionID + ":" + version
-}
-
-func oracleCandidateKind(t completioncore.CandidateType) (string, int) {
+func oracleCandidateKind(t completioncore.CandidateType) string {
 	switch t {
 	case completioncore.CandidateColumn:
-		return "column", 100
+		return "column"
 	case completioncore.CandidateTable:
-		return "table", 90
+		return "table"
 	case completioncore.CandidateView:
-		return "view", 85
+		return "view"
 	case completioncore.CandidateMaterializedView:
-		return "materialized_view", 84
+		return "materialized_view"
 	case completioncore.CandidateSchema:
-		return "schema", 70
+		return "schema"
 	case completioncore.CandidateSequence:
-		return "sequence", 60
+		return "sequence"
 	case completioncore.CandidateFunction:
-		return "function", 58
+		return "function"
 	case completioncore.CandidateProcedure:
-		return "procedure", 57
+		return "procedure"
 	case completioncore.CandidateKeyword:
-		return "keyword", 40
+		return "keyword"
 	default:
-		return "text", 20
+		return "text"
 	}
 }
 

@@ -395,17 +395,13 @@ func TestSQLiteSchemaBackedCompletionRoundTrip(t *testing.T) {
 	if err != nil {
 		t.Fatalf("InspectObjects: %v", err)
 	}
-	directory := &metadata.Directory{DefaultScope: scope, Roots: []metadata.ScopeNode{{
-		Path:   scope,
-		Groups: []metadata.ObjectGroup{{Kind: "table", Objects: refs}},
-	}}}
-	schema := &metadata.MetadataSet{Directory: directory, Objects: objects, Version: "snapshot-1"}
+	view := sqliteCompletionView(objects...)
 
 	columnSQL := "SELECT  FROM users"
 	columnResult, err := d.Complete(ctx, completer.Request{
 		SQL:          columnSQL,
 		CursorOffset: len("SELECT "),
-		Schema:       schema,
+		Metadata:     view,
 		ConnectionID: "conn-roundtrip",
 	})
 	if err != nil {
@@ -418,7 +414,7 @@ func TestSQLiteSchemaBackedCompletionRoundTrip(t *testing.T) {
 	tableResult, err := d.Complete(ctx, completer.Request{
 		SQL:          tableSQL,
 		CursorOffset: len(tableSQL),
-		Schema:       schema,
+		Metadata:     view,
 		ConnectionID: "conn-roundtrip",
 	})
 	if err != nil {

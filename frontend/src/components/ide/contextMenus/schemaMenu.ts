@@ -65,7 +65,7 @@ export function buildNamespaceMenu(ctx: NamespaceMenuCtx): ContextMenuItem[] {
   ]
 }
 
-export type ObjectGroupMenuCtx = {
+export type SchemaFolderMenuCtx = {
   newLabel: string
   onRefresh: () => void
   onViewDiagram?: () => void
@@ -73,7 +73,7 @@ export type ObjectGroupMenuCtx = {
   createTableDisabledReason?: string
 }
 
-export function buildObjectGroupMenu(ctx: ObjectGroupMenuCtx): ContextMenuItem[] {
+export function buildSchemaFolderMenu(ctx: SchemaFolderMenuCtx): ContextMenuItem[] {
   return [
     ...(ctx.onViewDiagram
       ? [

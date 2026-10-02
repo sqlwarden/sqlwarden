@@ -6,7 +6,7 @@ import type {
 } from '#/components/ui/context-menu'
 import { buildEnvironmentMenu } from './environmentMenu'
 import { buildConnectionMenu } from './connectionMenu'
-import { buildNamespaceMenu, buildObjectGroupMenu } from './schemaMenu'
+import { buildNamespaceMenu, buildSchemaFolderMenu } from './schemaMenu'
 import { buildObjectMenu } from './objectMenu'
 import { buildColumnMenu, buildIndexMenu } from './columnMenu'
 
@@ -122,7 +122,7 @@ describe('buildConnectionMenu', () => {
   })
 })
 
-describe('buildNamespaceMenu / buildObjectGroupMenu', () => {
+describe('buildNamespaceMenu / buildSchemaFolderMenu', () => {
   it('scope copy + refresh are live; create/drop disabled without callbacks', () => {
     const items = buildNamespaceMenu({
       onCopyName: noop,
@@ -175,7 +175,7 @@ describe('buildNamespaceMenu / buildObjectGroupMenu', () => {
   })
   it('object-group omits new-object entirely without create-table support (non-table kinds)', () => {
     for (const newLabel of ['New View…', 'New Function…', 'New Sequence…', 'New Trigger…']) {
-      const items = buildObjectGroupMenu({ newLabel, onRefresh: noop })
+      const items = buildSchemaFolderMenu({ newLabel, onRefresh: noop })
       expect(action(items, 'new-object')).toBeUndefined()
       expect(items.some((i) => i.kind === 'action' && i.soon)).toBe(false)
       expect(action(items, 'refresh')?.soon).toBeFalsy()
@@ -183,7 +183,7 @@ describe('buildNamespaceMenu / buildObjectGroupMenu', () => {
     }
   })
   it('object-group shows View diagram when the callback is provided', () => {
-    const items = buildObjectGroupMenu({
+    const items = buildSchemaFolderMenu({
       newLabel: 'New Table…',
       onRefresh: noop,
       onViewDiagram: noop,
@@ -192,7 +192,7 @@ describe('buildNamespaceMenu / buildObjectGroupMenu', () => {
     expect(action(items, 'view-diagram')?.soon).toBeFalsy()
   })
   it('object-group enables new-object when onCreateTable is provided', () => {
-    const items = buildObjectGroupMenu({
+    const items = buildSchemaFolderMenu({
       newLabel: 'New Table…',
       onRefresh: noop,
       onCreateTable: noop,
@@ -201,7 +201,7 @@ describe('buildNamespaceMenu / buildObjectGroupMenu', () => {
     expect(action(items, 'new-object')?.disabled).toBeFalsy()
   })
   it('object-group shows a disabled reason instead of soon when create-table is gated', () => {
-    const items = buildObjectGroupMenu({
+    const items = buildSchemaFolderMenu({
       newLabel: 'New Table…',
       onRefresh: noop,
       createTableDisabledReason: 'You do not have permission to change this schema.',

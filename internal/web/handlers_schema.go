@@ -258,7 +258,6 @@ func (app *application) applyConnectionDDL(w http.ResponseWriter, r *http.Reques
 		return
 	}
 
-	app.completionService.InvalidateConnection(session.ConnectionID)
 	app.logInfo(r, "DDL applied",
 		slog.String("session_id", session.ID),
 		slog.Int64("connection_id", conn.ID),

@@ -7,6 +7,8 @@ import (
 
 	"github.com/sqlwarden/internal/engine"
 	"github.com/sqlwarden/internal/engine/completer"
+	"github.com/sqlwarden/internal/engine/metadata"
+	"github.com/sqlwarden/internal/engine/metadata/metadatatest"
 )
 
 func connectedSQLite(t *testing.T, ddl ...string) *sqliteDriver {
@@ -63,7 +65,20 @@ func TestSQLiteCompleteCursorOutOfRange(t *testing.T) {
 	}
 }
 
-func TestSQLiteInvalidateCompletionCatalogNoPanic(t *testing.T) {
-	d := &sqliteDriver{}
-	d.InvalidateCompletionCatalog("conn-1") // must be safe with nothing cached
+func sqliteCompletionView(objects ...metadata.Object) *metadata.CompletionView {
+	main := metadata.NewScopePath(metadata.ScopeSegment{Kind: "database", Name: "main"})
+	return metadatatest.Build((&sqliteDriver{}).Tree(), metadatatest.Fixture{DefaultScope: main, Objects: objects})
+}
+
+func TestSQLiteCompleteReturnsDemandsForUnlistedTables(t *testing.T) {
+	tree := (&sqliteDriver{}).Tree()
+	main := metadata.NewScopePath(metadata.ScopeSegment{Kind: "database", Name: "main"})
+	view := metadata.NewCompletionView(tree, main, "", nil, nil)
+	result, err := (&sqliteDriver{}).Complete(context.Background(), completer.Request{SQL: "SELECT * FROM ", CursorOffset: 14, Metadata: view})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(result.Demands) == 0 || result.Demands[0].Parent != main {
+		t.Fatalf("demands = %v", result.Demands)
+	}
 }

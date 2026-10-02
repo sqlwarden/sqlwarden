@@ -194,9 +194,6 @@ func (app *application) configureConnectionCacheInvalidation() {
 		return
 	}
 	app.connManager.SetOnConnectionEmpty(func(connectionID string) {
-		if app.completionService != nil {
-			app.completionService.InvalidateConnection(connectionID)
-		}
 		if app.schemaNavigator != nil {
 			if id, err := strconv.ParseInt(connectionID, 10, 64); err == nil {
 				app.schemaNavigator.ForgetConnection(id)

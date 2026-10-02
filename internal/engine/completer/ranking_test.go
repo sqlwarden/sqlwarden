@@ -26,3 +26,18 @@ func TestMatchTier(t *testing.T) {
 		})
 	}
 }
+
+func TestKindScoreOrdersRelationsBeforeOtherObjects(t *testing.T) {
+	order := []string{"table", "view", "materialized_view", "foreign_table", "synonym", "schema", "sequence", "function", "procedure"}
+	for i := 1; i < len(order); i++ {
+		if KindScore(order[i-1]) <= KindScore(order[i]) {
+			t.Fatalf("KindScore(%q) = %d, want above KindScore(%q) = %d", order[i-1], KindScore(order[i-1]), order[i], KindScore(order[i]))
+		}
+	}
+	if KindScore("column") <= KindScore("table") {
+		t.Fatal("columns must outrank relations")
+	}
+	if KindScore("not-a-kind") >= KindScore("keyword") {
+		t.Fatal("unknown kinds must rank below keywords")
+	}
+}

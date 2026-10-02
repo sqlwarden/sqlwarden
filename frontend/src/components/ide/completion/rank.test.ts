@@ -92,3 +92,25 @@ it('is a stable deterministic sort', () => {
     'c_tbl',
   ])
 })
+
+it('keeps the backend kind order under the relation hint boost', () => {
+  const kinds = ['table', 'view', 'synonym', 'schema', 'database', 'sequence']
+  const scores: Record<string, number> = {
+    table: 90,
+    view: 85,
+    synonym: 82,
+    schema: 70,
+    database: 70,
+    sequence: 65,
+  }
+  const input = [...kinds].reverse().map((kind) => s(`a_${kind}`, kind, scores[kind]))
+  const out = rankSuggestions(input, '', 'relation')
+  expect(out.map((o) => o.kind)).toEqual([
+    'table',
+    'view',
+    'synonym',
+    'database',
+    'schema',
+    'sequence',
+  ])
+})

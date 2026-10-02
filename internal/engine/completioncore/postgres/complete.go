@@ -9,7 +9,6 @@ import (
 	"unicode"
 
 	omnipg "github.com/bytebase/omni/pg"
-	"github.com/bytebase/omni/pg/catalog"
 	omnicompletion "github.com/bytebase/omni/pg/completion"
 	"github.com/bytebase/omni/pg/parser"
 
@@ -17,19 +16,18 @@ import (
 )
 
 // Complete combines Omni's grammar candidates with parser-native scope
-// resolution. nativeCatalog is retained only for Omni candidate resolution;
-// semantic resolution reads the dialect-neutral SQLWarden catalog.
+// resolution. Omni runs without a catalog and supplies grammar candidates
+// only; every object name comes from metadata.
 func Complete(
 	ctx context.Context,
 	sql string,
 	cursor int,
-	nativeCatalog *catalog.Catalog,
 	metadata completioncore.MetadataResolver,
 ) ([]completioncore.Candidate, completioncore.Context, error) {
 	if err := completioncore.CheckContext(ctx); err != nil {
 		return nil, completioncore.Context{}, err
 	}
-	native := omnicompletion.Complete(sql, cursor, nativeCatalog)
+	native := omnicompletion.Complete(sql, cursor, nil)
 	completion := omnipg.CollectCompletion(sql, cursor)
 	qualifier := qualifierAt(sql, cursor)
 	valueContext := isInsertValueContext(sql, cursor)
@@ -49,6 +47,13 @@ func Complete(
 			continue
 		}
 		result = append(result, convertNative(candidate))
+	}
+	ruleCandidates := ruleCandidatesAt(completion.Candidates, sql, cursor)
+	// DML and any_name statements count as column contexts as a whole, yet
+	// their target slot (UPDATE |, DROP TABLE |) is a pure relation rule.
+	relationSlot := hasAnyRule(ruleCandidates, relationRules) && !hasRule(ruleCandidates, "columnref")
+	if !columnContext || relationSlot || qualifier != "" || hasRule(ruleCandidates, "func_name") {
+		result = append(result, resolveRuleCandidates(ruleCandidates, sql, cursor, metadata)...)
 	}
 	if columnContext && metadata != nil {
 		result = append(result, resolveColumns(sql, cursor, completion, metadata)...)
@@ -1025,7 +1030,7 @@ func deduplicate(candidates []completioncore.Candidate) []completioncore.Candida
 	seen := make(map[string]bool, len(candidates))
 	result := make([]completioncore.Candidate, 0, len(candidates))
 	for _, candidate := range candidates {
-		key := string(candidate.Type) + "\x00" + strings.ToLower(candidate.Text)
+		key := string(candidate.Type) + "\x00" + strings.ToLower(strings.Join(append(slices.Clone(candidate.Qualifier), candidate.Text), "\x00"))
 		if candidate.Text == "" || seen[key] {
 			continue
 		}

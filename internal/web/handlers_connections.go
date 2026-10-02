@@ -707,9 +707,6 @@ func (app *application) updateConnection(w http.ResponseWriter, r *http.Request)
 			return
 		}
 	}
-	if scopeChanged && !dsnChanged {
-		app.completionService.InvalidateConnection(strconv.FormatInt(conn.ID, 10))
-	}
 	if tlsChanged {
 		if err := app.db.UpdateConnectionTLSConfig(r.Context(), conn.ID, tlsEncrypted); err != nil {
 			app.serverError(w, r, err)

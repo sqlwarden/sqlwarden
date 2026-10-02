@@ -1,7 +1,7 @@
 // Package completer defines the SQL completion capability: cursor-aware
 // suggestions for an in-progress statement. An engine provides completion by
 // implementing Completer; it is stateless and never touches a live connection —
-// any schema context it needs is passed in as a catalog by the caller.
+// any schema context it needs is passed in by the caller.
 package completer
 
 import (
@@ -11,8 +11,9 @@ import (
 )
 
 // Completer returns suggestions for the text at a cursor position, optionally
-// informed by a schema catalog. Stateless: the caller supplies the catalog
-// rather than the completer fetching it, so completion needs no connection.
+// informed by cached schema metadata. Stateless: the caller supplies the
+// metadata rather than the completer fetching it, so completion needs no
+// connection.
 type Completer interface {
 	Complete(ctx context.Context, req Request) (Result, error)
 }
@@ -23,19 +24,12 @@ type VocabularyProvider interface {
 	CompletionVocabulary() Vocabulary
 }
 
-// CatalogInvalidator is implemented by completers that cache prepared native
-// catalogs or schema indexes. Connection lifecycle and schema refresh paths
-// call it so stale or compliance-sensitive metadata is not retained.
-type CatalogInvalidator interface {
-	InvalidateCompletionCatalog(connectionID string)
-}
-
 // Request is the editor state to complete: the SQL, the cursor offset into it,
-// and optional schema metadata for name-aware suggestions.
+// and optional schema metadata view for name-aware suggestions.
 type Request struct {
 	SQL          string
 	CursorOffset int
-	Schema       *metadata.MetadataSet
+	Metadata     *metadata.CompletionView
 	ConnectionID string
 	TriggerKind  TriggerKind
 	TriggerChar  string
@@ -50,8 +44,9 @@ const (
 
 // Result is the ranked list of suggestions for the cursor position.
 type Result struct {
-	Suggestions []Suggestion `json:"suggestions"`
-	Context     string       `json:"context,omitempty"`
+	Suggestions []Suggestion      `json:"suggestions"`
+	Context     string            `json:"context,omitempty"`
+	Demands     []metadata.Demand `json:"-"`
 }
 
 // Suggestion is a single completion candidate. ReplaceStart/ReplaceEnd delimit

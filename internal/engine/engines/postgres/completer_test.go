@@ -8,6 +8,7 @@ import (
 	"github.com/sqlwarden/internal/engine/completer"
 	"github.com/sqlwarden/internal/engine/completioncore"
 	"github.com/sqlwarden/internal/engine/metadata"
+	"github.com/sqlwarden/internal/engine/metadata/metadatatest"
 )
 
 func TestPostgresCompleteKeywordsAndSchema(t *testing.T) {
@@ -20,12 +21,11 @@ func TestPostgresCompleteKeywordsAndSchema(t *testing.T) {
 	}
 	requireCompletion(t, keywordResult, "SELECT", "keyword")
 
-	catalog := completionTestCatalog("postgres", "public")
-	objects := completionTestObjects("public")
+	view := completionTestView("public")
 	sql := "SELECT  FROM public.users"
 	result, err := driver.Complete(context.Background(), completer.Request{
 		SQL: sql, CursorOffset: len("SELECT "),
-		Schema:       &metadata.MetadataSet{Directory: catalog, Objects: objects, Version: "snapshot-1"},
+		Metadata:     view,
 		ConnectionID: "7",
 	})
 	if err != nil {
@@ -36,7 +36,7 @@ func TestPostgresCompleteKeywordsAndSchema(t *testing.T) {
 	fromSQL := "SELECT * FROM "
 	result, err = driver.Complete(context.Background(), completer.Request{
 		SQL: fromSQL, CursorOffset: len(fromSQL),
-		Schema: &metadata.MetadataSet{Directory: catalog, Objects: objects},
+		Metadata: view,
 	})
 	if err != nil {
 		t.Fatal(err)
@@ -49,13 +49,11 @@ func TestPostgresCompleteKeywordsAndSchema(t *testing.T) {
 
 func TestPostgresCompleteClassifiesCursorContext(t *testing.T) {
 	driver := &Driver{}
-	catalog := completionTestCatalog("postgres", "public")
-	objects := completionTestObjects("public")
-	schema := &metadata.MetadataSet{Directory: catalog, Objects: objects}
+	view := completionTestView("public")
 
 	fromSQL := "SELECT * FROM "
 	result, err := driver.Complete(context.Background(), completer.Request{
-		SQL: fromSQL, CursorOffset: len(fromSQL), Schema: schema,
+		SQL: fromSQL, CursorOffset: len(fromSQL), Metadata: view,
 	})
 	if err != nil {
 		t.Fatal(err)
@@ -66,7 +64,7 @@ func TestPostgresCompleteClassifiesCursorContext(t *testing.T) {
 
 	keywordSQL := `SELECT * FROM users `
 	result, err = driver.Complete(context.Background(), completer.Request{
-		SQL: keywordSQL, CursorOffset: len(keywordSQL), Schema: schema,
+		SQL: keywordSQL, CursorOffset: len(keywordSQL), Metadata: view,
 	})
 	if err != nil {
 		t.Fatal(err)
@@ -95,57 +93,32 @@ func TestPostgresCompletionQuotesReservedIdentifier(t *testing.T) {
 }
 
 func TestPostgresCompletionDefaultSchema(t *testing.T) {
-	root := metadata.NewScopePath(metadata.ScopeSegment{Kind: "database", Name: "app"})
-	public := root.Child(metadata.ScopeSegment{Kind: "schema", Name: "public"})
-	tenant := root.Child(metadata.ScopeSegment{Kind: "schema", Name: "tenant"})
-	directory := &metadata.Directory{
-		DefaultScope: tenant,
-		Roots: []metadata.ScopeNode{{Path: root, Children: []metadata.ScopeNode{
-			{Path: public}, {Path: tenant},
-		}}},
+	tree := (&Driver{}).Tree()
+	app := metadata.NewScopePath(metadata.ScopeSegment{Kind: "database", Name: "app"})
+	schema := func(name string) metadata.ScopePath {
+		return app.Child(metadata.ScopeSegment{Kind: "schema", Name: name})
 	}
-	if got := postgresCompletionDefaultSchema(directory); got != "tenant" {
-		t.Fatalf("default schema = %q", got)
+	cases := []struct {
+		name string
+		view *metadata.CompletionView
+		want string
+	}{
+		{"default scope", metadatatest.Build(tree, metadatatest.Fixture{DefaultScope: schema("tenant"), Scopes: []metadata.ScopePath{schema("public"), schema("tenant")}}), "tenant"},
+		{"public listed", metadatatest.Build(tree, metadatatest.Fixture{Scopes: []metadata.ScopePath{schema("public"), schema("tenant")}}), "public"},
+		{"only schema", metadatatest.Build(tree, metadatatest.Fixture{Scopes: []metadata.ScopePath{schema("only_schema")}}), "only_schema"},
 	}
-	directory.DefaultScope = ""
-	if got := postgresCompletionDefaultSchema(directory); got != "public" {
-		t.Fatalf("public fallback = %q", got)
-	}
-	only := root.Child(metadata.ScopeSegment{Kind: "schema", Name: "only_schema"})
-	directory.Roots[0].Children = []metadata.ScopeNode{{Path: only}}
-	if got := postgresCompletionDefaultSchema(directory); got != "only_schema" {
-		t.Fatalf("single-schema fallback = %q", got)
+	for _, tc := range cases {
+		if got := postgresCompletionDefaultSchema(tc.view); got != tc.want {
+			t.Errorf("%s: got %q want %q", tc.name, got, tc.want)
+		}
 	}
 }
 
-func TestPostgresCompleteUsesDirectoryDefaultSchemaForUnqualifiedTables(t *testing.T) {
+func TestPostgresCompleteUsesDefaultSchemaForUnqualifiedTables(t *testing.T) {
 	driver := &Driver{}
 	root := metadata.NewScopePath(metadata.ScopeSegment{Kind: "database", Name: "analytics"})
 	public := root.Child(metadata.ScopeSegment{Kind: "schema", Name: "public"})
 	tenant := root.Child(metadata.ScopeSegment{Kind: "schema", Name: "tenant"})
-	directory := &metadata.Directory{
-		Engine: "postgres", DefaultScope: tenant,
-		Roots: []metadata.ScopeNode{{Path: root, Children: []metadata.ScopeNode{
-			{
-				Path: public,
-				Groups: []metadata.ObjectGroup{{
-					Kind: "table",
-					Objects: []metadata.ObjectRef{{
-						Scope: public, Kind: "table", Name: "public_orders",
-					}},
-				}},
-			},
-			{
-				Path: tenant,
-				Groups: []metadata.ObjectGroup{{
-					Kind: "table",
-					Objects: []metadata.ObjectRef{{
-						Scope: tenant, Kind: "table", Name: "tenant_orders",
-					}},
-				}},
-			},
-		}}},
-	}
 	objects := []metadata.Object{
 		{
 			Ref: metadata.ObjectRef{Scope: public, Kind: "table", Name: "public_orders"},
@@ -160,10 +133,10 @@ func TestPostgresCompleteUsesDirectoryDefaultSchemaForUnqualifiedTables(t *testi
 			}}},
 		},
 	}
+	view := metadatatest.Build(driver.Tree(), metadatatest.Fixture{DefaultScope: tenant, Objects: objects})
 	sql := "SELECT * FROM "
 	result, err := driver.Complete(context.Background(), completer.Request{
-		SQL: sql, CursorOffset: len(sql),
-		Schema: &metadata.MetadataSet{Directory: directory, Objects: objects},
+		SQL: sql, CursorOffset: len(sql), Metadata: view,
 	})
 	if err != nil {
 		t.Fatal(err)
@@ -174,13 +147,12 @@ func TestPostgresCompleteUsesDirectoryDefaultSchemaForUnqualifiedTables(t *testi
 
 func TestPostgresCompleteHidesNativeParserArtifacts(t *testing.T) {
 	driver := &Driver{}
-	catalog := completionTestCatalog("postgres", "public")
-	objects := completionTestObjects("public")
+	view := completionTestView("public")
 
 	afterSelectList := "SELECT * "
 	result, err := driver.Complete(context.Background(), completer.Request{
 		SQL: afterSelectList, CursorOffset: len(afterSelectList),
-		Schema: &metadata.MetadataSet{Directory: catalog, Objects: objects},
+		Metadata: view,
 	})
 	if err != nil {
 		t.Fatal(err)
@@ -192,7 +164,7 @@ func TestPostgresCompleteHidesNativeParserArtifacts(t *testing.T) {
 	afterFrom := "SELECT * FROM "
 	result, err = driver.Complete(context.Background(), completer.Request{
 		SQL: afterFrom, CursorOffset: len(afterFrom),
-		Schema: &metadata.MetadataSet{Directory: catalog, Objects: objects},
+		Metadata: view,
 	})
 	if err != nil {
 		t.Fatal(err)
@@ -204,13 +176,12 @@ func TestPostgresCompleteHidesNativeParserArtifacts(t *testing.T) {
 
 func TestPostgresCompleteCuratesCompletedRelationContext(t *testing.T) {
 	driver := &Driver{}
-	catalog := completionTestCatalog("postgres", "public")
-	objects := completionTestObjects("public")
+	view := completionTestView("public")
 
 	sql := "SELECT * FROM users "
 	result, err := driver.Complete(context.Background(), completer.Request{
 		SQL: sql, CursorOffset: len(sql),
-		Schema:      &metadata.MetadataSet{Directory: catalog, Objects: objects},
+		Metadata:    view,
 		TriggerKind: completer.TriggerInvoked,
 	})
 	if err != nil {
@@ -226,7 +197,7 @@ func TestPostgresCompleteCuratesCompletedRelationContext(t *testing.T) {
 	joinedSQL := "SELECT * FROM users u JOIN \"Order Items\" oi "
 	result, err = driver.Complete(context.Background(), completer.Request{
 		SQL: joinedSQL, CursorOffset: len(joinedSQL),
-		Schema:      &metadata.MetadataSet{Directory: catalog, Objects: objects},
+		Metadata:    view,
 		TriggerKind: completer.TriggerInvoked,
 	})
 	if err != nil {
@@ -240,8 +211,7 @@ func TestPostgresCompleteCuratesCompletedRelationContext(t *testing.T) {
 
 func TestPostgresCompleteUsesStatementAtCursor(t *testing.T) {
 	driver := &Driver{}
-	catalog := completionTestCatalog("postgres", "public")
-	objects := completionTestObjects("public")
+	view := completionTestView("public")
 	sql := `select s.first_name, s.last_name, a.address from staff s
 join store st
 on s.staff_id = st.manager_staff_id
@@ -251,7 +221,7 @@ on a.address_id = s.address_id;
 select * from `
 	result, err := driver.Complete(context.Background(), completer.Request{
 		SQL: sql, CursorOffset: len(sql),
-		Schema: &metadata.MetadataSet{Directory: catalog, Objects: objects},
+		Metadata: view,
 	})
 	if err != nil {
 		t.Fatal(err)
@@ -261,8 +231,7 @@ select * from `
 
 func TestPostgresCompleteRecoversNewSelectWithoutSemicolon(t *testing.T) {
 	driver := &Driver{}
-	catalog := completionTestCatalog("postgres", "public")
-	objects := completionTestObjects("public")
+	view := completionTestView("public")
 	sql := `select s.first_name, s.last_name, a.address from staff s
 join store st
 on s.staff_id = st.manager_staff_id
@@ -274,7 +243,7 @@ select * from actor
 select * from `
 	result, err := driver.Complete(context.Background(), completer.Request{
 		SQL: sql, CursorOffset: len(sql),
-		Schema: &metadata.MetadataSet{Directory: catalog, Objects: objects},
+		Metadata: view,
 	})
 	if err != nil {
 		t.Fatal(err)
@@ -295,7 +264,6 @@ func TestPostgresCompletionRecoveryDoesNotSplitNestedSelects(t *testing.T) {
 
 func TestPostgresCompleteRespectsQualifiedAliasesAndJoinConflicts(t *testing.T) {
 	driver := &Driver{}
-	catalog := completionTestCatalog("postgres", "public")
 	objects := []metadata.Object{
 		{
 			Ref: metadata.ObjectRef{Scope: completionTestScope("public"), Kind: "table", Name: "inventory"},
@@ -310,12 +278,12 @@ func TestPostgresCompleteRespectsQualifiedAliasesAndJoinConflicts(t *testing.T) 
 			}},
 		},
 	}
-	catalog.Roots[0].Groups[0].Objects = []metadata.ObjectRef{objects[0].Ref, objects[1].Ref}
+	view := metadatatest.Build((&Driver{}).Tree(), metadatatest.Fixture{DefaultScope: completionTestScope("public"), Objects: objects})
 
 	qualifiedSQL := "SELECT * FROM inventory i JOIN store s ON i.id = s.id WHERE s."
 	qualified, err := driver.Complete(context.Background(), completer.Request{
 		SQL: qualifiedSQL, CursorOffset: len(qualifiedSQL),
-		Schema: &metadata.MetadataSet{Directory: catalog, Objects: objects},
+		Metadata: view,
 	})
 	if err != nil {
 		t.Fatal(err)
@@ -326,7 +294,7 @@ func TestPostgresCompleteRespectsQualifiedAliasesAndJoinConflicts(t *testing.T) 
 	unqualifiedSQL := "SELECT * FROM inventory i JOIN store s ON i.id = s.id WHERE "
 	unqualified, err := driver.Complete(context.Background(), completer.Request{
 		SQL: unqualifiedSQL, CursorOffset: len(unqualifiedSQL),
-		Schema: &metadata.MetadataSet{Directory: catalog, Objects: objects},
+		Metadata: view,
 	})
 	if err != nil {
 		t.Fatal(err)
@@ -339,7 +307,6 @@ func TestPostgresCompleteRespectsQualifiedAliasesAndJoinConflicts(t *testing.T) 
 
 func TestPostgresCompleteUsesFinalAliasAfterEarlierQualifiedColumn(t *testing.T) {
 	driver := &Driver{}
-	catalog := completionTestCatalog("postgres", "public")
 	objects := []metadata.Object{
 		{
 			Ref: metadata.ObjectRef{Scope: completionTestScope("public"), Kind: "table", Name: "film"},
@@ -356,12 +323,12 @@ func TestPostgresCompleteUsesFinalAliasAfterEarlierQualifiedColumn(t *testing.T)
 			}},
 		},
 	}
-	catalog.Roots[0].Groups[0].Objects = []metadata.ObjectRef{objects[0].Ref, objects[1].Ref}
+	view := metadatatest.Build((&Driver{}).Tree(), metadatatest.Fixture{DefaultScope: completionTestScope("public"), Objects: objects})
 
 	sql := "select * from film f\njoin film_actor fa\nwhere f.\"description\" = fa."
 	result, err := driver.Complete(context.Background(), completer.Request{
 		SQL: sql, CursorOffset: len(sql),
-		Schema:      &metadata.MetadataSet{Directory: catalog, Objects: objects},
+		Metadata:    view,
 		TriggerKind: completer.TriggerAutomatic,
 		TriggerChar: ".",
 	})
@@ -417,12 +384,11 @@ func TestPostgresSuggestionRankingPrioritizesTypedPrefix(t *testing.T) {
 }
 
 func TestPostgresCompleteDoesNotEchoUnknownRelationPrefix(t *testing.T) {
-	directory := completionTestCatalog("postgres", "public")
-	objects := completionTestObjects("public")
+	view := completionTestView("public")
 	sql := "SELECT * FROM veraxasdwadqwd"
 	result, err := (&Driver{}).Complete(context.Background(), completer.Request{
 		SQL: sql, CursorOffset: len(sql),
-		Schema: &metadata.MetadataSet{Directory: directory, Objects: objects},
+		Metadata: view,
 	})
 	if err != nil {
 		t.Fatal(err)
@@ -432,7 +398,7 @@ func TestPostgresCompleteDoesNotEchoUnknownRelationPrefix(t *testing.T) {
 	partialSQL := "SELECT * FROM us"
 	partial, err := (&Driver{}).Complete(context.Background(), completer.Request{
 		SQL: partialSQL, CursorOffset: len(partialSQL),
-		Schema: &metadata.MetadataSet{Directory: directory, Objects: objects},
+		Metadata: view,
 	})
 	if err != nil {
 		t.Fatal(err)
@@ -442,12 +408,11 @@ func TestPostgresCompleteDoesNotEchoUnknownRelationPrefix(t *testing.T) {
 }
 
 func TestPostgresCompletePreservesCTERelation(t *testing.T) {
-	directory := completionTestCatalog("postgres", "public")
-	objects := completionTestObjects("public")
+	view := completionTestView("public")
 	sql := "WITH recent_orders AS (SELECT * FROM users) SELECT * FROM recent"
 	result, err := (&Driver{}).Complete(context.Background(), completer.Request{
 		SQL: sql, CursorOffset: len(sql),
-		Schema: &metadata.MetadataSet{Directory: directory, Objects: objects},
+		Metadata: view,
 	})
 	if err != nil {
 		t.Fatal(err)
@@ -486,9 +451,7 @@ func TestPostgresCompleteSelectAliasesByClause(t *testing.T) {
 
 func TestPostgresCompleteInsideStandaloneCTE(t *testing.T) {
 	driver := &Driver{}
-	set := &metadata.MetadataSet{
-		Directory: completionTestCatalog("postgres", "public"), Objects: completionTestObjects("public"),
-	}
+	view := completionTestView("public")
 	for _, trigger := range []completer.TriggerKind{completer.TriggerAutomatic, completer.TriggerInvoked} {
 		for _, suffix := range []string{"", "\n-- block\n-- SELECT\n-- FROM users\n-- block"} {
 			name := string(trigger)
@@ -500,7 +463,7 @@ func TestPostgresCompleteInsideStandaloneCTE(t *testing.T) {
 				cursor := strings.IndexByte(template, '|')
 				sql := strings.Replace(template, "|", "", 1)
 				result, err := driver.Complete(context.Background(), completer.Request{
-					SQL: sql, CursorOffset: cursor, TriggerKind: trigger, Schema: set,
+					SQL: sql, CursorOffset: cursor, TriggerKind: trigger, Metadata: view,
 				})
 				if err != nil {
 					t.Fatal(err)
@@ -514,15 +477,13 @@ func TestPostgresCompleteInsideStandaloneCTE(t *testing.T) {
 
 func TestPostgresCompleteCTERelationsAndProjectedColumns(t *testing.T) {
 	driver := &Driver{}
-	set := &metadata.MetadataSet{
-		Directory: completionTestCatalog("postgres", "public"), Objects: completionTestObjects("public"),
-	}
+	view := completionTestView("public")
 	for _, trigger := range []completer.TriggerKind{completer.TriggerAutomatic, completer.TriggerInvoked} {
 		for _, prefix := range []string{"", "pic"} {
 			t.Run(string(trigger)+"/relation/"+prefix, func(t *testing.T) {
 				sql := `WITH picked AS (SELECT id, "display name" AS amt FROM users) SELECT * FROM ` + prefix
 				result, err := driver.Complete(context.Background(), completer.Request{
-					SQL: sql, CursorOffset: len(sql), TriggerKind: trigger, Schema: set,
+					SQL: sql, CursorOffset: len(sql), TriggerKind: trigger, Metadata: view,
 				})
 				if err != nil {
 					t.Fatal(err)
@@ -536,7 +497,7 @@ func TestPostgresCompleteCTERelationsAndProjectedColumns(t *testing.T) {
 	cursor := strings.IndexByte(template, '|')
 	sql := strings.Replace(template, "|", "", 1)
 	result, err := driver.Complete(context.Background(), completer.Request{
-		SQL: sql, CursorOffset: cursor, TriggerKind: completer.TriggerInvoked, Schema: set,
+		SQL: sql, CursorOffset: cursor, TriggerKind: completer.TriggerInvoked, Metadata: view,
 	})
 	if err != nil {
 		t.Fatal(err)
@@ -548,8 +509,7 @@ func TestPostgresCompleteCTERelationsAndProjectedColumns(t *testing.T) {
 
 func TestPostgresCompletionContextMatrix(t *testing.T) {
 	driver := &Driver{}
-	directory := completionTestCatalog("postgres", "public")
-	metadata := &metadata.MetadataSet{Directory: directory, Objects: completionTestObjects("public")}
+	view := completionTestView("public")
 	tests := []struct {
 		name           string
 		sql            string
@@ -585,7 +545,7 @@ func TestPostgresCompletionContextMatrix(t *testing.T) {
 			cursor := strings.IndexByte(test.sql, '|')
 			sql := strings.Replace(test.sql, "|", "", 1)
 			result, err := driver.Complete(context.Background(), completer.Request{
-				SQL: sql, CursorOffset: cursor, Schema: metadata,
+				SQL: sql, CursorOffset: cursor, Metadata: view,
 			})
 			if err != nil {
 				t.Fatal(err)
@@ -603,25 +563,12 @@ func TestPostgresCompletionContextMatrix(t *testing.T) {
 	}
 }
 
-func completionTestCatalog(dialect, namespace string) *metadata.Directory {
-	scope := completionTestScope(namespace)
-	return &metadata.Directory{
-		Engine: dialect, DefaultScope: scope,
-		Roots: []metadata.ScopeNode{{
-			Path: scope,
-			Groups: []metadata.ObjectGroup{{
-				Kind: "table",
-				Objects: []metadata.ObjectRef{
-					{Scope: scope, Kind: "table", Name: "users"},
-					{Scope: scope, Kind: "table", Name: "Order Items"},
-				},
-			}},
-		}},
-	}
+func completionTestView(ns string) *metadata.CompletionView {
+	scope := completionTestScope(ns)
+	return metadatatest.Build((&Driver{}).Tree(), metadatatest.Fixture{DefaultScope: scope, Objects: completionTestObjects(scope)})
 }
 
-func completionTestObjects(namespace string) []metadata.Object {
-	scope := completionTestScope(namespace)
+func completionTestObjects(scope metadata.ScopePath) []metadata.Object {
 	return []metadata.Object{
 		{
 			Ref: metadata.ObjectRef{Scope: scope, Kind: "table", Name: "users"},
@@ -681,5 +628,50 @@ func requireNoSuggestionKinds(t *testing.T, result completer.Result, kinds ...st
 		if excluded[suggestion.Kind] {
 			t.Fatalf("unexpected %s completion %q in %+v", suggestion.Kind, suggestion.Label, result.Suggestions)
 		}
+	}
+}
+
+func TestPostgresCompleteQualifiesRelationsWithoutDefaultScope(t *testing.T) {
+	driver := &Driver{}
+	app := metadata.NewScopePath(metadata.ScopeSegment{Kind: "database", Name: "app"})
+	sales := app.Child(metadata.ScopeSegment{Kind: "schema", Name: "Sales"})
+	view := metadatatest.Build(driver.Tree(), metadatatest.Fixture{
+		Refs: []metadata.ObjectRef{{Scope: sales, Kind: "table", Name: "Order Items"}},
+	})
+	sql := "SELECT * FROM "
+	result, err := driver.Complete(context.Background(), completer.Request{
+		SQL: sql, CursorOffset: len(sql), Metadata: view,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	got := requireCompletion(t, result, "Order Items", "table")
+	if got.InsertText != `"Sales"."Order Items"` {
+		t.Fatalf("insert text = %q", got.InsertText)
+	}
+}
+
+func TestPostgresCompleteUsesSessionCurrentScopeWithoutDefaultScope(t *testing.T) {
+	driver := &Driver{}
+	app := metadata.NewScopePath(metadata.ScopeSegment{Kind: "database", Name: "app"})
+	sales := app.Child(metadata.ScopeSegment{Kind: "schema", Name: "Sales"})
+	view := metadata.NewCompletionView(driver.Tree(), "", sales, map[metadata.ListingKey][]metadata.Child{
+		{Parent: "", Folder: "databases"}:             {{Kind: "database", Name: "app", Current: true}},
+		{Parent: app, Folder: "schemas"}:              {{Kind: "schema", Name: "Sales", Current: true}},
+		{Parent: sales, Folder: "tables"}:             {{Kind: "table", Name: "Order Items"}},
+		{Parent: sales, Folder: "views"}:              {},
+		{Parent: sales, Folder: "materialized_views"}: {},
+		{Parent: sales, Folder: "foreign_tables"}:     {},
+	}, nil)
+	sql := "SELECT * FROM "
+	result, err := driver.Complete(context.Background(), completer.Request{
+		SQL: sql, CursorOffset: len(sql), Metadata: view,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	got := requireCompletion(t, result, "Order Items", "table")
+	if got.InsertText != `"Order Items"` {
+		t.Fatalf("insert text = %q", got.InsertText)
 	}
 }

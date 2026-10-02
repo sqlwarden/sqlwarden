@@ -3,7 +3,7 @@ package postgres
 import (
 	"context"
 	"fmt"
-	"regexp"
+	"slices"
 	"sort"
 	"strings"
 	"sync"
@@ -17,17 +17,11 @@ import (
 	"github.com/sqlwarden/internal/engine/metadata"
 )
 
-const preparedCompletionCatalogs = 32
-
 var (
 	_                               completer.Completer          = (*Driver)(nil)
-	_                               completer.CatalogInvalidator = (*Driver)(nil)
 	_                               completer.VocabularyProvider = (*Driver)(nil)
-	pgCompletionCatalogCache                                     = completer.NewPreparedCache[*pgcatalog.Catalog](preparedCompletionCatalogs)
-	pgSchemaIndexCache                                           = completer.NewPreparedCache[*metadata.Index](preparedCompletionCatalogs)
 	pgVocabularyOnce                sync.Once
 	pgVocabulary                    completer.Vocabulary
-	pgSafeType                      = regexp.MustCompile(`^[A-Za-z0-9_ ."(),\[\]]+$`)
 	pgReservedCompletionIdentifiers = map[string]struct{}{
 		"all": {}, "analyse": {}, "analyze": {}, "and": {}, "any": {}, "array": {}, "as": {}, "asc": {},
 		"asymmetric": {}, "authorization": {}, "binary": {}, "both": {}, "case": {}, "cast": {}, "check": {},
@@ -55,30 +49,11 @@ func (d *Driver) Complete(ctx context.Context, req completer.Request) (completer
 		return completer.Result{}, err
 	}
 
-	var catalog *pgcatalog.Catalog
-	var resolver completioncore.MetadataResolver
-	if req.Schema != nil && req.Schema.Directory != nil {
-		key := completionCatalogKey(req.ConnectionID, req.Schema.Version)
-		var err error
-		defaultSchema := postgresCompletionDefaultSchema(req.Schema.Directory)
-		var index *metadata.Index
-		if key == "" {
-			catalog, err = buildPostgresCompletionCatalog(req.Schema.Directory, req.Schema.Objects)
-			index = metadata.NewIndex(*req.Schema)
-		} else {
-			catalog, err = pgCompletionCatalogCache.GetOrBuild(ctx, key, func() (*pgcatalog.Catalog, error) {
-				return buildPostgresCompletionCatalog(req.Schema.Directory, req.Schema.Objects)
-			})
-			if err == nil {
-				index, err = pgSchemaIndexCache.GetOrBuild(ctx, key, func() (*metadata.Index, error) {
-					return metadata.NewIndex(*req.Schema), nil
-				})
-			}
-		}
-		if err != nil {
-			return completer.Result{}, err
-		}
-		resolver = completioncore.NewSchemaResolver(index, defaultSchema)
+	var resolver *completioncore.SchemaResolver
+	var metadataResolver completioncore.MetadataResolver
+	if req.Metadata != nil {
+		resolver = completioncore.NewSchemaResolver(req.Metadata, postgresCompletionDefaultSchema(req.Metadata))
+		metadataResolver = resolver
 	}
 
 	completionSQL, completionCursor := postgresCompletionStatement(req.SQL, req.CursorOffset)
@@ -86,8 +61,7 @@ func (d *Driver) Complete(ctx context.Context, req completer.Request) (completer
 		ctx,
 		completionSQL,
 		completionCursor,
-		catalog,
-		resolver,
+		metadataResolver,
 	)
 	if err != nil {
 		return completer.Result{}, err
@@ -101,33 +75,30 @@ func (d *Driver) Complete(ctx context.Context, req completer.Request) (completer
 				ctx,
 				recoverySQL,
 				recoveryCursor,
-				catalog,
-				resolver,
+				metadataResolver,
 			)
 			if err != nil {
 				return completer.Result{}, err
 			}
 			if len(recoveryCandidates) > 0 {
 				candidates, cursorContext = recoveryCandidates, recoveryContext
-				completionSQL, completionCursor = recoverySQL, recoveryCursor
 			}
 		}
-	}
-	if req.Schema != nil && req.Schema.Directory != nil {
-		candidates = filterPostgresRelations(
-			candidates,
-			req.Schema.Directory,
-			completionSQL,
-			completionCursor,
-		)
 	}
 	start := completionReplaceStart(req.SQL, req.CursorOffset, '"')
 	suggestions := make([]completer.Suggestion, 0, len(candidates))
 	for _, candidate := range candidates {
-		kind, score := postgresCandidateKind(candidate.Type)
+		kind := postgresCandidateKind(candidate.Type)
 		insertText := candidate.Text
 		if kind != "keyword" && kind != "type" {
 			insertText = postgresQuoteCompletionPath(candidate.Text)
+			if len(candidate.Qualifier) > 0 {
+				parts := make([]string, 0, len(candidate.Qualifier)+1)
+				for _, part := range candidate.Qualifier {
+					parts = append(parts, postgresQuoteCompletionIdentifier(part))
+				}
+				insertText = strings.Join(append(parts, insertText), ".")
+			}
 		}
 		suggestions = append(suggestions, completer.Suggestion{
 			Label:        candidate.Text,
@@ -137,7 +108,7 @@ func (d *Driver) Complete(ctx context.Context, req completer.Request) (completer
 			InsertText:   insertText,
 			ReplaceStart: start,
 			ReplaceEnd:   req.CursorOffset,
-			Score:        score,
+			Score:        completer.KindScore(kind),
 		})
 	}
 	if req.TriggerKind == completer.TriggerAutomatic && isBareSelect(req.SQL, req.CursorOffset) {
@@ -151,7 +122,11 @@ func (d *Driver) Complete(ctx context.Context, req completer.Request) (completer
 	if position == "" {
 		position = completioncore.PositionAny
 	}
-	return completer.Result{Suggestions: suggestions, Context: position}, nil
+	result := completer.Result{Suggestions: suggestions, Context: position}
+	if resolver != nil {
+		result.Demands = resolver.Demands()
+	}
+	return result, nil
 }
 
 func postgresCompletionStatement(sql string, cursor int) (string, int) {
@@ -225,195 +200,23 @@ func postgresTokenStartsLine(sql string, offset int) bool {
 	return strings.TrimSpace(sql[lineStart:offset]) == ""
 }
 
-func postgresCompletionDefaultSchema(directory *metadata.Directory) string {
-	if directory == nil {
-		return "public"
-	}
-	if selected := directory.DefaultScope.Name("schema"); selected != "" {
-		return selected
+func postgresCompletionDefaultSchema(view *metadata.CompletionView) string {
+	if schema := view.DefaultScope().Name("schema"); schema != "" {
+		return schema
 	}
 	var schemas []string
-	for _, node := range directory.ScopeNodes() {
-		name := node.Path.Name("schema")
-		if name == "" {
-			continue
+	for _, path := range view.ScopePaths() {
+		if last, _ := path.Last(); last.Kind == "schema" {
+			schemas = append(schemas, last.Name)
 		}
-		schemas = append(schemas, name)
-		if name == "public" {
-			return "public"
-		}
+	}
+	if slices.Contains(schemas, "public") {
+		return "public"
 	}
 	if len(schemas) == 1 {
 		return schemas[0]
 	}
 	return "public"
-}
-
-func filterPostgresRelations(
-	candidates []completioncore.Candidate,
-	directory *metadata.Directory,
-	sql string,
-	cursor int,
-) []completioncore.Candidate {
-	if directory == nil {
-		return candidates
-	}
-	qualified := completionHasQualifier(sql, cursor)
-	defaultSchema := postgresCompletionDefaultSchema(directory)
-	if defaultSchema == "" {
-		return candidates
-	}
-	allRelations := make(map[string]struct{})
-	defaultRelations := make(map[string]struct{})
-	foundDefaultSchema := false
-	for _, node := range directory.ScopeNodes() {
-		namespace := node.Path.Name("schema")
-		if namespace == "" {
-			continue
-		}
-		isDefault := strings.EqualFold(namespace, defaultSchema)
-		foundDefaultSchema = foundDefaultSchema || isDefault
-		for _, group := range node.Groups {
-			if !postgresRelationKind(group.Kind) {
-				continue
-			}
-			for _, ref := range group.Objects {
-				name := strings.ToLower(ref.Name)
-				allRelations[name] = struct{}{}
-				if isDefault {
-					defaultRelations[name] = struct{}{}
-				}
-			}
-		}
-	}
-	if !foundDefaultSchema {
-		return candidates
-	}
-	localRelations := postgresCTENames(sql)
-	result := make([]completioncore.Candidate, 0, len(candidates))
-	for _, candidate := range candidates {
-		if !postgresRelationCandidate(candidate.Type) {
-			result = append(result, candidate)
-			continue
-		}
-		name := strings.ToLower(candidate.Text)
-		if _, catalogRelation := allRelations[name]; !catalogRelation {
-			// Omni may echo the unfinished identifier as a table candidate even
-			// when it is absent from the catalog. Preserve only query-local CTEs.
-			if _, localRelation := localRelations[name]; localRelation {
-				result = append(result, candidate)
-			}
-			continue
-		}
-		if _, visible := defaultRelations[name]; qualified || visible {
-			result = append(result, candidate)
-		}
-	}
-	return result
-}
-
-func postgresCTENames(sql string) map[string]struct{} {
-	result := make(map[string]struct{})
-	tokens := pgparser.Tokenize(sql)
-	if len(tokens) == 0 || tokens[0].Type != pgparser.WITH {
-		return result
-	}
-	i := 1
-	if i < len(tokens) && tokens[i].Type == pgparser.RECURSIVE {
-		i++
-	}
-	for i < len(tokens) && pgparser.IsIdentifierTokenType(tokens[i].Type) {
-		name := strings.ToLower(postgresCompletionUnquoteIdentifier(tokens[i].Str))
-		result[name] = struct{}{}
-		i++
-		if i < len(tokens) && tokens[i].Type == '(' {
-			close := postgresMatchingParen(tokens, i)
-			if close < 0 {
-				break
-			}
-			i = close + 1
-		}
-		if i < len(tokens) && tokens[i].Type == pgparser.AS {
-			i++
-		}
-		if i >= len(tokens) || tokens[i].Type != '(' {
-			break
-		}
-		close := postgresMatchingParen(tokens, i)
-		if close < 0 {
-			break
-		}
-		i = close + 1
-		if i >= len(tokens) || tokens[i].Type != ',' {
-			break
-		}
-		i++
-	}
-	return result
-}
-
-func postgresMatchingParen(tokens []pgparser.Token, open int) int {
-	depth := 0
-	for i := open; i < len(tokens); i++ {
-		switch tokens[i].Type {
-		case '(':
-			depth++
-		case ')':
-			depth--
-			if depth == 0 {
-				return i
-			}
-		}
-	}
-	return -1
-}
-
-func postgresCompletionUnquoteIdentifier(identifier string) string {
-	if len(identifier) >= 2 && identifier[0] == '"' && identifier[len(identifier)-1] == '"' {
-		return strings.ReplaceAll(identifier[1:len(identifier)-1], `""`, `"`)
-	}
-	return identifier
-}
-
-func postgresRelationKind(kind string) bool {
-	switch kind {
-	case "table", "foreign_table", "view", "materialized_view", "sequence":
-		return true
-	default:
-		return false
-	}
-}
-
-func postgresRelationCandidate(kind completioncore.CandidateType) bool {
-	switch kind {
-	case completioncore.CandidateTable,
-		completioncore.CandidateForeignTable,
-		completioncore.CandidateView,
-		completioncore.CandidateMaterializedView,
-		completioncore.CandidateSequence:
-		return true
-	default:
-		return false
-	}
-}
-
-func completionHasQualifier(sql string, cursor int) bool {
-	if cursor < 0 || cursor > len(sql) {
-		return false
-	}
-	index := cursor
-	for index > 0 {
-		character := sql[index-1]
-		if (character >= 'a' && character <= 'z') ||
-			(character >= 'A' && character <= 'Z') ||
-			(character >= '0' && character <= '9') ||
-			character == '_' || character == '$' {
-			index--
-			continue
-		}
-		break
-	}
-	return index > 0 && sql[index-1] == '.'
 }
 
 func (d *Driver) CompletionVocabulary() completer.Vocabulary {
@@ -457,122 +260,31 @@ func curatedSelectSuggestions(start, end int) []completer.Suggestion {
 	return result
 }
 
-func (d *Driver) InvalidateCompletionCatalog(connectionID string) {
-	pgCompletionCatalogCache.InvalidatePrefix(connectionID + ":")
-	pgSchemaIndexCache.InvalidatePrefix(connectionID + ":")
-}
-
-func buildPostgresCompletionCatalog(directory *metadata.Directory, objects []metadata.Object) (*pgcatalog.Catalog, error) {
-	native := pgcatalog.New()
-	created := map[string]bool{"public": true, "pg_catalog": true}
-	for _, node := range directory.ScopeNodes() {
-		namespace := node.Path.Name("schema")
-		if namespace == "" || created[namespace] {
-			continue
-		}
-		if err := execPostgresCatalog(native, "CREATE SCHEMA "+pgQuoteIdent(namespace)); err != nil {
-			return nil, fmt.Errorf("prepare postgres schema %q: %w", namespace, err)
-		}
-		created[namespace] = true
-	}
-	for _, object := range objects {
-		statement := postgresCompletionDDL(object, false)
-		if statement == "" {
-			continue
-		}
-		if err := execPostgresCatalog(native, statement); err != nil && object.Relational != nil {
-			if fallbackErr := execPostgresCatalog(native, postgresCompletionDDL(object, true)); fallbackErr != nil {
-				return nil, fmt.Errorf("prepare postgres completion object %s.%s: %w", object.Ref.Scope.Name("schema"), object.Ref.Name, fallbackErr)
-			}
-		}
-	}
-	native.SetSearchPath([]string{postgresCompletionDefaultSchema(directory)})
-	return native, nil
-}
-
-func execPostgresCatalog(catalog *pgcatalog.Catalog, sql string) error {
-	results, err := catalog.Exec(sql, nil)
-	if err != nil {
-		return err
-	}
-	for _, result := range results {
-		if result.Error != nil {
-			return result.Error
-		}
-	}
-	return nil
-}
-
-func postgresCompletionDDL(object metadata.Object, fallbackTypes bool) string {
-	namespace := object.Ref.Scope.Name("schema")
-	if namespace == "" {
-		namespace = "public"
-	}
-	qualified := pgQuoteIdent(namespace) + "." + pgQuoteIdent(object.Ref.Name)
-	switch object.Ref.Kind {
-	case "table", "foreign_table":
-		return "CREATE TABLE " + qualified + " (" + postgresCompletionColumns(object, fallbackTypes) + ")"
-	case "view":
-		return "CREATE VIEW " + qualified + " AS SELECT " + postgresCompletionSelectColumns(object)
-	case "materialized_view":
-		return "CREATE MATERIALIZED VIEW " + qualified + " AS SELECT " + postgresCompletionSelectColumns(object)
-	case "sequence":
-		return "CREATE SEQUENCE " + qualified
-	}
-	return ""
-}
-
-func postgresCompletionColumns(object metadata.Object, fallbackTypes bool) string {
-	if object.Relational == nil || len(object.Relational.Columns) == 0 {
-		return pgQuoteIdent("__sqlwarden_placeholder") + " text"
-	}
-	columns := make([]string, 0, len(object.Relational.Columns))
-	for _, column := range object.Relational.Columns {
-		dataType := strings.TrimSpace(column.DataType)
-		if fallbackTypes || dataType == "" || !pgSafeType.MatchString(dataType) {
-			dataType = "text"
-		}
-		columns = append(columns, pgQuoteIdent(column.Name)+" "+dataType)
-	}
-	return strings.Join(columns, ", ")
-}
-
-func postgresCompletionSelectColumns(object metadata.Object) string {
-	if object.Relational == nil || len(object.Relational.Columns) == 0 {
-		return "NULL::text AS " + pgQuoteIdent("__sqlwarden_placeholder")
-	}
-	columns := make([]string, 0, len(object.Relational.Columns))
-	for _, column := range object.Relational.Columns {
-		columns = append(columns, "NULL::text AS "+pgQuoteIdent(column.Name))
-	}
-	return strings.Join(columns, ", ")
-}
-
-func postgresCandidateKind(candidateType completioncore.CandidateType) (string, int) {
+func postgresCandidateKind(candidateType completioncore.CandidateType) string {
 	switch candidateType {
 	case completioncore.CandidateColumn:
-		return "column", 100
+		return "column"
 	case completioncore.CandidateTable:
-		return "table", 90
+		return "table"
 	case completioncore.CandidateView:
-		return "view", 85
+		return "view"
 	case completioncore.CandidateMaterializedView:
-		return "materialized_view", 84
+		return "materialized_view"
 	case completioncore.CandidateSchema:
 		// In unqualified relation slots, the current schema is useful but less
 		// likely than one of its tables. A typed "metadata." prefix still wins
 		// through CodeMirror's prefix matching.
-		return "schema", 70
+		return "schema"
 	case completioncore.CandidateSequence:
-		return "sequence", 70
+		return "sequence"
 	case completioncore.CandidateFunction:
-		return "function", 60
+		return "function"
 	case completioncore.CandidateTypeName:
-		return "type", 35
+		return "type"
 	case completioncore.CandidateKeyword:
-		return "keyword", 40
+		return "keyword"
 	default:
-		return "text", 20
+		return "text"
 	}
 }
 
@@ -609,13 +321,6 @@ func isSafePostgresIdentifier(identifier string) bool {
 		}
 	}
 	return true
-}
-
-func completionCatalogKey(connectionID, version string) string {
-	if connectionID == "" || version == "" {
-		return ""
-	}
-	return connectionID + ":" + version
 }
 
 func completionReplaceStart(sql string, cursor int, quote byte) int {

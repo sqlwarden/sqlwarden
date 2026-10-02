@@ -20,6 +20,10 @@ class OracleDialect extends BaseSqlDialect {
     return this.quoteIdentifier(name)
   }
 
+  formatIdentifier(name: string): string {
+    return /^[A-Z][A-Z0-9_$#]*$/.test(name) ? name : this.quoteIdentifier(name)
+  }
+
   override boundedCountQuery(ref: ObjectRef, limit: number): string {
     return `SELECT COUNT(*) FROM (SELECT 1 FROM ${this.formatObject(ref.scope, ref.name)} FETCH FIRST ${limit} ROWS ONLY)`
   }

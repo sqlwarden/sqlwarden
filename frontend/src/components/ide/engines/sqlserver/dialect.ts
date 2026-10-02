@@ -6,6 +6,7 @@ import { sqlServerSqlFormatter } from '../../sqlFormatter'
 class SqlServerDialect extends BaseSqlDialect {
   protected override readonly formatter = sqlServerSqlFormatter
   private quoteIdentifier = createIdentifierQuoter('[', ']')
+  private quoteCompletionName = createIdentifierQuoter('[', ']', /^[A-Za-z_][A-Za-z0-9_@#$]*$/)
 
   formatObject(scope: ScopePath, name: string): string {
     const schemaName = scopeName(scope, 'schema')
@@ -17,6 +18,10 @@ class SqlServerDialect extends BaseSqlDialect {
 
   formatColumn(name: string): string {
     return this.quoteIdentifier(name)
+  }
+
+  formatIdentifier(name: string): string {
+    return this.quoteCompletionName(name)
   }
 
   // T-SQL has no LIMIT clause (spec quirk #2); TOP (n) is the equivalent for

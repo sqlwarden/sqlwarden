@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"github.com/sqlwarden/internal/engine"
+	"github.com/sqlwarden/internal/engine/completioncore/mssql"
 	"github.com/sqlwarden/internal/engine/enginetest"
 	"github.com/sqlwarden/internal/engine/metadata"
 )
@@ -134,6 +135,7 @@ func navFixture(t *testing.T, d *Driver) {
 		`CREATE TRIGGER nav.child_trg ON nav.child AFTER INSERT AS BEGIN SET NOCOUNT ON; END`,
 		`CREATE PROCEDURE nav.proc1 AS SELECT 1`,
 		`CREATE FUNCTION nav.fn1() RETURNS INT AS BEGIN RETURN 1 END`,
+		`CREATE FUNCTION nav.tvf1() RETURNS TABLE AS RETURN SELECT 1 AS id`,
 		`CREATE SEQUENCE nav.seq1 AS BIGINT`,
 		`CREATE SYNONYM nav.syn1 FOR nav.parent`,
 		`CREATE TYPE nav.code_t FROM NVARCHAR(20)`,
@@ -242,7 +244,12 @@ func TestSQLServerNavigator(t *testing.T) {
 		}
 		routines := list("procedures")
 		childNamed(t, routines, "procedure", "proc1")
-		childNamed(t, routines, "function", "fn1")
+		if fn := childNamed(t, routines, "function", "fn1"); fn.Attributes[mssql.ReturnsTableAttribute] != nil {
+			t.Fatalf("fn1 = %+v, want a scalar function", fn)
+		}
+		if tvf := childNamed(t, routines, "function", "tvf1"); tvf.Attributes[mssql.ReturnsTableAttribute] != true {
+			t.Fatalf("tvf1 = %+v, want returns_table", tvf)
+		}
 		if seq := childNamed(t, list("sequences"), "sequence", "seq1"); seq.Attributes["data_type"] != "bigint" {
 			t.Fatalf("seq1 = %+v", seq)
 		}

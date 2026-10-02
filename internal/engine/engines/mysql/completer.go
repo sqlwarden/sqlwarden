@@ -3,7 +3,6 @@ package mysql
 import (
 	"context"
 	"fmt"
-	"regexp"
 	"sort"
 	"strings"
 	"sync"
@@ -15,20 +14,13 @@ import (
 	"github.com/sqlwarden/internal/engine/completer"
 	"github.com/sqlwarden/internal/engine/completioncore"
 	coremysql "github.com/sqlwarden/internal/engine/completioncore/mysql"
-	"github.com/sqlwarden/internal/engine/metadata"
 )
 
-const preparedCompletionCatalogs = 32
-
 var (
-	_                           completer.Completer          = (*Driver)(nil)
-	_                           completer.CatalogInvalidator = (*Driver)(nil)
-	_                           completer.VocabularyProvider = (*Driver)(nil)
-	mysqlCompletionCatalogCache                              = completer.NewPreparedCache[*mysqlcatalog.Catalog](preparedCompletionCatalogs)
-	mysqlSchemaIndexCache                                    = completer.NewPreparedCache[*metadata.Index](preparedCompletionCatalogs)
-	mysqlVocabularyOnce         sync.Once
-	mysqlVocabulary             completer.Vocabulary
-	mysqlSafeType               = regexp.MustCompile(`^[A-Za-z0-9_ (),.'"]+$`)
+	_                   completer.Completer          = (*Driver)(nil)
+	_                   completer.VocabularyProvider = (*Driver)(nil)
+	mysqlVocabularyOnce sync.Once
+	mysqlVocabulary     completer.Vocabulary
 )
 
 func (d *Driver) Complete(ctx context.Context, req completer.Request) (completer.Result, error) {
@@ -39,42 +31,31 @@ func (d *Driver) Complete(ctx context.Context, req completer.Request) (completer
 		return completer.Result{}, err
 	}
 
-	var catalog *mysqlcatalog.Catalog
-	var resolver completioncore.MetadataResolver
-	if req.Schema != nil && req.Schema.Directory != nil {
-		key := mysqlCompletionCatalogKey(req.ConnectionID, req.Schema.Version)
-		var err error
-		var index *metadata.Index
-		if key == "" {
-			catalog, err = buildMySQLCompletionCatalog(req.Schema.Directory, req.Schema.Objects)
-			index = metadata.NewIndex(*req.Schema)
-		} else {
-			catalog, err = mysqlCompletionCatalogCache.GetOrBuild(ctx, key, func() (*mysqlcatalog.Catalog, error) {
-				return buildMySQLCompletionCatalog(req.Schema.Directory, req.Schema.Objects)
-			})
-			if err == nil {
-				index, err = mysqlSchemaIndexCache.GetOrBuild(ctx, key, func() (*metadata.Index, error) {
-					return metadata.NewIndex(*req.Schema), nil
-				})
-			}
-		}
-		if err != nil {
-			return completer.Result{}, err
-		}
-		resolver = completioncore.NewSchemaResolver(index, "")
+	var resolver *completioncore.SchemaResolver
+	var metadataResolver completioncore.MetadataResolver
+	if req.Metadata != nil {
+		resolver = completioncore.NewSchemaResolver(req.Metadata, "")
+		metadataResolver = resolver
 	}
 
-	candidates, cursorContext, err := coremysql.Complete(ctx, req.SQL, req.CursorOffset, catalog, resolver)
+	candidates, cursorContext, err := coremysql.Complete(ctx, req.SQL, req.CursorOffset, metadataResolver)
 	if err != nil {
 		return completer.Result{}, err
 	}
 	start := mysqlCompletionReplaceStart(req.SQL, req.CursorOffset)
 	suggestions := make([]completer.Suggestion, 0, len(candidates))
 	for _, candidate := range candidates {
-		kind, score := mysqlCoreCandidateKind(candidate.Type)
+		kind := mysqlCoreCandidateKind(candidate.Type)
 		insertText := candidate.Text
 		if kind != "keyword" && kind != "type" && kind != "engine" && kind != "charset" {
 			insertText = mysqlQuoteCompletionPath(candidate.Text)
+			if len(candidate.Qualifier) > 0 {
+				parts := make([]string, 0, len(candidate.Qualifier)+1)
+				for _, part := range candidate.Qualifier {
+					parts = append(parts, mysqlQuoteCompletionIdentifier(part))
+				}
+				insertText = strings.Join(append(parts, insertText), ".")
+			}
 		}
 		suggestions = append(suggestions, completer.Suggestion{
 			Label:        candidate.Text,
@@ -84,7 +65,7 @@ func (d *Driver) Complete(ctx context.Context, req completer.Request) (completer
 			InsertText:   insertText,
 			ReplaceStart: start,
 			ReplaceEnd:   req.CursorOffset,
-			Score:        score,
+			Score:        completer.KindScore(kind),
 		})
 	}
 	if req.TriggerKind == completer.TriggerAutomatic && isMySQLBareSelect(req.SQL, req.CursorOffset) {
@@ -98,7 +79,11 @@ func (d *Driver) Complete(ctx context.Context, req completer.Request) (completer
 	if position == "" {
 		position = completioncore.PositionAny
 	}
-	return completer.Result{Suggestions: suggestions, Context: position}, nil
+	result := completer.Result{Suggestions: suggestions, Context: position}
+	if resolver != nil {
+		result.Demands = resolver.Demands()
+	}
+	return result, nil
 }
 
 func (d *Driver) CompletionVocabulary() completer.Vocabulary {
@@ -110,9 +95,9 @@ func (d *Driver) CompletionVocabulary() completer.Vocabulary {
 			}
 		}
 		for _, candidate := range mysqlcompletion.Complete("SELECT ", len("SELECT "), mysqlcatalog.New()) {
-			kind, score := mysqlCandidateKind(candidate.Type)
+			kind := mysqlCandidateKind(candidate.Type)
 			if kind == "function" || kind == "type" || kind == "charset" || kind == "engine" {
-				items = append(items, completer.Suggestion{Label: candidate.Text, Kind: kind, Score: score})
+				items = append(items, completer.Suggestion{Label: candidate.Text, Kind: kind, Score: completer.KindScore(kind)})
 			}
 		}
 		for _, name := range strings.Fields("bigint binary bit blob boolean char date datetime decimal double enum float int integer json mediumint numeric real set smallint text time timestamp tinyint varbinary varchar year") {
@@ -146,172 +131,71 @@ func mysqlCuratedSelectSuggestions(start, end int) []completer.Suggestion {
 	return result
 }
 
-func (d *Driver) InvalidateCompletionCatalog(connectionID string) {
-	mysqlCompletionCatalogCache.InvalidatePrefix(connectionID + ":")
-	mysqlSchemaIndexCache.InvalidatePrefix(connectionID + ":")
-}
-
-func buildMySQLCompletionCatalog(directory *metadata.Directory, objects []metadata.Object) (*mysqlcatalog.Catalog, error) {
-	native := mysqlcatalog.New()
-	created := make(map[string]bool)
-	for _, node := range directory.ScopeNodes() {
-		database := node.Path.Name("database")
-		if database == "" || created[database] {
-			continue
-		}
-		if err := execMySQLCatalog(native, "CREATE DATABASE "+mysqlCompletionQuoteIdent(database)); err != nil {
-			return nil, fmt.Errorf("prepare mysql database %q: %w", database, err)
-		}
-		created[database] = true
-	}
-	for _, object := range objects {
-		databaseName := object.Ref.Scope.Name("database")
-		if databaseName == "" {
-			continue
-		}
-		if !created[databaseName] {
-			if err := execMySQLCatalog(native, "CREATE DATABASE "+mysqlCompletionQuoteIdent(databaseName)); err != nil {
-				return nil, fmt.Errorf("prepare mysql database %q: %w", databaseName, err)
-			}
-			created[databaseName] = true
-		}
-		native.SetCurrentDatabase(databaseName)
-		statement := mysqlCompletionDDL(databaseName, object, false)
-		if statement == "" {
-			continue
-		}
-		if err := execMySQLCatalog(native, statement); err != nil && object.Relational != nil {
-			if fallbackErr := execMySQLCatalog(native, mysqlCompletionDDL(databaseName, object, true)); fallbackErr != nil {
-				return nil, fmt.Errorf("prepare mysql completion object %s.%s: %w", databaseName, object.Ref.Name, fallbackErr)
-			}
-		}
-	}
-	current := directory.DefaultScope.Name("database")
-	if current == "" {
-		for database := range created {
-			current = database
-			break
-		}
-	}
-	native.SetCurrentDatabase(current)
-	return native, nil
-}
-
-func execMySQLCatalog(catalog *mysqlcatalog.Catalog, sql string) error {
-	results, err := catalog.Exec(sql, nil)
-	if err != nil {
-		return err
-	}
-	for _, result := range results {
-		if result.Error != nil {
-			return result.Error
-		}
-	}
-	return nil
-}
-
-func mysqlCompletionDDL(databaseName string, object metadata.Object, fallbackTypes bool) string {
-	qualified := mysqlCompletionQuoteIdent(databaseName) + "." + mysqlCompletionQuoteIdent(object.Ref.Name)
-	switch object.Ref.Kind {
-	case "table":
-		return "CREATE TABLE " + qualified + " (" + mysqlCompletionColumns(object, fallbackTypes) + ")"
-	case "view":
-		return "CREATE VIEW " + qualified + " AS SELECT " + mysqlCompletionSelectColumns(object)
-	}
-	return ""
-}
-
-func mysqlCompletionColumns(object metadata.Object, fallbackTypes bool) string {
-	if object.Relational == nil || len(object.Relational.Columns) == 0 {
-		return mysqlCompletionQuoteIdent("__sqlwarden_placeholder") + " TEXT"
-	}
-	columns := make([]string, 0, len(object.Relational.Columns))
-	for _, column := range object.Relational.Columns {
-		dataType := strings.TrimSpace(column.DataType)
-		if fallbackTypes || dataType == "" || !mysqlSafeType.MatchString(dataType) {
-			dataType = "TEXT"
-		}
-		columns = append(columns, mysqlCompletionQuoteIdent(column.Name)+" "+dataType)
-	}
-	return strings.Join(columns, ", ")
-}
-
-func mysqlCompletionSelectColumns(object metadata.Object) string {
-	if object.Relational == nil || len(object.Relational.Columns) == 0 {
-		return "NULL AS " + mysqlCompletionQuoteIdent("__sqlwarden_placeholder")
-	}
-	columns := make([]string, 0, len(object.Relational.Columns))
-	for _, column := range object.Relational.Columns {
-		columns = append(columns, "NULL AS "+mysqlCompletionQuoteIdent(column.Name))
-	}
-	return strings.Join(columns, ", ")
-}
-
-func mysqlCandidateKind(candidateType mysqlcompletion.CandidateType) (string, int) {
+func mysqlCandidateKind(candidateType mysqlcompletion.CandidateType) string {
 	switch candidateType {
 	case mysqlcompletion.CandidateColumn:
-		return "column", 100
+		return "column"
 	case mysqlcompletion.CandidateDatabase:
-		return "database", 90
+		return "database"
 	case mysqlcompletion.CandidateTable:
-		return "table", 80
+		return "table"
 	case mysqlcompletion.CandidateView:
-		return "view", 75
+		return "view"
 	case mysqlcompletion.CandidateFunction:
-		return "function", 60
+		return "function"
 	case mysqlcompletion.CandidateProcedure:
-		return "procedure", 58
+		return "procedure"
 	case mysqlcompletion.CandidateIndex:
-		return "index", 55
+		return "index"
 	case mysqlcompletion.CandidateTrigger:
-		return "trigger", 54
+		return "trigger"
 	case mysqlcompletion.CandidateEvent:
-		return "event", 53
+		return "event"
 	case mysqlcompletion.CandidateEngine:
-		return "engine", 45
+		return "engine"
 	case mysqlcompletion.CandidateCharset:
-		return "charset", 45
+		return "charset"
 	case mysqlcompletion.CandidateType_:
-		return "type", 35
+		return "type"
 	case mysqlcompletion.CandidateKeyword:
-		return "keyword", 40
+		return "keyword"
 	default:
-		return "text", 20
+		return "text"
 	}
 }
 
-func mysqlCoreCandidateKind(candidateType completioncore.CandidateType) (string, int) {
+func mysqlCoreCandidateKind(candidateType completioncore.CandidateType) string {
 	switch candidateType {
 	case completioncore.CandidateColumn:
-		return "column", 100
+		return "column"
 	case completioncore.CandidateTable:
-		return "table", 90
+		return "table"
 	case completioncore.CandidateView:
-		return "view", 85
+		return "view"
 	case completioncore.CandidateDatabase:
 		// Prefer relations in ordinary unqualified slots. Database names remain
 		// available for explicit qualification and prefix matching.
-		return "database", 70
+		return "database"
 	case completioncore.CandidateFunction:
-		return "function", 60
+		return "function"
 	case completioncore.CandidateProcedure:
-		return "procedure", 58
+		return "procedure"
 	case completioncore.CandidateIndex:
-		return "index", 55
+		return "index"
 	case completioncore.CandidateTrigger:
-		return "trigger", 54
+		return "trigger"
 	case completioncore.CandidateEvent:
-		return "event", 53
+		return "event"
 	case completioncore.CandidateEngine:
-		return "engine", 45
+		return "engine"
 	case completioncore.CandidateCharset:
-		return "charset", 45
+		return "charset"
 	case completioncore.CandidateTypeName:
-		return "type", 35
+		return "type"
 	case completioncore.CandidateKeyword:
-		return "keyword", 40
+		return "keyword"
 	default:
-		return "text", 20
+		return "text"
 	}
 }
 
@@ -349,13 +233,6 @@ func isSafeMySQLIdentifier(identifier string) bool {
 
 func isMySQLIdentifierStart(c byte) bool {
 	return (c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z') || c == '_'
-}
-
-func mysqlCompletionCatalogKey(connectionID, version string) string {
-	if connectionID == "" || version == "" {
-		return ""
-	}
-	return connectionID + ":" + version
 }
 
 func mysqlCompletionReplaceStart(sql string, cursor int) int {

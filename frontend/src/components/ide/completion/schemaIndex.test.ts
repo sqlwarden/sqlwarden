@@ -18,8 +18,9 @@ function indexResponse() {
     JSON.stringify({
       version: 'snap-1',
       default_schema: 'public',
+      search_schemas: ['public'],
       schemas: ['public'],
-      objects: [{ schema: 'public', name: 'orders', kind: 'table' }],
+      objects: [{ schema: 'public', name: 'orders', kind: 'table', score: 90 }],
       columns: [
         { schema: 'public', table: 'orders', name: 'id', type: 'int8', nullable: false },
         { schema: 'public', table: 'orders', name: 'total', type: 'numeric', nullable: true },

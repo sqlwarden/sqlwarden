@@ -28,6 +28,9 @@ import (
 // container started in TestMain.
 var testDSN string
 
+// testSysDSN is a go-ora URL for the SYSTEM account of the same container.
+var testSysDSN string
+
 // oracleITSchema is the APP_USER created by the gvenzl image; Oracle folds the
 // unquoted name to upper case, so every scope in these tests uses "WARDEN".
 const oracleITSchema = "WARDEN"
@@ -77,14 +80,14 @@ func TestMain(m *testing.M) {
 	}
 
 	testDSN = fmt.Sprintf("oracle://%s:%s@%s:%s/%s", appUser, appPassword, host, mapped.Port(), service)
-	sysDSN := fmt.Sprintf("oracle://system:%s@%s:%s/%s", sysPassword, host, mapped.Port(), service)
+	testSysDSN = fmt.Sprintf("oracle://system:%s@%s:%s/%s", sysPassword, host, mapped.Port(), service)
 
 	// RESOURCE (granted to APP_USER by the image) covers tables, sequences and
 	// PL/SQL, but not views, materialized views, or the V$ fixed views that
 	// DBMS_XPLAN.DISPLAY_CURSOR (EXPLAIN ANALYZE) reads. Grant those so every
 	// schema object kind the inspector reports can be created from the tests
 	// and the analyze-mode explain plan can be resolved.
-	if err := grantPrivileges(ctx, sysDSN, appUser); err != nil {
+	if err := grantPrivileges(ctx, testSysDSN, appUser); err != nil {
 		fmt.Fprintf(os.Stderr, "grant privileges: %v\n", err)
 		_ = container.Terminate(ctx)
 		os.Exit(1)

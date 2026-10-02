@@ -41,7 +41,7 @@ import {
 } from './rank'
 import { completionTheme, renderCompletionRow, type IconMap } from './render'
 import { decideCompletionPath, resolveLocalCompletions } from './resolve'
-import { getCompletionIndex } from './schemaIndex'
+import { getCompletionIndex, invalidateCompletionIndex } from './schemaIndex'
 import { loadVocabulary, normalizedDriver } from './vocabularyCache'
 
 export type SQLCompletionConfig = {
@@ -161,8 +161,9 @@ export function remoteSQLCompletionSource(config: SQLCompletionConfig): Completi
     const automaticTrigger = context.explicit
       ? undefined
       : automaticSQLCompletionTrigger(source, context.pos)
-    const supportsSemanticCompletion =
-      findFrontendEngine(normalizedDriver(config.driver))?.semanticCompletion === true
+    const engine = findFrontendEngine(normalizedDriver(config.driver))
+    const engineDialect = engine?.dialect
+    const supportsSemanticCompletion = engine?.semanticCompletion === true
     const hasRemote =
       supportsSemanticCompletion &&
       config.orgSlug !== undefined &&
@@ -182,7 +183,8 @@ export function remoteSQLCompletionSource(config: SQLCompletionConfig): Completi
     }
 
     const cursorContext = classifyCursorContext(source, context.pos)
-    if (cursorContext.protectedRegion) return null
+    const insideQuotedIdentifier = cursorContext.openQuotedIdentifier
+    if (cursorContext.protectedRegion && !insideQuotedIdentifier) return null
 
     // Warm both client-side sources without blocking; both are memoised so a
     // repeat completion in the same session issues no extra round trip.
@@ -192,7 +194,8 @@ export function remoteSQLCompletionSource(config: SQLCompletionConfig): Completi
     // Vocabulary is a last-resort prefix lookup, not a context-free menu.
     // In particular, Ctrl+Space at an empty prefix must not dump every dialect
     // keyword and function into an otherwise precise semantic result.
-    const shouldCompleteLexically = prefix.length >= 2 || (context.explicit && prefix.length > 0)
+    const shouldCompleteLexically =
+      !insideQuotedIdentifier && (prefix.length >= 2 || (context.explicit && prefix.length > 0))
     // A broad result from a semantic boundary (for example "HAVING ") may be
     // capped before the typed identifier exists. Re-run semantic completion
     // for a settled prefix instead of fuzzy-filtering that incomplete result.
@@ -221,7 +224,7 @@ export function remoteSQLCompletionSource(config: SQLCompletionConfig): Completi
     const localHint = positionHint(cursorContext.positionClass)
 
     const from = word?.from ?? context.pos
-    const resolvedLocal = index ? resolveLocalCompletions(cursorContext, index) : []
+    const resolvedLocal = index ? resolveLocalCompletions(cursorContext, index, engineDialect) : []
     const localRanked = rankSuggestions(
       resolvedLocal.map((suggestion) => ({
         ...suggestion,
@@ -255,7 +258,10 @@ export function remoteSQLCompletionSource(config: SQLCompletionConfig): Completi
 
     const wantBackend =
       hasRemote &&
-      (context.explicit || automaticTrigger !== undefined || shouldRetrySemanticIdentifier)
+      (context.explicit ||
+        automaticTrigger !== undefined ||
+        shouldRetrySemanticIdentifier ||
+        insideQuotedIdentifier)
 
     // A warm local index answers relation and keyword positions completely, so
     // an explicit invoke there skips the round trip. Column and qualified
@@ -286,6 +292,9 @@ export function remoteSQLCompletionSource(config: SQLCompletionConfig): Completi
         context.explicit ? 'invoked' : 'automatic',
         automaticTrigger,
       )
+      // The server loaded metadata regardless of whether this response is
+      // still wanted, so the index must refresh even for a superseded request.
+      if (result.metadata_loaded) invalidateCompletionIndex(config.connectionId!)
       if (context.aborted || controller.signal.aborted || generation !== remoteGeneration)
         return null
       const remoteFrom = result.suggestions[0]?.replace_start ?? from
@@ -315,12 +324,16 @@ export function remoteSQLCompletionSource(config: SQLCompletionConfig): Completi
         // with. The 150 ms activation delay and cancellation coalesce normal
         // typing while still letting the backend rank against the new prefix.
         validFor: (text) => text === prefix,
+        // Inside an open quoted identifier the replace range starts at the
+        // quote, which CodeMirror's own fuzzy filter would match against the
+        // bare label and drop every row the backend already ranked.
+        filter: !insideQuotedIdentifier,
       }
     } catch (_error) {
       if (controller.signal.aborted || context.aborted || generation !== remoteGeneration)
         return null
       if (local.length > 0) return localResult(local)
-      return localKeywords(context)
+      return insideQuotedIdentifier ? null : localKeywords(context)
     } finally {
       if (activeRemoteController === controller) {
         activeRemoteController = undefined

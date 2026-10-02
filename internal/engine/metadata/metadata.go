@@ -229,8 +229,7 @@ type ForeignKey struct {
 	Attributes        map[string]any `json:"attributes,omitempty"`
 }
 
-// SecondaryIndex is a database index on a relational object. The explicit
-// name distinguishes it from Index, the prepared schema metadata lookup.
+// SecondaryIndex is a database index on a relational object.
 type SecondaryIndex struct {
 	Name       string         `json:"name"`
 	Columns    []string       `json:"columns"`

@@ -79,6 +79,10 @@ type Tree struct {
 	Root          Node            `json:"root"`
 	Nodes         map[string]Node `json:"nodes"`
 	SystemObjects bool            `json:"system_objects"`
+	// FallbackScopes names scopes searched, in order, after the default scope
+	// for unqualified names: siblings of a default scope, or children of a
+	// default scope that holds a single scope kind.
+	FallbackScopes []string `json:"fallback_scopes,omitempty"`
 }
 
 var KnownIcons = map[string]bool{
@@ -200,7 +204,7 @@ func (t Tree) Validate() error {
 }
 
 func (t Tree) clone() Tree {
-	out := Tree{Root: cloneNode(t.Root), Nodes: make(map[string]Node, len(t.Nodes)), SystemObjects: t.SystemObjects}
+	out := Tree{Root: cloneNode(t.Root), Nodes: make(map[string]Node, len(t.Nodes)), SystemObjects: t.SystemObjects, FallbackScopes: slices.Clone(t.FallbackScopes)}
 	for kind, node := range t.Nodes {
 		out.Nodes[kind] = cloneNode(node)
 	}

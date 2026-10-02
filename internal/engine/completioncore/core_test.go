@@ -6,16 +6,13 @@ import (
 	"time"
 
 	"github.com/sqlwarden/internal/engine/metadata"
+	"github.com/sqlwarden/internal/engine/metadata/metadatatest"
 )
 
-func TestSchemaResolverAdaptsIndexMetadata(t *testing.T) {
+func TestSchemaResolverAdaptsViewMetadata(t *testing.T) {
 	root := metadata.NewScopePath(metadata.ScopeSegment{Kind: "database", Name: "app"})
 	public := root.Child(metadata.ScopeSegment{Kind: "schema", Name: "public"})
 	reporting := root.Child(metadata.ScopeSegment{Kind: "schema", Name: "reporting"})
-	directory := &metadata.Directory{
-		Engine: "postgres", DefaultScope: reporting,
-		Roots: []metadata.ScopeNode{{Path: root, Children: []metadata.ScopeNode{{Path: public}, {Path: reporting}}}},
-	}
 	objects := []metadata.Object{{
 		Ref: metadata.ObjectRef{Scope: reporting, Kind: "view", Name: "Daily Sales"},
 		Relational: &metadata.RelationalDetail{Columns: []metadata.Column{{
@@ -27,8 +24,10 @@ func TestSchemaResolverAdaptsIndexMetadata(t *testing.T) {
 		}},
 	}}
 
-	index := metadata.NewIndex(metadata.MetadataSet{Directory: directory, Objects: objects, Version: "v1"})
-	resolver := NewSchemaResolver(index, "reporting")
+	view := metadatatest.Build(metadatatest.Tree(true), metadatatest.Fixture{
+		DefaultScope: reporting, Scopes: []metadata.ScopePath{public, reporting}, Objects: objects,
+	})
+	resolver := NewSchemaResolver(view, "reporting")
 	if resolver.DefaultDatabase() != "app" || resolver.DefaultSchema() != "reporting" {
 		t.Fatalf("unexpected defaults: %q %q", resolver.DefaultDatabase(), resolver.DefaultSchema())
 	}
@@ -52,15 +51,14 @@ func TestSchemaResolverAdaptsIndexMetadata(t *testing.T) {
 
 func TestSchemaResolverDefaultAndMySQLNamespaceFallbacks(t *testing.T) {
 	scope := metadata.NewScopePath(metadata.ScopeSegment{Kind: "database", Name: "sakila"})
-	directory := &metadata.Directory{Engine: "mysql", DefaultScope: scope, Roots: []metadata.ScopeNode{{Path: scope}}}
 	objects := []metadata.Object{{
 		Ref: metadata.ObjectRef{Scope: scope, Kind: "table", Name: "film"},
 		Relational: &metadata.RelationalDetail{Columns: []metadata.Column{{
 			Name: "film_id", DataType: "smallint",
 		}}},
 	}}
-	index := metadata.NewIndex(metadata.MetadataSet{Directory: directory, Objects: objects})
-	resolver := NewSchemaResolver(index, "")
+	view := metadatatest.Build(metadatatest.Tree(false), metadatatest.Fixture{DefaultScope: scope, Objects: objects})
+	resolver := NewSchemaResolver(view, "")
 	if _, ok := resolver.FindRelation("", "", "film"); !ok {
 		t.Fatal("MySQL database-as-namespace fallback did not resolve film")
 	}

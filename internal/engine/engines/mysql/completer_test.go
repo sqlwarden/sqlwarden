@@ -8,6 +8,7 @@ import (
 	"github.com/sqlwarden/internal/engine/completer"
 	"github.com/sqlwarden/internal/engine/completioncore"
 	"github.com/sqlwarden/internal/engine/metadata"
+	"github.com/sqlwarden/internal/engine/metadata/metadatatest"
 )
 
 func TestMySQLCompleteKeywordsAndSchema(t *testing.T) {
@@ -20,12 +21,11 @@ func TestMySQLCompleteKeywordsAndSchema(t *testing.T) {
 	}
 	requireMySQLCompletion(t, keywordResult, "SELECT", "keyword")
 
-	catalog := mysqlCompletionTestCatalog()
-	objects := mysqlCompletionTestObjects()
+	view := mysqlCompletionTestView()
 	sql := "SELECT  FROM users"
 	result, err := driver.Complete(context.Background(), completer.Request{
 		SQL: sql, CursorOffset: len("SELECT "),
-		Schema:       &metadata.MetadataSet{Directory: catalog, Objects: objects, Version: "snapshot-1"},
+		Metadata:     view,
 		ConnectionID: "8",
 	})
 	if err != nil {
@@ -36,7 +36,7 @@ func TestMySQLCompleteKeywordsAndSchema(t *testing.T) {
 	fromSQL := "SELECT * FROM "
 	result, err = driver.Complete(context.Background(), completer.Request{
 		SQL: fromSQL, CursorOffset: len(fromSQL),
-		Schema: &metadata.MetadataSet{Directory: catalog, Objects: objects},
+		Metadata: view,
 	})
 	if err != nil {
 		t.Fatal(err)
@@ -49,13 +49,11 @@ func TestMySQLCompleteKeywordsAndSchema(t *testing.T) {
 
 func TestMySQLCompleteClassifiesCursorContext(t *testing.T) {
 	driver := &Driver{}
-	catalog := mysqlCompletionTestCatalog()
-	objects := mysqlCompletionTestObjects()
-	schema := &metadata.MetadataSet{Directory: catalog, Objects: objects}
+	view := mysqlCompletionTestView()
 
 	fromSQL := "SELECT * FROM "
 	result, err := driver.Complete(context.Background(), completer.Request{
-		SQL: fromSQL, CursorOffset: len(fromSQL), Schema: schema,
+		SQL: fromSQL, CursorOffset: len(fromSQL), Metadata: view,
 	})
 	if err != nil {
 		t.Fatal(err)
@@ -66,7 +64,7 @@ func TestMySQLCompleteClassifiesCursorContext(t *testing.T) {
 
 	keywordSQL := "SELECT * FROM users "
 	result, err = driver.Complete(context.Background(), completer.Request{
-		SQL: keywordSQL, CursorOffset: len(keywordSQL), Schema: schema,
+		SQL: keywordSQL, CursorOffset: len(keywordSQL), Metadata: view,
 	})
 	if err != nil {
 		t.Fatal(err)
@@ -99,13 +97,12 @@ func TestMySQLCompletionQuotesReservedIdentifier(t *testing.T) {
 
 func TestMySQLCompleteCuratesCompletedRelationContext(t *testing.T) {
 	driver := &Driver{}
-	catalog := mysqlCompletionTestCatalog()
-	objects := mysqlCompletionTestObjects()
+	view := mysqlCompletionTestView()
 
 	sql := "SELECT * FROM users "
 	result, err := driver.Complete(context.Background(), completer.Request{
 		SQL: sql, CursorOffset: len(sql),
-		Schema:      &metadata.MetadataSet{Directory: catalog, Objects: objects},
+		Metadata:    view,
 		TriggerKind: completer.TriggerInvoked,
 	})
 	if err != nil {
@@ -121,7 +118,7 @@ func TestMySQLCompleteCuratesCompletedRelationContext(t *testing.T) {
 	joinedSQL := "SELECT * FROM users u JOIN `Order Items` oi "
 	result, err = driver.Complete(context.Background(), completer.Request{
 		SQL: joinedSQL, CursorOffset: len(joinedSQL),
-		Schema:      &metadata.MetadataSet{Directory: catalog, Objects: objects},
+		Metadata:    view,
 		TriggerKind: completer.TriggerInvoked,
 	})
 	if err != nil {
@@ -135,8 +132,7 @@ func TestMySQLCompleteCuratesCompletedRelationContext(t *testing.T) {
 
 func TestMySQLCompleteUsesStatementAtCursor(t *testing.T) {
 	driver := &Driver{}
-	catalog := mysqlCompletionTestCatalog()
-	objects := mysqlCompletionTestObjects()
+	view := mysqlCompletionTestView()
 	sql := `select s.first_name, s.last_name, a.address from staff s
 join store st
 on s.staff_id = st.manager_staff_id
@@ -146,7 +142,7 @@ on a.address_id = s.address_id;
 select * from `
 	result, err := driver.Complete(context.Background(), completer.Request{
 		SQL: sql, CursorOffset: len(sql),
-		Schema:      &metadata.MetadataSet{Directory: catalog, Objects: objects},
+		Metadata:    view,
 		TriggerKind: completer.TriggerAutomatic,
 		TriggerChar: " ",
 	})
@@ -158,8 +154,7 @@ select * from `
 
 func TestMySQLCompleteRecoversNewSelectWithoutSemicolon(t *testing.T) {
 	driver := &Driver{}
-	catalog := mysqlCompletionTestCatalog()
-	objects := mysqlCompletionTestObjects()
+	view := mysqlCompletionTestView()
 	sql := `select s.first_name, s.last_name, a.address from staff s
 join store st
 on s.staff_id = st.manager_staff_id
@@ -171,7 +166,7 @@ select * from actor
 select * from `
 	result, err := driver.Complete(context.Background(), completer.Request{
 		SQL: sql, CursorOffset: len(sql),
-		Schema:      &metadata.MetadataSet{Directory: catalog, Objects: objects},
+		Metadata:    view,
 		TriggerKind: completer.TriggerAutomatic,
 		TriggerChar: " ",
 	})
@@ -183,7 +178,6 @@ select * from `
 
 func TestMySQLCompleteRespectsQualifiedAliasesAndJoinConflicts(t *testing.T) {
 	driver := &Driver{}
-	catalog := mysqlCompletionTestCatalog()
 	objects := []metadata.Object{
 		{
 			Ref: metadata.ObjectRef{Scope: mysqlCompletionTestScope(), Kind: "table", Name: "inventory"},
@@ -198,12 +192,12 @@ func TestMySQLCompleteRespectsQualifiedAliasesAndJoinConflicts(t *testing.T) {
 			}},
 		},
 	}
-	catalog.Roots[0].Groups[0].Objects = []metadata.ObjectRef{objects[0].Ref, objects[1].Ref}
+	view := mysqlCompletionTestViewOf(objects)
 
 	qualifiedSQL := "SELECT * FROM inventory i JOIN store s ON i.id = s.id WHERE s."
 	qualified, err := driver.Complete(context.Background(), completer.Request{
 		SQL: qualifiedSQL, CursorOffset: len(qualifiedSQL),
-		Schema: &metadata.MetadataSet{Directory: catalog, Objects: objects},
+		Metadata: view,
 	})
 	if err != nil {
 		t.Fatal(err)
@@ -214,7 +208,7 @@ func TestMySQLCompleteRespectsQualifiedAliasesAndJoinConflicts(t *testing.T) {
 	unqualifiedSQL := "SELECT * FROM inventory i JOIN store s ON i.id = s.id WHERE "
 	unqualified, err := driver.Complete(context.Background(), completer.Request{
 		SQL: unqualifiedSQL, CursorOffset: len(unqualifiedSQL),
-		Schema: &metadata.MetadataSet{Directory: catalog, Objects: objects},
+		Metadata: view,
 	})
 	if err != nil {
 		t.Fatal(err)
@@ -225,7 +219,6 @@ func TestMySQLCompleteRespectsQualifiedAliasesAndJoinConflicts(t *testing.T) {
 
 func TestMySQLCompleteUsesFinalAliasAfterEarlierQualifiedColumn(t *testing.T) {
 	driver := &Driver{}
-	catalog := mysqlCompletionTestCatalog()
 	objects := []metadata.Object{
 		{
 			Ref: metadata.ObjectRef{Scope: mysqlCompletionTestScope(), Kind: "table", Name: "film"},
@@ -242,12 +235,12 @@ func TestMySQLCompleteUsesFinalAliasAfterEarlierQualifiedColumn(t *testing.T) {
 			}},
 		},
 	}
-	catalog.Roots[0].Groups[0].Objects = []metadata.ObjectRef{objects[0].Ref, objects[1].Ref}
+	view := mysqlCompletionTestViewOf(objects)
 
 	sql := "select * from film f\njoin film_actor fa\nwhere f.`description` = fa."
 	result, err := driver.Complete(context.Background(), completer.Request{
 		SQL: sql, CursorOffset: len(sql),
-		Schema:      &metadata.MetadataSet{Directory: catalog, Objects: objects},
+		Metadata:    view,
 		TriggerKind: completer.TriggerAutomatic,
 		TriggerChar: ".",
 	})
@@ -352,9 +345,7 @@ func TestMySQLCompleteSelectAliasesByClause(t *testing.T) {
 
 func TestMySQLCompleteInsideStandaloneCTE(t *testing.T) {
 	driver := &Driver{}
-	set := &metadata.MetadataSet{
-		Directory: mysqlCompletionTestCatalog(), Objects: mysqlCompletionTestObjects(),
-	}
+	view := mysqlCompletionTestView()
 	for _, trigger := range []completer.TriggerKind{completer.TriggerAutomatic, completer.TriggerInvoked} {
 		for _, suffix := range []string{"", "\n-- block\n-- SELECT\n-- FROM users\n-- block"} {
 			name := string(trigger)
@@ -366,7 +357,7 @@ func TestMySQLCompleteInsideStandaloneCTE(t *testing.T) {
 				cursor := strings.IndexByte(template, '|')
 				sql := strings.Replace(template, "|", "", 1)
 				result, err := driver.Complete(context.Background(), completer.Request{
-					SQL: sql, CursorOffset: cursor, TriggerKind: trigger, Schema: set,
+					SQL: sql, CursorOffset: cursor, TriggerKind: trigger, Metadata: view,
 				})
 				if err != nil {
 					t.Fatal(err)
@@ -380,15 +371,13 @@ func TestMySQLCompleteInsideStandaloneCTE(t *testing.T) {
 
 func TestMySQLCompleteCTERelationsAndProjectedColumns(t *testing.T) {
 	driver := &Driver{}
-	set := &metadata.MetadataSet{
-		Directory: mysqlCompletionTestCatalog(), Objects: mysqlCompletionTestObjects(),
-	}
+	view := mysqlCompletionTestView()
 	for _, trigger := range []completer.TriggerKind{completer.TriggerAutomatic, completer.TriggerInvoked} {
 		for _, prefix := range []string{"", "pic"} {
 			t.Run(string(trigger)+"/relation/"+prefix, func(t *testing.T) {
 				sql := "WITH picked AS (SELECT id, `display name` AS amt FROM users) SELECT * FROM " + prefix
 				result, err := driver.Complete(context.Background(), completer.Request{
-					SQL: sql, CursorOffset: len(sql), TriggerKind: trigger, Schema: set,
+					SQL: sql, CursorOffset: len(sql), TriggerKind: trigger, Metadata: view,
 				})
 				if err != nil {
 					t.Fatal(err)
@@ -402,7 +391,7 @@ func TestMySQLCompleteCTERelationsAndProjectedColumns(t *testing.T) {
 	cursor := strings.IndexByte(template, '|')
 	sql := strings.Replace(template, "|", "", 1)
 	result, err := driver.Complete(context.Background(), completer.Request{
-		SQL: sql, CursorOffset: cursor, TriggerKind: completer.TriggerInvoked, Schema: set,
+		SQL: sql, CursorOffset: cursor, TriggerKind: completer.TriggerInvoked, Metadata: view,
 	})
 	if err != nil {
 		t.Fatal(err)
@@ -413,12 +402,11 @@ func TestMySQLCompleteCTERelationsAndProjectedColumns(t *testing.T) {
 }
 
 func TestMySQLCompleteDoesNotEchoUnknownRelationPrefix(t *testing.T) {
-	directory := mysqlCompletionTestCatalog()
-	objects := mysqlCompletionTestObjects()
+	view := mysqlCompletionTestView()
 	sql := "SELECT * FROM veraxasdwadqwd"
 	result, err := (&Driver{}).Complete(context.Background(), completer.Request{
 		SQL: sql, CursorOffset: len(sql),
-		Schema: &metadata.MetadataSet{Directory: directory, Objects: objects},
+		Metadata: view,
 	})
 	if err != nil {
 		t.Fatal(err)
@@ -428,8 +416,7 @@ func TestMySQLCompleteDoesNotEchoUnknownRelationPrefix(t *testing.T) {
 
 func TestMySQLCompletionContextMatrix(t *testing.T) {
 	driver := &Driver{}
-	directory := mysqlCompletionTestCatalog()
-	metadata := &metadata.MetadataSet{Directory: directory, Objects: mysqlCompletionTestObjects()}
+	view := mysqlCompletionTestView()
 	tests := []struct {
 		name           string
 		sql            string
@@ -465,7 +452,7 @@ func TestMySQLCompletionContextMatrix(t *testing.T) {
 			cursor := strings.IndexByte(test.sql, '|')
 			sql := strings.Replace(test.sql, "|", "", 1)
 			result, err := driver.Complete(context.Background(), completer.Request{
-				SQL: sql, CursorOffset: cursor, Schema: metadata,
+				SQL: sql, CursorOffset: cursor, Metadata: view,
 			})
 			if err != nil {
 				t.Fatal(err)
@@ -483,21 +470,14 @@ func TestMySQLCompletionContextMatrix(t *testing.T) {
 	}
 }
 
-func mysqlCompletionTestCatalog() *metadata.Directory {
-	scope := mysqlCompletionTestScope()
-	return &metadata.Directory{
-		Engine: "mysql", DefaultScope: scope,
-		Roots: []metadata.ScopeNode{{
-			Path: scope,
-			Groups: []metadata.ObjectGroup{{
-				Kind: "table",
-				Objects: []metadata.ObjectRef{
-					{Scope: scope, Kind: "table", Name: "users"},
-					{Scope: scope, Kind: "table", Name: "Order Items"},
-				},
-			}},
-		}},
-	}
+func mysqlCompletionTestView() *metadata.CompletionView {
+	return mysqlCompletionTestViewOf(mysqlCompletionTestObjects())
+}
+
+func mysqlCompletionTestViewOf(objects []metadata.Object) *metadata.CompletionView {
+	return metadatatest.Build((&Driver{}).Tree(), metadatatest.Fixture{
+		DefaultScope: mysqlCompletionTestScope(), Objects: objects,
+	})
 }
 
 func mysqlCompletionTestObjects() []metadata.Object {
@@ -558,5 +538,24 @@ func requireNoMySQLSuggestionKinds(t *testing.T, result completer.Result, kinds 
 		if excluded[suggestion.Kind] {
 			t.Fatalf("unexpected %s completion %q in %+v", suggestion.Kind, suggestion.Label, result.Suggestions)
 		}
+	}
+}
+
+func TestMySQLCompleteQualifiesRelationsWithoutDefaultScope(t *testing.T) {
+	driver := &Driver{}
+	shop := metadata.NewScopePath(metadata.ScopeSegment{Kind: "database", Name: "shop"})
+	view := metadatatest.Build(driver.Tree(), metadatatest.Fixture{
+		Refs: []metadata.ObjectRef{{Scope: shop, Kind: "table", Name: "Order Items"}},
+	})
+	sql := "SELECT * FROM "
+	result, err := driver.Complete(context.Background(), completer.Request{
+		SQL: sql, CursorOffset: len(sql), Metadata: view,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	got := requireMySQLCompletion(t, result, "Order Items", "table")
+	if got.InsertText != "shop.`Order Items`" {
+		t.Fatalf("insert text = %q", got.InsertText)
 	}
 }

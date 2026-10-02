@@ -4,7 +4,7 @@ import {
 } from '#/lib/api/queries/database'
 import type { SQLCompletionConfig } from './source'
 
-export type IndexedObject = { schema: string; name: string; kind: string }
+export type IndexedObject = { schema: string; name: string; kind: string; score: number }
 export type IndexedColumn = {
   schema: string
   table: string
@@ -15,6 +15,9 @@ export type IndexedColumn = {
 export type CompletionIndex = {
   version: string
   defaultSchema: string
+  searchSchemas: string[]
+  defaultScopeRelationsListed: boolean
+  columnScore: number
   schemas: string[]
   objects: IndexedObject[]
   columnsByTable: Map<string, IndexedColumn[]>
@@ -60,8 +63,16 @@ function buildIndex(payload: SQLCompletionIndexResponse): CompletionIndex {
   return {
     version: payload.version,
     defaultSchema: payload.default_schema,
+    searchSchemas: payload.search_schemas,
+    defaultScopeRelationsListed: payload.default_scope_relations_listed,
+    columnScore: payload.column_score,
     schemas: payload.schemas,
-    objects: payload.objects.map((o) => ({ schema: o.schema, name: o.name, kind: o.kind })),
+    objects: payload.objects.map((o) => ({
+      schema: o.schema,
+      name: o.name,
+      kind: o.kind,
+      score: o.score,
+    })),
     columnsByTable,
     allColumns,
   }

@@ -16,11 +16,13 @@ import {
   remoteSQLCompletionSource,
   sqlCompletionExtension,
 } from './index'
+import * as schemaIndex from './schemaIndex'
 import { MySQL, PostgreSQL, SQLite, StandardSQL } from '@codemirror/lang-sql'
 
 afterEach(() => {
   clearSQLCompletionCaches()
   vi.unstubAllGlobals()
+  vi.restoreAllMocks()
 })
 
 describe('SQL completion', () => {
@@ -77,6 +79,43 @@ describe('SQL completion', () => {
       type: 'table',
       boost: 5080,
     })
+  })
+
+  it('invalidates the completion index when the server loaded metadata', async () => {
+    const spy = vi.spyOn(schemaIndex, 'invalidateCompletionIndex')
+    const fetchMock = vi.fn(async (input: RequestInfo | URL) => {
+      if (String(input).includes('completion-vocabulary')) return vocabularyResponse()
+      return new Response(
+        JSON.stringify({
+          suggestions: [
+            {
+              label: 'orders',
+              kind: 'table',
+              insert_text: 'orders',
+              replace_start: 14,
+              replace_end: 14,
+              score: 80,
+            },
+          ],
+          mode: 'ephemeral',
+          metadata_available: true,
+          metadata_status: 'partial',
+          metadata_loaded: true,
+        }),
+        { status: 200, headers: { 'Content-Type': 'application/json' } },
+      )
+    })
+    vi.stubGlobal('fetch', fetchMock)
+    const state = EditorState.create({ doc: 'SELECT * FROM ' })
+    const source = remoteSQLCompletionSource({
+      orgSlug: 'acme',
+      workspaceId: 1,
+      connectionId: 2,
+      driver: 'postgres',
+    })
+    const result = await source(new CompletionContext(state, state.doc.length, true))
+    expect(result?.options.some((option) => option.label === 'orders')).toBe(true)
+    expect(spy).toHaveBeenCalledWith(2)
   })
 
   it('issues the remote completion call for sqlite', async () => {
@@ -387,8 +426,11 @@ describe('SQL completion', () => {
           JSON.stringify({
             version: 'v1',
             default_schema: 'main',
+            search_schemas: ['main'],
+            default_scope_relations_listed: true,
+            column_score: 100,
             schemas: ['main'],
-            objects: [{ schema: 'main', name: 'customers', kind: 'table' }],
+            objects: [{ schema: 'main', name: 'customers', kind: 'table', score: 90 }],
             columns: [],
           }),
           { status: 200, headers: { 'Content-Type': 'application/json' } },
@@ -1090,8 +1132,11 @@ SELECT * FROM customer_total_spent`
           JSON.stringify({
             version: 'v1',
             default_schema: 'public',
+            search_schemas: ['public'],
+            default_scope_relations_listed: true,
+            column_score: 100,
             schemas: ['public'],
-            objects: [{ schema: 'public', name: 'orders', kind: 'table' }],
+            objects: [{ schema: 'public', name: 'orders', kind: 'table', score: 90 }],
             columns: [],
           }),
           { status: 200, headers: { 'Content-Type': 'application/json' } },
@@ -1122,6 +1167,9 @@ SELECT * FROM customer_total_spent`
           JSON.stringify({
             version: 'v1',
             default_schema: 'public',
+            search_schemas: ['public'],
+            default_scope_relations_listed: true,
+            column_score: 100,
             schemas: [],
             objects: [],
             columns: [],
@@ -1172,8 +1220,11 @@ SELECT * FROM customer_total_spent`
           JSON.stringify({
             version: 'v1',
             default_schema: 'public',
+            search_schemas: ['public'],
+            default_scope_relations_listed: true,
+            column_score: 100,
             schemas: ['public'],
-            objects: [{ schema: 'public', name: 'orders', kind: 'table' }],
+            objects: [{ schema: 'public', name: 'orders', kind: 'table', score: 90 }],
             columns: [
               { schema: 'public', table: 'orders', name: 'total', type: 'numeric' },
               { schema: 'public', table: 'orders', name: 'token', type: 'text' },
@@ -1221,8 +1272,11 @@ SELECT * FROM customer_total_spent`
           JSON.stringify({
             version: 'v1',
             default_schema: 'public',
+            search_schemas: ['public'],
+            default_scope_relations_listed: true,
+            column_score: 100,
             schemas: ['public'],
-            objects: [{ schema: 'public', name: 'orders', kind: 'table' }],
+            objects: [{ schema: 'public', name: 'orders', kind: 'table', score: 90 }],
             columns: [{ schema: 'public', table: 'orders', name: 'total', type: 'numeric' }],
           }),
           { status: 200, headers: { 'Content-Type': 'application/json' } },
@@ -1256,6 +1310,165 @@ SELECT * FROM customer_total_spent`
     expect(semanticCallCount(fetchMock)).toBe(1)
   })
 
+  it('consults the backend for an automatic relation completion when the local index is empty', async () => {
+    const fetchMock = vi.fn(async (input: RequestInfo | URL) => {
+      if (String(input).includes('completion-index')) return emptyIndexResponse()
+      if (String(input).includes('completion-vocabulary')) return vocabularyResponse()
+      return semanticCompletionResponse([
+        {
+          label: 'orders',
+          kind: 'table',
+          insert_text: 'orders',
+          replace_start: 14,
+          replace_end: 14,
+          score: 80,
+        },
+      ])
+    })
+    vi.stubGlobal('fetch', fetchMock)
+    const source = remoteSQLCompletionSource({
+      orgSlug: 'acme',
+      workspaceId: 1,
+      connectionId: 2,
+      driver: 'postgres',
+    })
+    const state = EditorState.create({ doc: 'SELECT * FROM ' })
+    const result = await source(new CompletionContext(state, state.doc.length, false))
+
+    expect(result?.options.map((o) => o.label)).toContain('orders')
+    expect(semanticCallCount(fetchMock)).toBe(1)
+  })
+
+  it('consults the backend for an automatic qualified completion when the table has no indexed columns', async () => {
+    const fetchMock = vi.fn(async (input: RequestInfo | URL) => {
+      if (String(input).includes('completion-index')) {
+        return new Response(
+          JSON.stringify({
+            version: 'v1',
+            default_schema: 'public',
+            search_schemas: ['public'],
+            default_scope_relations_listed: true,
+            column_score: 100,
+            schemas: ['public'],
+            objects: [{ schema: 'public', name: 'orders', kind: 'table', score: 90 }],
+            columns: [],
+          }),
+          { status: 200, headers: { 'Content-Type': 'application/json' } },
+        )
+      }
+      if (String(input).includes('completion-vocabulary')) return vocabularyResponse()
+      return semanticCompletionResponse([
+        {
+          label: 'total',
+          kind: 'column',
+          insert_text: 'total',
+          replace_start: 9,
+          replace_end: 9,
+          score: 90,
+        },
+      ])
+    })
+    vi.stubGlobal('fetch', fetchMock)
+    const source = remoteSQLCompletionSource({
+      orgSlug: 'acme',
+      workspaceId: 1,
+      connectionId: 2,
+      driver: 'postgres',
+    })
+    const state = EditorState.create({ doc: 'SELECT o. FROM orders o' })
+    const result = await source(new CompletionContext(state, 9, false))
+
+    expect(result?.options.map((o) => o.label)).toContain('total')
+    expect(semanticCallCount(fetchMock)).toBe(1)
+  })
+
+  it('consults the backend for an explicit relation completion when the index lacks the typed object', async () => {
+    const fetchMock = vi.fn(async (input: RequestInfo | URL) => {
+      if (String(input).includes('completion-index')) {
+        return new Response(
+          JSON.stringify({
+            version: 'v1',
+            default_schema: 'public',
+            search_schemas: ['public'],
+            default_scope_relations_listed: true,
+            column_score: 100,
+            schemas: ['public'],
+            objects: [{ schema: 'public', name: 'orders', kind: 'table', score: 90 }],
+            columns: [],
+          }),
+          { status: 200, headers: { 'Content-Type': 'application/json' } },
+        )
+      }
+      if (String(input).includes('completion-vocabulary')) return vocabularyResponse()
+      return semanticCompletionResponse([
+        {
+          label: 'zebras',
+          kind: 'table',
+          insert_text: 'zebras',
+          replace_start: 14,
+          replace_end: 17,
+          score: 80,
+        },
+      ])
+    })
+    vi.stubGlobal('fetch', fetchMock)
+    const source = remoteSQLCompletionSource({
+      orgSlug: 'acme',
+      workspaceId: 1,
+      connectionId: 2,
+      driver: 'postgres',
+    })
+    const state = EditorState.create({ doc: 'SELECT * FROM zeb' })
+    const result = await source(new CompletionContext(state, state.doc.length, true))
+
+    expect(result?.options.map((o) => o.label)).toContain('zebras')
+    expect(semanticCallCount(fetchMock)).toBe(1)
+  })
+
+  it('invalidates the completion index even when the metadata-loading response was superseded', async () => {
+    const spy = vi.spyOn(schemaIndex, 'invalidateCompletionIndex')
+    let releaseFirst: (response: Response) => void = () => {}
+    let semanticCalls = 0
+    const fetchMock = vi.fn(async (input: RequestInfo | URL) => {
+      if (String(input).includes('completion-index')) return emptyIndexResponse()
+      if (String(input).includes('completion-vocabulary')) return vocabularyResponse()
+      semanticCalls += 1
+      if (semanticCalls === 1) {
+        return new Promise<Response>((resolve) => {
+          releaseFirst = resolve
+        })
+      }
+      return semanticCompletionResponse([])
+    })
+    vi.stubGlobal('fetch', fetchMock)
+    const source = remoteSQLCompletionSource({
+      orgSlug: 'acme',
+      workspaceId: 1,
+      connectionId: 2,
+      driver: 'postgres',
+    })
+    const state = EditorState.create({ doc: 'SELECT * FROM ' })
+    const first = source(new CompletionContext(state, state.doc.length, true))
+    await vi.waitFor(() => expect(semanticCalls).toBe(1))
+    const second = source(new CompletionContext(state, state.doc.length, true))
+    await vi.waitFor(() => expect(semanticCalls).toBe(2))
+    releaseFirst(
+      new Response(
+        JSON.stringify({
+          suggestions: [],
+          mode: 'ephemeral',
+          metadata_available: true,
+          metadata_status: 'partial',
+          metadata_loaded: true,
+        }),
+        { status: 200, headers: { 'Content-Type': 'application/json' } },
+      ),
+    )
+    expect(await first).toBeNull()
+    await second
+    expect(spy).toHaveBeenCalledWith(2)
+  })
+
   it('loads one vocabulary promise for concurrent editors', async () => {
     const fetchMock = vi.fn(async () => vocabularyResponse())
     vi.stubGlobal('fetch', fetchMock)
@@ -1268,6 +1481,84 @@ SELECT * FROM customer_total_spent`
     ])
     expect(fetchMock).toHaveBeenCalledOnce()
   })
+})
+
+describe('SQL completion inside an open quoted identifier', () => {
+  const indexResponse = () =>
+    new Response(
+      JSON.stringify({
+        version: 'v1',
+        default_schema: 'dbo',
+        search_schemas: ['dbo'],
+        default_scope_relations_listed: true,
+        column_score: 100,
+        schemas: ['dbo'],
+        objects: [{ schema: 'dbo', name: 'orders', kind: 'table', score: 90 }],
+        columns: [],
+      }),
+      { status: 200, headers: { 'Content-Type': 'application/json' } },
+    )
+
+  const sqlServerFetch = () =>
+    vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+      const url = String(input)
+      if (url.includes('completion-index')) return indexResponse()
+      if (url.includes('completion-vocabulary')) return vocabularyResponse()
+      expect(JSON.parse(String(init?.body)).sql).toBe('SELECT * FROM [ord')
+      return new Response(
+        JSON.stringify({
+          suggestions: [
+            {
+              label: 'order details',
+              kind: 'table',
+              insert_text: '[order details]',
+              replace_start: 14,
+              replace_end: 18,
+              score: 80,
+            },
+          ],
+          mode: 'persistent',
+          metadata_available: true,
+          metadata_status: 'ready',
+        }),
+        { status: 200, headers: { 'Content-Type': 'application/json' } },
+      )
+    })
+
+  const config = {
+    orgSlug: 'acme',
+    workspaceId: 1,
+    connectionId: 2,
+    driver: 'sqlserver',
+  }
+
+  it.each([false, true])(
+    'asks the backend and applies its range and insert text (explicit=%s)',
+    async (explicit) => {
+      const fetchMock = sqlServerFetch()
+      vi.stubGlobal('fetch', fetchMock)
+      const state = EditorState.create({ doc: 'SELECT * FROM [ord' })
+      const source = remoteSQLCompletionSource(config)
+      const result = await source(new CompletionContext(state, state.doc.length, explicit))
+      expect(semanticCallCount(fetchMock)).toBe(1)
+      expect(result?.from).toBe(14)
+      expect(result?.options.map((option) => option.label)).toEqual(['order details'])
+      expect(result?.options[0]).toMatchObject({ apply: '[order details]' })
+    },
+  )
+
+  it.each(['SELECT * FROM t -- [x', "SELECT * FROM t WHERE a = '[x", 'SELECT 1 /* [x'])(
+    'stays suppressed inside %j',
+    async (doc) => {
+      const fetchMock = sqlServerFetch()
+      vi.stubGlobal('fetch', fetchMock)
+      const state = EditorState.create({ doc })
+      const source = remoteSQLCompletionSource(config)
+      const result = await source(new CompletionContext(state, state.doc.length, true))
+      expect(result).toBeNull()
+      expect(semanticCallCount(fetchMock)).toBe(0)
+    },
+  )
 })
 
 function semanticCallCount(fetchMock: ReturnType<typeof vi.fn>): number {
@@ -1377,6 +1668,22 @@ function semanticCompletionResponse(
       mode: 'persistent',
       metadata_available: true,
       metadata_status: 'ready',
+    }),
+    { status: 200, headers: { 'Content-Type': 'application/json' } },
+  )
+}
+
+function emptyIndexResponse() {
+  return new Response(
+    JSON.stringify({
+      version: 'v0',
+      default_schema: 'public',
+      search_schemas: ['public'],
+      default_scope_relations_listed: false,
+      column_score: 100,
+      schemas: [],
+      objects: [],
+      columns: [],
     }),
     { status: 200, headers: { 'Content-Type': 'application/json' } },
   )

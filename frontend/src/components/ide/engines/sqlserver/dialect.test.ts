@@ -49,4 +49,11 @@ describe('sqlserver dialect', () => {
     )
     expect(query).not.toContain('LIMIT')
   })
+
+  it('quotes a completion name only when it is not a bare identifier', () => {
+    expect(sqlServerDialect.formatIdentifier('Orders')).toBe('Orders')
+    expect(sqlServerDialect.formatIdentifier('order_2$')).toBe('order_2$')
+    expect(sqlServerDialect.formatIdentifier('order details')).toBe('[order details]')
+    expect(sqlServerDialect.formatIdentifier('a]b')).toBe('[a]]b]')
+  })
 })

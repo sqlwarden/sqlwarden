@@ -8,6 +8,8 @@ export interface SqlDialect {
   formatSql(sql: string): string
   formatObject(scope: ScopePath, name: string): string
   formatColumn(name: string): string
+  /** Quotes a single unqualified name only when it is not a safe bare identifier. */
+  formatIdentifier(name: string): string
   previewQuery(ref: ObjectRef): string
   exactCountQuery(ref: ObjectRef): string
   boundedCountQuery(ref: ObjectRef, limit: number): string
@@ -18,6 +20,7 @@ export abstract class BaseSqlDialect implements SqlDialect {
 
   abstract formatObject(scope: ScopePath, name: string): string
   abstract formatColumn(name: string): string
+  abstract formatIdentifier(name: string): string
 
   formatSql(sql: string): string {
     return this.formatter.format(sql)
@@ -38,12 +41,16 @@ export abstract class BaseSqlDialect implements SqlDialect {
 
 const BARE_IDENTIFIER = /^[a-z_][a-z0-9_]*$/
 
+/** Unquoted identifiers that resolve to themselves in case-insensitive dialects. */
+export const CASE_INSENSITIVE_BARE_IDENTIFIER = /^[A-Za-z_][A-Za-z0-9_]*$/
+
 export function createIdentifierQuoter(
   openingQuote: string,
   closingQuote = openingQuote,
+  bareIdentifier = BARE_IDENTIFIER,
 ): (name: string) => string {
   return (name) => {
-    if (BARE_IDENTIFIER.test(name)) return name
+    if (bareIdentifier.test(name)) return name
     const escapedName = name.split(closingQuote).join(closingQuote + closingQuote)
     return openingQuote + escapedName + closingQuote
   }

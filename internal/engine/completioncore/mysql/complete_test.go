@@ -16,7 +16,7 @@ func TestScopeScenarios(t *testing.T) {
 	catalog := completiontest.Metadata("mysql", "sakila", "sakila")
 	column := completioncore.CandidateColumn
 	completiontest.Run(t, func(ctx context.Context, sql string, cursor int, metadata completioncore.MetadataResolver) ([]completioncore.Candidate, error) {
-		candidates, _, err := coremysql.Complete(ctx, sql, cursor, nil, metadata)
+		candidates, _, err := coremysql.Complete(ctx, sql, cursor, metadata)
 		return candidates, err
 	}, catalog, []completiontest.Scenario{
 		{
@@ -323,7 +323,7 @@ func TestCompleteClassifiesCursorContext(t *testing.T) {
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
-			_, ctx, err := coremysql.Complete(context.Background(), tc.sql, tc.cursor, nil, catalog)
+			_, ctx, err := coremysql.Complete(context.Background(), tc.sql, tc.cursor, catalog)
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -343,7 +343,7 @@ func TestCompletionWithBrokenTrailingStatementScalesLinearly(t *testing.T) {
 		fmt.Fprintf(&sheet, "SELECT col_a, col_b FROM table_%04d WHERE col_a = %d;\n", i, i)
 	}
 	started := time.Now()
-	candidates, _, err := coremysql.Complete(context.Background(), sheet.String(), len("SELECT s."), nil, catalog)
+	candidates, _, err := coremysql.Complete(context.Background(), sheet.String(), len("SELECT s."), catalog)
 	if err != nil {
 		t.Fatal(err)
 	}

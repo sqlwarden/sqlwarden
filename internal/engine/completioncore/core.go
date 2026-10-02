@@ -3,16 +3,15 @@
 // licensed completion implementation, while metadata remains owned by
 // SQLWarden.
 //
-// Keeping parser candidates and catalog resolution behind this package is
-// intentional: as Omni grows complete semantic resolvers, a dialect can
-// delegate more work to Omni without changing the engine or HTTP contracts.
+// Keeping parser candidates and metadata resolution against SQLWarden's
+// metadata.CompletionView behind this package is intentional: as Omni grows
+// complete semantic resolvers, a dialect can delegate more work to Omni
+// without changing the engine or HTTP contracts.
 package completioncore
 
 import (
 	"context"
 	"fmt"
-	"sort"
-	"strings"
 
 	"github.com/sqlwarden/internal/engine/metadata"
 )
@@ -29,6 +28,7 @@ const (
 	CandidateForeignTable     CandidateType = "foreign_table"
 	CandidateView             CandidateType = "view"
 	CandidateMaterializedView CandidateType = "materialized_view"
+	CandidateSynonym          CandidateType = "synonym"
 	CandidateColumn           CandidateType = "column"
 	CandidateFunction         CandidateType = "function"
 	CandidateProcedure        CandidateType = "procedure"
@@ -54,6 +54,9 @@ type Candidate struct {
 	Comment      string
 	Priority     int
 	ReplaceStart int
+	// Qualifier holds unquoted name parts the dialect adapter prepends, each
+	// quoted individually, when the connection has no default scope.
+	Qualifier []string
 }
 
 // Column is the metadata needed by completion. It intentionally excludes
@@ -94,148 +97,6 @@ type CatalogResolver interface {
 	CatalogObjects(database, schema string, kinds ...string) []metadata.ObjectRef
 }
 
-func (r *SchemaResolver) CatalogObjects(database, namespace string, kinds ...string) []metadata.ObjectRef {
-	if r == nil || r.index == nil {
-		return nil
-	}
-	if namespace == "" {
-		namespace = r.defaultSchema
-	}
-	scope, ok := r.resolveScope(database, namespace)
-	if !ok {
-		return nil
-	}
-	var result []metadata.ObjectRef
-	for _, kind := range kinds {
-		result = append(result, r.index.ObjectRefsInScope(scope, kind)...)
-	}
-	return result
-}
-
-// SchemaResolver adapts metadata.Index to the completion metadata boundary.
-// The underlying index may represent persistent or ephemeral metadata.
-type SchemaResolver struct {
-	index         *metadata.Index
-	defaultSchema string
-}
-
-func NewSchemaResolver(index *metadata.Index, defaultSchema string) *SchemaResolver {
-	return &SchemaResolver{index: index, defaultSchema: defaultSchema}
-}
-
-func (r *SchemaResolver) DefaultDatabase() string {
-	if r == nil || r.index == nil {
-		return ""
-	}
-	return r.index.DefaultScope().Name("database")
-}
-
-func (r *SchemaResolver) DefaultSchema() string {
-	if r == nil {
-		return ""
-	}
-	return r.defaultSchema
-}
-
-func (r *SchemaResolver) DatabaseNames() []string {
-	if r == nil || r.index == nil {
-		return nil
-	}
-	seen := map[string]bool{}
-	var names []string
-	for _, scope := range r.index.Scopes() {
-		if name := scope.Name("database"); name != "" && !seen[name] {
-			seen[name] = true
-			names = append(names, name)
-		}
-	}
-	sort.Strings(names)
-	return names
-}
-
-func (r *SchemaResolver) SchemaNames(database string) []string {
-	if r == nil || r.index == nil {
-		return nil
-	}
-	seen := map[string]bool{}
-	var names []string
-	for _, scope := range r.index.Scopes() {
-		if !matchesDatabase(database, scope.Name("database")) {
-			continue
-		}
-		if name := scope.Name("schema"); name != "" && !seen[name] {
-			seen[name] = true
-			names = append(names, name)
-		}
-	}
-	sort.Strings(names)
-	return names
-}
-
-func (r *SchemaResolver) Relations(database, namespace string) []Relation {
-	if r == nil || r.index == nil {
-		return nil
-	}
-	scope, ok := r.resolveScope(database, namespace)
-	if !ok {
-		return nil
-	}
-	objects := r.index.ObjectsInScope(scope, "")
-	result := make([]Relation, 0, len(objects))
-	for _, object := range objects {
-		if relation, ok := relationFromObject(object); ok {
-			result = append(result, relation)
-		}
-	}
-	return result
-}
-
-func (r *SchemaResolver) FindRelation(database, namespace, name string) (Relation, bool) {
-	if r == nil || r.index == nil {
-		return Relation{}, false
-	}
-	namespaces := []string{namespace}
-	if namespace == "" && r.defaultSchema != "" {
-		namespaces = append(namespaces, r.defaultSchema)
-	}
-	for _, candidateNamespace := range namespaces {
-		scope, ok := r.resolveScope(database, candidateNamespace)
-		if !ok {
-			continue
-		}
-		for _, kind := range relationKinds {
-			object, ok := r.index.FindObjectInScope(scope, kind, name)
-			if !ok {
-				continue
-			}
-			return relationFromObject(object)
-		}
-	}
-	return Relation{}, false
-}
-
-func (r *SchemaResolver) resolveScope(database, namespace string) (metadata.ScopePath, bool) {
-	defaultScope := r.index.DefaultScope()
-	for _, scope := range r.index.Scopes() {
-		if !matchesDatabase(database, scope.Name("database")) {
-			continue
-		}
-		if namespace != "" && !strings.EqualFold(namespace, scope.Name("schema")) &&
-			!strings.EqualFold(namespace, scope.Name("database")) {
-			continue
-		}
-		if namespace == "" && defaultScope != "" && scope != defaultScope {
-			continue
-		}
-		return scope, true
-	}
-	return "", false
-}
-
-func matchesDatabase(requested, current string) bool {
-	return requested == "" || strings.EqualFold(requested, current)
-}
-
 // CheckContext lets CPU-bound completion loops remain cancellation-aware.
 func CheckContext(ctx context.Context) error {
 	if err := ctx.Err(); err != nil {
@@ -244,7 +105,7 @@ func CheckContext(ctx context.Context) error {
 	return nil
 }
 
-var relationKinds = []string{"table", "foreign_table", "view", "materialized_view"}
+var relationKinds = []string{"table", "foreign_table", "external_table", "view", "materialized_view"}
 
 func relationFromObject(object metadata.Object) (Relation, bool) {
 	kind, ok := relationCandidateType(object.Ref.Kind)
@@ -274,7 +135,7 @@ func relationCandidateType(kind string) (CandidateType, bool) {
 	switch kind {
 	case "table":
 		return CandidateTable, true
-	case "foreign_table":
+	case "foreign_table", "external_table":
 		return CandidateForeignTable, true
 	case "view":
 		return CandidateView, true

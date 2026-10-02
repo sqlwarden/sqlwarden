@@ -10,6 +10,7 @@ import (
 
 	completionapp "github.com/sqlwarden/internal/completion"
 	"github.com/sqlwarden/internal/engine/completer"
+	"github.com/sqlwarden/internal/engine/metadata"
 	"github.com/sqlwarden/internal/request"
 	"github.com/sqlwarden/internal/response"
 )
@@ -31,6 +32,7 @@ type completionResponse struct {
 	Mode              string                 `json:"mode"`
 	MetadataAvailable bool                   `json:"metadata_available"`
 	MetadataStatus    string                 `json:"metadata_status"`
+	MetadataLoaded    bool                   `json:"metadata_loaded"`
 	Context           string                 `json:"context,omitempty"`
 }
 
@@ -81,7 +83,8 @@ func (app *application) completeConnectionSQL(w http.ResponseWriter, r *http.Req
 		MetadataStatus: "unavailable",
 	}
 
-	if _, ok := app.optionalSchemaSession(w, r); !ok {
+	session, ok := app.optionalSchemaSession(w, r)
+	if !ok {
 		return
 	}
 	navConn, err := app.navigatorConnection(r)
@@ -92,36 +95,29 @@ func (app *application) completeConnectionSQL(w http.ResponseWriter, r *http.Req
 	if navConn.Persistent {
 		out.Mode = "persistent"
 	}
+	var loader completionapp.Loader = staticCompletionLoader{view: metadata.NewCompletionView(metadata.Tree{}, navConn.DefaultScope, "", nil, nil)}
 	if tree, ok := app.optionalNavigatorTree(conn); ok {
-		set, metaErr := app.schemaNavigator.CompletionMetadata(r.Context(), navConn, tree)
-		if metaErr != nil {
-			app.logWarn(r, "completion metadata unavailable", slog.Int64("connection_id", conn.ID), slog.Any("error", metaErr))
-		} else if len(set.Directory.Roots) > 0 || len(set.Objects) > 0 {
-			req.Schema = set
-			out.MetadataAvailable, out.MetadataStatus = true, "ready"
+		loader = navigatorCompletionLoader{
+			app: app, request: r, navigator: app.schemaNavigator, conn: navConn,
+			driver: conn.Driver, tree: tree, live: navigatorLive(session),
 		}
 	}
-
-	result, err := app.completionService.Complete(r.Context(), conn.Driver, req)
+	result, outcome, err := app.completionService.CompleteWithMetadata(r.Context(), conn.Driver, req, loader)
 	if errors.Is(err, completionapp.ErrUnsupported) {
 		app.errorMessage(w, r, http.StatusNotImplemented, "This driver does not support SQL completion.", nil)
 		return
-	}
-	if err != nil && req.Schema != nil {
-		app.logWarn(r, "schema-aware SQL completion failed; retrying without metadata",
-			slog.Int64("connection_id", conn.ID),
-			slog.String("driver", conn.Driver),
-			slog.String("mode", out.Mode),
-			slog.String("error", err.Error()),
-		)
-		req.Schema = nil
-		out.MetadataAvailable, out.MetadataStatus = false, "degraded"
-		result, err = app.completionService.Complete(r.Context(), conn.Driver, req)
 	}
 	if err != nil {
 		app.serverError(w, r, err)
 		return
 	}
+	if outcome.Status == completionapp.MetadataDegraded {
+		app.logWarn(r, "schema-aware SQL completion failed; retried without metadata",
+			slog.Int64("connection_id", conn.ID), slog.String("driver", conn.Driver))
+	}
+	out.MetadataStatus = outcome.Status
+	out.MetadataAvailable = outcome.Available && outcome.Status != completionapp.MetadataDegraded
+	out.MetadataLoaded = outcome.Loaded
 	if len(result.Suggestions) > maxCompletionSuggestions {
 		result.Suggestions = result.Suggestions[:maxCompletionSuggestions]
 	}
@@ -139,7 +135,14 @@ func (app *application) completeConnectionSQL(w http.ResponseWriter, r *http.Req
 		slog.String("driver", conn.Driver),
 		slog.String("mode", out.Mode),
 		slog.String("trigger_kind", string(triggerKind)),
-		slog.Bool("metadata_available", out.MetadataAvailable),
+		slog.String("metadata_status", out.MetadataStatus),
+		slog.Int("rounds", outcome.Rounds),
+		slog.Int("demand_count", outcome.Demands),
+		slog.Int("loads_started", outcome.Report.Started),
+		slog.Int("loads_joined", outcome.Report.Joined),
+		slog.Int("loads_failed", outcome.Report.Failed),
+		slog.Int("loads_capped", outcome.Report.Capped),
+		slog.Bool("budget_exhausted", outcome.BudgetExhausted),
 		slog.Int("suggestion_count", len(out.Suggestions)),
 		slog.Int64("duration_ms", time.Since(started).Milliseconds()),
 	)

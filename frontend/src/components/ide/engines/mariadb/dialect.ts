@@ -5,6 +5,7 @@ import { mariadbSqlFormatter } from '../../sqlFormatter'
 class MariaDbDialect extends BaseSqlDialect {
   protected override readonly formatter = mariadbSqlFormatter
   private quoteIdentifier = createIdentifierQuoter('`')
+  private quoteCompletionName = createIdentifierQuoter('`', '`', /^[A-Za-z_$][A-Za-z0-9_$]*$/)
 
   formatObject(_scope: ScopePath, name: string): string {
     return this.quoteIdentifier(name)
@@ -12,6 +13,10 @@ class MariaDbDialect extends BaseSqlDialect {
 
   formatColumn(name: string): string {
     return this.quoteIdentifier(name)
+  }
+
+  formatIdentifier(name: string): string {
+    return this.quoteCompletionName(name)
   }
 }
 

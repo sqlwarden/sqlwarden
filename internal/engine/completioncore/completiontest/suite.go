@@ -10,6 +10,7 @@ import (
 
 	"github.com/sqlwarden/internal/engine/completioncore"
 	"github.com/sqlwarden/internal/engine/metadata"
+	"github.com/sqlwarden/internal/engine/metadata/metadatatest"
 )
 
 // CompleteFunc is the stable dialect-neutral shape exercised by the suite.
@@ -64,10 +65,10 @@ func Caret(t *testing.T, marked string) (string, int) {
 }
 
 func Metadata(engine, database, namespace string) completioncore.MetadataResolver {
-	root := metadata.NewScopePath(metadata.ScopeSegment{Kind: "database", Name: database})
-	scope := root
-	if engine == "postgres" {
-		scope = root.Child(metadata.ScopeSegment{Kind: "schema", Name: namespace})
+	nested := engine == "postgres"
+	scope := metadata.NewScopePath(metadata.ScopeSegment{Kind: "database", Name: database})
+	if nested {
+		scope = scope.Child(metadata.ScopeSegment{Kind: "schema", Name: namespace})
 	}
 	objects := []metadata.Object{
 		relation(scope, "inventory",
@@ -81,16 +82,8 @@ func Metadata(engine, database, namespace string) completioncore.MetadataResolve
 		relation(scope, "customer",
 			column("customer_id", "bigint"), column("email", "text")),
 	}
-	refs := make([]metadata.ObjectRef, 0, len(objects))
-	for _, object := range objects {
-		refs = append(refs, object.Ref)
-	}
-	directory := &metadata.Directory{
-		Engine: engine, DefaultScope: scope,
-		Roots: []metadata.ScopeNode{{Path: scope, Groups: []metadata.ObjectGroup{{Kind: "table", Objects: refs}}}},
-	}
-	index := metadata.NewIndex(metadata.MetadataSet{Directory: directory, Objects: objects, Version: "test"})
-	return completioncore.NewSchemaResolver(index, namespace)
+	view := metadatatest.Build(metadatatest.Tree(nested), metadatatest.Fixture{DefaultScope: scope, Objects: objects})
+	return completioncore.NewSchemaResolver(view, namespace)
 }
 
 func relation(scope metadata.ScopePath, name string, columns ...metadata.Column) metadata.Object {

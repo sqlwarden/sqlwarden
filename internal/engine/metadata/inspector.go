@@ -23,6 +23,16 @@ type RelationshipInspector interface {
 	InspectRelationshipsInScope(ctx context.Context, scope ScopePath) (*RelationshipGraph, error)
 }
 
+// SessionScoper is the OPTIONAL capability to report the live session's
+// current scope (for example its current database and schema) as a path
+// built from the engine's own tree kinds. It may return a partial path when
+// the session has no current scope at some level. Completion uses it to fill
+// in levels the configured default scope leaves open; engines without it get
+// no fill-in.
+type SessionScoper interface {
+	CurrentScope(ctx context.Context) (ScopePath, error)
+}
+
 // SchemaInspector is the navigator capability: a static grammar whose folder
 // loaders run against a database-scoped Querier, plus on-demand object detail.
 type SchemaInspector interface {

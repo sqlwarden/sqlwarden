@@ -15,14 +15,16 @@ Omni owns:
 
 SQLWarden owns:
 
-- canonical engine metadata and its reusable immutable `metadata.Index`;
+- canonical engine metadata and its per-request `metadata.CompletionView`;
 - the thin `SchemaResolver` adapter from schema objects to completion relations;
 - candidate types and mapping to the editor API;
 - exact alias/qualifier resolution;
 - CTE and derived-relation projected columns;
 - DML target/reference resolution;
 - ambiguity handling and identifier quoting at the engine boundary;
-- cache invalidation by connection and schema snapshot version.
+- reading only what the navigator cache already holds: completion never queries
+  the target itself, and missing folders are loaded through
+  `Navigator.EnsureForCompletion` and re-read from the view.
 
 MySQL reference collection is deliberately confined to `mysql/complete.go`.
 When Omni exports a MySQL scope snapshot equivalent to PostgreSQL's

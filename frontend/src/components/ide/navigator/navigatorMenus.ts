@@ -13,7 +13,7 @@ import type {
 import { buildColumnMenu, buildIndexMenu } from '../contextMenus/columnMenu'
 import { columnList, copyWithToast, qualifiedColumn } from '../contextMenus/clipboard'
 import { buildObjectMenu } from '../contextMenus/objectMenu'
-import { buildNamespaceMenu, buildObjectGroupMenu } from '../contextMenus/schemaMenu'
+import { buildNamespaceMenu, buildSchemaFolderMenu } from '../contextMenus/schemaMenu'
 import { statementOperationsFor } from '../generateStatementCapability'
 import type { DiagramTarget } from '../schema-diagram/diagramTab'
 import {
@@ -131,7 +131,7 @@ function folderMenu(row: FolderRow, actions: NavigatorActions, refresh: () => vo
     row.folder.child === 'table'
       ? canCreateTable(actions.tree.editor, actions.sessionId, actions.canMutate, scopeKind)
       : null
-  return buildObjectGroupMenu({
+  return buildSchemaFolderMenu({
     newLabel: `New ${child?.label ?? row.folder.label}...`,
     onRefresh: refresh,
     onViewDiagram: child?.supports_diagram

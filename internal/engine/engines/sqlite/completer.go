@@ -10,19 +10,13 @@ import (
 	"github.com/sqlwarden/internal/engine/completer"
 	"github.com/sqlwarden/internal/engine/completioncore"
 	coresqlite "github.com/sqlwarden/internal/engine/completioncore/sqlite"
-	"github.com/sqlwarden/internal/engine/metadata"
 )
 
-const preparedCompletionIndexes = 32
-
 var (
-	_ completer.Completer          = (*sqliteDriver)(nil)
-	_ completer.VocabularyProvider = (*sqliteDriver)(nil)
-	_ completer.CatalogInvalidator = (*sqliteDriver)(nil)
-
-	sqliteSchemaIndexCache = completer.NewPreparedCache[*metadata.Index](preparedCompletionIndexes)
-	sqliteVocabularyOnce   sync.Once
-	sqliteVocabulary       completer.Vocabulary
+	_                    completer.Completer          = (*sqliteDriver)(nil)
+	_                    completer.VocabularyProvider = (*sqliteDriver)(nil)
+	sqliteVocabularyOnce sync.Once
+	sqliteVocabulary     completer.Vocabulary
 )
 
 func (d *sqliteDriver) Complete(ctx context.Context, req completer.Request) (completer.Result, error) {
@@ -33,25 +27,14 @@ func (d *sqliteDriver) Complete(ctx context.Context, req completer.Request) (com
 		return completer.Result{}, err
 	}
 
-	var resolver completioncore.MetadataResolver
-	if req.Schema != nil && req.Schema.Directory != nil {
-		key := sqliteCompletionKey(req.ConnectionID, req.Schema.Version)
-		var index *metadata.Index
-		if key == "" {
-			index = metadata.NewIndex(*req.Schema)
-		} else {
-			var err error
-			index, err = sqliteSchemaIndexCache.GetOrBuild(ctx, key, func() (*metadata.Index, error) {
-				return metadata.NewIndex(*req.Schema), nil
-			})
-			if err != nil {
-				return completer.Result{}, err
-			}
-		}
-		resolver = completioncore.NewSchemaResolver(index, "")
+	var resolver *completioncore.SchemaResolver
+	var metadataResolver completioncore.MetadataResolver
+	if req.Metadata != nil {
+		resolver = completioncore.NewSchemaResolver(req.Metadata, "")
+		metadataResolver = resolver
 	}
 
-	candidates, cursorContext, err := coresqlite.Complete(ctx, req.SQL, req.CursorOffset, resolver)
+	candidates, cursorContext, err := coresqlite.Complete(ctx, req.SQL, req.CursorOffset, metadataResolver)
 	if err != nil {
 		return completer.Result{}, err
 	}
@@ -59,7 +42,7 @@ func (d *sqliteDriver) Complete(ctx context.Context, req completer.Request) (com
 	start := sqliteCompletionReplaceStart(req.SQL, req.CursorOffset)
 	suggestions := make([]completer.Suggestion, 0, len(candidates))
 	for _, candidate := range candidates {
-		kind, score := sqliteCoreCandidateKind(candidate.Type)
+		kind := sqliteCoreCandidateKind(candidate.Type)
 		insertText := candidate.Text
 		if kind != "keyword" && kind != "type" && !sqliteIsBareIdent(candidate.Text) {
 			insertText = sqliteQuoteIdent(candidate.Text)
@@ -70,7 +53,7 @@ func (d *sqliteDriver) Complete(ctx context.Context, req completer.Request) (com
 			InsertText:   insertText,
 			ReplaceStart: start,
 			ReplaceEnd:   req.CursorOffset,
-			Score:        score,
+			Score:        completer.KindScore(kind),
 		})
 	}
 	sqliteSortSuggestions(suggestions, req.SQL[start:req.CursorOffset])
@@ -81,7 +64,11 @@ func (d *sqliteDriver) Complete(ctx context.Context, req completer.Request) (com
 	if position == "" {
 		position = completioncore.PositionAny
 	}
-	return completer.Result{Suggestions: suggestions, Context: position}, nil
+	result := completer.Result{Suggestions: suggestions, Context: position}
+	if resolver != nil {
+		result.Demands = resolver.Demands()
+	}
+	return result, nil
 }
 
 func (d *sqliteDriver) CompletionVocabulary() completer.Vocabulary {
@@ -101,17 +88,6 @@ func (d *sqliteDriver) CompletionVocabulary() completer.Vocabulary {
 	return sqliteVocabulary
 }
 
-func (d *sqliteDriver) InvalidateCompletionCatalog(connectionID string) {
-	sqliteSchemaIndexCache.InvalidatePrefix(connectionID + ":")
-}
-
-func sqliteCompletionKey(connectionID, version string) string {
-	if connectionID == "" || version == "" {
-		return ""
-	}
-	return connectionID + ":" + version
-}
-
 func sqliteCompletionReplaceStart(sql string, cursor int) int {
 	start := cursor
 	for start > 0 {
@@ -128,22 +104,22 @@ func sqliteCompletionReplaceStart(sql string, cursor int) int {
 	return start
 }
 
-func sqliteCoreCandidateKind(candidateType completioncore.CandidateType) (string, int) {
+func sqliteCoreCandidateKind(candidateType completioncore.CandidateType) string {
 	switch candidateType {
 	case completioncore.CandidateColumn:
-		return "column", 100
+		return "column"
 	case completioncore.CandidateTable:
-		return "table", 90
+		return "table"
 	case completioncore.CandidateView:
-		return "view", 85
+		return "view"
 	case completioncore.CandidateDatabase:
-		return "database", 70
+		return "database"
 	case completioncore.CandidateKeyword:
-		return "keyword", 40
+		return "keyword"
 	case completioncore.CandidateFunction:
-		return "function", 60
+		return "function"
 	default:
-		return "text", 20
+		return "text"
 	}
 }
 
