@@ -23,4 +23,4 @@
 - [ ] The branch is rebased onto the latest `main` and does not include unrelated changes.
 - [ ] No secrets, credentials, private data, or generated local state are included.
 - [ ] New third-party code or assets include their required license and attribution.
-- [ ] I understand that contributions to this repository are licensed under `AGPL-3.0-only`.
+- [ ] I have read the [Contributor License Agreement](https://github.com/sqlwarden/sqlwarden/blob/main/CLA.md) and will sign it by comment on this pull request if prompted.
