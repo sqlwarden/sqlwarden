@@ -7,6 +7,7 @@ import (
 
 	"github.com/sqlwarden/internal/engine/completer"
 	"github.com/sqlwarden/internal/engine/metadata"
+	"github.com/sqlwarden/internal/engine/metadata/metadatatest"
 )
 
 func TestOracleCompleteKeywords(t *testing.T) {
@@ -53,39 +54,37 @@ func TestOracleCompletionVocabulary(t *testing.T) {
 	}
 }
 
-func TestOracleInvalidateCompletionCatalogNoPanic(t *testing.T) {
-	(&oracleDriver{}).InvalidateCompletionCatalog("conn-1")
+func TestOracleCompletionVocabularyFunctionsUseSharedKindScore(t *testing.T) {
+	functions := 0
+	for _, s := range (&oracleDriver{}).CompletionVocabulary().Suggestions {
+		if s.Kind != "function" {
+			continue
+		}
+		functions++
+		if s.Score != completer.KindScore("function") {
+			t.Fatalf("%s score = %d, want %d", s.Label, s.Score, completer.KindScore("function"))
+		}
+	}
+	if functions == 0 {
+		t.Fatal("vocabulary has no functions")
+	}
+}
+
+func oracleCompletionView(defaultSchema string, objects []metadata.Object, refs []metadata.ObjectRef) *metadata.CompletionView {
+	scope := metadata.NewScopePath(metadata.ScopeSegment{Kind: "schema", Name: defaultSchema})
+	return metadatatest.Build((&oracleDriver{}).Tree(), metadatatest.Fixture{DefaultScope: scope, Objects: objects, Refs: refs})
 }
 
 func TestOracleCompleteColumnsFromSchema(t *testing.T) {
 	d := &oracleDriver{}
-	set := &metadata.MetadataSet{
-		Version: "v1",
-		Directory: &metadata.Directory{
-			Engine:       "oracle",
-			DefaultScope: metadata.NewScopePath(metadata.ScopeSegment{Kind: "schema", Name: "HR"}),
-			Roots: []metadata.ScopeNode{{
-				Path: metadata.NewScopePath(metadata.ScopeSegment{Kind: "schema", Name: "HR"}),
-				Groups: []metadata.ObjectGroup{{
-					Kind: "table",
-					Objects: []metadata.ObjectRef{{
-						Scope: metadata.NewScopePath(metadata.ScopeSegment{Kind: "schema", Name: "HR"}),
-						Kind:  "table", Name: "EMPLOYEES",
-					}},
-				}},
-			}},
-		},
-		Objects: []metadata.Object{{
-			Ref: metadata.ObjectRef{
-				Scope: metadata.NewScopePath(metadata.ScopeSegment{Kind: "schema", Name: "HR"}),
-				Kind:  "table", Name: "EMPLOYEES",
-			},
-			Relational: &metadata.RelationalDetail{Columns: []metadata.Column{{Name: "EMPLOYEE_ID"}, {Name: "FIRST_NAME"}}},
-		}},
-	}
+	hr := oracleSchemaScope("HR")
+	view := oracleCompletionView("HR", []metadata.Object{{
+		Ref:        metadata.ObjectRef{Scope: hr, Kind: "table", Name: "EMPLOYEES"},
+		Relational: &metadata.RelationalDetail{Columns: []metadata.Column{{Name: "EMPLOYEE_ID"}, {Name: "FIRST_NAME"}}},
+	}}, nil)
 	const sql = "SELECT  FROM EMPLOYEES"
 	res, err := d.Complete(context.Background(), completer.Request{
-		SQL: sql, CursorOffset: len("SELECT "), Schema: set, ConnectionID: "conn-1",
+		SQL: sql, CursorOffset: len("SELECT "), Metadata: view, ConnectionID: "conn-1",
 	})
 	if err != nil {
 		t.Fatalf("Complete: %v", err)
@@ -104,14 +103,13 @@ func TestOracleCompleteColumnsFromSchema(t *testing.T) {
 func TestOracleCompletionCatalogAndIdentifierInsertion(t *testing.T) {
 	scope := oracleSchemaScope("HR")
 	table := metadata.ObjectRef{Scope: scope, Kind: "table", Name: "EMP"}
-	set := &metadata.MetadataSet{
-		Directory: &metadata.Directory{DefaultScope: scope, Roots: []metadata.ScopeNode{{Path: scope, Groups: []metadata.ObjectGroup{
-			{Kind: "table", Objects: []metadata.ObjectRef{table, {Scope: scope, Kind: "table", Name: "UNINSPECTED"}}},
-			{Kind: "function", Objects: []metadata.ObjectRef{{Scope: scope, Kind: "function", Name: "CALCULATE_TAX"}}},
-			{Kind: "sequence", Objects: []metadata.ObjectRef{{Scope: scope, Kind: "sequence", Name: "ORDER_SEQ"}}},
-		}}}},
-		Objects: []metadata.Object{{Ref: table, Relational: &metadata.RelationalDetail{Columns: []metadata.Column{{Name: "Job No"}, {Name: "account.Total"}}}}},
-	}
+	view := oracleCompletionView("HR",
+		[]metadata.Object{{Ref: table, Relational: &metadata.RelationalDetail{Columns: []metadata.Column{{Name: "Job No"}, {Name: "account.Total"}}}}},
+		[]metadata.ObjectRef{
+			{Scope: scope, Kind: "table", Name: "UNINSPECTED"},
+			{Scope: scope, Kind: "function", Name: "CALCULATE_TAX"},
+			{Scope: scope, Kind: "sequence", Name: "ORDER_SEQ"},
+		})
 	for _, tt := range []struct{ sql, label, insert string }{
 		{"SELECT * FROM UNI|", "UNINSPECTED", "UNINSPECTED"},
 		{"SELECT HR.CALC| FROM EMP", "CALCULATE_TAX", "CALCULATE_TAX"},
@@ -123,7 +121,7 @@ func TestOracleCompletionCatalogAndIdentifierInsertion(t *testing.T) {
 	} {
 		cursor := strings.IndexByte(tt.sql, '|')
 		query := strings.Replace(tt.sql, "|", "", 1)
-		result, err := (&oracleDriver{}).Complete(context.Background(), completer.Request{SQL: query, CursorOffset: cursor, Schema: set})
+		result, err := (&oracleDriver{}).Complete(context.Background(), completer.Request{SQL: query, CursorOffset: cursor, Metadata: view})
 		if err != nil {
 			t.Fatal(err)
 		}

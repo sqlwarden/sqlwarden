@@ -13,10 +13,29 @@ import (
 	"github.com/sqlwarden/internal/engine/metadata"
 )
 
-var _ metadata.SchemaInspector = (*oracleDriver)(nil)
+var (
+	_ metadata.SchemaInspector = (*oracleDriver)(nil)
+	_ metadata.SessionScoper   = (*oracleDriver)(nil)
+)
 
 func (d *oracleDriver) Tree() metadata.Tree {
 	return navigatorTree
+}
+
+// CurrentScope reports the session's current schema, which ALTER SESSION SET
+// CURRENT_SCHEMA can move away from the login user.
+func (d *oracleDriver) CurrentScope(ctx context.Context) (metadata.ScopePath, error) {
+	if d.db == nil {
+		return "", errors.New("oracle: not connected")
+	}
+	var schema sql.NullString
+	if err := d.db.QueryRowContext(ctx, `SELECT SYS_CONTEXT('USERENV', 'CURRENT_SCHEMA') FROM dual`).Scan(&schema); err != nil {
+		return "", fmt.Errorf("oracle: read current scope: %w", err)
+	}
+	if !schema.Valid || schema.String == "" {
+		return "", nil
+	}
+	return metadata.NewScopePath(metadata.ScopeSegment{Kind: "schema", Name: schema.String}), nil
 }
 
 // Querier returns the session pool for every schema: catalog queries filter

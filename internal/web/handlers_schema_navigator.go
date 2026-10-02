@@ -254,7 +254,6 @@ func (app *application) refreshConnectionSchemaNodes(w http.ResponseWriter, r *h
 		app.navigatorError(w, r, err)
 		return
 	}
-	app.completionService.InvalidateConnection(strconv.FormatInt(conn.ID, 10))
 	app.logInfo(r, "schema subtree refreshed",
 		slog.Int64("connection_id", conn.ID),
 		slog.Int("depth", input.Path.Depth()),

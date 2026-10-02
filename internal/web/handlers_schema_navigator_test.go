@@ -13,6 +13,7 @@ import (
 	"github.com/sqlwarden/internal/assert"
 	"github.com/sqlwarden/internal/database"
 	"github.com/sqlwarden/internal/engine"
+	"github.com/sqlwarden/internal/engine/completer"
 	"github.com/sqlwarden/internal/engine/ddl"
 	"github.com/sqlwarden/internal/engine/metadata"
 	"github.com/sqlwarden/pkg/result"
@@ -158,6 +159,30 @@ func (*navTestDriver) InspectObjects(_ context.Context, refs []metadata.ObjectRe
 		out = append(out, metadata.Object{Ref: ref, Relational: &metadata.RelationalDetail{Columns: []metadata.Column{{Name: "id", DataType: "integer", Ordinal: 1}}}})
 	}
 	return out, nil
+}
+
+// Complete suggests the tables of app.public from the cached view and demands
+// the listing when it has not been loaded.
+func (*navTestDriver) Complete(_ context.Context, req completer.Request) (completer.Result, error) {
+	if req.Metadata == nil {
+		return completer.Result{}, nil
+	}
+	scope := navSchema("app", "public")
+	refs, loaded := req.Metadata.Objects(scope, "table")
+	result := completer.Result{}
+	for _, ref := range refs {
+		result.Suggestions = append(result.Suggestions, completer.Suggestion{Label: ref.Name, Kind: ref.Kind, InsertText: ref.Name})
+	}
+	if !loaded {
+		result.Demands = req.Metadata.ObjectDemands(scope, "table")
+	}
+	return result, nil
+}
+
+func (q *navTestQuerier) loadCalls() int {
+	q.mu.Lock()
+	defer q.mu.Unlock()
+	return q.calls
 }
 
 func navDB(name string) metadata.ScopePath {
@@ -513,4 +538,34 @@ func TestSchemaReadPathsNeverOpenTargetConnections(t *testing.T) {
 		}
 	}
 	assert.Equal(t, f.app.connManager.CountForConnection(strconv.FormatInt(f.conn.ID, 10)), 0)
+}
+
+func TestCompleteConnectionSQLFetchesUnexpandedRelations(t *testing.T) {
+	t.Parallel()
+	f := newNavFixture(t, navTestEngine)
+	drv := newNavTestDriver()
+	drv.q.set(navSchema("app", "public"), "tables", metadata.Child{Kind: "table", Name: "users"})
+	sessionID := f.attach(t, drv)
+	res := f.do(t, sessionID, http.MethodPost, "/completion", map[string]any{"sql": "SELECT * FROM ", "cursor_offset": 14})
+	assert.Equal(t, res.StatusCode, http.StatusOK)
+	if !responseHasCompletionLabel(res.BodyFields, "users") {
+		t.Fatalf("want users after fetch, got %s", res.BodyBytes)
+	}
+	assert.Equal(t, res.BodyFields["metadata_loaded"], true)
+	assert.Equal(t, res.BodyFields["metadata_status"], "ready")
+}
+
+func TestCompleteConnectionSQLDoesNotFetchWithoutSession(t *testing.T) {
+	t.Parallel()
+	f := newNavFixture(t, navTestEngine)
+	drv := newNavTestDriver()
+	drv.q.set(navSchema("app", "public"), "tables", metadata.Child{Kind: "table", Name: "users"})
+	res := f.do(t, "", http.MethodPost, "/completion", map[string]any{"sql": "SELECT * FROM ", "cursor_offset": 14})
+	assert.Equal(t, res.StatusCode, http.StatusOK)
+	assert.Equal(t, res.BodyFields["metadata_status"], "partial")
+	assert.Equal(t, res.BodyFields["metadata_loaded"], false)
+	if responseHasCompletionLabel(res.BodyFields, "users") {
+		t.Fatal("fetched without a session")
+	}
+	assert.Equal(t, drv.q.loadCalls(), 0)
 }

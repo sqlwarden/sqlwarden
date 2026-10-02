@@ -28,6 +28,7 @@ export type SQLTriggerToken = {
 export type SQLTriggerScan = {
   tokens: SQLTriggerToken[]
   protectedRegion: boolean
+  openQuotedIdentifier: boolean
   depth: number
   terminatedAtTop: boolean
 }
@@ -52,13 +53,27 @@ export function scanSQLTriggerPrefix(source: string): SQLTriggerScan {
     }
     if (char === '-' && next === '-') {
       const newline = source.indexOf('\n', i + 2)
-      if (newline === -1) return { tokens, protectedRegion: true, depth, terminatedAtTop }
+      if (newline === -1)
+        return {
+          tokens,
+          protectedRegion: true,
+          openQuotedIdentifier: false,
+          depth,
+          terminatedAtTop,
+        }
       i = newline + 1
       continue
     }
     if (char === '/' && next === '*') {
       const end = source.indexOf('*/', i + 2)
-      if (end === -1) return { tokens, protectedRegion: true, depth, terminatedAtTop }
+      if (end === -1)
+        return {
+          tokens,
+          protectedRegion: true,
+          openQuotedIdentifier: false,
+          depth,
+          terminatedAtTop,
+        }
       i = end + 2
       continue
     }
@@ -78,7 +93,14 @@ export function scanSQLTriggerPrefix(source: string): SQLTriggerScan {
         closed = true
         break
       }
-      if (!closed) return { tokens, protectedRegion: true, depth, terminatedAtTop }
+      if (!closed)
+        return {
+          tokens,
+          protectedRegion: true,
+          openQuotedIdentifier: false,
+          depth,
+          terminatedAtTop,
+        }
       push('', 'value')
       continue
     }
@@ -99,7 +121,8 @@ export function scanSQLTriggerPrefix(source: string): SQLTriggerScan {
         closed = true
         break
       }
-      if (!closed) return { tokens, protectedRegion: true, depth, terminatedAtTop }
+      if (!closed)
+        return { tokens, protectedRegion: true, openQuotedIdentifier: true, depth, terminatedAtTop }
       push('', 'identifier')
       continue
     }
@@ -107,7 +130,14 @@ export function scanSQLTriggerPrefix(source: string): SQLTriggerScan {
       const tag = source.slice(i).match(/^\$(?:[A-Za-z_][A-Za-z0-9_]*)?\$/)?.[0]
       if (tag) {
         const end = source.indexOf(tag, i + tag.length)
-        if (end === -1) return { tokens, protectedRegion: true, depth, terminatedAtTop }
+        if (end === -1)
+          return {
+            tokens,
+            protectedRegion: true,
+            openQuotedIdentifier: false,
+            depth,
+            terminatedAtTop,
+          }
         i = end + tag.length
         push('', 'value')
         continue
@@ -153,7 +183,7 @@ export function scanSQLTriggerPrefix(source: string): SQLTriggerScan {
     i++
   }
 
-  return { tokens, protectedRegion: false, depth, terminatedAtTop }
+  return { tokens, protectedRegion: false, openQuotedIdentifier: false, depth, terminatedAtTop }
 }
 
 function previousWord(
@@ -193,6 +223,9 @@ export type CursorContext = {
   cteNames: Set<string>
   prefix: string
   protectedRegion: boolean
+  openQuotedIdentifier: boolean
+  afterTableRef: boolean
+  afterClauseLead: boolean
 }
 
 const RELATION_GOV = new Set(['FROM', 'JOIN', 'INTO', 'UPDATE'])
@@ -211,6 +244,7 @@ const COLUMN_GOV = new Set([
   'USING',
 ])
 const KEYWORD_GOV = new Set(['GROUP', 'ORDER'])
+const RELATION_MODIFIERS = new Set(['ONLY', 'LATERAL'])
 const GOV_KEYWORDS = new Set([...RELATION_GOV, ...COLUMN_GOV, ...KEYWORD_GOV])
 
 const REF_LIST_STOP = new Set([
@@ -429,7 +463,12 @@ function extractRelationRefs(tokens: SQLTriggerToken[], targetDepth: number): Cu
           i++
           continue
         }
-        if (current.kind !== 'word' || !expectRef || GOV_KEYWORDS.has(currentUpper)) {
+        if (
+          current.kind !== 'word' ||
+          !expectRef ||
+          GOV_KEYWORDS.has(currentUpper) ||
+          RELATION_MODIFIERS.has(currentUpper)
+        ) {
           i++
           continue
         }
@@ -476,6 +515,8 @@ function extractRelationRefs(tokens: SQLTriggerToken[], targetDepth: number): Cu
   return refs
 }
 
+const NO_SIGNALS = { afterTableRef: false, afterClauseLead: false } as const
+
 export function classifyCursorContext(source: string, cursor: number): CursorContext {
   const { start, end } = currentStatementBounds(source, cursor)
   const statement = source.slice(start, end)
@@ -490,6 +531,8 @@ export function classifyCursorContext(source: string, cursor: number): CursorCon
       cteNames: new Set(),
       prefix: '',
       protectedRegion: true,
+      openQuotedIdentifier: beforeScan.openQuotedIdentifier,
+      ...NO_SIGNALS,
     }
   }
 
@@ -516,6 +559,8 @@ export function classifyCursorContext(source: string, cursor: number): CursorCon
       cteNames,
       prefix,
       protectedRegion: false,
+      openQuotedIdentifier: false,
+      ...NO_SIGNALS,
     }
   }
 
@@ -534,6 +579,8 @@ export function classifyCursorContext(source: string, cursor: number): CursorCon
       cteNames,
       prefix,
       protectedRegion: false,
+      openQuotedIdentifier: false,
+      ...NO_SIGNALS,
     }
   }
 
@@ -549,6 +596,8 @@ export function classifyCursorContext(source: string, cursor: number): CursorCon
         cteNames,
         prefix,
         protectedRegion: false,
+        openQuotedIdentifier: false,
+        ...NO_SIGNALS,
       }
     }
     const lastPost = post[post.length - 1]
@@ -556,18 +605,37 @@ export function classifyCursorContext(source: string, cursor: number): CursorCon
     if (lastPost.kind === 'symbol' && (lastPost.text === ',' || lastPost.text === '.')) {
       return relation(fromRefs, cteNames, prefix)
     }
+    if (lastPost.kind === 'word' && RELATION_MODIFIERS.has(wordUpper(lastPost))) {
+      return relation(fromRefs, cteNames, prefix)
+    }
     if (!prefix && !endsWithSpace) return relation(fromRefs, cteNames, prefix)
-    return keyword(fromRefs, cteNames, prefix)
+    return { ...keyword(fromRefs, cteNames, prefix), afterTableRef: true }
   }
 
   if (COLUMN_GOV.has(gov)) {
     if (gov === 'VALUES') {
-      return { positionClass: 'value', fromRefs, cteNames, prefix, protectedRegion: false }
+      return {
+        positionClass: 'value',
+        fromRefs,
+        cteNames,
+        prefix,
+        protectedRegion: false,
+        openQuotedIdentifier: false,
+        ...NO_SIGNALS,
+      }
     }
-    return { positionClass: 'column', fromRefs, cteNames, prefix, protectedRegion: false }
+    return {
+      positionClass: 'column',
+      fromRefs,
+      cteNames,
+      prefix,
+      protectedRegion: false,
+      openQuotedIdentifier: false,
+      ...NO_SIGNALS,
+    }
   }
 
-  return keyword(fromRefs, cteNames, prefix)
+  return { ...keyword(fromRefs, cteNames, prefix), afterClauseLead: KEYWORD_GOV.has(gov) }
 }
 
 function relation(
@@ -575,7 +643,15 @@ function relation(
   cteNames: Set<string>,
   prefix: string,
 ): CursorContext {
-  return { positionClass: 'relation', fromRefs, cteNames, prefix, protectedRegion: false }
+  return {
+    positionClass: 'relation',
+    fromRefs,
+    cteNames,
+    prefix,
+    protectedRegion: false,
+    openQuotedIdentifier: false,
+    ...NO_SIGNALS,
+  }
 }
 
 function keyword(
@@ -583,7 +659,15 @@ function keyword(
   cteNames: Set<string>,
   prefix: string,
 ): CursorContext {
-  return { positionClass: 'keyword', fromRefs, cteNames, prefix, protectedRegion: false }
+  return {
+    positionClass: 'keyword',
+    fromRefs,
+    cteNames,
+    prefix,
+    protectedRegion: false,
+    openQuotedIdentifier: false,
+    ...NO_SIGNALS,
+  }
 }
 
 function qualifierBeforeCursor(

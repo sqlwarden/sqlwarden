@@ -9,7 +9,6 @@ import (
 	"strings"
 	"unicode"
 
-	"github.com/bytebase/omni/mysql/catalog"
 	omnicompletion "github.com/bytebase/omni/mysql/completion"
 	"github.com/bytebase/omni/mysql/parser"
 
@@ -31,18 +30,18 @@ type token struct {
 }
 
 // Complete combines Omni's grammar candidates with Bytebase-style visible
-// reference resolution.
+// reference resolution. Omni runs without a catalog and supplies grammar
+// candidates only; every object name comes from metadata.
 func Complete(
 	ctx context.Context,
 	sql string,
 	cursor int,
-	nativeCatalog *catalog.Catalog,
 	metadata completioncore.MetadataResolver,
 ) ([]completioncore.Candidate, completioncore.Context, error) {
 	if err := completioncore.CheckContext(ctx); err != nil {
 		return nil, completioncore.Context{}, err
 	}
-	native := omnicompletion.Complete(sql, cursor, nativeCatalog)
+	native := omnicompletion.Complete(sql, cursor, nil)
 	candidateSet := parser.Collect(sql, cursor)
 	qualifier := qualifierAt(sql, cursor)
 	valueContext := isInsertValueContext(sql, cursor)
@@ -56,6 +55,9 @@ func Complete(
 			continue
 		}
 		result = append(result, convertNative(candidate))
+	}
+	if !columnContext || qualifier != "" || isRelationSlot(sql, cursor) {
+		result = append(result, resolveRuleCandidates(sql, cursor, metadata)...)
 	}
 	if columnContext && metadata != nil {
 		result = append(result, resolveColumns(sql, cursor, qualifier, metadata)...)
@@ -1075,7 +1077,7 @@ func deduplicate(candidates []completioncore.Candidate) []completioncore.Candida
 	seen := make(map[string]bool, len(candidates))
 	result := make([]completioncore.Candidate, 0, len(candidates))
 	for _, candidate := range candidates {
-		key := string(candidate.Type) + "\x00" + strings.ToLower(candidate.Text)
+		key := string(candidate.Type) + "\x00" + strings.ToLower(strings.Join(append(slices.Clone(candidate.Qualifier), candidate.Text), "\x00"))
 		if candidate.Text == "" || seen[key] {
 			continue
 		}

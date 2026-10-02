@@ -21,7 +21,7 @@ func (n *Navigator) Refresh(ctx context.Context, conn Connection, tree metadata.
 	if live == nil {
 		return nil, ErrSessionRequired
 	}
-	previous, err := n.cachedWithin(ctx, conn, root)
+	previous, err := n.cachedWithin(ctx, conn, root, nil)
 	if err != nil {
 		return nil, err
 	}
@@ -82,7 +82,7 @@ func (n *Navigator) Refresh(ctx context.Context, conn Connection, tree metadata.
 
 // cachedWithin returns every cached listing whose parent is within root,
 // memory taking precedence over the store.
-func (n *Navigator) cachedWithin(ctx context.Context, conn Connection, root metadata.ScopePath) (map[listingKey][]metadata.Child, error) {
+func (n *Navigator) cachedWithin(ctx context.Context, conn Connection, root metadata.ScopePath, read *memoRead) (map[listingKey][]metadata.Child, error) {
 	out := map[listingKey][]metadata.Child{}
 	if conn.Persistent && n.store != nil {
 		rows, err := n.store.SchemaListingsWithin(ctx, conn.ID, string(root))
@@ -90,7 +90,7 @@ func (n *Navigator) cachedWithin(ctx context.Context, conn Connection, root meta
 			return nil, fmt.Errorf("read cached listings: %w", err)
 		}
 		for _, row := range rows {
-			listing, err := decodeListing(row)
+			listing, err := read.listing(row)
 			if err != nil {
 				return nil, err
 			}

@@ -11,10 +11,29 @@ import (
 	"github.com/sqlwarden/internal/engine/metadata"
 )
 
-var _ metadata.SchemaInspector = (*Driver)(nil)
+var (
+	_ metadata.SchemaInspector = (*Driver)(nil)
+	_ metadata.SessionScoper   = (*Driver)(nil)
+)
 
 func (d *Driver) Tree() metadata.Tree {
 	return navigatorTree
+}
+
+// CurrentScope reports the session's database, or the root when the session
+// has none selected.
+func (d *Driver) CurrentScope(ctx context.Context) (metadata.ScopePath, error) {
+	if d.db == nil {
+		return "", errors.New("mysql: not connected")
+	}
+	var database sql.NullString
+	if err := d.db.QueryRowContext(ctx, `SELECT DATABASE()`).Scan(&database); err != nil {
+		return "", fmt.Errorf("mysql: read current scope: %w", err)
+	}
+	if !database.Valid || database.String == "" {
+		return "", nil
+	}
+	return metadata.NewScopePath(metadata.ScopeSegment{Kind: "database", Name: database.String}), nil
 }
 
 // Querier returns the session pool for every database: MySQL catalog queries

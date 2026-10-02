@@ -51,3 +51,38 @@ func isSubsequence(label, prefix string) bool {
 	}
 	return len(remaining) == 0
 }
+
+// kindScores ranks suggestion kinds so that, at equal match quality, columns
+// come first, then relations (tables before views), then containers, then the
+// remaining catalog objects. Every engine shares it so the backend and the
+// client-side index order candidates the same way.
+var kindScores = map[string]int{
+	"column":            100,
+	"table":             90,
+	"view":              85,
+	"materialized_view": 84,
+	"foreign_table":     83,
+	"external_table":    83,
+	"synonym":           82,
+	"database":          70,
+	"schema":            70,
+	"sequence":          65,
+	"function":          60,
+	"procedure":         58,
+	"index":             55,
+	"trigger":           54,
+	"event":             53,
+	"engine":            45,
+	"charset":           45,
+	"keyword":           40,
+	"type":              35,
+}
+
+// KindScore is the context score for a suggestion kind; unknown kinds rank
+// below keywords.
+func KindScore(kind string) int {
+	if score, ok := kindScores[kind]; ok {
+		return score
+	}
+	return 20
+}

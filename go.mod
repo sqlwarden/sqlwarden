@@ -3,7 +3,7 @@ module github.com/sqlwarden
 go 1.26.6
 
 require (
-	github.com/bytebase/omni v0.0.0-20260727045020-25af7ffb855f
+	github.com/bytebase/omni v0.0.0-20260924090414-198ce4f34cd4
 	github.com/docker/go-connections v0.7.0
 	github.com/go-chi/chi/v5 v5.2.4
 	github.com/go-sql-driver/mysql v1.9.3
@@ -116,6 +116,7 @@ require (
 	golang.org/x/sys v0.47.0 // indirect
 	google.golang.org/genproto/googleapis/api v0.0.0-20260209200024-4cfbd4190f57 // indirect
 	google.golang.org/genproto/googleapis/rpc v0.0.0-20260209200024-4cfbd4190f57 // indirect
+	google.golang.org/protobuf v1.36.11 // indirect
 	gopkg.in/yaml.v3 v3.0.1 // indirect
 	mellium.im/sasl v0.3.2 // indirect
 	modernc.org/libc v1.70.0 // indirect

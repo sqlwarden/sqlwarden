@@ -3,15 +3,37 @@ package postgres
 import (
 	"context"
 	"database/sql"
+	"errors"
 	"fmt"
 
 	"github.com/sqlwarden/internal/engine/metadata"
 )
 
-var _ metadata.SchemaInspector = (*Driver)(nil)
+var (
+	_ metadata.SchemaInspector = (*Driver)(nil)
+	_ metadata.SessionScoper   = (*Driver)(nil)
+)
 
 func (d *Driver) Tree() metadata.Tree {
 	return navigatorTree
+}
+
+// CurrentScope reports the session's database and, when its search_path
+// names an existing schema, that schema.
+func (d *Driver) CurrentScope(ctx context.Context) (metadata.ScopePath, error) {
+	if d.db == nil {
+		return "", errors.New("postgres: not connected")
+	}
+	var database string
+	var schema sql.NullString
+	if err := d.db.QueryRowContext(ctx, `SELECT current_database(), current_schema()`).Scan(&database, &schema); err != nil {
+		return "", fmt.Errorf("postgres: read current scope: %w", err)
+	}
+	path := metadata.NewScopePath(metadata.ScopeSegment{Kind: "database", Name: database})
+	if schema.Valid && schema.String != "" {
+		path = path.Child(metadata.ScopeSegment{Kind: "schema", Name: schema.String})
+	}
+	return path, nil
 }
 
 func folder(kind, label, child string, order int, list metadata.Loader, mixed ...string) metadata.Folder {

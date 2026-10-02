@@ -39,4 +39,9 @@ describe('postgres dialect', () => {
       }),
     ).toBe('SELECT * FROM analytics."Daily"')
   })
+
+  it('quotes a completion name only when it is not a bare identifier', () => {
+    expect(postgresDialect.formatIdentifier('orders')).toBe('orders')
+    expect(postgresDialect.formatIdentifier('Orders')).toBe('"Orders"')
+  })
 })

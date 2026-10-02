@@ -79,6 +79,15 @@ type Navigator struct {
 
 	mu     sync.Mutex
 	memory map[int64]*connectionMemory
+	// inflight holds the flight keys of live loads whose singleflight call
+	// has not been forgotten yet. It is only read or written, and group.DoChan
+	// and group.Forget are only called, while holding mu, so presence here
+	// exactly means a new caller for the key would join an existing load.
+	inflight map[string]struct{}
+	// sessionScopes memoizes each connection's live session scope.
+	sessionScopes map[int64]sessionScopeMemo
+
+	decoded *decodeMemo
 }
 
 // navigatorLoadTimeout bounds a shared live load so a hung target cannot pin
@@ -89,7 +98,7 @@ func NewNavigator(store Store, logger *slog.Logger) *Navigator {
 	if logger == nil {
 		logger = slog.New(slog.NewTextHandler(io.Discard, nil))
 	}
-	return &Navigator{store: store, logger: logger, now: time.Now, memory: map[int64]*connectionMemory{}}
+	return &Navigator{store: store, logger: logger, now: time.Now, memory: map[int64]*connectionMemory{}, inflight: map[string]struct{}{}, sessionScopes: map[int64]sessionScopeMemo{}, decoded: newDecodeMemo()}
 }
 
 // memoryFor returns the connection's memory cache; callers must hold n.mu.
@@ -110,6 +119,8 @@ func (n *Navigator) ForgetConnection(connID int64) {
 	n.mu.Lock()
 	defer n.mu.Unlock()
 	delete(n.memory, connID)
+	delete(n.sessionScopes, connID)
+	n.decoded.forget(connID)
 }
 
 func (n *Navigator) Children(ctx context.Context, conn Connection, tree metadata.Tree, live metadata.SchemaInspector, parent metadata.ScopePath, folderKind string) (Listing, error) {
@@ -117,45 +128,86 @@ func (n *Navigator) Children(ctx context.Context, conn Connection, tree metadata
 	if !ok {
 		return Listing{}, ErrUnknownFolder
 	}
-	listing, err := n.cachedOrLoad(ctx, conn, tree, live, parent, folder)
+	listing, _, err := n.cachedOrLoad(ctx, conn, tree, live, parent, folder, navigatorLoadTimeout)
 	if err != nil {
 		return Listing{}, err
 	}
 	return n.present(conn, tree, listing), nil
 }
 
-func (n *Navigator) cachedOrLoad(ctx context.Context, conn Connection, tree metadata.Tree, live metadata.SchemaInspector, parent metadata.ScopePath, folder metadata.Folder) (Listing, error) {
+// loadOrigin reports how cachedOrLoad obtained a listing: from the memory or
+// store cache, by starting a live load, or by joining one already running.
+type loadOrigin int
+
+const (
+	originNone loadOrigin = iota
+	originCache
+	originStarted
+	originJoined
+)
+
+func flightKeyFor(connID int64, parent metadata.ScopePath, folder string) string {
+	return fmt.Sprintf("%d\x00%s\x00%s", connID, parent, folder)
+}
+
+// cachedOrLoad serves the listing from memory, then the store, then a shared
+// live load bounded by timeout. No live load starts once ctx is done.
+func (n *Navigator) cachedOrLoad(ctx context.Context, conn Connection, tree metadata.Tree, live metadata.SchemaInspector, parent metadata.ScopePath, folder metadata.Folder, timeout time.Duration) (Listing, loadOrigin, error) {
 	key := listingKey{parent: parent, folder: folder.Kind}
 	n.mu.Lock()
 	cached, ok := n.memoryFor(conn.ID).listings[key]
 	n.mu.Unlock()
 	if ok {
 		cached.Source = SourceMemory
-		return cached, nil
+		return cached, originCache, nil
 	}
 	if conn.Persistent && n.store != nil {
 		row, found, err := n.store.SchemaListing(ctx, conn.ID, string(parent), folder.Kind)
 		if err != nil {
-			return Listing{}, fmt.Errorf("read cached listing: %w", err)
+			return Listing{}, originNone, fmt.Errorf("read cached listing: %w", err)
 		}
 		if found {
 			listing, err := decodeListing(row)
 			if err != nil {
-				return Listing{}, err
+				return Listing{}, originNone, err
 			}
 			n.remember(conn.ID, listing)
 			listing.Source = SourceStore
-			return listing, nil
+			return listing, originCache, nil
 		}
 	}
 	if live == nil {
-		return Listing{}, ErrSessionRequired
+		return Listing{}, originNone, ErrSessionRequired
+	}
+	flightKey := flightKeyFor(conn.ID, parent, folder.Kind)
+	n.mu.Lock()
+	// Re-checked under mu: a load that finished since the first check has
+	// already remembered its listing and forgotten its flight.
+	if cached, ok := n.memoryFor(conn.ID).listings[key]; ok {
+		n.mu.Unlock()
+		cached.Source = SourceMemory
+		return cached, originCache, nil
+	}
+	if err := ctx.Err(); err != nil {
+		n.mu.Unlock()
+		return Listing{}, originNone, err
+	}
+	origin := originStarted
+	if _, running := n.inflight[flightKey]; running {
+		origin = originJoined
+	} else {
+		n.inflight[flightKey] = struct{}{}
 	}
 	// The shared load outlives any single waiter's cancellation so coalesced
 	// callers are not failed by whichever request happened to start it.
-	flightKey := fmt.Sprintf("%d\x00%s\x00%s", conn.ID, parent, folder.Kind)
 	result := n.group.DoChan(flightKey, func() (any, error) {
-		flightCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), navigatorLoadTimeout)
+		defer func() {
+			n.mu.Lock()
+			n.group.Forget(flightKey)
+			delete(n.inflight, flightKey)
+			n.mu.Unlock()
+		}()
+		flightCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), timeout)
 		defer cancel()
 		listings, err := n.load(flightCtx, live, tree.DatabaseOf(parent), folder, []metadata.ScopePath{parent})
 		if err != nil {
@@ -166,16 +218,17 @@ func (n *Navigator) cachedOrLoad(ctx context.Context, conn Connection, tree meta
 		}
 		return listings[0], nil
 	})
+	n.mu.Unlock()
 	select {
 	case <-ctx.Done():
-		return Listing{}, ctx.Err()
+		return Listing{}, origin, ctx.Err()
 	case res := <-result:
 		if res.Err != nil {
-			return Listing{}, res.Err
+			return Listing{}, origin, res.Err
 		}
 		listing := res.Val.(Listing)
 		listing.Source = SourceLive
-		return listing, nil
+		return listing, origin, nil
 	}
 }
 

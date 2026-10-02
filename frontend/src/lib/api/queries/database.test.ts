@@ -22,8 +22,11 @@ it('requests the completion-index endpoint with the session header and unwraps t
       JSON.stringify({
         version: 'snap-1',
         default_schema: 'public',
+        search_schemas: ['public'],
+        default_scope_relations_listed: true,
+        column_score: 100,
         schemas: ['public'],
-        objects: [{ schema: 'public', name: 'orders', kind: 'table' }],
+        objects: [{ schema: 'public', name: 'orders', kind: 'table', score: 90 }],
         columns: [{ schema: 'public', table: 'orders', name: 'id', type: 'int8', nullable: false }],
       }),
       { status: 200, headers: { 'Content-Type': 'application/json' } },
@@ -34,7 +37,7 @@ it('requests the completion-index endpoint with the session header and unwraps t
   const res = await getConnectionCompletionIndex('acme', 3, 7, 'sess-1')
 
   expect(res.default_schema).toBe('public')
-  expect(res.objects[0]).toEqual({ schema: 'public', name: 'orders', kind: 'table' })
+  expect(res.objects[0]).toEqual({ schema: 'public', name: 'orders', kind: 'table', score: 90 })
   expect(res.columns[0].nullable).toBe(false)
 })
 

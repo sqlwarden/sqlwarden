@@ -8,13 +8,36 @@ import (
 	"strconv"
 	"strings"
 
+	"github.com/sqlwarden/internal/engine/completioncore/mssql"
 	"github.com/sqlwarden/internal/engine/metadata"
 )
 
-var _ metadata.SchemaInspector = (*Driver)(nil)
+var (
+	_ metadata.SchemaInspector = (*Driver)(nil)
+	_ metadata.SessionScoper   = (*Driver)(nil)
+)
 
 func (d *Driver) Tree() metadata.Tree {
 	return navigatorTree
+}
+
+// CurrentScope reports the session's database and the login's default schema.
+func (d *Driver) CurrentScope(ctx context.Context) (metadata.ScopePath, error) {
+	if d.db == nil {
+		return "", errors.New("sqlserver: not connected")
+	}
+	var database, schema sql.NullString
+	if err := d.db.QueryRowContext(ctx, `SELECT DB_NAME(), SCHEMA_NAME()`).Scan(&database, &schema); err != nil {
+		return "", fmt.Errorf("sqlserver: read current scope: %w", err)
+	}
+	if !database.Valid || database.String == "" {
+		return "", nil
+	}
+	path := metadata.NewScopePath(metadata.ScopeSegment{Kind: "database", Name: database.String})
+	if schema.Valid && schema.String != "" {
+		path = path.Child(metadata.ScopeSegment{Kind: "schema", Name: schema.String})
+	}
+	return path, nil
 }
 
 // Querier returns the session pool, switched to database per query. The sys
@@ -79,7 +102,8 @@ var (
 )
 
 var navigatorTree = metadata.Tree{
-	SystemObjects: true,
+	SystemObjects:  true,
+	FallbackScopes: []string{"dbo"},
 	Root: metadata.Node{Label: "Connection", Icon: "connection", Folders: []metadata.Folder{
 		folder("databases", "Databases", "database", 10, ListDatabases),
 		folder("logins", "Logins", "login", 20, ListLogins),
@@ -481,12 +505,14 @@ func ListProcedures(ctx context.Context, q metadata.Querier, parents []metadata.
 		if err := rows.Scan(schema, &name, &objectType, &shipped); err != nil {
 			return metadata.Child{}, err
 		}
-		kind := "function"
+		child := metadata.Child{Kind: "function", Name: name, System: shipped}
 		switch strings.TrimSpace(objectType) {
 		case "P", "PC", "X":
-			kind = "procedure"
+			child.Kind = "procedure"
+		case "IF", "TF", "FT":
+			child.Attributes = map[string]any{mssql.ReturnsTableAttribute: true}
 		}
-		return metadata.Child{Kind: kind, Name: name, System: shipped}, nil
+		return child, nil
 	})
 }
 

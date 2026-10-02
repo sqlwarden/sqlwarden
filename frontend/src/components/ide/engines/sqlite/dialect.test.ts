@@ -38,4 +38,9 @@ describe('sqlite dialect', () => {
       }),
     ).toBe('SELECT * FROM audit."Daily"')
   })
+
+  it('quotes a completion name only when it is not a bare identifier', () => {
+    expect(sqliteDialect.formatIdentifier('Orders')).toBe('Orders')
+    expect(sqliteDialect.formatIdentifier('order details')).toBe('"order details"')
+  })
 })

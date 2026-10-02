@@ -47,6 +47,18 @@ it('marks comments and unterminated strings as protected', () => {
   expect(at("SELECT 'unterminated ").protectedRegion).toBe(true)
 })
 
+it('flags an unclosed quoted identifier separately from comments and strings', () => {
+  const bracket = at('SELECT * FROM [ord')
+  expect(bracket.openQuotedIdentifier).toBe(true)
+  expect(bracket.protectedRegion).toBe(true)
+  expect(at('SELECT * FROM "ord').openQuotedIdentifier).toBe(true)
+  expect(at('SELECT * FROM `ord').openQuotedIdentifier).toBe(true)
+  expect(at('SELECT * FROM [orders] ').openQuotedIdentifier).toBe(false)
+  expect(at('SELECT 1 -- [x').openQuotedIdentifier).toBe(false)
+  expect(at("SELECT '[x").openQuotedIdentifier).toBe(false)
+  expect(at('SELECT 1 /* [x').openQuotedIdentifier).toBe(false)
+})
+
 it('does not leak FROM refs across a statement boundary', () => {
   const ctx = classifyCursorContext(
     'SELECT * FROM a; SELECT  FROM b',

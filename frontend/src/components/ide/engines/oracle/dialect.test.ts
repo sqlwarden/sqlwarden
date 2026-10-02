@@ -30,4 +30,11 @@ describe('oracle dialect', () => {
       'SELECT COUNT(*) FROM (SELECT 1 FROM "HR"."EMPLOYEES" FETCH FIRST 1000 ROWS ONLY)',
     )
   })
+
+  it('quotes a completion name only when it is not a bare identifier', () => {
+    expect(oracleDialect.formatIdentifier('ORDERS')).toBe('ORDERS')
+    expect(oracleDialect.formatIdentifier('ORDER$1')).toBe('ORDER$1')
+    expect(oracleDialect.formatIdentifier('orders')).toBe('"orders"')
+    expect(oracleDialect.formatIdentifier('Orders')).toBe('"Orders"')
+  })
 })

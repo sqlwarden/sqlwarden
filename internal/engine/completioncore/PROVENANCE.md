@@ -11,6 +11,6 @@ Bytebase's MIT-licensed parser completion implementation:
   - `backend/plugin/parser/pg/builtin_functions.go`
   - `backend/plugin/parser/mysql/completion.go`
 
-The implementation is adapted to use SQLWarden's immutable schema snapshots
-and completion API. Bytebase protobuf, store, query-span, and transport
+The implementation is adapted to read SQLWarden's per-request completion
+metadata view and completion API. Bytebase protobuf, store, query-span, and transport
 dependencies are deliberately not included.

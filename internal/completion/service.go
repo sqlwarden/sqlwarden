@@ -5,6 +5,7 @@ import (
 	"context"
 	"errors"
 	"sync"
+	"time"
 
 	"github.com/sqlwarden/internal/engine"
 	"github.com/sqlwarden/internal/engine/completer"
@@ -12,15 +13,20 @@ import (
 
 var ErrUnsupported = errors.New("SQL completion is not supported for this driver")
 
-// Service reuses one connectionless engine per dialect. Prepared catalogs are
-// owned by the engines and keyed by connection and immutable schema version.
+// Service reuses one connectionless engine per dialect.
 type Service struct {
-	mu      sync.Mutex
-	engines map[string]completer.Completer
+	mu        sync.Mutex
+	engines   map[string]completer.Completer
+	budget    time.Duration
+	maxRounds int
 }
 
 func NewService() *Service {
-	return &Service{engines: make(map[string]completer.Completer)}
+	return &Service{
+		engines:   make(map[string]completer.Completer),
+		budget:    1500 * time.Millisecond,
+		maxRounds: 4,
+	}
 }
 
 func (s *Service) Complete(ctx context.Context, driver string, req completer.Request) (completer.Result, error) {
@@ -41,20 +47,6 @@ func (s *Service) Vocabulary(driver string) (completer.Vocabulary, error) {
 		return completer.Vocabulary{}, ErrUnsupported
 	}
 	return provider.CompletionVocabulary(), nil
-}
-
-func (s *Service) InvalidateConnection(connectionID string) {
-	s.mu.Lock()
-	engines := make([]completer.Completer, 0, len(s.engines))
-	for _, engine := range s.engines {
-		engines = append(engines, engine)
-	}
-	s.mu.Unlock()
-	for _, engine := range engines {
-		if invalidator, ok := engine.(completer.CatalogInvalidator); ok {
-			invalidator.InvalidateCompletionCatalog(connectionID)
-		}
-	}
 }
 
 func (s *Service) engine(driver string) (completer.Completer, error) {

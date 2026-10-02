@@ -16,7 +16,7 @@ func TestScopeScenarios(t *testing.T) {
 	catalog := completiontest.Metadata("postgres", "app", "public")
 	column := completioncore.CandidateColumn
 	completiontest.Run(t, func(ctx context.Context, sql string, cursor int, metadata completioncore.MetadataResolver) ([]completioncore.Candidate, error) {
-		candidates, _, err := corepostgres.Complete(ctx, sql, cursor, nil, metadata)
+		candidates, _, err := corepostgres.Complete(ctx, sql, cursor, metadata)
 		return candidates, err
 	}, catalog, []completiontest.Scenario{
 		{
@@ -325,7 +325,7 @@ func TestCompleteClassifiesCursorContext(t *testing.T) {
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
-			_, ctx, err := corepostgres.Complete(context.Background(), tc.sql, tc.cursor, nil, catalog)
+			_, ctx, err := corepostgres.Complete(context.Background(), tc.sql, tc.cursor, catalog)
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -345,7 +345,7 @@ func TestCompletionWithBrokenTrailingStatementScalesLinearly(t *testing.T) {
 		fmt.Fprintf(&sheet, "SELECT col_a, col_b FROM table_%04d WHERE col_a = %d;\n", i, i)
 	}
 	started := time.Now()
-	candidates, _, err := corepostgres.Complete(context.Background(), sheet.String(), len("SELECT "), nil, catalog)
+	candidates, _, err := corepostgres.Complete(context.Background(), sheet.String(), len("SELECT "), catalog)
 	if err != nil {
 		t.Fatal(err)
 	}

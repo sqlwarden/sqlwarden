@@ -23,4 +23,9 @@ describe('mariadb dialect', () => {
       ),
     ).toBe('SELECT COUNT(*) FROM (SELECT 1 FROM `Orders` LIMIT 5) AS _warden_count')
   })
+
+  it('quotes a completion name only when it is not a bare identifier', () => {
+    expect(mariadbDialect.formatIdentifier('Orders')).toBe('Orders')
+    expect(mariadbDialect.formatIdentifier('order details')).toBe('`order details`')
+  })
 })

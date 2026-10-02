@@ -18,6 +18,10 @@ class PostgresDialect extends BaseSqlDialect {
   formatColumn(name: string): string {
     return this.quoteIdentifier(name)
   }
+
+  formatIdentifier(name: string): string {
+    return this.quoteIdentifier(name)
+  }
 }
 
 export const postgresDialect = new PostgresDialect()

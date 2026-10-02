@@ -11,10 +11,18 @@ import (
 	moderncsqlite "modernc.org/sqlite"
 )
 
-var _ metadata.SchemaInspector = (*sqliteDriver)(nil)
+var (
+	_ metadata.SchemaInspector = (*sqliteDriver)(nil)
+	_ metadata.SessionScoper   = (*sqliteDriver)(nil)
+)
 
 func (d *sqliteDriver) Tree() metadata.Tree {
 	return navigatorTree
+}
+
+// CurrentScope is always main, the database the connection opened.
+func (d *sqliteDriver) CurrentScope(context.Context) (metadata.ScopePath, error) {
+	return metadata.NewScopePath(metadata.ScopeSegment{Kind: "database", Name: "main"}), nil
 }
 
 // Querier returns the connection pool for every database: catalog queries

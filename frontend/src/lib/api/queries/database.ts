@@ -46,7 +46,12 @@ export type SQLCompletionSuggestion = {
   data_type?: string
 }
 
-export type SQLCompletionIndexObject = { schema: string; name: string; kind: string }
+export type SQLCompletionIndexObject = {
+  schema: string
+  name: string
+  kind: string
+  score: number
+}
 
 export type SQLCompletionIndexColumn = {
   schema: string
@@ -59,6 +64,9 @@ export type SQLCompletionIndexColumn = {
 export type SQLCompletionIndexResponse = {
   version: string
   default_schema: string
+  search_schemas: string[]
+  default_scope_relations_listed: boolean
+  column_score: number
   schemas: string[]
   objects: SQLCompletionIndexObject[]
   columns: SQLCompletionIndexColumn[]
@@ -74,7 +82,8 @@ export type SQLCompletionResponse = {
   suggestions: SQLCompletionSuggestion[]
   mode: 'persistent' | 'ephemeral'
   metadata_available: boolean
-  metadata_status: string
+  metadata_status: 'ready' | 'degraded' | 'unavailable' | 'partial'
+  metadata_loaded?: boolean
   snapshot_id?: string
   context?: 'column' | 'relation' | 'keyword' | 'value' | 'any'
 }
