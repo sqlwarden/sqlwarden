@@ -1,5 +1,45 @@
 # Changelog
 
+## [0.9.4](https://github.com/sqlwarden/sqlwarden/compare/v0.9.3...v0.9.4) (2026-10-02)
+
+
+### Features
+
+* **completion:** load completion metadata on demand and add SQL Server object completion (SQLW-191) ([8d1ce59](https://github.com/sqlwarden/sqlwarden/commit/8d1ce594bc1a62b9b1d1417c99cbd9bee8b2ddf3))
+* **ide:** distinguish focused and unfocused tab surfaces (SQLW-184) ([46027a1](https://github.com/sqlwarden/sqlwarden/commit/46027a1d5eb5b589acf4ebd7ab2e8875c17e67d4))
+* **ide:** editor-owned toolbar, shell/editor surface tokens, transaction control redesign (SQLW-177) ([0915188](https://github.com/sqlwarden/sqlwarden/commit/09151885d7f7b2ec8c96c5ec175c59d810949448))
+* **ide:** implement a persistent bottom toolbar, move history and favorites to bottom toolbar (SQLW-175) ([4850224](https://github.com/sqlwarden/sqlwarden/commit/4850224b758bc2c19727920966a4d1ea62187ff5))
+* **ide:** move results/history/favorites switcher to header of bottom panel as middle divider (SQLW-177) ([e9603a6](https://github.com/sqlwarden/sqlwarden/commit/e9603a6fe980d98b1ef7940d80b991e1418619ec))
+* **ide:** redesign history/favorites as tables with drag-to-editor (SQLW-177) ([02519ed](https://github.com/sqlwarden/sqlwarden/commit/02519ed61b0fed65425e2977ad9baaaa7713fbce))
+* **ide:** rerun queries from results and history with connect prompt (SQLW-183) ([36c2e4d](https://github.com/sqlwarden/sqlwarden/commit/36c2e4d2e09473f548f6b6629a13f943645f4a31))
+* **ide:** restyle database navigator and panel surfaces and make raw csv editable (SQLW-196) ([56c5efb](https://github.com/sqlwarden/sqlwarden/commit/56c5efbf507569deb44eb1a2cdfdef904f4c73b6))
+* **ide:** third user feedback round UI changes implementation (SQLW-180) ([3f1ad84](https://github.com/sqlwarden/sqlwarden/commit/3f1ad840a755bf27bd273b35b1854f611ed5c7cb))
+* **schema:** add lazy DBeaver-style schema navigator foundation with PostgreSQL (SQLW-186) ([f4a42ec](https://github.com/sqlwarden/sqlwarden/commit/f4a42ec54131b153dbcf4064f8c8eba93b90835d))
+* **schema:** add lazy navigator for PostgreSQL-compatible engines (SQLW-187) ([6d0152f](https://github.com/sqlwarden/sqlwarden/commit/6d0152f2eef550c3698048c6d4ed7e7c04f3d57e))
+* **schema:** add lazy navigator for SQLite, SQL Server, and Oracle (SQLW-189) ([d4a5e59](https://github.com/sqlwarden/sqlwarden/commit/d4a5e591e3d4734b4b6f5beaa10a4ab50237fe8d))
+* **schema:** add lazy navigator for the MySQL family (SQLW-188) ([41b0f5f](https://github.com/sqlwarden/sqlwarden/commit/41b0f5f8059f510e0bc098ddf908eac39ae4666a))
+* **ui:** polish empty states and standardize typography across the app (SQLW-176) ([c896aa3](https://github.com/sqlwarden/sqlwarden/commit/c896aa3b76f6ee5b7d13eb97a15859f8ecf9324a))
+
+
+### Bug Fixes
+
+* **ide:** show not-connected state instead of snapshot spinner when disconnected (SQLW-179) ([ac2b78c](https://github.com/sqlwarden/sqlwarden/commit/ac2b78c8d300498b53b0507352356055c281c2cd))
+* **ide:** stop per-keystroke sequence fetches and debounce schema filter (SQLW-174) ([77f636a](https://github.com/sqlwarden/sqlwarden/commit/77f636a6de375eead7c6231cc0371b995ac6c972))
+* **release:** align prerelease notes with stable releases (SQLW-178) ([3a433e8](https://github.com/sqlwarden/sqlwarden/commit/3a433e8c53887aba4aecd1b84c878dc007b703cb))
+
+
+### Documentation
+
+* add CLA with PR enforcement and trademark notice (SQLW-140) ([1ef38c5](https://github.com/sqlwarden/sqlwarden/commit/1ef38c569515e158a6cbc8be0e306868ab44fd50))
+* adopt AGPLv3 and refresh project documentation (SQLW-140) ([58fe3c6](https://github.com/sqlwarden/sqlwarden/commit/58fe3c69d622b73755676c9234259a931784e24f))
+* document the lazy schema navigator architecture (SQLW-190) ([ad1f882](https://github.com/sqlwarden/sqlwarden/commit/ad1f882082dc3f05be75a9e0c4a72ece1da1379b))
+* state that the AGPL covers the full repository history (SQLW-140) ([520b16b](https://github.com/sqlwarden/sqlwarden/commit/520b16b965718040cf40324bae26b45a3d33af71))
+
+
+### Code Refactoring
+
+* **schema:** remove legacy directory inspection and snapshot sync settings (SQLW-190) ([771e9df](https://github.com/sqlwarden/sqlwarden/commit/771e9df014ad2618b344af3ba08c17e7e2a55764))
+
 ## [0.9.3](https://github.com/sqlwarden/sqlwarden/compare/v0.9.2...v0.9.3) (2026-09-16)
 
 
