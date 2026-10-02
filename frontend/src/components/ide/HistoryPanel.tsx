@@ -58,6 +58,7 @@ import { isExpandableSql, flattenSql } from './sqlPreview'
 import { useEditorViewRegistry } from './useEditorViewRegistry'
 import { useFavoritesMutations } from './useFavoritesMutations'
 import { useIde, activeTabId as selectActiveTabId } from './useIdeStore'
+import { useRunInActiveTab } from './useRunInActiveTab'
 import { IdeEmptyState } from './IdeEmptyState'
 
 function favoriteKey(connectionId: number | null, sqlText: string): string {
@@ -176,6 +177,7 @@ type HistoryRowItemProps = {
   onToggleFavorite: () => void
   onCopy: () => void
   onInsertAtCursor: () => void
+  onRun: () => void
   onDelete: () => void
 }
 
@@ -193,6 +195,7 @@ function HistoryRowItem({
   onToggleFavorite,
   onCopy,
   onInsertAtCursor,
+  onRun,
   onDelete,
 }: HistoryRowItemProps) {
   const expandable = isExpandableSql(row.sqlText)
@@ -298,6 +301,17 @@ function HistoryRowItem({
               )}
             </Button>
           </Tip>
+          <Tip label="Run query">
+            <Button
+              type="button"
+              variant="ghost"
+              size="icon-sm"
+              aria-label="Run query"
+              onClick={onRun}
+            >
+              <Icon name="play" size={12} />
+            </Button>
+          </Tip>
           <Tip label="Copy query">
             <Button
               type="button"
@@ -369,6 +383,7 @@ export function HistoryPanel({ orgSlug, workspace }: BottomPanelTabProps) {
   const mode = runtimeSettings.data?.effective.query_history_mode ?? 'backend'
 
   const connections = useQuery(allOrgWorkspaceConnectionsQueryOptions(orgSlug, workspace.id))
+  const runInActiveTab = useRunInActiveTab(workspace.id)
   const environments = useQuery(
     orgEnvironmentsQueryOptions(orgSlug, workspace.id, {
       page_size: 100,
@@ -446,6 +461,13 @@ export function HistoryPanel({ orgSlug, workspace }: BottomPanelTabProps) {
     const view = viewRegistry.get(`${activeGroupId}:${activeTabId}`)
     if (!view) return
     insertAtCursor(view, row.sqlText)
+  }
+
+  function handleRun(row: HistoryRow) {
+    runInActiveTab(
+      connections.data?.items.find((c) => c.id === row.connectionId),
+      row.sqlText,
+    )
   }
 
   function toggleExpand(id: number | string) {
@@ -678,6 +700,7 @@ export function HistoryPanel({ orgSlug, workspace }: BottomPanelTabProps) {
                         }}
                         onCopy={() => handleCopy(row.sqlText)}
                         onInsertAtCursor={() => handleInsertAtCursor(row)}
+                        onRun={() => handleRun(row)}
                         onDelete={() => scheduleDelete(row)}
                       />
                     )

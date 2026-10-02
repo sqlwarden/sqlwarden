@@ -8,6 +8,7 @@ import type { Connection, EngineView, Workspace } from '#/lib/api/types'
 import { createTestQueryClient } from '#/test/render'
 import { createEditorViewRegistry, EditorViewRegistryContext } from './useEditorViewRegistry'
 import { createIdeStore, IdeStoreContext, type EditorTab } from './useIdeStore'
+import { createQueryRunRegistry, QueryRunRegistryContext } from './useQueryRunRegistry'
 import { createYDocRegistry, YDocRegistryContext } from './useYDocRegistry'
 import { resolveEditorSql, useToolbarQueryAction } from './useToolbarQueryAction'
 
@@ -395,6 +396,63 @@ describe('useToolbarQueryAction', () => {
 
       expect(mocks.run).not.toHaveBeenCalled()
       expect(mocks.warning).toHaveBeenCalledTimes(2)
+    })
+  })
+
+  describe('registered tab runner', () => {
+    const otherConnection: Connection = { ...connection, id: 9, name: 'staging' }
+
+    function renderWithRegistry() {
+      const registry = createQueryRunRegistry()
+      const registryWrapper = ({ children }: PropsWithChildren) =>
+        wrapper({
+          children: (
+            <QueryRunRegistryContext.Provider value={registry}>
+              {children}
+            </QueryRunRegistryContext.Provider>
+          ),
+        })
+      renderHook(
+        () =>
+          useToolbarQueryAction({
+            orgSlug: 'acme',
+            workspace,
+            activeTab: tab,
+            activeConnection: connection,
+            hasConnections: true,
+          }),
+        { wrapper: registryWrapper },
+      )
+      return registry
+    }
+
+    beforeEach(() => {
+      mocks.sessions = {}
+      mocks.run.mockClear()
+      mocks.warning.mockClear()
+    })
+
+    it('prompts to connect instead of running when the target connection has no session', async () => {
+      const registry = renderWithRegistry()
+
+      await act(() => registry.get(tab.id)!(otherConnection, 'select 1'))
+
+      expect(mocks.run).not.toHaveBeenCalled()
+      expect(mocks.connect).not.toHaveBeenCalled()
+      expect(mocks.warning).toHaveBeenCalledWith(
+        'Not connected to staging.',
+        expect.objectContaining({ action: expect.objectContaining({ label: 'Connect' }) }),
+      )
+    })
+
+    it('runs on the target connection when it has a session', async () => {
+      mocks.sessions = { 9: 'session-9' }
+      const registry = renderWithRegistry()
+
+      await act(() => registry.get(tab.id)!(otherConnection, 'select 1'))
+
+      expect(mocks.run).toHaveBeenCalledWith('select 1', undefined, 9)
+      expect(mocks.warning).not.toHaveBeenCalled()
     })
   })
 })

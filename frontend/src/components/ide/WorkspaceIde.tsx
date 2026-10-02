@@ -57,6 +57,7 @@ import { EditorLayout } from './EditorLayout'
 import { BottomPanelHeader, BottomPanelContent, BOTTOM_PANEL_HEADER_HEIGHT } from './BottomPanel'
 import { createYDocRegistry, YDocRegistryContext, useYDocRegistry } from './useYDocRegistry'
 import { createEditorViewRegistry, EditorViewRegistryContext } from './useEditorViewRegistry'
+import { createQueryRunRegistry, QueryRunRegistryContext } from './useQueryRunRegistry'
 import { createTabViewStateCache, TabViewStateCacheContext } from './tabViewStateCache'
 import { useSessionSync } from './useSessionSync'
 import { useSaveEditorTab } from './useSaveEditorTab'
@@ -82,6 +83,7 @@ export function WorkspaceIde({ orgSlug, workspaceId }: WorkspaceIdeProps) {
   const store = useMemo(() => createIdeStore(orgSlug, accountId), [orgSlug, accountId])
   const registry = useMemo(() => createYDocRegistry(accountId, orgSlug), [orgSlug, accountId])
   const viewRegistry = useMemo(() => createEditorViewRegistry(), [])
+  const queryRunRegistry = useMemo(() => createQueryRunRegistry(), [])
   const tabViewStateCache = useMemo(() => createTabViewStateCache(), [])
 
   // Release the primary lock when this editor window unmounts so another window can
@@ -117,17 +119,19 @@ export function WorkspaceIde({ orgSlug, workspaceId }: WorkspaceIdeProps) {
       <YDocRegistryContext.Provider value={registry}>
         <EditorViewRegistryContext.Provider value={viewRegistry}>
           <TabViewStateCacheContext.Provider value={tabViewStateCache}>
-            <WorkspaceIdeContent
-              orgSlug={orgSlug}
-              requestedWorkspaceId={workspaceId}
-              isLoading={workspaces.isLoading}
-              isError={workspaces.isError}
-              isRetrying={workspaces.isFetching}
-              workspaces={workspaces.data?.items ?? []}
-              onRetry={() => {
-                void workspaces.refetch()
-              }}
-            />
+            <QueryRunRegistryContext.Provider value={queryRunRegistry}>
+              <WorkspaceIdeContent
+                orgSlug={orgSlug}
+                requestedWorkspaceId={workspaceId}
+                isLoading={workspaces.isLoading}
+                isError={workspaces.isError}
+                isRetrying={workspaces.isFetching}
+                workspaces={workspaces.data?.items ?? []}
+                onRetry={() => {
+                  void workspaces.refetch()
+                }}
+              />
+            </QueryRunRegistryContext.Provider>
           </TabViewStateCacheContext.Provider>
         </EditorViewRegistryContext.Provider>
       </YDocRegistryContext.Provider>

@@ -32,6 +32,7 @@ export function useQueryExecution(
   const runIdRef = useRef('')
   const sqlRef = useRef('')
   const explainRef = useRef<'plain' | 'analyze' | undefined>(undefined)
+  const runConnectionIdRef = useRef<number | undefined>(undefined)
 
   const cancel = useCallback(() => previousController?.abort(), [previousController])
 
@@ -41,27 +42,31 @@ export function useQueryExecution(
       controller: AbortController,
       options: { runId: string; startAt?: number; confirmUnsafeAt?: number },
     ) => {
-      if (!tabId || !connectionId) return Promise.resolve('')
+      const targetConnectionId = runConnectionIdRef.current ?? connectionId
+      if (!tabId || !targetConnectionId) return Promise.resolve('')
       const deps: BatchExecutionDependencies = {
         ensureSession,
         runStatement: (sessionId, statementSql, confirmUnsafe, signal) =>
-          runConnectionQuery(orgSlug, workspaceId, connectionId, sessionId, statementSql, {
+          runConnectionQuery(orgSlug, workspaceId, targetConnectionId, sessionId, statementSql, {
             useCursor: true,
             confirmUnsafe,
             explain: explainRef.current,
             signal,
           }),
-        beginRun: (_tabId, sqls) => beginRun(sqls),
+        beginRun: (_tabId, sqls) => beginRun(sqls, targetConnectionId),
         setRunStatementResult,
         markRunRemainingSkipped,
         setRunning,
         setController,
         setPendingConfirmation,
-        recordHistory,
+        recordHistory: (entry) => recordHistory(entry, targetConnectionId),
         setTransactionState,
         refreshTransactionState,
       }
-      return runStatementBatch({ tabId, connectionId, sqls: [sql], controller, ...options }, deps)
+      return runStatementBatch(
+        { tabId, connectionId: targetConnectionId, sqls: [sql], controller, ...options },
+        deps,
+      )
     },
     [
       beginRun,
@@ -82,14 +87,16 @@ export function useQueryExecution(
   )
 
   const run = useCallback(
-    async (sql: string, explain?: 'plain' | 'analyze') => {
-      if (!tabId || !connectionId || isRunning) return
+    async (sql: string, explain?: 'plain' | 'analyze', connectionOverrideId?: number) => {
+      const targetConnectionId = connectionOverrideId ?? connectionId
+      if (!tabId || !targetConnectionId || isRunning) return
 
       previousController?.abort()
       sqlRef.current = sql
       explainRef.current = explain
+      runConnectionIdRef.current = connectionOverrideId
       const controller = new AbortController()
-      const runId = beginRun([sql])
+      const runId = beginRun([sql], targetConnectionId)
       runIdRef.current = runId
       await executeBatch(sql, controller, { runId })
     },
@@ -98,7 +105,7 @@ export function useQueryExecution(
 
   const confirmAt = useCallback(
     async (index: number) => {
-      if (!tabId || !connectionId) return
+      if (!tabId || !(runConnectionIdRef.current ?? connectionId)) return
       if (!runIdRef.current || runIdRef.current !== pendingRunId) return
 
       const controller = new AbortController()

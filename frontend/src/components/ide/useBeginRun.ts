@@ -14,10 +14,10 @@ export function useBeginRun(
   const store = useContext(IdeStoreContext)
 
   return useCallback(
-    (sqls: string[]): string => {
+    (sqls: string[], connectionId: number | undefined = fallbackConnectionId): string => {
       if (!store || !tabId) return ''
       const s = store.getState()
-      const runId = s.beginRun(tabId, sqls, fallbackConnectionId)
+      const runId = s.beginRun(tabId, sqls, connectionId)
 
       const evicted = runsToEvict(store.getState().resultRuns[tabId] ?? [])
       if (evicted.length > 0) {
@@ -26,7 +26,7 @@ export function useBeginRun(
           evicted.map((run) => run.id),
         )
         for (const run of evicted) {
-          void closeRunCursors(orgSlug, workspaceId, fallbackConnectionId, run)
+          void closeRunCursors(orgSlug, workspaceId, connectionId, run)
         }
       }
 

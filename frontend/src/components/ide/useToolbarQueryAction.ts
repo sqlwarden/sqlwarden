@@ -10,6 +10,7 @@ import { useConnectionActions } from './useConnectionActions'
 import { useEditorViewRegistry, type EditorViewRegistry } from './useEditorViewRegistry'
 import { useQueryExecution } from './useQueryExecution'
 import { useRunAllStatements } from './useRunAllStatements'
+import { useQueryRunRegistry, type TabQueryRunner } from './useQueryRunRegistry'
 import { useYDocRegistry, type YDocRegistry } from './useYDocRegistry'
 
 export function resolveEditorSql({
@@ -172,6 +173,26 @@ export function useToolbarQueryAction({
       execute,
     ],
   )
+
+  const runOnConnection = useCallback<TabQueryRunner>(
+    async (connection, sql) => {
+      if (!activeTab || isRunning) return
+      if (needsConnect(connection)) return
+      if (!sql) return
+      ensureResultsVisible()
+      await execute(sql, undefined, connection.id)
+    },
+    [activeTab, isRunning, ensureResultsVisible, needsConnect, execute],
+  )
+
+  const queryRunRegistry = useQueryRunRegistry()
+  const activeTabId = activeTab?.id
+  useEffect(() => {
+    if (!bindShortcut || !activeTabId) return
+    const tabId = activeTabId
+    queryRunRegistry.register(tabId, runOnConnection)
+    return () => queryRunRegistry.unregister(tabId, runOnConnection)
+  }, [bindShortcut, activeTabId, queryRunRegistry, runOnConnection])
 
   const { data: activeEngine } = useQuery({
     ...engineDetailQueryOptions(activeConnection?.driver ?? ''),

@@ -38,6 +38,7 @@ import { useResultCursorPaging } from './useResultCursorPaging'
 import { IdeEmptyState } from './IdeEmptyState'
 import { resultRowCountLabel } from './cursorPaging'
 import { DataGrid } from './dataGrid/DataGrid'
+import { useRunInActiveTab } from './useRunInActiveTab'
 
 type ResultsAreaProps = {
   orgSlug: string
@@ -876,6 +877,7 @@ function ResultSqlCaption({
   showConnection?: boolean
 }) {
   const [expanded, setExpanded] = useState(false)
+  const runInActiveTab = useRunInActiveTab(workspaceId)
 
   if (!sql) return null
   const expandable = isExpandableSql(sql)
@@ -937,6 +939,16 @@ function ResultSqlCaption({
         </span>
       )}
       <span className={cn('flex shrink-0 items-center', isExpanded && 'mt-0.5')}>
+        <Tip label="Rerun query">
+          <button
+            type="button"
+            aria-label="Rerun query"
+            onClick={() => runInActiveTab(connection, sql)}
+            className="flex size-5 shrink-0 items-center justify-center rounded text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
+          >
+            <Icon name="refresh" size={11} />
+          </button>
+        </Tip>
         <ExportButton
           orgSlug={orgSlug}
           workspaceId={workspaceId}
