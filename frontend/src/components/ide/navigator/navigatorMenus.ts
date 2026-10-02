@@ -77,6 +77,12 @@ export function isObjectLevel(tree: NavigatorTree, path: ScopePath): boolean {
   return tree.nodes[path[path.length - 2].kind]?.scope === true
 }
 
+/** True when a folder listed under `parent` holds objects that live directly under a scope (or the root). */
+export function isObjectLevelFolder(tree: NavigatorTree, parent: ScopePath): boolean {
+  if (parent.length === 0) return true
+  return tree.nodes[parent[parent.length - 1].kind]?.scope === true
+}
+
 export function scopeSupportsDiagram(tree: NavigatorTree, node: NavigatorNode): boolean {
   return node.folders.some((folder) => tree.nodes[folder.child]?.supports_diagram)
 }

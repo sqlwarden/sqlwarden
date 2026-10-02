@@ -3,6 +3,7 @@ import userEvent from '@testing-library/user-event'
 import { describe, expect, it, vi } from 'vitest'
 import * as Y from 'yjs'
 import { CsvViewer } from './CsvViewer'
+import { EditorProviders, editorViewOf } from './rawEditorTestUtils'
 
 vi.mock('@tanstack/react-virtual', () => ({
   useVirtualizer: ({ count }: { count: number }) => ({
@@ -128,12 +129,12 @@ describe('CsvViewer', () => {
     const source = 'id,notes\n1,"hello, team"\n'
     const doc = docWithContent(source)
     const user = userEvent.setup()
-    render(<CsvViewer doc={doc} />)
+    const { container } = render(<CsvViewer doc={doc} />, { wrapper: EditorProviders })
 
     expect(screen.getByRole('grid', { name: 'CSV data' })).toBeInTheDocument()
     await user.click(screen.getByRole('button', { name: 'Raw view' }))
 
-    expect(screen.getByRole('textbox', { name: 'Raw CSV' })).toHaveValue(source)
+    expect(editorViewOf(container).state.doc.toString()).toBe(source)
     expect(screen.queryByRole('grid', { name: 'CSV data' })).not.toBeInTheDocument()
     expect(screen.queryByLabelText('Search CSV rows')).not.toBeInTheDocument()
 
@@ -145,12 +146,12 @@ describe('CsvViewer', () => {
     const source = 'id,name\n1,"unfinished'
     const doc = docWithContent(source)
     const user = userEvent.setup()
-    render(<CsvViewer doc={doc} />)
+    const { container } = render(<CsvViewer doc={doc} />, { wrapper: EditorProviders })
 
     expect(screen.getByText('Could not parse CSV')).toBeInTheDocument()
     await user.click(screen.getByRole('button', { name: 'Raw view' }))
 
-    expect(screen.getByRole('textbox', { name: 'Raw CSV' })).toHaveValue(source)
+    expect(editorViewOf(container).state.doc.toString()).toBe(source)
     expect(screen.queryByText('Could not parse CSV')).not.toBeInTheDocument()
   })
 

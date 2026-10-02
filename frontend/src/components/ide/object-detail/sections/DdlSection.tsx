@@ -1,7 +1,7 @@
 import { useQuery } from '@tanstack/react-query'
 import { orgConnectionObjectDefinitionQueryOptions } from '#/lib/api/queries/database'
 import { sourceDescriptor } from '../baseRenderer'
-import { ReadOnlySqlView } from '../ReadOnlySqlView'
+import { SourcePane } from '../ReadOnlySqlView'
 import type { ObjectViewModel } from '../registry'
 
 export function DdlSection({ vm }: { vm: ObjectViewModel }) {
@@ -32,9 +32,5 @@ export function DdlSection({ vm }: { vm: ObjectViewModel }) {
     }
     return <div className="p-4 text-xs text-muted-foreground">No definition available.</div>
   }
-  return (
-    <div className="h-full min-h-0">
-      <ReadOnlySqlView value={body} />
-    </div>
-  )
+  return <SourcePane value={body} />
 }

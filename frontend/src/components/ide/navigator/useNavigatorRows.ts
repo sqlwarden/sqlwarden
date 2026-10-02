@@ -59,7 +59,7 @@ export function useNavigatorRows({
   const { rows, requests } = tree
     ? flattenNavigator({
         tree,
-        isExpanded: (key) => expandedNodes[prefix + key] === true,
+        isExpanded: (key, defaultOpen) => expandedNodes[prefix + key] ?? defaultOpen,
         listing,
         filter,
       })

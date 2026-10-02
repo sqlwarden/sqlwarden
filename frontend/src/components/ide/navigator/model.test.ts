@@ -275,6 +275,45 @@ describe('flattenNavigator', () => {
   })
 })
 
+describe('flattenNavigator column folders', () => {
+  const listing = cache([
+    [[], 'databases', ready(listingOf([], 'databases', [['database', 'app']]))],
+    [app, 'schemas', ready(listingOf(app, 'schemas', [['schema', 'public']]))],
+    [pub, 'tables', ready(listingOf(pub, 'tables', [['table', 'orders']]))],
+    [orders, 'columns', ready(listingOf(orders, 'columns', [['column', 'id']]))],
+  ])
+  const opened = new Set([
+    folderKey([], 'databases'),
+    objectKey(app),
+    folderKey(app, 'schemas'),
+    objectKey(pub),
+    folderKey(pub, 'tables'),
+    objectKey(orders),
+  ])
+
+  it('opens the columns folder by default and requests its listing', () => {
+    const result = flattenNavigator({
+      tree,
+      isExpanded: (key, defaultOpen) =>
+        opened.has(key) || (!key.startsWith('object:') && defaultOpen),
+      listing,
+    })
+
+    expect(result.rows).toContainEqual(expect.objectContaining({ type: 'leaf' }))
+    expect(result.requests).toContainEqual({ parent: orders, folder: 'columns' })
+  })
+
+  it('keeps the columns folder collapsed once the user collapses it', () => {
+    const result = flattenNavigator({
+      tree,
+      isExpanded: (key) => opened.has(key),
+      listing,
+    })
+
+    expect(result.rows.some((row) => row.type === 'leaf')).toBe(false)
+  })
+})
+
 describe('refOfPath', () => {
   it('splits a path into the owning scope and the object segment', () => {
     expect(refOfPath(orders)).toEqual({ scope: pub, kind: 'table', name: 'orders' })

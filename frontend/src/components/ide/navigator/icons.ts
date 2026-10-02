@@ -5,46 +5,54 @@ export interface NavigatorIconStyle {
   className: string
 }
 
+const MUTED = 'text-muted-foreground'
+const TABLE = 'text-chart-1/90'
+const VIEW = 'text-chart-3/90'
+const REMOTE = 'text-chart-4/90'
+const CODE = 'text-chart-5/80'
+
 /** Grammar icon token to glyph and accent. Keys must equal metadata.KnownIcons (icons_sync_test.go). */
 export const NAVIGATOR_ICONS: Record<string, NavigatorIconStyle> = {
-  connection: { icon: 'server-stack-01', className: 'text-muted-foreground' },
-  database: { icon: 'database', className: 'text-muted-foreground' },
-  schema: { icon: 'folder', className: 'text-muted-foreground' },
-  table: { icon: 'table', className: 'text-chart-4' },
-  view: { icon: 'eye', className: 'text-chart-2' },
-  materialized_view: { icon: 'eye', className: 'text-chart-2' },
-  foreign_table: { icon: 'table', className: 'text-chart-2' },
-  column: { icon: 'column', className: 'text-muted-foreground' },
-  constraint: { icon: 'checkmark-badge', className: 'text-chart-3' },
-  foreign_key: { icon: 'key-01', className: 'text-chart-2' },
-  index: { icon: 'list-view', className: 'text-chart-3' },
-  dependency: { icon: 'flow-connection', className: 'text-muted-foreground' },
-  reference: { icon: 'arrow-up-right-01', className: 'text-muted-foreground' },
-  partition: { icon: 'crop', className: 'text-chart-4' },
-  trigger: { icon: 'flow-connection', className: 'text-chart-5' },
-  rule: { icon: 'subject', className: 'text-chart-5' },
-  policy: { icon: 'policy', className: 'text-chart-5' },
-  function: { icon: 'play', className: 'text-chart-1' },
-  procedure: { icon: 'terminal', className: 'text-chart-1' },
-  sequence: { icon: 'sort', className: 'text-chart-3' },
-  type: { icon: 'subject', className: 'text-chart-3' },
-  domain: { icon: 'target', className: 'text-chart-3' },
-  aggregate: { icon: 'pie-chart', className: 'text-chart-1' },
-  event_trigger: { icon: 'notification', className: 'text-chart-5' },
-  extension: { icon: 'box', className: 'text-muted-foreground' },
-  event: { icon: 'history', className: 'text-chart-5' },
-  user: { icon: 'user-02', className: 'text-muted-foreground' },
-  role: { icon: 'user-group', className: 'text-muted-foreground' },
-  profile: { icon: 'user-lock-02', className: 'text-muted-foreground' },
-  package: { icon: 'briefcase-01', className: 'text-chart-1' },
-  queue: { icon: 'arrow-up-down', className: 'text-chart-5' },
-  synonym: { icon: 'copy-01', className: 'text-muted-foreground' },
-  db_link: { icon: 'server-stack-01', className: 'text-chart-2' },
-  extended_property: { icon: 'information-circle', className: 'text-muted-foreground' },
+  connection: { icon: 'server-stack-01', className: MUTED },
+  database: { icon: 'database', className: MUTED },
+  schema: { icon: 'schema', className: MUTED },
+  table: { icon: 'table', className: TABLE },
+  view: { icon: 'eye', className: VIEW },
+  materialized_view: { icon: 'eye', className: VIEW },
+  foreign_table: { icon: 'table', className: REMOTE },
+  column: { icon: 'column', className: MUTED },
+  constraint: { icon: 'checkmark-badge', className: MUTED },
+  foreign_key: { icon: 'key-01', className: MUTED },
+  index: { icon: 'list-view', className: MUTED },
+  dependency: { icon: 'flow-connection', className: MUTED },
+  reference: { icon: 'arrow-up-right-01', className: MUTED },
+  partition: { icon: 'crop', className: TABLE },
+  trigger: { icon: 'flow-connection', className: CODE },
+  rule: { icon: 'subject', className: CODE },
+  policy: { icon: 'policy', className: MUTED },
+  function: { icon: 'play', className: CODE },
+  procedure: { icon: 'terminal', className: CODE },
+  sequence: { icon: 'sort', className: MUTED },
+  type: { icon: 'subject', className: MUTED },
+  domain: { icon: 'target', className: MUTED },
+  aggregate: { icon: 'pie-chart', className: CODE },
+  event_trigger: { icon: 'notification', className: CODE },
+  extension: { icon: 'box', className: MUTED },
+  event: { icon: 'history', className: CODE },
+  user: { icon: 'user-02', className: MUTED },
+  role: { icon: 'user-group', className: MUTED },
+  profile: { icon: 'user-lock-02', className: MUTED },
+  package: { icon: 'briefcase-01', className: CODE },
+  queue: { icon: 'arrow-up-down', className: MUTED },
+  synonym: { icon: 'copy-01', className: REMOTE },
+  db_link: { icon: 'server-stack-01', className: REMOTE },
+  extended_property: { icon: 'information-circle', className: MUTED },
 }
 
-const FALLBACK: NavigatorIconStyle = { icon: 'box', className: 'text-muted-foreground' }
+const FALLBACK: NavigatorIconStyle = { icon: 'box', className: MUTED }
 
-export function navigatorIcon(token: string): NavigatorIconStyle {
-  return NAVIGATOR_ICONS[token] ?? FALLBACK
+/** Only objects listed directly under a scope are accented; the same token nested under an object (a table's triggers) stays neutral so siblings read consistently. */
+export function navigatorIcon(token: string, accented: boolean): NavigatorIconStyle {
+  const style = NAVIGATOR_ICONS[token] ?? FALLBACK
+  return accented ? style : { icon: style.icon, className: MUTED }
 }
