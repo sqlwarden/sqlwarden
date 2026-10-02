@@ -18,7 +18,7 @@ export function useHistoryRecorder(orgSlug: string, workspaceId: number, connect
   const queryClient = useQueryClient()
 
   return useCallback(
-    (entry: RecordHistoryInput) => {
+    (entry: RecordHistoryInput, entryConnectionId: number = connectionId) => {
       const settings = queryClient.getQueryData<OrganizationRuntimeSettings>(
         orgRuntimeSettingsQueryOptions(orgSlug).queryKey,
       )
@@ -27,7 +27,7 @@ export function useHistoryRecorder(orgSlug: string, workspaceId: number, connect
       if (mode === 'off') return
 
       if (mode === 'backend') {
-        void recordQueryHistoryEntry(orgSlug, workspaceId, connectionId, {
+        void recordQueryHistoryEntry(orgSlug, workspaceId, entryConnectionId, {
           sql_text: entry.sqlText,
           status: entry.status,
           error_message: entry.errorMessage,
@@ -46,7 +46,7 @@ export function useHistoryRecorder(orgSlug: string, workspaceId: number, connect
       const retentionCount = settings?.effective.query_history_retention_count ?? 200
       void addLocalHistoryEntry(
         {
-          connectionId,
+          connectionId: entryConnectionId,
           sqlText: entry.sqlText,
           status: entry.status,
           errorMessage: entry.errorMessage,
