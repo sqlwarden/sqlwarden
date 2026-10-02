@@ -184,7 +184,10 @@ export function IdeTabBar({ orgSlug, workspace, group, focused, onFocus }: IdeTa
   return (
     <>
       <div
-        className={cn('flex h-9 shrink-0 items-end bg-sidebar', draggingTab && 'bg-accent/30')}
+        className={cn(
+          'flex h-9 shrink-0 items-end bg-editor-tab-strip shadow-[inset_0_-1px_0_var(--color-border)]',
+          draggingTab && 'bg-accent/30',
+        )}
         onDragOver={handleBarDragOver}
       >
         {(overflow.canScrollLeft || overflow.canScrollRight) && (

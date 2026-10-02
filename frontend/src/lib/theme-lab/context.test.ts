@@ -5,6 +5,13 @@ import { SURFACE_PRESETS, surfaceTokens } from './context'
 const AA_TEXT = 4.5
 const AAA_TEXT = 7
 const NON_TEXT = 3
+const MIN_TAB_LIGHTNESS_STEP = 0.025
+
+function oklchLightness(token: string): number {
+  const match = /^oklch\(([\d.]+)/.exec(token)
+  if (!match) throw new Error(`not an oklch token: ${token}`)
+  return Number(match[1])
+}
 
 describe('surfaceTokens contrast', () => {
   for (const preset of SURFACE_PRESETS) {
@@ -27,6 +34,25 @@ describe('surfaceTokens contrast', () => {
           tokenContrastRatio(tokens['--background'], tokens['--muted-foreground']),
         ).toBeGreaterThanOrEqual(AA_TEXT)
       })
+
+      for (const [strip, content] of [
+        ['--editor-tab-strip', '--editor'],
+        ['--panel-tab-strip', '--panel'],
+      ] as const) {
+        it(`separates "${preset.label}" (${mode}) ${strip} from the ${content} surface its selected tab takes`, () => {
+          const tokens = surfaceTokens(preset, isDark)
+          expect(
+            Math.abs(oklchLightness(tokens[strip]) - oklchLightness(tokens[content])),
+          ).toBeGreaterThanOrEqual(MIN_TAB_LIGHTNESS_STEP)
+        })
+
+        it(`keeps "${preset.label}" (${mode}) unselected tab text on ${strip} at or above 4.5:1`, () => {
+          const tokens = surfaceTokens(preset, isDark)
+          expect(
+            tokenContrastRatio(tokens[strip], tokens['--muted-foreground']),
+          ).toBeGreaterThanOrEqual(AA_TEXT)
+        })
+      }
     }
   }
 })

@@ -120,6 +120,8 @@ type DarkSurfaceRamp = {
   accentForeground: number
   border: number
   editor: number
+  editorTabStrip: number
+  panelTabStrip: number
   /** Border alpha as a 0-1 fraction over `background`. Every preset but
    *  "High Contrast" relies on the 12%/15% default baked into
    *  `surfaceTokens` — low-chroma dark borders need real opacity to clear
@@ -136,6 +138,8 @@ type LightSurfaceRamp = {
   accent: number
   border: number
   editor: number
+  editorTabStrip: number
+  panelTabStrip: number
   sidebarAccent: number
 }
 
@@ -166,6 +170,8 @@ const FLUSH_DARK_RAMP: DarkSurfaceRamp = {
   accentForeground: 0.86,
   border: 0.65,
   editor: 0.175,
+  editorTabStrip: 0.24,
+  panelTabStrip: 0.205,
 }
 
 const FLUSH_LIGHT_RAMP: LightSurfaceRamp = {
@@ -180,6 +186,8 @@ const FLUSH_LIGHT_RAMP: LightSurfaceRamp = {
   accent: 0.97,
   border: 0.94,
   editor: 0.99,
+  editorTabStrip: 0.965,
+  panelTabStrip: 0.965,
   sidebarAccent: 0.97,
 }
 
@@ -199,6 +207,8 @@ const HIGH_CONTRAST_DARK_RAMP: DarkSurfaceRamp = {
   border: 0.7,
   borderAlpha: 0.7,
   editor: 0.03,
+  editorTabStrip: 0.08,
+  panelTabStrip: 0.03,
 }
 
 /** Light: mirrors the dark ramp's AAA target. Border stays fully opaque
@@ -213,6 +223,8 @@ const HIGH_CONTRAST_LIGHT_RAMP: LightSurfaceRamp = {
   accent: 0.92,
   border: 0.55,
   editor: 0.975,
+  editorTabStrip: 0.92,
+  panelTabStrip: 0.92,
   sidebarAccent: 0.92,
 }
 
@@ -303,6 +315,8 @@ export function surfaceTokens(preset: SurfacePreset, isDark: boolean): Record<st
       '--sidebar': t(r.card, 0.01),
       '--panel': t(r.card, 0.01),
       '--editor': t(r.editor, 0.008),
+      '--editor-tab-strip': t(r.editorTabStrip, 0.01),
+      '--panel-tab-strip': t(r.panelTabStrip, 0.008),
       '--sidebar-foreground': t(r.foreground, 0.006),
       '--sidebar-accent': t(r.accent, 0.018),
       '--sidebar-accent-foreground': t(r.accentForeground, 0.008),
@@ -328,6 +342,8 @@ export function surfaceTokens(preset: SurfacePreset, isDark: boolean): Record<st
     '--sidebar': 'oklch(1 0 0)',
     '--panel': 'oklch(1 0 0)',
     '--editor': t(r.editor, 0.004),
+    '--editor-tab-strip': t(r.editorTabStrip, 0.004),
+    '--panel-tab-strip': t(r.panelTabStrip, 0.004),
     '--sidebar-foreground': t(r.foreground, 0.012),
     '--sidebar-accent': t(r.sidebarAccent, 0.009),
     '--sidebar-accent-foreground': t(r.secondaryForeground, 0.016),

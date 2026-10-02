@@ -118,22 +118,24 @@ export function ResultsArea({ orgSlug, workspace }: ResultsAreaProps) {
 
   return (
     <div className="flex min-h-0 flex-1 flex-col gap-0">
-      <div className="flex h-8 shrink-0 items-center bg-panel">
-        <RunTabStrip
-          runs={runs}
-          connections={connections}
-          tabs={tabs}
-          mode={resultsPanelMode}
-          activeRunId={activeRun?.id}
-          onSelect={handleSelectRun}
-          onClose={handleCloseRun}
-          onCloseMany={handleCloseRuns}
-          onTogglePin={handleTogglePin}
-        />
-        <div className="flex shrink-0 items-center gap-0.5 border-l border-border px-1">
-          <ResultsPanelModeMenu mode={resultsPanelMode} onChange={setResultsPanelMode} />
+      {runs.length > 0 && (
+        <div className="flex h-8 shrink-0 items-center bg-panel shadow-[inset_0_-1px_0_var(--color-border)]">
+          <RunTabStrip
+            runs={runs}
+            connections={connections}
+            tabs={tabs}
+            mode={resultsPanelMode}
+            activeRunId={activeRun?.id}
+            onSelect={handleSelectRun}
+            onClose={handleCloseRun}
+            onCloseMany={handleCloseRuns}
+            onTogglePin={handleTogglePin}
+          />
+          <div className="flex shrink-0 items-center gap-0.5 border-l border-border px-1">
+            <ResultsPanelModeMenu mode={resultsPanelMode} onChange={setResultsPanelMode} />
+          </div>
         </div>
-      </div>
+      )}
 
       <div className="min-h-0 flex-1 overflow-hidden">
         <ResultsContent
@@ -431,8 +433,8 @@ function RunTabStrip({
             className={cn(
               'group relative flex h-8 max-w-40 shrink-0 cursor-pointer items-center gap-1.5 border-r border-border px-2.5 text-xs',
               selected
-                ? 'bg-card text-foreground after:absolute after:left-0 after:right-0 after:top-0 after:h-[2px] after:bg-primary'
-                : 'text-muted-foreground hover:bg-card/50 hover:text-foreground',
+                ? 'bg-panel text-foreground after:absolute after:left-0 after:right-0 after:top-0 after:h-[2px] after:bg-primary'
+                : 'bg-panel-tab-strip text-muted-foreground shadow-[inset_0_-1px_0_var(--color-border)] hover:bg-panel-tab-strip/50 hover:text-foreground',
             )}
           >
             <Icon name={icon.name} size={11} className={cn('shrink-0', icon.className)} />
@@ -883,7 +885,7 @@ function ResultSqlCaption({
   return (
     <div
       className={cn(
-        'flex shrink-0 gap-2 pl-3 pr-1.5',
+        'flex shrink-0 gap-2 border-b border-border pl-3 pr-1.5',
         isExpanded ? 'items-start py-1.5' : 'h-7 items-center',
       )}
     >
