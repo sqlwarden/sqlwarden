@@ -344,12 +344,12 @@ export function DataGrid({
         className="table-fixed border-separate border-spacing-0 text-xs"
         style={{ width: totalWidth }}
       >
-        <thead className="sticky top-0 z-10 bg-muted shadow-[0_-1px_0_0_var(--color-muted)]">
+        <thead className="sticky top-0 z-10 bg-(--data-grid-surface) shadow-[0_-1px_0_0_var(--data-grid-surface)]">
           <tr role="row">
             <th
               role="columnheader"
               style={{ width: ROW_NUM_COL_WIDTH }}
-              className="sticky left-0 z-20 border-b border-r border-border bg-muted px-2 py-1.5 text-right font-medium text-muted-foreground tabular-nums"
+              className="sticky left-0 z-20 border-b border-r border-border bg-(--data-grid-surface) px-2 py-1.5 text-right font-medium text-muted-foreground tabular-nums"
             />
             {columns.map((col, i) => (
               <ColumnHeader
@@ -636,7 +636,6 @@ function DataCell({
         isNumeric || col.type === 'integer' || col.type === 'decimal' ? 'tabular-nums' : '',
         isNull ? 'text-muted-foreground/50' : '',
         isInRange ? 'bg-primary/15' : 'group-hover:bg-accent/30',
-        isAnchor && 'ring-1 ring-inset ring-primary/60',
       )}
     >
       {isNull ? (

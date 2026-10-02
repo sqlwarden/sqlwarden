@@ -31,10 +31,6 @@ import { showMinimap } from '@replit/codemirror-minimap'
 import { createFindPanel } from './findPanel'
 import { IDENTIFIER_DND_MIME } from './sqlDialect'
 
-// A common convention for formatted SQL line width; matches no specific
-// formatter setting today, just gives a visual reference while writing.
-const RULER_COLUMN = 100
-
 // The find panel supplies its own design-system chrome, so strip CodeMirror's
 // default panel border/background and theme the in-document match highlights
 // with the app's tokens. var(...) values pass straight through to CSS.
@@ -65,15 +61,6 @@ const sqlwardenSearchTheme = EditorView.theme({
   '.cm-selectionMatch': {
     backgroundColor: 'color-mix(in oklab, var(--color-foreground) 14%, transparent)',
     borderRadius: '2px',
-  },
-  // Column ruler: a single-pixel vertical guide at RULER_COLUMN, drawn as a
-  // background image on .cm-content rather than a decoration — it needs no
-  // per-line computation and scales with document height automatically.
-  '.cm-content': {
-    backgroundImage: 'linear-gradient(var(--color-border) 100%, transparent 100%)',
-    backgroundRepeat: 'no-repeat',
-    backgroundSize: '1px 100%',
-    backgroundPosition: `${RULER_COLUMN}ch 0`,
   },
 })
 

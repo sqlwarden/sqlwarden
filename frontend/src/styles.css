@@ -98,6 +98,8 @@
   --sidebar: oklch(1 0 0);
   --panel: oklch(1 0 0);
   --editor: oklch(0.99 0 0);
+  --editor-tab-strip: oklch(0.965 0 0);
+  --panel-tab-strip: oklch(0.965 0 0);
   --sidebar-foreground: oklch(0.27 0 0);
   --sidebar-primary: oklch(0.55 0.19 255);
   --sidebar-primary-foreground: oklch(0.985 0.005 240);
@@ -159,6 +161,8 @@
   --sidebar: oklch(0.24 0.006 235);
   --panel: oklch(0.24 0.006 235);
   --editor: oklch(0.175 0.006 235);
+  --editor-tab-strip: oklch(0.24 0.006 235);
+  --panel-tab-strip: oklch(0.205 0.006 235);
   --sidebar-foreground: oklch(0.86 0.006 235);
   --sidebar-primary: oklch(0.68 0.15 250);
   --sidebar-primary-foreground: oklch(0.16 0.015 240);
@@ -192,6 +196,8 @@
   --color-sidebar: var(--sidebar);
   --color-panel: var(--panel);
   --color-editor: var(--editor);
+  --color-editor-tab-strip: var(--editor-tab-strip);
+  --color-panel-tab-strip: var(--panel-tab-strip);
   --color-chart-5: var(--chart-5);
   --color-chart-4: var(--chart-4);
   --color-chart-3: var(--chart-3);
