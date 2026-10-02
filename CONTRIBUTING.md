@@ -4,9 +4,11 @@ Thank you for contributing to SQLWarden! This document provides guidelines for c
 
 ## License and contributions
 
-SQLWarden is licensed under the [GNU Affero General Public License v3.0 only](LICENSE) (`AGPL-3.0-only`). Unless explicitly stated otherwise, contributions submitted to this repository are licensed on the same terms.
+SQLWarden is licensed under the [GNU Affero General Public License v3.0 only](LICENSE) (`AGPL-3.0-only`).
 
-The project is preparing a contributor license agreement (CLA). Until that process is published, maintainers may discuss and review external proposals but will not merge external contributions. Open an issue before investing substantial effort in a change.
+External contributions require acceptance of the [Contributor License Agreement](CLA.md). The CLA lets the project distribute your contribution under the AGPL and under other licenses, including commercial ones, while you keep ownership of your work. To accept it, comment `I have read the CLA Document and I hereby sign the CLA` on your pull request. Pull requests cannot be merged until the CLA is accepted.
+
+Open an issue before investing substantial effort in a change.
 
 ## Conventional Commits
 

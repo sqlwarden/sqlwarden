@@ -235,4 +235,6 @@ Use squash or rebase workflows that keep `main` linear and preserve clear conven
 
 SQLWarden is licensed under the [GNU Affero General Public License v3.0 only](LICENSE) (`AGPL-3.0-only`). If you modify SQLWarden and let users interact with the modified version over a network, the license requires you to offer those users the corresponding source code.
 
+The SQLWarden name and logo are trademarks and are not licensed under the AGPL; see the trademark notice in [NOTICE.md](NOTICE.md).
+
 Third-party components and assets remain subject to their own license terms. See [NOTICE.md](NOTICE.md) and the license or notice files stored alongside those components.
