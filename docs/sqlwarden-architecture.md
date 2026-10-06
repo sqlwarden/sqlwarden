@@ -613,16 +613,24 @@ MySQL scope API, the MySQL adapter owns its isolated reference collector.
 SQLite completion uses the same `completioncore` boundary; rqlite/sql supplies
 the scanner from which cursor intent is derived (no ANTLR candidate collector),
 and names resolve from the SQLWarden metadata index.
-All dialects resolve semantic candidates through the reusable immutable
-`metadata.Index`, adapted by completioncore's `SchemaResolver`; no completer
-opens or queries a live connection. `metadata.MetadataSet` keeps a lightweight
-catalog, independently inspected object details, optional relationship graphs,
-and their version together without conflating their storage tiers. The same
-index provides object and FK adjacency lookups for schema-graph consumers such
-as ER diagrams. Engine adapters map completion candidates into the stable
-`completer.Suggestion` API and cache prepared Omni catalogs and schema indexes
-by connection and metadata version. This boundary allows more resolution to
-move into Omni later without changing metadata storage or the editor protocol.
+All dialects resolve semantic candidates through a `metadata.CompletionView`,
+an immutable snapshot of the navigator cache adapted by completioncore's
+`SchemaResolver`; no completer opens or queries a live connection. When the
+resolver needs a folder that is not cached (the tables of a referenced schema,
+the columns of a referenced relation), it records a `metadata.Demand` instead
+of guessing. Engine adapters map completion candidates into the stable
+`completer.Suggestion` API and rank them with the shared `completer.KindScore`
+table, so every dialect orders relations before other objects and then sorts
+by name. SQL Server completion combines Omni MSSQL keyword and type candidates
+with object names resolved from `mssqlparser.CollectCompletion` intent and
+scope by the `completioncore/mssql` adapter, since Omni's MSSQL completer
+resolves no catalog names. Unqualified names follow the navigator grammar's
+`Tree.FallbackScopes` (`dbo` for SQL Server): the default scope is searched
+first and shadows later scopes. Table-valued functions are recognised by a
+`returns_table` listing attribute, so routine listings cached before that
+attribute existed offer them as scalar functions until refreshed. This
+boundary allows more resolution to move into Omni later without changing
+metadata storage or the editor protocol.
 
 `internal/connection` manages live target database sessions:
 
@@ -804,10 +812,50 @@ and refresh summaries, never DSNs or object contents.
 
 ### Completion
 
-Completion builds its index from whatever the navigator has cached for the
-connection, synthesizing relation columns from cached column listings when
-object detail is absent. It still consumes the legacy `metadata.Directory`
-shape until completion moves to on-demand loading (SQLW-191).
+Completion loads metadata on demand through the navigator rather than from a
+prebuilt index. `completion.Service.CompleteWithMetadata` drives it through a
+`completion.Loader`:
+
+1. `View` builds a `metadata.CompletionView` from cached listings and object
+   detail only. It never queries the target.
+2. The completer runs against the view and returns suggestions plus the
+   demands it could not resolve.
+3. If demands remain and the request has a live session, `Ensure` calls
+   `Navigator.EnsureForCompletion`, which lists the demanded folders through
+   the same single-flight path the navigator tree uses, so a completion load
+   and a tree expansion of the same folder share one query. Loads are capped
+   per round, deduplicated, and keep running detached after the request
+   budget ends so the cache still fills.
+4. The completer runs again on the refreshed view.
+
+Rounds repeat for at most four rounds within a 1.5 second budget. Without a
+live session no loads start and the response reports `partial` metadata.
+
+The view's default scope is the connection's configured default scope,
+extended with the live session's current scope where the configuration stops
+short. Engines report that scope through the optional
+`metadata.SessionScoper` capability (current database and schema), memoized
+per connection for 30 seconds. Cached listings' current flags never drive it:
+they reflect whichever pooled connection ran the listing and persist across
+sessions. Without a live session the configured scope is used as is.
+
+The completion index reports `search_schemas`, the ordered schema names
+unqualified relations resolve in. `default_scope_relations_listed` is true
+only when every search scope's relation folders are cached, and the editor's
+local resolver hides an object shadowed by the same name in an earlier search
+schema.
+
+Decoded store rows are memoized per connection (keyed by blob hash and size)
+so repeated completion reads skip JSON decoding; refresh bypasses the memo and
+forgetting a connection drops it. Memoized values are shared and treated as
+read-only.
+
+`GET /schema/completion-index` projects the same cached view into the
+frontend's local index, including each object's `KindScore`, so locally
+resolved suggestions rank the same way as server suggestions. It also reports
+whether every relation folder of the default scope is listed; the editor
+answers a relation position locally only then, and otherwise asks the backend,
+which can fetch what is missing.
 
 ## Frontend Architecture
 
