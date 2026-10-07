@@ -1,12 +1,16 @@
 package app
 
 import (
+	"bytes"
 	"context"
+	"encoding/json"
 	"errors"
+	"log/slog"
 	"net/http"
 	"net/http/httptest"
 	"path/filepath"
 	"slices"
+	"strings"
 	"testing"
 
 	"github.com/sqlwarden/internal/config"
@@ -23,13 +27,13 @@ func testConfig(t *testing.T) config.Config {
 	return cfg
 }
 
-func TestBuildAllBuildsHTTPAndRuntime(t *testing.T) {
+func TestBuildAllBuildsRuntimeAndHTTP(t *testing.T) {
 	built, err := Build(context.Background(), Options{Config: testConfig(t), Logger: discardLogger()})
 	if err != nil {
 		t.Fatal(err)
 	}
 	t.Cleanup(func() { _ = built.Close(context.Background()) })
-	if got := built.ProcessKindNames(); !slices.Equal(got, []string{"http", "runtime"}) {
+	if got := built.ProcessKindNames(); !slices.Equal(got, []string{"runtime", "http"}) {
 		t.Fatalf("ProcessKindNames() = %v", got)
 	}
 }
@@ -59,11 +63,29 @@ func TestBuildClosesDatabaseWhenWebConstructionFails(t *testing.T) {
 	cfg := testConfig(t)
 	failWebConstruction = errors.New("injected")
 	t.Cleanup(func() { failWebConstruction = nil })
-	if _, err := Build(context.Background(), Options{Config: cfg, Logger: discardLogger()}); err == nil {
+	var logs bytes.Buffer
+	logger := slog.New(slog.NewJSONHandler(&logs, nil))
+	if _, err := Build(context.Background(), Options{Config: cfg, Logger: logger}); err == nil {
 		t.Fatal("Build did not return the injected error")
 	}
 	if openDatabases.Load() != 0 {
 		t.Fatalf("%d databases left open", openDatabases.Load())
+	}
+	var closed []string
+	for line := range strings.Lines(logs.String()) {
+		var entry struct {
+			Msg      string `json:"msg"`
+			Resource string `json:"resource"`
+		}
+		if err := json.Unmarshal([]byte(line), &entry); err != nil {
+			t.Fatal(err)
+		}
+		if entry.Msg == "resource closed" {
+			closed = append(closed, entry.Resource)
+		}
+	}
+	if want := []string{"cursors", "sessions", "database"}; !slices.Equal(closed, want) {
+		t.Fatalf("closed resources = %v, want %v", closed, want)
 	}
 }
 

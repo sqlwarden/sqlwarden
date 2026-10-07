@@ -165,9 +165,11 @@ func Build(ctx context.Context, opts Options) (*Application, error) {
 	handler := httpHandler(api, health)
 	application.handler = handler
 	tls := web.TLSFiles{Enabled: cfg.TLS.Enabled, CertFile: cfg.TLS.CertFile, KeyFile: cfg.TLS.KeyFile}
+	// Kinds close in reverse, so HTTP drains in-flight requests before the
+	// runtime and its job runner stop.
 	application.kinds = append(application.kinds,
-		newHTTPKind(web.NewServer(cfg.HTTPPort, handler, logger), tls, logger),
 		newRuntimeKind(webApp, runJobs),
+		newHTTPKind(web.NewServer(cfg.HTTPPort, handler, logger), tls, logger),
 	)
 	health.bind(application)
 	logger.Info("process kinds built",

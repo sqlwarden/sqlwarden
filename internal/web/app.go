@@ -68,6 +68,7 @@ type application struct {
 	jobStore          *jobs.Store
 	jobRegistry       *jobs.Registry
 	runtimeCancel     context.CancelFunc
+	runtimeStarted    atomic.Bool
 	runtimeUpdates    chan database.InstanceSettings
 	runtimeSettings   *runtimeSettingsService
 	initialSettings   database.InstanceSettings
@@ -117,8 +118,12 @@ func NewApplication(deps Dependencies) (*App, error) {
 // StartRuntime starts the runtime supervisor. Every serving process runs it,
 // because it applies instance settings changes made by any replica. With
 // runJobs it also owns the job runner, and the file content deletion reaper
-// starts beside it.
+// starts beside it. Only the first call has an effect.
 func (app *application) StartRuntime(runJobs bool) {
+	if !app.runtimeStarted.CompareAndSwap(false, true) {
+		app.logger.Warn("runtime already started; ignoring repeated start", "run_jobs", runJobs)
+		return
+	}
 	app.logger.Info("runtime starting", "run_jobs", runJobs)
 	app.startRuntimeSupervisor(app.initialSettings, runJobs)
 	if runJobs {

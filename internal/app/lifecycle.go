@@ -27,6 +27,9 @@ type Application struct {
 	resources        *resourceStack
 	shutdownDeadline time.Duration
 
+	// closeMu serializes Close so a second caller waits for the first
+	// shutdown to finish. mu guards the lifecycle state below it.
+	closeMu     sync.Mutex
 	mu          sync.Mutex
 	started     []ProcessKind
 	closed      bool
@@ -53,7 +56,8 @@ func (a *Application) Start(ctx context.Context) error {
 	for _, kind := range a.kinds {
 		if err := kind.Start(ctx); err != nil {
 			a.logger.Error("process kind failed to start", "process_kind", kind.Name(), "error", err)
-			a.closeStartedLocked(context.WithoutCancel(ctx))
+			_ = a.closeKinds(context.WithoutCancel(ctx), a.started)
+			a.started = nil
 			return fmt.Errorf("start process kind %q: %w", kind.Name(), err)
 		}
 		a.started = append(a.started, kind)
@@ -141,16 +145,25 @@ func (a *Application) waitForStop(ctx context.Context) error {
 }
 
 // Close stops started process kinds in reverse start order, then releases the
-// resources in reverse construction order. It is safe to call more than
-// once and bounds the whole shutdown by the configured deadline.
+// resources in reverse construction order. It is safe to call more than once
+// and bounds the whole shutdown by the configured deadline.
+//
+// a.mu is released before any kind or resource is closed: health probes take
+// it, and the HTTP kind waits for in-flight probes while it drains.
 func (a *Application) Close(ctx context.Context) error {
+	a.closeMu.Lock()
+	defer a.closeMu.Unlock()
+
 	a.mu.Lock()
-	defer a.mu.Unlock()
 	if a.closed {
+		a.mu.Unlock()
 		return nil
 	}
 	a.closed = true
 	a.running = false
+	started := a.started
+	a.started = nil
+	a.mu.Unlock()
 
 	startedAt := time.Now()
 	a.logger.Info("stopping application")
@@ -158,7 +171,7 @@ func (a *Application) Close(ctx context.Context) error {
 	shutdownCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), a.shutdownDeadline)
 	defer cancel()
 
-	err := a.closeStartedLocked(shutdownCtx)
+	err := a.closeKinds(shutdownCtx, started)
 	a.resources.closeAll(shutdownCtx)
 
 	if deadlineErr := shutdownCtx.Err(); errors.Is(deadlineErr, context.DeadlineExceeded) {
@@ -170,12 +183,11 @@ func (a *Application) Close(ctx context.Context) error {
 	return err
 }
 
-// closeStartedLocked closes started process kinds in reverse order. The caller
-// must hold a.mu.
-func (a *Application) closeStartedLocked(ctx context.Context) error {
+// closeKinds closes process kinds in reverse order.
+func (a *Application) closeKinds(ctx context.Context, kinds []ProcessKind) error {
 	var errs []error
-	for i := len(a.started) - 1; i >= 0; i-- {
-		kind := a.started[i]
+	for i := len(kinds) - 1; i >= 0; i-- {
+		kind := kinds[i]
 		startedAt := time.Now()
 		if err := kind.Close(ctx); err != nil {
 			a.logger.Warn("process kind shutdown failed", "process_kind", kind.Name(), "error", err)
@@ -184,7 +196,6 @@ func (a *Application) closeStartedLocked(ctx context.Context) error {
 		}
 		a.logger.Info("process kind stopped", "process_kind", kind.Name(), "duration_ms", time.Since(startedAt).Milliseconds())
 	}
-	a.started = nil
 	return errors.Join(errs...)
 }
 

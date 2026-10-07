@@ -155,6 +155,23 @@ func TestStartRuntimeRunsJobsOnlyWhenSelected(t *testing.T) {
 	}
 }
 
+func TestStartRuntimeTwiceStartsOnce(t *testing.T) {
+	deps := newTestDependencies(t)
+	app, err := NewApplication(deps)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(app.Close)
+	app.StartRuntime(true)
+	time.Sleep(100 * time.Millisecond)
+	before := runtime.NumGoroutine()
+	app.StartRuntime(true)
+	time.Sleep(100 * time.Millisecond)
+	if after := runtime.NumGoroutine(); after > before {
+		t.Fatalf("second StartRuntime started %d goroutines", after-before)
+	}
+}
+
 func TestCloseLeavesDatabaseOpen(t *testing.T) {
 	deps := newTestDependencies(t)
 	app, err := NewApplication(deps)

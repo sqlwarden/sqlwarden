@@ -266,3 +266,76 @@ func settledGoroutines() int {
 	}
 	return count
 }
+
+// slowKind blocks in Close until released, so tests can observe the
+// application while shutdown is in progress.
+type slowKind struct {
+	closing chan struct{}
+	release chan struct{}
+}
+
+func (k *slowKind) Name() string                { return "slow" }
+func (k *slowKind) Start(context.Context) error { return nil }
+func (k *slowKind) Ready(context.Context) error { return nil }
+func (k *slowKind) Close(context.Context) error {
+	close(k.closing)
+	select {
+	case <-k.release:
+	case <-time.After(300 * time.Millisecond):
+	}
+	return nil
+}
+
+func TestProbesDoNotBlockDuringClose(t *testing.T) {
+	kind := &slowKind{closing: make(chan struct{}), release: make(chan struct{})}
+	built := newKindsApplication(kind)
+	health := NewHealth()
+	health.bind(built)
+	if err := built.Start(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+
+	closed := make(chan error, 1)
+	closeStarted := time.Now()
+	go func() { closed <- built.Close(context.Background()) }()
+	<-kind.closing
+
+	probed := make(chan [2]error, 1)
+	go func() { probed <- [2]error{health.Live(), health.Ready(context.Background())} }()
+	select {
+	case errs := <-probed:
+		if errs[0] == nil || errs[1] == nil {
+			t.Fatalf("probes during Close = %v, want both to fail", errs)
+		}
+	case <-time.After(150 * time.Millisecond):
+		t.Fatal("probe blocked while the application was closing")
+	}
+	close(kind.release)
+
+	if err := <-closed; err != nil {
+		t.Fatalf("Close = %v, want nil", err)
+	}
+	if elapsed := time.Since(closeStarted); elapsed > time.Second {
+		t.Fatalf("Close took %s", elapsed)
+	}
+}
+
+func TestConcurrentCloseClosesOnce(t *testing.T) {
+	var events []string
+	built := newKindsApplication(newRecordingKind("http", &events))
+	if err := built.Start(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	done := make(chan error, 2)
+	for range 2 {
+		go func() { done <- built.Close(context.Background()) }()
+	}
+	for range 2 {
+		if err := <-done; err != nil {
+			t.Fatal(err)
+		}
+	}
+	if got := strings.Join(events, ","); got != "start:http,close:http" {
+		t.Fatalf("lifecycle events = %q, want a single close", got)
+	}
+}
