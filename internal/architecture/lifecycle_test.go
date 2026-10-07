@@ -65,6 +65,44 @@ func TestConstructorsDoNotStartBackgroundWork(t *testing.T) {
 	})
 }
 
+func TestStartedComponentsExposeShutdownPair(t *testing.T) {
+	type methods map[string]token.Position
+	starts := make(map[string]methods)
+	stops := make(map[string]bool)
+
+	walkProductionGo(t, func(_ string, rel string, file *ast.File, fset *token.FileSet) {
+		for _, declaration := range file.Decls {
+			function, ok := declaration.(*ast.FuncDecl)
+			if !ok || function.Recv == nil || len(function.Recv.List) != 1 {
+				continue
+			}
+			receiver := receiverName(function.Recv.List[0].Type)
+			if receiver == "" {
+				continue
+			}
+			qualified := filepath.Dir(rel) + ":" + file.Name.Name + "." + receiver
+			switch function.Name.Name {
+			case "Start", "StartReaper":
+				if starts[qualified] == nil {
+					starts[qualified] = make(methods)
+				}
+				starts[qualified][function.Name.Name] = fset.Position(function.Pos())
+			case "Close", "Stop":
+				stops[qualified] = true
+			}
+		}
+	})
+
+	for component, methods := range starts {
+		if stops[component] {
+			continue
+		}
+		for method, position := range methods {
+			t.Errorf("%s:%d %s.%s has no Close or Stop method", filepath.ToSlash(position.Filename), position.Line, component, method)
+		}
+	}
+}
+
 func walkProductionGo(t *testing.T, visit func(path, rel string, file *ast.File, fset *token.FileSet)) {
 	t.Helper()
 	root := repoRoot(t)
@@ -95,5 +133,20 @@ func walkProductionGo(t *testing.T, visit func(path, rel string, file *ast.File,
 	})
 	if err != nil {
 		t.Fatal(err)
+	}
+}
+
+func receiverName(expression ast.Expr) string {
+	switch receiver := expression.(type) {
+	case *ast.Ident:
+		return receiver.Name
+	case *ast.StarExpr:
+		return receiverName(receiver.X)
+	case *ast.IndexExpr:
+		return receiverName(receiver.X)
+	case *ast.IndexListExpr:
+		return receiverName(receiver.X)
+	default:
+		return ""
 	}
 }
