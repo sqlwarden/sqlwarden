@@ -49,8 +49,8 @@ Explicitly future or incomplete:
 - Multi-backend desktop/server selector UX.
 - Connector agent and WebSocket routing for databases behind firewalls.
 - Background query runs and query-run observability.
-- Full audit log product surface, tamper-evident audit logs, and SIEM forwarding.
-- Deny rules and binding expiry enforcement.
+- Full audit log product surface and SIEM forwarding.
+- Deny rules.
 - Distributed RBAC cache invalidation.
 - Shared-file collaborative editing through WebSockets.
 - File uploads, revision browsing UX, S3-compatible file storage, and storage migration tooling.
@@ -442,7 +442,7 @@ Binding fields:
 - `subject_id`: account ID, team ID, org ID for `org_members`, or workspace ID for `workspace_members`.
 - `resource_type`: `org`, `workspace`, `environment`, or `connection`.
 - `resource_id`: resource ID of that type.
-- `expires_at`: present for future expiry enforcement.
+- `expires_at`: optional expiry. A binding stops granting at `expires_at`. The enforcer caches the timestamp with the binding and compares it to the current time on every check, so the policy cache TTL never extends an expired grant.
 - `created_by`: actor account.
 
 Bindings are unique on `(role_id, subject_type, subject_id, resource_type, resource_id)`, making grant operations idempotent.
@@ -466,7 +466,10 @@ Evaluation flow:
 - Resolve ancestry for the target resource from `resource_hierarchy`: target resource, parent resources, and the owning org.
 - Load org policy from the process-local cache.
 - Match role bindings at the target resource and ancestors.
+- Ignore bindings whose `expires_at` is at or before the current time.
 - Allow if any matching role contains the requested permission and the permission is valid for that role/resource relationship.
+
+Handlers call the composed `access.PolicyEvaluator`, not the enforcer directly. An edition may wrap the enforcer with policy decorators. A decorator can deny a grant, but it cannot grant a permission the enforcer denied.
 
 Inheritance is additive. Parent bindings can grant access to children. There are no deny rules, so revocation means removing the granting binding or membership source.
 
@@ -903,11 +906,9 @@ Current implemented controls:
 Important open gaps:
 
 - Audit trail for policy and data access events (only setup and sign-in are audited today).
-- Tamper-evident audit logs.
 - SSO/SCIM identity lifecycle.
 - SSRF-safe cloud deployment model.
 - Distributed cache invalidation.
-- Binding expiry enforcement.
 - Service accounts/API tokens.
 
 SQLWarden is primarily self-hosted. Any future hosted/cloud offering needs stronger controls around SSRF, target network egress, tenant isolation, audit integrity, and managed identity lifecycle before it is safe.
@@ -928,13 +929,26 @@ Future desktop may support multiple remote SQLWarden backends, such as separate 
 
 ## Open-Core / Enterprise Direction
 
-The current repository is licensed under `AGPL-3.0-only` and has no enterprise product or `ee/` tree. A future source-available enterprise edition may live in an isolated `ee/` directory in this monorepo, but its composition boundary and custom license are intentionally deferred until that product exists. Community code must not depend on enterprise code.
+The community distribution is licensed under `AGPL-3.0-only`. Enterprise code lives in `ee/` and compiles only with the `enterprise` build tag, which produces a separate binary. Community code must not import `ee/`. `internal/architecture` tests enforce this, and the only allowed importer is `cmd/sqlwarden/edition_ee.go`.
 
-Likely enterprise-only features:
+Edition composition (`internal/edition`):
+
+- An `Edition` has a name, a `Licenser`, and a list of `Module`s. `cmd/sqlwarden/edition_ce.go` selects the community edition. `cmd/sqlwarden/edition_ee.go` selects the enterprise edition.
+- `edition.Compose` runs after the application database opens and before migrations. Each module registers through a `Registrar`. `Registrar.Deps()` gives modules the application SQL handle, audit event store, logger, and clock.
+- Modules contribute audit writer decorators, policy decorators, authenticator decorators, extra authenticators, request policies, posture providers, HTTP routes under `/ee`, background jobs, and migrations.
+- A module whose feature the license does not cover is not registered. Contribution kinds that this build does not wire (for example settings or sign-in methods) fail `Build` with an error instead of being dropped.
+- Enterprise migrations run in a separate stream tracked in `schema_migrations_ee`, on `ee_*` tables. A module declares the lowest core migration version it needs.
+- The feature catalog is static. `GET /api/v1/instance/capabilities` reports each feature as `available`, `upgrade` (not in this build), or `unlicensed` (in this build but not covered by the license).
+- The enterprise license key is read from the `license` setting (`LICENSE` environment variable). The community build rejects a configured license key. Licensing is currently a no-op licenser that enables every enterprise feature.
+
+The first enterprise module is the tamper-evident audit writer. It wraps the core audit writer, seals new events into a hash chain in `ee_*` tables, and passes sealed events to an exporter interface. Signing and exporting are interfaces with no concrete product implementation yet.
+
+Frontend editions use the `@edition` import alias. `bun run build` resolves it to `src/edition/community.ts`, and `bun run build:ee` resolves it to `src/enterprise/index.ts`. The `/ee/$` route renders a registered enterprise page when its feature is available, and an upsell page for any catalog feature in the `upgrade` or `unlicensed` state. `EditionGate` applies the same rule inside other pages.
+
+Likely future enterprise-only features:
 
 - SAML/OIDC/LDAP SSO.
 - SCIM provisioning.
-- Tamper-evident audit logs.
 - SIEM forwarding.
 - Advanced compliance packaging.
 - License enforcement.

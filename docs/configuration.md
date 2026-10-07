@@ -167,6 +167,7 @@ Use PostgreSQL for larger deployments, environments with multiple server replica
 | `jwt.secret_key` | `JWT_SECRET_KEY` | `--jwt-secret-key` | Development-only secret | JWT signing secret. Replace in every real deployment. |
 | `encryption.key` | `ENCRYPTION_KEY` | `--encryption-key` | Development-only secret | Application encryption key for encrypted values such as DSNs and SMTP credentials. Replace in every real deployment. |
 | `encryption.previous_keys` | `ENCRYPTION_PREVIOUS_KEYS` | `--encryption-previous-keys` | Empty | Comma-separated retired encryption keys retained for decrypting old ciphertext during rotation. |
+| `license` | `LICENSE` | `--license` | Empty | Enterprise license material. Only the enterprise build accepts it. The community build refuses to start when it is set. |
 
 Do not use the default secrets outside local development.
 

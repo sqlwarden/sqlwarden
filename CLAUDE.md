@@ -133,6 +133,15 @@ Configuration uses spf13/viper through `internal/config`.
 - Permission catalog API is the backend source of truth for permission labels, descriptions, role scope maps, and resource applicability.
 - Org owner-level policy grants such as `org:delete` and `org:transfer_ownership` require the actor to already hold the privileged permission.
 - Discovery queries must defensively ignore invalid role/resource scope combinations.
+- Role bindings with an `expires_at` at or before the current time grant nothing. Expiry is evaluated at check time, not when the policy is cached.
+- Handlers authorize through the composed `access.PolicyEvaluator` (`app.policy`). Edition policy decorators may deny but never grant.
+
+## Editions
+
+- Enterprise code lives in `ee/` behind the `enterprise` build tag. Community code never imports `ee/`; only `cmd/sqlwarden/edition_ee.go` may.
+- Enterprise behavior enters through `internal/edition` module contributions (decorators, routes under `/ee`, jobs, `ee_*` migrations), not through edition checks in shared code.
+- The license key comes from the `license` setting. The community build rejects it.
+- Frontend enterprise UI registers through the `@edition` registry and `EditionGate`; never branch on the edition name in shared UI.
 
 ## Resource Invariants
 
