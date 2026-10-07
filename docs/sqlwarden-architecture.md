@@ -18,7 +18,9 @@ Implemented today:
 - Local username/password auth, JWT access tokens, refresh tokens, database-backed auth sessions, and org access-session revocation.
 - Instance-admin layer above organizations.
 - Organization, workspace, environment, connection, team, role, policy, and account models.
-- Optional personal spaces under `/api/v1/me`.
+- Product profiles (`server`, `desktop`) in `internal/profile`.
+- Identity chain and principal model in `internal/identity`, with reason-coded authentication failures.
+- Audit core in `internal/audit` that records setup and sign-in events.
 - Custom additive RBAC enforcer in `internal/access`.
 - Effective permissions API and permissions catalog API for frontend capability gating.
 - Workspace direct/team membership model and `workspace_members` policy principal.
@@ -107,18 +109,18 @@ Configuration is loaded by `internal/config` using spf13/viper. Supported source
 
 Important concepts:
 
-- `deployment_mode` describes runtime packaging and operating context, such as server or future desktop.
-- `access_mode` describes account/authorization behavior, such as multi-user or single-user.
-- `personal_spaces_enabled` gates `/api/v1/me/workspaces...`.
+- `profile` (`server` or `desktop`) selects a `profile.Profile` implementation. The profile supplies config defaults, validation, the setup plan, the invitation policy, and the sign-in strategy. Shared code reads these capabilities and never branches on the profile name.
+- The desktop profile requires SQLite, derives the default DB path from `desktop.app_dir`, disables invitations, and disables password sign-in.
+- `server.trusted_proxies` lists the proxy networks whose `X-Forwarded-For` hops are trusted. `internal/platform/clientip` walks the header from the direct peer and stops at the first untrusted address. IPv4-mapped IPv6 addresses and prefixes are unmapped before the check.
 - Session revocation can be enabled/disabled for deployments that do not need account session management overhead.
 - File storage currently supports local filesystem storage. Config names are designed around active backend plus future backend registry.
 - Target SQLite connections are explicitly gated through database-backed instance settings; REST clients cannot rely on the frontend driver list as the security control.
 
 Configuration ownership is split deliberately:
 
-- Bootstrap configuration is deployment-managed and must be available before the application database opens. It covers listeners, deployment/access mode, application database connectivity, secrets, TLS, storage topology, desktop topology, and log format.
+- Bootstrap configuration is deployment-managed and must be available before the application database opens. It covers listeners, profile, trusted proxies, application database connectivity, secrets, TLS, storage topology, desktop topology, and log format.
 - Runtime instance settings are typed columns in the singleton `instance_settings` row. They cover product policy, limits, log level, database query tracing, job-runner tuning, and SMTP delivery without restarting.
-- Organizations store typed nullable overrides for the small set of policies they may tighten. Effective settings are the instance values plus valid organization overrides. Personal spaces use instance settings.
+- Organizations store typed nullable overrides for the small set of policies they may tighten. Effective settings are the instance values plus valid organization overrides.
 The current consistency model intentionally performs a database read when an operation resolves policy settings. Live operational adapters additionally reconcile the singleton row every two seconds so all replicas converge after an update. A request uses one immutable resolved value set; background jobs capture policy settings when execution begins. Running jobs finish or cancel through the normal runner shutdown path when worker tuning changes.
 
 If settings reads become measurable load at larger horizontal scale, the settings service is the replacement boundary for a versioned in-process cache. Such a cache must use database notifications or an external pub/sub mechanism for cross-replica invalidation and retain a bounded fallback check. No cache or Redis dependency is part of the current implementation.
@@ -135,7 +137,7 @@ Typical org-scoped request:
 ```text
 HTTP request
   -> chi route
-  -> authenticateV1
+  -> authenticateV1 (identity chain -> principal on the request context)
   -> requireAccount
   -> orgCtx
   -> workspace/environment/connection context middleware as needed
@@ -232,12 +234,27 @@ Many current create/update/get endpoints still return the raw resource directly.
 Implemented auth flow:
 
 - First-run setup creates the initial account and instance admin.
-- In multi-user mode, setup also requires creation of the first organization.
-- In single-user mode, setup seeds a local organization and grants the account owner-level access through normal RBAC.
-- Login creates a refresh token, JWT access token, and auth session.
+- On the server profile, setup also requires creation of the first organization.
+- On the desktop profile, setup takes no input. It seeds a local account and a local organization and grants the account owner-level access through normal RBAC. It returns an access token and sets no refresh cookie.
+- `GET /api/setup/status` returns capabilities (`setup_requires_input`, `invitations_enabled`), not the profile name.
+- Login runs the profile's `identity.SignInStrategy`: the method verifies the primary credential (`Begin`), the factor policy and sign-in policy can deny, and `Complete` returns the credential info recorded on the auth session. The desktop strategy is disabled and login returns 404.
+- Password sign-in returns the same `invalid_credentials` reason for an unknown email, a missing password hash, an inactive account, and a wrong password. It compares against a dummy hash when no account hash exists so timing does not reveal account existence.
+- Login creates a refresh token, JWT access token, and auth session. Each auth session stores `auth_method` and `assurance` (for example `password`/`aal1`, or `local` for desktop setup).
 - Refresh-token rotation issues new access tokens.
 - Auth sessions and org access sessions are database-backed and revocable when session revocation is enabled.
 - Account/session APIs support listing and revoking active sessions.
+
+Request authentication:
+
+- `authenticateV1` runs the `identity.Chain`. The session authenticator verifies the JWT and, when session revocation is on, loads the auth session row. It produces an `access.Principal` with the subject, credential kind, method, assurance, and session ID, and stores it on the request context.
+- With session revocation off, no session row is loaded and the credential method and assurance default to `password`/`aal1`.
+- A rejected credential returns 401 with a `reason` code in the error envelope. Account and session IDs on a `CredentialError` are for logs only and never reach the response.
+
+Audit:
+
+- `internal/audit` writes `audit_events` rows with principal columns (subject, credential ID, auth method, assurance), action, outcome, decision reason, and metadata.
+- Setup and sign-in (success and failure) emit events. Failure events carry an anonymous actor and never the submitted email. Metadata includes the resolved client IP.
+- Audit writes are fail-open: a write failure logs a warning and does not fail the request. A future compliance mode can switch the writer to fail-closed.
 
 Current identity model:
 
@@ -300,7 +317,6 @@ Core properties:
 - Permission checks evaluate the current resource and allowed ancestor resources.
 - Policy subjects include accounts, teams, `org_members`, and `workspace_members`.
 - Org membership is required before org resource access, regardless of policy bindings.
-- Personal spaces use owner middleware and are outside org RBAC.
 
 ### Identity And Bootstrap
 
@@ -314,7 +330,7 @@ Important identity tables:
 - `org_members`: account membership in an organization.
 - `teams` and `team_members`: org-scoped team principals.
 
-`POST /api/setup` is self-sealing. In multi-user server mode it creates the first account, makes that account an instance admin, creates the first organization, adds the account to that organization, and grants the account the builtin `Owner` role through a normal role binding. In single-user mode it still creates a real local account and local organization; it does not bypass RBAC for org-owned resources.
+`POST /api/setup` is self-sealing. On the server profile it creates the first account, makes that account an instance admin, creates the first organization, adds the account to that organization, and grants the account the builtin `Owner` role through a normal role binding. On the desktop profile it still creates a real local account and local organization; it does not bypass RBAC for org-owned resources.
 
 Register/login flows are separate from authorization. An account may exist without meaningful access until it is an org member and receives policy-derived permissions.
 
@@ -331,7 +347,7 @@ organization -> workspace -> environment -> connection
 Workspace ownership has two modes:
 
 - Org-owned workspace: `org_id = organizations.id`, `owner_type = "org"`, `owner_id = organizations.id`.
-- Personal-space workspace: `org_id = NULL`, `owner_type = "space"`, `owner_id = accounts.id`.
+- Legacy personal-space workspace (unreachable through the API): `org_id = NULL`, `owner_type = "space"`, `owner_id = accounts.id`.
 
 Connections are strict leaves under environments. They should not be modeled as dual-parent resources even though the connection row stores both `workspace_id` and `environment_id`; RBAC ancestry is connection -> environment -> workspace -> org.
 
@@ -445,7 +461,7 @@ Can(ctx, account_id, org_id, owner_type, resource_type, resource_id, permission)
 
 Evaluation flow:
 
-- If `owner_type = "space"`, allow only after `/me` middleware has already proven the current account owns the personal-space resource.
+- If `owner_type = "space"`, allow through the owner short-circuit. No API route reaches space-owned resources. Existing space rows remain in the database and are unreachable.
 - Resolve principals for the account: direct account principal, org teams, `org_members` when applicable, and `workspace_members` when applicable.
 - Resolve ancestry for the target resource from `resource_hierarchy`: target resource, parent resources, and the owning org.
 - Load org policy from the process-local cache.
@@ -471,7 +487,7 @@ Typical UI usage:
 - Check create actions on the parent container: `ws:create` at org, `env:create` at workspace, `conn:create` at workspace/environment.
 - Check existing resource actions on the concrete resource: workspace actions at workspace, environment actions at environment, connection actions at connection.
 
-The effective-permissions endpoint validates resource ownership. Missing or cross-org resources should behave as not found. Personal-space permissions are not exposed as org-scoped RBAC.
+The effective-permissions endpoint validates resource ownership. Missing or cross-org resources should behave as not found.
 
 ### Middleware Mapping
 
@@ -492,14 +508,6 @@ Role-like route guards map to permissions rather than special-case role names:
 
 - Owner-level guard: `org:transfer_ownership`.
 - Administrator-level guard: `org:write`.
-
-Personal-space routes use their own `/me` middleware chain:
-
-```text
-authenticateV1 -> requireAccount -> requirePersonalSpacesEnabled -> spaceWsCtx/spaceEnvCtx/spaceConnCtx -> handler
-```
-
-The `/me` context middleware proves `owner_type = "space"` and `owner_id = current account` before the enforcer owner short-circuit can apply.
 
 ### Scope And Discovery Rules
 
@@ -546,17 +554,7 @@ Policy changes invalidate org policy cache. Team membership changes invalidate p
 
 ## Personal Spaces
 
-Personal spaces are implemented under `/api/v1/me`.
-
-Properties:
-
-- Gated by the persisted personal-spaces feature setting.
-- `owner_type = "space"` and `owner_id = account.id`.
-- Use `/me` owner middleware instead of org RBAC.
-- Intended for user-owned personal database workspaces in multi-user deployments.
-- Not the desktop/single-user authorization model.
-
-Single-user/local mode should use the seeded local organization and normal org routes for managed resources.
+Personal spaces were removed. The `/api/v1/me/workspaces` routes and the `personal_spaces_enabled` setting no longer exist. `GET /api/v1/me` still returns the current account. Desktop uses the seeded local organization and normal org routes.
 
 ## Workspace Membership
 
@@ -899,11 +897,12 @@ Current implemented controls:
 - Auth/session revocation.
 - Query cancellation.
 - Workspace private/shared file scoping.
-- Personal-space feature gate.
+- Audit events for setup and sign-in.
+- Trusted-proxy client IP resolution.
 
 Important open gaps:
 
-- Audit trail for policy and data access events.
+- Audit trail for policy and data access events (only setup and sign-in are audited today).
 - Tamper-evident audit logs.
 - SSO/SCIM identity lifecycle.
 - SSRF-safe cloud deployment model.
@@ -919,11 +918,10 @@ Future Wails support should reuse `internal/web` instead of importing `cmd/sqlwa
 
 Recommended model:
 
-- `deployment_mode=desktop` controls runtime packaging and local loopback behavior.
-- `access_mode=single_user` controls bootstrap and account behavior.
+- `profile=desktop` selects the desktop profile, which controls bootstrap, sign-in, and invitation behavior.
 - Desktop still creates a real local account and local organization.
 - Desktop does not bypass RBAC for org-owned resources.
-- Personal spaces remain optional sandboxes for multi-user deployments, not the desktop security model.
+- Desktop session renewal (no refresh cookie today) is part of the future `cmd/desktop` work.
 - Wails-specific code should be isolated behind a small bridge layer in the frontend and a future `cmd/desktop` entrypoint.
 
 Future desktop may support multiple remote SQLWarden backends, such as separate prod and non-prod enterprise instances. That should be modeled as a client-side backend registry, not as a change to the server authorization model.
