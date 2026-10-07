@@ -1,6 +1,7 @@
 package web
 
 import (
+	"errors"
 	"log/slog"
 	"net/http"
 	"net/url"
@@ -9,7 +10,10 @@ import (
 	"time"
 
 	"github.com/go-chi/chi/v5"
+	"github.com/sqlwarden/internal/access"
+	"github.com/sqlwarden/internal/audit"
 	"github.com/sqlwarden/internal/database"
+	"github.com/sqlwarden/internal/identity"
 	"github.com/sqlwarden/internal/password"
 	"github.com/sqlwarden/internal/request"
 	"github.com/sqlwarden/internal/response"
@@ -87,6 +91,11 @@ func (app *application) registerAccount(w http.ResponseWriter, r *http.Request) 
 }
 
 func (app *application) loginAccount(w http.ResponseWriter, r *http.Request) {
+	if !app.signIn.Enabled() {
+		app.notFound(w, r)
+		return
+	}
+
 	var input struct {
 		Email    string              `json:"email"`
 		Password string              `json:"password"`
@@ -107,33 +116,52 @@ func (app *application) loginAccount(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	account, found, err := app.db.GetAccountByEmail(r.Context(), input.Email)
+	attrs := app.requestAttributes(r)
+	method := app.signIn.Method()
+	subject, err := method.Begin(r.Context(), identity.Credentials{Email: input.Email, Password: input.Password})
+	var credErr *identity.CredentialError
+	if errors.As(err, &credErr) {
+		app.auditSignInFailure(r, method.Name(), credErr.Reason)
+		app.rejectCredential(w, r, credErr.Reason)
+		return
+	}
+	if err != nil {
+		app.serverError(w, r, err)
+		return
+	}
+	if factors := app.signIn.Factors().Required(r.Context(), subject, attrs); len(factors) > 0 {
+		app.auditSignInFailure(r, method.Name(), "factor_required")
+		app.rejectCredential(w, r, "factor_required")
+		return
+	}
+	decision, err := app.signIn.Policy().Evaluate(r.Context(), subject, attrs)
+	if err != nil {
+		app.serverError(w, r, err)
+		return
+	}
+	if decision.Effect != access.EffectAllow {
+		reason := decision.Reason
+		if reason == "" {
+			reason = "sign_in_policy_denied"
+		}
+		app.auditSignInFailure(r, method.Name(), reason)
+		app.rejectCredential(w, r, reason)
+		return
+	}
+	credential, err := method.Complete(r.Context(), subject)
 	if err != nil {
 		app.serverError(w, r, err)
 		return
 	}
 
-	if !found || account.Password == nil || !account.IsActive {
-		app.invalidAuthenticationToken(w, r)
-		return
-	}
-
-	match, err := password.Matches(input.Password, *account.Password)
+	accessToken, authSessionID, err := app.issueAccountSession(w, r, subject.Account, database.SessionAuth{Method: credential.Method, Assurance: string(credential.Assurance)})
 	if err != nil {
 		app.serverError(w, r, err)
 		return
 	}
-	if !match {
-		app.invalidAuthenticationToken(w, r)
-		return
-	}
-
-	accessToken, authSessionID, err := app.issueAccountSession(w, r, account)
-	if err != nil {
-		app.serverError(w, r, err)
-		return
-	}
-	app.logInfo(r, "account logged in", slog.Int64("account_id", account.ID), slog.String("auth_session_id", authSessionID))
+	credential.ID = authSessionID
+	app.auditSignInSuccess(r, subject.Account.ID, credential)
+	app.logInfo(r, "account logged in", slog.Int64("account_id", subject.Account.ID), slog.String("auth_session_id", authSessionID))
 
 	err = response.JSON(w, http.StatusOK, map[string]string{"access_token": accessToken})
 	if err != nil {
@@ -141,12 +169,21 @@ func (app *application) loginAccount(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
-func (app *application) issueAccountSession(w http.ResponseWriter, r *http.Request, account database.Account) (string, string, error) {
+func (app *application) auditSignInFailure(r *http.Request, method, reason string) {
+	app.emitAudit(r, audit.Event{Actor: audit.AnonymousActor(method), Action: audit.ActionSignIn, Outcome: audit.OutcomeFailure, DecisionReason: reason})
+}
+
+func (app *application) auditSignInSuccess(r *http.Request, accountID int64, credential access.CredentialInfo) {
+	principal := access.Principal{Subject: access.SubjectRef{Kind: access.SubjectAccount, ID: accountID}, Credential: credential}
+	app.emitAudit(r, audit.Event{Actor: audit.ActorFromPrincipal(principal), Action: audit.ActionSignIn, Outcome: audit.OutcomeSuccess})
+}
+
+func (app *application) issueAccountSession(w http.ResponseWriter, r *http.Request, account database.Account, auth database.SessionAuth) (string, string, error) {
 	const refreshTTL = 7 * 24 * time.Hour
 	family := database.NewID()
 	authSession, _, err := app.db.CreateAuthSessionWithRefreshToken(
 		r.Context(), account.ID, time.Now().Add(refreshTTL), r.Header.Get("User-Agent"),
-		app.clientIP(r), token.Hash(family), family,
+		app.clientIP(r), token.Hash(family), family, auth,
 	)
 	if err != nil {
 		return "", "", err

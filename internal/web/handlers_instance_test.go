@@ -201,7 +201,7 @@ func TestCreateFirstRunSetup_RollsBackAccountAdminAndSessionOnOrgFailure(t *test
 	assert.Nil(t, err)
 
 	hashedPassword := testUsers["alice"].hashedPassword
-	_, _, _, err = app.createFirstRunSetup(t.Context(), "rollback-admin@example.com", "Rollback Admin", &hashedPassword, "first-org", "First Organization", "agent", "127.0.0.1")
+	_, _, _, err = app.createFirstRunSetup(t.Context(), "rollback-admin@example.com", "Rollback Admin", &hashedPassword, "first-org", "First Organization", "agent", "127.0.0.1", identity.MethodPassword)
 	if err == nil {
 		t.Fatal("expected duplicate organization failure")
 	}

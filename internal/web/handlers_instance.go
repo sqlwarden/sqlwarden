@@ -89,7 +89,7 @@ func (app *application) setup(w http.ResponseWriter, r *http.Request) {
 		hashedPassword = &hashed
 	}
 
-	account, org, authSession, err := app.createFirstRunSetup(r.Context(), plan.AccountEmail, plan.AccountName, hashedPassword, slug, plan.OrganizationName, r.Header.Get("User-Agent"), app.clientIP(r))
+	account, org, authSession, err := app.createFirstRunSetup(r.Context(), plan.AccountEmail, plan.AccountName, hashedPassword, slug, plan.OrganizationName, r.Header.Get("User-Agent"), app.clientIP(r), plan.Method)
 	if err != nil {
 		if isUniqueViolation(err) {
 			input.V.AddFieldError("email", "An account or organization with these details already exists.")
@@ -123,13 +123,11 @@ func (app *application) setup(w http.ResponseWriter, r *http.Request) {
 			Method: plan.Method, Assurance: access.AAL1,
 		},
 	}
-	if err := audit.Emit(r.Context(), app.audit, audit.Event{
+	app.emitAudit(r, audit.Event{
 		OrgID: &org.ID, Actor: audit.ActorFromPrincipal(principal),
 		Action: audit.ActionSetupCompleted, Resource: "organization",
 		ResourceID: strconv.FormatInt(org.ID, 10), Outcome: audit.OutcomeSuccess,
-	}); err != nil {
-		app.logWarn(r, "audit write failed", slog.String("action", audit.ActionSetupCompleted), slog.Any("error", err))
-	}
+	})
 
 	app.logInfo(r, "instance setup completed", slog.Int64("account_id", account.ID), slog.Int64("org_id", org.ID), slog.String("org_slug", org.Slug), slog.String("auth_method", plan.Method))
 	err = response.JSON(w, http.StatusCreated, body)
@@ -138,7 +136,7 @@ func (app *application) setup(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
-func (app *application) createFirstRunSetup(ctx context.Context, email, name string, hashedPassword *string, organizationSlug, organizationName, userAgent, remoteAddr string) (database.Account, database.Organization, database.AuthSession, error) {
+func (app *application) createFirstRunSetup(ctx context.Context, email, name string, hashedPassword *string, organizationSlug, organizationName, userAgent, remoteAddr, method string) (database.Account, database.Organization, database.AuthSession, error) {
 	var account database.Account
 	var org database.Organization
 	var authSession database.AuthSession
@@ -158,7 +156,7 @@ func (app *application) createFirstRunSetup(ctx context.Context, email, name str
 			return err
 		}
 
-		authSession, err = app.db.InsertAuthSessionWithExecutor(ctx, tx, account.ID, time.Now().Add(7*24*time.Hour), userAgent, remoteAddr)
+		authSession, err = app.db.InsertAuthSessionWithExecutor(ctx, tx, account.ID, time.Now().Add(7*24*time.Hour), userAgent, remoteAddr, database.SessionAuth{Method: method, Assurance: string(access.AAL1)})
 		return err
 	})
 	if err != nil {

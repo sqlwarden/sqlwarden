@@ -62,6 +62,7 @@ func newTestDependencies(t *testing.T) Dependencies {
 
 		Setup:       identity.FormSetup,
 		Invitations: orgs.InvitationsEnabled,
+		SignIn:      identity.PasswordSignIn(db),
 	}
 }
 

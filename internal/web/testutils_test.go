@@ -71,6 +71,7 @@ func newTestApplication(t *testing.T) *application {
 	}
 	app.logger = slog.New(slog.NewTextHandler(io.Discard, nil))
 	app.db = newTestDB(t)
+	app.signIn = identity.PasswordSignIn(app.db)
 	app.audit = audit.NewCoreWriter(audit.NewSQLStore(app.db.DB), time.Now)
 	app.clientIPs = clientip.New(nil)
 	app.authChain = app.newAuthChain()
@@ -162,7 +163,7 @@ func seedAccountWithToken(t *testing.T, app *application, email, name string) (d
 	t.Helper()
 
 	account := seedAccount(t, app, email, name)
-	authSession, err := app.db.InsertAuthSession(context.Background(), account.ID, time.Now().Add(7*24*time.Hour), "test-agent", "127.0.0.1")
+	authSession, err := app.db.InsertAuthSession(context.Background(), account.ID, time.Now().Add(7*24*time.Hour), "test-agent", "127.0.0.1", database.SessionAuth{Method: "password", Assurance: "aal1"})
 	if err != nil {
 		t.Fatal(err)
 	}

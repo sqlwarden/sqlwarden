@@ -17,6 +17,9 @@ func TestDesktopProfileStrategies(t *testing.T) {
 	if p.Setup() != identity.LocalSetup {
 		t.Fatal("desktop must use LocalSetup")
 	}
+	if p.SignIn(nil).Enabled() {
+		t.Fatal("desktop must not offer sign-in")
+	}
 	if p.Invitations() != orgs.InvitationsDisabled {
 		t.Fatal("desktop must disable invitations")
 	}

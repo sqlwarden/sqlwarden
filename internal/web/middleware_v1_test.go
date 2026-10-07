@@ -40,7 +40,7 @@ func testWithParams(r *http.Request, params map[string]string) *http.Request {
 // issueTestToken creates a valid JWT for the given account using the test app's secret.
 func issueTestToken(t *testing.T, app *application, accountID int64, email, name string) string {
 	t.Helper()
-	authSession, err := app.db.InsertAuthSession(context.Background(), accountID, time.Now().Add(7*24*time.Hour), "test-agent", "127.0.0.1")
+	authSession, err := app.db.InsertAuthSession(context.Background(), accountID, time.Now().Add(7*24*time.Hour), "test-agent", "127.0.0.1", database.SessionAuth{Method: "password", Assurance: "aal1"})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -293,7 +293,7 @@ func TestOrgCtx_NonMember(t *testing.T) {
 	}
 
 	req := httptest.NewRequest(http.MethodGet, "/api/v1/orgs/"+org.Slug, nil)
-	authSession, err := app.db.InsertAuthSession(context.Background(), account.ID, time.Now().Add(7*24*time.Hour), "test-agent", "127.0.0.1")
+	authSession, err := app.db.InsertAuthSession(context.Background(), account.ID, time.Now().Add(7*24*time.Hour), "test-agent", "127.0.0.1", database.SessionAuth{Method: "password", Assurance: "aal1"})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -340,7 +340,7 @@ func TestOrgCtx_Member(t *testing.T) {
 	})
 
 	req := httptest.NewRequest(http.MethodGet, "/api/v1/orgs/"+org.Slug, nil)
-	authSession, err := app.db.InsertAuthSession(context.Background(), account.ID, time.Now().Add(7*24*time.Hour), "test-agent", "127.0.0.1")
+	authSession, err := app.db.InsertAuthSession(context.Background(), account.ID, time.Now().Add(7*24*time.Hour), "test-agent", "127.0.0.1", database.SessionAuth{Method: "password", Assurance: "aal1"})
 	if err != nil {
 		t.Fatal(err)
 	}

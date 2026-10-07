@@ -16,6 +16,9 @@ func TestServerProfile(t *testing.T) {
 	if p.Setup() != identity.FormSetup {
 		t.Fatal("server must use FormSetup")
 	}
+	if !p.SignIn(nil).Enabled() {
+		t.Fatal("server must enable sign-in")
+	}
 	if p.Invitations() != orgs.InvitationsEnabled {
 		t.Fatal("server must enable invitations")
 	}

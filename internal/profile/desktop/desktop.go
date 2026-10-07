@@ -41,3 +41,7 @@ func (desktopProfile) Validate(cfg config.Config) error {
 
 func (desktopProfile) Setup() identity.SetupStrategy      { return identity.LocalSetup }
 func (desktopProfile) Invitations() orgs.InvitationPolicy { return orgs.InvitationsDisabled }
+
+func (desktopProfile) SignIn(identity.AccountLookup) identity.SignInStrategy {
+	return identity.SignInUnavailable
+}

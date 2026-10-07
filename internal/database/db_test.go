@@ -154,6 +154,8 @@ func TestMigrateUpAddsQueryCursorPageSizeAfterVersion29(t *testing.T) {
 		ALTER TABLE organization_runtime_settings ADD COLUMN schema_snapshot_freshness_seconds INTEGER;
 		ALTER TABLE instance_settings ADD COLUMN personal_spaces_enabled BOOLEAN NOT NULL DEFAULT TRUE;
 		DROP TABLE audit_events;
+		ALTER TABLE auth_sessions DROP COLUMN assurance;
+		ALTER TABLE auth_sessions DROP COLUMN auth_method;
 	`)
 	assert.Nil(t, err)
 	_, err = db.ExecContext(context.Background(), "UPDATE schema_migrations SET version = 29, dirty = 0")

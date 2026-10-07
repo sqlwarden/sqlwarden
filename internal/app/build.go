@@ -166,6 +166,7 @@ func Build(ctx context.Context, opts Options) (*Application, error) {
 
 		Setup:       prof.Setup(),
 		Invitations: prof.Invitations(),
+		SignIn:      prof.SignIn(db),
 	})
 	if err != nil {
 		return fail(err)

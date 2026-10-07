@@ -64,6 +64,8 @@ func (a sessionAuthenticator) Authenticate(ctx context.Context, p Presented) (Au
 		return Authenticated{}, true, reject("account_inactive", account.ID)
 	}
 
+	// Without revocation no session row is loaded, so the method and assurance
+	// fall back to the password defaults.
 	result := Authenticated{
 		Account: account,
 		Principal: access.Principal{
@@ -93,6 +95,8 @@ func (a sessionAuthenticator) Authenticate(ctx context.Context, p Presented) (Au
 		return Authenticated{}, true, err
 	}
 	result.AuthSession = &session
+	result.Principal.Credential.Method = session.AuthMethod
+	result.Principal.Credential.Assurance = access.AAL(session.Assurance)
 	result.Principal.Credential.AuthTime = session.CreatedAt
 	return result, true, nil
 }

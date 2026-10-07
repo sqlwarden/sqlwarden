@@ -18,4 +18,7 @@ type Profile interface {
 	Validate(config.Config) error
 	Setup() identity.SetupStrategy
 	Invitations() orgs.InvitationPolicy
+	// SignIn takes the account lookup port because the password method needs
+	// storage and profiles hold no database.
+	SignIn(accounts identity.AccountLookup) identity.SignInStrategy
 }

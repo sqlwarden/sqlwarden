@@ -17,3 +17,7 @@ func (serverProfile) Defaults(*config.Config)            {}
 func (serverProfile) Validate(config.Config) error       { return nil }
 func (serverProfile) Setup() identity.SetupStrategy      { return identity.FormSetup }
 func (serverProfile) Invitations() orgs.InvitationPolicy { return orgs.InvitationsEnabled }
+
+func (serverProfile) SignIn(accounts identity.AccountLookup) identity.SignInStrategy {
+	return identity.PasswordSignIn(accounts)
+}

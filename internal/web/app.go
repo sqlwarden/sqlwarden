@@ -58,6 +58,7 @@ type Dependencies struct {
 
 	Setup       identity.SetupStrategy
 	Invitations orgs.InvitationPolicy
+	SignIn      identity.SignInStrategy
 }
 
 type application struct {
@@ -86,6 +87,7 @@ type application struct {
 	accessLogsEnabled atomic.Bool
 	setupStrategy     identity.SetupStrategy
 	invitationPolicy  orgs.InvitationPolicy
+	signIn            identity.SignInStrategy
 	clientIPs         clientip.Resolver
 	authChain         identity.Chain
 	audit             audit.Writer
@@ -99,8 +101,8 @@ func NewApplication(deps Dependencies) (*App, error) {
 	if logger == nil {
 		logger = slog.New(slog.NewTextHandler(io.Discard, nil))
 	}
-	if deps.Setup == nil || deps.Invitations == nil {
-		return nil, errors.New("web: setup strategy and invitation policy are required")
+	if deps.Setup == nil || deps.Invitations == nil || deps.SignIn == nil {
+		return nil, errors.New("web: setup strategy, invitation policy, and sign-in strategy are required")
 	}
 	auditWriter := deps.Audit
 	if auditWriter == nil {
@@ -109,6 +111,7 @@ func NewApplication(deps Dependencies) (*App, error) {
 	app := &application{
 		setupStrategy:     deps.Setup,
 		invitationPolicy:  deps.Invitations,
+		signIn:            deps.SignIn,
 		config:            deps.Config,
 		db:                deps.DB,
 		logger:            logger,

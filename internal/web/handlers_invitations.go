@@ -9,7 +9,9 @@ import (
 	"time"
 
 	"github.com/go-chi/chi/v5"
+	"github.com/sqlwarden/internal/access"
 	"github.com/sqlwarden/internal/database"
+	"github.com/sqlwarden/internal/identity"
 	"github.com/sqlwarden/internal/password"
 	"github.com/sqlwarden/internal/request"
 	"github.com/sqlwarden/internal/response"
@@ -295,7 +297,7 @@ func (app *application) acceptOrganizationInvitation(w http.ResponseWriter, r *h
 	result := map[string]any{"organization": org}
 	status := http.StatusOK
 	if created {
-		accessToken, sessionID, err := app.issueAccountSession(w, r, account)
+		accessToken, sessionID, err := app.issueAccountSession(w, r, account, database.SessionAuth{Method: identity.MethodPassword, Assurance: string(access.AAL1)})
 		if err != nil {
 			app.serverError(w, r, err)
 			return

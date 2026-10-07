@@ -56,10 +56,12 @@ func newFakeSessionStore(now time.Time) *fakeSessionStore {
 		account:      database.Account{ID: 42, IsActive: true},
 		accountFound: true,
 		session: database.AuthSession{
-			ID:        "session-1",
-			AccountID: 42,
-			CreatedAt: now.Add(-time.Hour),
-			ExpiresAt: now.Add(time.Hour),
+			ID:         "session-1",
+			AccountID:  42,
+			CreatedAt:  now.Add(-time.Hour),
+			ExpiresAt:  now.Add(time.Hour),
+			AuthMethod: MethodLocal,
+			Assurance:  string(access.AAL1),
 		},
 		sessionFound: true,
 	}
@@ -205,6 +207,9 @@ func TestSessionAuthenticatorSkipsSessionWhenRevocationDisabled(t *testing.T) {
 	if got.AuthSession != nil {
 		t.Fatalf("auth session = %+v", got.AuthSession)
 	}
+	if got.Principal.Credential.Method != MethodPassword || got.Principal.Credential.Assurance != access.AAL1 {
+		t.Fatalf("credential = %+v", got.Principal.Credential)
+	}
 }
 
 func TestSessionAuthenticatorBuildsPrincipal(t *testing.T) {
@@ -218,7 +223,7 @@ func TestSessionAuthenticatorBuildsPrincipal(t *testing.T) {
 		t.Fatalf("subject = %+v", got.Principal.Subject)
 	}
 	credential := got.Principal.Credential
-	if credential.Kind != access.CredentialSession || credential.ID != "session-1" || credential.Method != MethodPassword || credential.Assurance != access.AAL1 {
+	if credential.Kind != access.CredentialSession || credential.ID != "session-1" || credential.Method != MethodLocal || credential.Assurance != access.AAL1 {
 		t.Fatalf("credential = %+v", credential)
 	}
 	if !credential.AuthTime.Equal(store.session.CreatedAt) {
