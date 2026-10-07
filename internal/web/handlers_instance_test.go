@@ -963,9 +963,15 @@ func TestSetupDesktopIsSelfSealing(t *testing.T) {
 	assert.NotEqual(t, res.BodyFields["access_token"].(string), "")
 	org := res.BodyFields["organization"].(map[string]any)
 	assert.Equal(t, org["slug"].(string), identity.LocalOrganizationSlug)
+	before, err := app.db.NewSelect().TableExpr("accounts").Count(t.Context())
+	assert.Nil(t, err)
 
 	again := send(t, newTestRequest(t, http.MethodPost, "/api/setup", map[string]any{}), app.routes())
 	assert.Equal(t, again.StatusCode, http.StatusConflict)
+
+	after, err := app.db.NewSelect().TableExpr("accounts").Count(t.Context())
+	assert.Nil(t, err)
+	assert.Equal(t, after, before)
 }
 
 func TestSetupStatusReportsCapabilities(t *testing.T) {
