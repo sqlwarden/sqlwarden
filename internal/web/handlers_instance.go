@@ -87,7 +87,7 @@ func (app *application) setup(w http.ResponseWriter, r *http.Request) {
 		hashedPassword = &hashed
 	}
 
-	account, org, authSession, err := app.createFirstRunSetup(r.Context(), plan.AccountEmail, plan.AccountName, hashedPassword, slug, plan.OrganizationName, r.Header.Get("User-Agent"), r.RemoteAddr)
+	account, org, authSession, err := app.createFirstRunSetup(r.Context(), plan.AccountEmail, plan.AccountName, hashedPassword, slug, plan.OrganizationName, r.Header.Get("User-Agent"), app.clientIP(r))
 	if err != nil {
 		if isUniqueViolation(err) {
 			input.V.AddFieldError("email", "An account or organization with these details already exists.")

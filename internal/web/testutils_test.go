@@ -22,6 +22,7 @@ import (
 	"github.com/sqlwarden/internal/encrypt"
 	"github.com/sqlwarden/internal/identity"
 	"github.com/sqlwarden/internal/orgs"
+	"github.com/sqlwarden/internal/platform/clientip"
 	"github.com/sqlwarden/internal/smtp"
 	"github.com/sqlwarden/internal/token"
 
@@ -69,6 +70,8 @@ func newTestApplication(t *testing.T) *application {
 	}
 	app.logger = slog.New(slog.NewTextHandler(io.Discard, nil))
 	app.db = newTestDB(t)
+	app.clientIPs = clientip.New(nil)
+	app.authChain = app.newAuthChain()
 	settings, found, err := app.db.GetInstanceSettings(context.Background())
 	if err != nil || !found {
 		t.Fatalf("get instance settings: found=%v err=%v", found, err)
@@ -365,6 +368,16 @@ type testResponse struct {
 	BodyFields map[string]any
 	BodyBytes  []byte
 }
+
+func (r testResponse) errorField(name string) string {
+	errorValue, _ := r.BodyFields["error"].(map[string]any)
+	value, _ := errorValue[name].(string)
+	return value
+}
+
+func (r testResponse) ErrorCode() string { return r.errorField("code") }
+
+func (r testResponse) ErrorReason() string { return r.errorField("reason") }
 
 func send(t *testing.T, req *http.Request, h http.Handler) testResponse {
 	if len(req.PostForm) > 0 {

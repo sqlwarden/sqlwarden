@@ -146,6 +146,10 @@ func Build(ctx context.Context, opts Options) (*Application, error) {
 	if failWebConstruction != nil {
 		return fail(failWebConstruction)
 	}
+	trustedProxies, err := config.ParseTrustedProxies(cfg.Server.TrustedProxies)
+	if err != nil {
+		return fail(err)
+	}
 	webApp, err := web.NewApplication(web.Dependencies{
 		Config:     cfg,
 		DB:         db,
@@ -155,6 +159,8 @@ func Build(ctx context.Context, opts Options) (*Application, error) {
 		FileStores: stores,
 		Sessions:   sessions,
 		Cursors:    cursors,
+
+		TrustedProxies: trustedProxies,
 
 		Setup:       prof.Setup(),
 		Invitations: prof.Invitations(),

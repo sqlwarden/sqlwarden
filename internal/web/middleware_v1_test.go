@@ -4,13 +4,16 @@ import (
 	"context"
 	"net/http"
 	"net/http/httptest"
+	"net/netip"
 	"strconv"
 	"testing"
 	"time"
 
 	"github.com/go-chi/chi/v5"
 	"github.com/sqlwarden/internal/access"
+	"github.com/sqlwarden/internal/assert"
 	"github.com/sqlwarden/internal/database"
+	"github.com/sqlwarden/internal/platform/clientip"
 	"github.com/sqlwarden/internal/token"
 )
 
@@ -689,4 +692,68 @@ func TestRequireConcreteResourcePermissionMissingContext(t *testing.T) {
 			t.Fatalf("%s: expected 404, got %d", tt.name, rec.Code)
 		}
 	}
+}
+
+func sendWithAuthorization(t *testing.T, app *application, path, header string) testResponse {
+	t.Helper()
+	req := newTestRequest(t, http.MethodGet, path, nil)
+	req.Header.Set("Authorization", header)
+	return send(t, req, app.routes())
+}
+
+func newTestSessionToken(t *testing.T, app *application) (string, string) {
+	t.Helper()
+	account := seedAccount(t, app, uniqueEmail(t, "session"), "Session Account")
+	tok := issueTestToken(t, app, account.ID, account.Email, account.Name)
+	claims, err := token.Verify(tok, app.config.JWT.SecretKey)
+	assert.Nil(t, err)
+	return tok, claims.AuthSessionID
+}
+
+func revokeTestSession(t *testing.T, app *application, sessionID string) {
+	t.Helper()
+	assert.Nil(t, app.db.RevokeAuthSession(context.Background(), sessionID, nil, "test"))
+}
+
+func TestAuthenticateRejectsUnclaimedCredential(t *testing.T) {
+	app := newTestApplication(t)
+	for _, header := range []string{"Basic abc", "Bearer", "Bearer a b"} {
+		res := sendWithAuthorization(t, app, "/api/v1/me", header)
+		assert.Equal(t, res.StatusCode, http.StatusUnauthorized)
+		assert.Equal(t, res.ErrorCode(), "invalid_authentication_token")
+	}
+}
+
+func TestAuthenticateRevokedSessionReturnsReason(t *testing.T) {
+	app := newTestApplication(t)
+	token, sessionID := newTestSessionToken(t, app)
+	revokeTestSession(t, app, sessionID)
+	res := sendWithAuthorization(t, app, "/api/v1/me", "Bearer "+token)
+	assert.Equal(t, res.StatusCode, http.StatusUnauthorized)
+	assert.Equal(t, res.ErrorReason(), "auth_session_revoked")
+}
+
+func TestAuthenticatePutsPrincipalOnContext(t *testing.T) {
+	app := newTestApplication(t)
+	token, sessionID := newTestSessionToken(t, app)
+	var got access.Principal
+	handler := app.authenticateV1(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		got, _ = contextGetPrincipal(r)
+	}))
+	req := httptest.NewRequest(http.MethodGet, "/", nil)
+	req.Header.Set("Authorization", "Bearer "+token)
+	req.RemoteAddr = "203.0.113.9:1234"
+	handler.ServeHTTP(httptest.NewRecorder(), req)
+	assert.Equal(t, got.Subject.Kind, access.SubjectAccount)
+	assert.Equal(t, got.Credential.ID, sessionID)
+	assert.Equal(t, got.Request.ClientIP.String(), "203.0.113.9")
+}
+
+func TestClientIPHonorsTrustedProxy(t *testing.T) {
+	app := newTestApplication(t)
+	app.clientIPs = clientip.New([]netip.Prefix{netip.MustParsePrefix("10.0.0.0/8")})
+	req := httptest.NewRequest(http.MethodGet, "/", nil)
+	req.RemoteAddr = "10.0.0.2:1234"
+	req.Header.Set("X-Forwarded-For", "198.51.100.7")
+	assert.Equal(t, app.clientIP(req), "198.51.100.7")
 }

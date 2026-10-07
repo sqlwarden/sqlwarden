@@ -1,19 +1,21 @@
 package web
 
 import (
+	"context"
+	"errors"
 	"log/slog"
 	"net/http"
 	"strconv"
-	"strings"
 	"time"
 
 	"github.com/go-chi/chi/v5"
 	"github.com/sqlwarden/internal/access"
-	"github.com/sqlwarden/internal/token"
+	"github.com/sqlwarden/internal/identity"
 )
 
-// authenticateV1 reads the Bearer token, verifies it, and sets the account on context.
-// Continues without error if no token is present — use requireAccount to enforce auth.
+// authenticateV1 authenticates the Authorization header through the identity
+// chain and sets the account, auth session and principal on context.
+// Continues without error if no credential is present; use requireAccount to enforce auth.
 func (app *application) authenticateV1(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		authHeader := r.Header.Get("Authorization")
@@ -21,73 +23,39 @@ func (app *application) authenticateV1(next http.Handler) http.Handler {
 			next.ServeHTTP(w, r)
 			return
 		}
-
-		parts := strings.Split(authHeader, " ")
-		if len(parts) != 2 || parts[0] != "Bearer" {
-			app.invalidAuthenticationToken(w, r)
-			return
-		}
-
-		claims, err := token.Verify(parts[1], app.config.JWT.SecretKey)
-		if err != nil {
-			app.invalidAuthenticationToken(w, r)
-			return
-		}
 		runtimeSettings, err := app.runtimeSettingsService().effectiveForOrg(r.Context(), nil)
 		if err != nil {
 			app.serverError(w, r, err)
 			return
 		}
-		if runtimeSettings.SessionsRevocationEnabled && claims.AuthSessionID == "" {
-			app.logWarn(r, "authentication token missing session binding")
-			app.invalidAuthenticationToken(w, r)
+		r = contextSetRuntimeSettings(r, runtimeSettings)
+
+		result, err := app.authChain.Authenticate(r.Context(), identity.Presented{
+			Authorization: authHeader,
+			Request:       app.requestAttributes(r),
+		})
+		var credErr *identity.CredentialError
+		if errors.As(err, &credErr) {
+			app.logWarn(r, "authentication rejected", slog.String("reason", credErr.Reason))
+			app.rejectCredential(w, r, credErr.Reason)
 			return
 		}
-
-		accountID, err := strconv.ParseInt(claims.AccountID, 10, 64)
-		if err != nil {
-			app.invalidAuthenticationToken(w, r)
-			return
-		}
-
-		account, found, err := app.db.GetAccount(r.Context(), accountID)
 		if err != nil {
 			app.serverError(w, r, err)
 			return
 		}
-		if !found || !account.IsActive {
-			app.invalidAuthenticationToken(w, r)
-			return
+		if result.AuthSession != nil {
+			r = contextSetAuthSession(r, *result.AuthSession)
 		}
-
-		if runtimeSettings.SessionsRevocationEnabled {
-			authSession, found, err := app.db.GetAuthSession(r.Context(), claims.AuthSessionID, account.ID)
-			if err != nil {
-				app.serverError(w, r, err)
-				return
-			}
-			if !found || authSession.RevokedAt != nil || time.Now().After(authSession.ExpiresAt) {
-				reason := "auth_session_not_found"
-				if found && authSession.RevokedAt != nil {
-					reason = "auth_session_revoked"
-				} else if found && time.Now().After(authSession.ExpiresAt) {
-					reason = "auth_session_expired"
-				}
-				app.logWarn(r, "authentication session rejected", slog.Int64("account_id", account.ID), slog.String("auth_session_id", claims.AuthSessionID), slog.String("reason", reason))
-				app.invalidAuthenticationToken(w, r)
-				return
-			}
-			if err = app.db.TouchAuthSession(r.Context(), authSession.ID); err != nil {
-				app.serverError(w, r, err)
-				return
-			}
-			r = contextSetAuthSession(r, authSession)
-		}
-
-		r = contextSetRuntimeSettings(r, runtimeSettings)
-		r = contextSetAccount(r, account)
+		r = contextSetAccount(r, result.Account)
+		r = contextSetPrincipal(r, result.Principal)
 		next.ServeHTTP(w, r)
 	})
+}
+
+func revocationFromContext(ctx context.Context) bool {
+	settings, ok := ctx.Value(runtimeSettingsKey).(effectiveRuntimeSettings)
+	return ok && settings.SessionsRevocationEnabled
 }
 
 // requireAccount rejects the request with 401 if no authenticated account is in context.

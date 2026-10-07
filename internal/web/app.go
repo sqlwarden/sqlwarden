@@ -6,6 +6,7 @@ import (
 	"io"
 	"log/slog"
 	"net/http"
+	"net/netip"
 	"strconv"
 	"sync"
 	"sync/atomic"
@@ -21,6 +22,7 @@ import (
 	"github.com/sqlwarden/internal/identity"
 	"github.com/sqlwarden/internal/jobs"
 	"github.com/sqlwarden/internal/orgs"
+	"github.com/sqlwarden/internal/platform/clientip"
 	schemaapp "github.com/sqlwarden/internal/schema"
 	"github.com/sqlwarden/internal/smtp"
 )
@@ -49,6 +51,8 @@ type Dependencies struct {
 	FileStores FileStores
 	Sessions   *connection.Manager
 	Cursors    *connection.QueryCursorManager
+
+	TrustedProxies []netip.Prefix
 
 	Setup       identity.SetupStrategy
 	Invitations orgs.InvitationPolicy
@@ -80,6 +84,8 @@ type application struct {
 	accessLogsEnabled atomic.Bool
 	setupStrategy     identity.SetupStrategy
 	invitationPolicy  orgs.InvitationPolicy
+	clientIPs         clientip.Resolver
+	authChain         identity.Chain
 }
 
 // NewApplication wires the web application from its dependencies. It applies
@@ -111,6 +117,8 @@ func NewApplication(deps Dependencies) (*App, error) {
 		runtimeSettings:   newRuntimeSettingsService(deps.DB),
 		runtimeUpdates:    make(chan database.InstanceSettings, 1),
 	}
+	app.clientIPs = clientip.New(deps.TrustedProxies)
+	app.authChain = app.newAuthChain()
 	initialSettings, err := app.instanceSettings(context.Background())
 	if err != nil {
 		return nil, err

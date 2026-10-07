@@ -941,3 +941,23 @@ func TestSetupStatusReportsCapabilities(t *testing.T) {
 	assert.Equal(t, res.BodyFields["setup_requires_input"].(bool), false)
 	assert.Equal(t, res.BodyFields["invitations_enabled"].(bool), false)
 }
+
+func TestSetupStoresResolvedClientIPOnAuthSession(t *testing.T) {
+	t.Parallel()
+	app := newTestApp(t)
+
+	req := newTestRequest(t, http.MethodPost, "/api/setup", map[string]any{
+		"email":             "ip-admin@example.com",
+		"name":              "Admin",
+		"password":          "securepass99",
+		"organization_name": "Default Organization",
+	})
+	req.RemoteAddr = "203.0.113.9:1234"
+	res := send(t, req, app.routes())
+	assert.Equal(t, res.StatusCode, http.StatusCreated)
+
+	var ip string
+	err := app.db.NewSelect().TableExpr("auth_sessions").ColumnExpr("ip_address").Limit(1).Scan(t.Context(), &ip)
+	assert.Nil(t, err)
+	assert.Equal(t, ip, "203.0.113.9")
+}

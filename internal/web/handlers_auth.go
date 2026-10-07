@@ -146,7 +146,7 @@ func (app *application) issueAccountSession(w http.ResponseWriter, r *http.Reque
 	family := database.NewID()
 	authSession, _, err := app.db.CreateAuthSessionWithRefreshToken(
 		r.Context(), account.ID, time.Now().Add(refreshTTL), r.Header.Get("User-Agent"),
-		r.RemoteAddr, token.Hash(family), family,
+		app.clientIP(r), token.Hash(family), family,
 	)
 	if err != nil {
 		return "", "", err
@@ -250,7 +250,7 @@ func (app *application) refreshToken(w http.ResponseWriter, r *http.Request) {
 		rt.Family,
 		time.Now().Add(7*24*time.Hour),
 		r.Header.Get("User-Agent"),
-		r.RemoteAddr,
+		app.clientIP(r),
 	)
 	if err != nil {
 		app.serverError(w, r, err)

@@ -414,9 +414,9 @@ func TestRevokedAuthSessionRejectsExistingAccessToken(t *testing.T) {
 	app.logger = slog.New(slog.NewJSONHandler(&logs, &slog.HandlerOptions{Level: slog.LevelDebug}))
 	res := send(t, newAuthRequest(t, http.MethodGet, "/api/v1/account", nil, tok), app.routes())
 	assert.Equal(t, res.StatusCode, http.StatusUnauthorized)
-	assert.True(t, strings.Contains(logs.String(), "authentication session rejected"))
+	assert.True(t, strings.Contains(logs.String(), "authentication rejected"))
 	assert.True(t, strings.Contains(logs.String(), "auth_session_revoked"))
-	assert.True(t, strings.Contains(logs.String(), claims.AuthSessionID))
+	assert.Equal(t, res.ErrorReason(), "auth_session_revoked")
 	assert.False(t, strings.Contains(logs.String(), tok))
 }
 
