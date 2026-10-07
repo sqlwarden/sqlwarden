@@ -10,7 +10,7 @@ This document is the committed architecture source of truth for the repository. 
 
 Implemented today:
 
-- One Go server binary in `cmd/api`.
+- One Go server binary in `cmd/sqlwarden`.
 - HTTP application package in `internal/web`, reusable by future entrypoints such as Wails desktop.
 - REST API under `/api/v1`.
 - Embedded React SPA served from `assets/static`.
@@ -63,7 +63,7 @@ sqlwarden/
 │   ├── migrations_sqlite/            # embedded SQLite migrations
 │   └── static/                       # embedded frontend build output
 ├── cmd/
-│   └── api/                          # thin server entrypoint
+│   └── sqlwarden/                    # thin server entrypoint
 ├── docs/
 │   └── sqlwarden-architecture.md     # canonical committed architecture doc
 ├── frontend/
@@ -97,11 +97,13 @@ sqlwarden/
     └── result/                       # normalized target DB result sets
 ```
 
-`cmd/api` should remain thin. New reusable HTTP behavior belongs in `internal/web`, not in `cmd/api`, so future `cmd/desktop` can embed or start the same web application.
+`cmd/sqlwarden` should remain thin. New reusable HTTP behavior belongs in `internal/web`, not in `cmd/sqlwarden`, so future `cmd/desktop` can embed or start the same web application.
+
+`internal/app` is the composition root. Only `cmd/*` imports it.
 
 ## Configuration
 
-Configuration is loaded by `internal/web` using spf13/viper. Supported sources are config file, environment variables, and CLI flags. Defaults are intended to support local development with minimal setup.
+Configuration is loaded by `internal/config` using spf13/viper. Supported sources are config file, environment variables, and CLI flags. Defaults are intended to support local development with minimal setup.
 
 Important concepts:
 
@@ -913,7 +915,7 @@ SQLWarden is primarily self-hosted. Any future hosted/cloud offering needs stron
 
 ## Desktop/Wails Direction
 
-Future Wails support should reuse `internal/web` instead of importing `cmd/api`.
+Future Wails support should reuse `internal/web` instead of importing `cmd/sqlwarden`.
 
 Recommended model:
 

@@ -17,8 +17,10 @@ This file gives AI coding agents working guidance for this repository. For archi
 
 SQLWarden is a Go API plus embedded React SPA.
 
-- `cmd/api` is a thin server entrypoint.
-- `internal/web` owns config loading, app wiring, routes, middleware, handlers, and static frontend serving.
+- `cmd/sqlwarden` is a thin server entrypoint with `serve`, `migrate`, and `rotate-keys` subcommands.
+- `internal/app` is the composition root. It builds the database, migrations, keyring, enforcer, and stores, and runs the selected process kinds (`all`, `api`, `jobs`). Only `cmd/*` imports it.
+- `internal/config` loads and validates configuration.
+- `internal/web` owns routes, middleware, handlers, and static frontend serving.
 - `internal/database` stores SQLWarden metadata through Bun against SQLite/PostgreSQL.
 - `internal/access` is the custom RBAC enforcer and permissions catalog.
 - `internal/connection` manages live target database sessions.
@@ -26,7 +28,7 @@ SQLWarden is a Go API plus embedded React SPA.
 - `internal/files` and `internal/filestore` implement workspace file metadata/content storage.
 - `frontend/` is the React app using TanStack Router, TanStack Query, Tailwind CSS, shadcn/ui, Base UI, CodeMirror, Zustand, IndexedDB, Y.js, and BroadcastChannel.
 
-Future Wails desktop work should reuse `internal/web`; do not put reusable web logic in `cmd/api`.
+Future Wails desktop work should reuse `internal/web`; do not put reusable web logic in `cmd/sqlwarden`.
 
 ## Source Of Truth
 
@@ -82,7 +84,7 @@ make migrations/goto version=5
 
 ## Configuration
 
-Configuration uses spf13/viper through `internal/web`.
+Configuration uses spf13/viper through `internal/config`.
 
 - Supports config file, environment variables, and CLI flags.
 - Default SQLite app DB path is `~/.sqlwarden/sqlwarden.db`.
@@ -93,7 +95,7 @@ Configuration uses spf13/viper through `internal/web`.
 
 ## Backend Conventions
 
-- Keep `cmd/api` thin.
+- Keep `cmd/sqlwarden` thin.
 - Put reusable HTTP behavior in `internal/web`.
 - Prefer concrete resource permission middleware:
   - `requireOrgPermission`

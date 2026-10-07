@@ -186,7 +186,7 @@ make hooks/install
 
 ```text
 assets/                       Embedded migrations, email templates, and frontend build output
-cmd/api/                      Server entrypoint
+cmd/sqlwarden/                Server entrypoint
 docs/                         Architecture and operator documentation
 frontend/                     React application
 internal/access/              RBAC permissions, roles, policies, and enforcer
@@ -199,7 +199,7 @@ internal/web/                 HTTP app, config, routes, middleware, handlers
 pkg/result/                   Normalized target query result types
 ```
 
-`cmd/api` is intentionally thin. Reusable HTTP behavior belongs in `internal/web` so future entrypoints, including desktop packaging, can wrap the same application.
+`cmd/sqlwarden` is intentionally thin. Reusable HTTP behavior belongs in `internal/web` so future entrypoints, including desktop packaging, can wrap the same application.
 
 ## API and Architecture
 
