@@ -187,7 +187,7 @@ func TestConfiguredInstanceWithMissingBaseURLFailsInvariantInsteadOfRebootstrapp
 		settings.BaseURL = ""
 	})
 
-	err := initializeInstanceBaseURL(context.Background(), app.db, "https://bootstrap.example.com")
+	err := InitializeInstanceBaseURL(context.Background(), app.db, "https://bootstrap.example.com")
 	if err == nil || !strings.Contains(err.Error(), "base_url is invalid") {
 		t.Fatalf("initialize base URL error = %v", err)
 	}
@@ -220,7 +220,7 @@ func TestRuntimeSettingsInvalidRowReturnsServiceUnavailable(t *testing.T) {
 func TestValidateRuntimeSettingsInvariant(t *testing.T) {
 	t.Run("accepts canonical migration row", func(t *testing.T) {
 		app := newTestApp(t)
-		if err := validateRuntimeSettingsInvariant(context.Background(), app.db); err != nil {
+		if err := ValidateRuntimeSettingsInvariant(context.Background(), app.db); err != nil {
 			t.Fatal(err)
 		}
 	})
@@ -230,7 +230,7 @@ func TestValidateRuntimeSettingsInvariant(t *testing.T) {
 		if _, err := app.db.ExecContext(context.Background(), "DELETE FROM instance_settings WHERE id = 1"); err != nil {
 			t.Fatal(err)
 		}
-		err := validateRuntimeSettingsInvariant(context.Background(), app.db)
+		err := ValidateRuntimeSettingsInvariant(context.Background(), app.db)
 		if err == nil || !strings.Contains(err.Error(), "row id=1 is missing") {
 			t.Fatalf("unexpected invariant error: %v", err)
 		}
@@ -241,7 +241,7 @@ func TestValidateRuntimeSettingsInvariant(t *testing.T) {
 		updateInstanceSettingsForTest(t, app, func(settings *database.InstanceSettings) {
 			settings.InstanceName = ""
 		})
-		err := validateRuntimeSettingsInvariant(context.Background(), app.db)
+		err := ValidateRuntimeSettingsInvariant(context.Background(), app.db)
 		if err == nil || !strings.Contains(err.Error(), "instance_name must not be empty") {
 			t.Fatalf("unexpected invariant error: %v", err)
 		}
@@ -252,7 +252,7 @@ func TestValidateRuntimeSettingsInvariant(t *testing.T) {
 		updateInstanceSettingsForTest(t, app, func(settings *database.InstanceSettings) {
 			settings.QueryCursorPageSize = 0
 		})
-		err := validateRuntimeSettingsInvariant(context.Background(), app.db)
+		err := ValidateRuntimeSettingsInvariant(context.Background(), app.db)
 		if err == nil || !strings.Contains(err.Error(), "query_cursor_page_size") {
 			t.Fatalf("unexpected invariant error: %v", err)
 		}

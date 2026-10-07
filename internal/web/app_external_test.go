@@ -7,10 +7,22 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/sqlwarden/internal/app"
 	"github.com/sqlwarden/internal/config"
 	"github.com/sqlwarden/internal/database"
 	"github.com/sqlwarden/internal/web"
 )
+
+func buildApp(cfg config.Config) (*app.Application, error) {
+	return app.Build(context.Background(), app.Options{Config: cfg, Logger: slog.Default()})
+}
+
+func closeApp(t *testing.T, built *app.Application) {
+	t.Helper()
+	if err := built.Close(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+}
 
 func TestAppCanBeConstructedFromExternalPackage(t *testing.T) {
 	cfg := config.Default()
@@ -22,13 +34,22 @@ func TestAppCanBeConstructedFromExternalPackage(t *testing.T) {
 		RootDir: t.TempDir() + "/files",
 	}
 
-	app, err := web.New(cfg, slog.Default())
+	built, err := buildApp(cfg)
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer app.Close()
+	defer closeApp(t, built)
 
-	var _ http.Handler = app.Handler()
+	if _, err := built.RotateEncryptionKeys(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func TestNewServerAcceptsAnyHandler(t *testing.T) {
+	srv := web.NewServer(0, http.NotFoundHandler(), slog.Default())
+	if srv.Handler == nil {
+		t.Fatal("NewServer dropped the handler")
+	}
 }
 
 func TestBaseURLIsBootstrappedOnceAndThenDatabaseOwned(t *testing.T) {
@@ -43,18 +64,18 @@ func TestBaseURLIsBootstrappedOnceAndThenDatabaseOwned(t *testing.T) {
 		RootDir: t.TempDir() + "/files",
 	}
 
-	app, err := web.New(cfg, slog.Default())
+	built, err := buildApp(cfg)
 	if err != nil {
 		t.Fatal(err)
 	}
-	app.Close()
+	closeApp(t, built)
 
 	cfg.BootstrapBaseURL = "https://second.example.com"
-	app, err = web.New(cfg, slog.Default())
+	built, err = buildApp(cfg)
 	if err != nil {
 		t.Fatal(err)
 	}
-	app.Close()
+	closeApp(t, built)
 
 	db, err := database.New("sqlite", dbPath, slog.Default())
 	if err != nil {
@@ -81,11 +102,11 @@ func TestAppFailsWhenSavedFileStorageBackendIsNotConfigured(t *testing.T) {
 		RootDir: t.TempDir() + "/files",
 	}
 
-	setup, err := web.New(cfg, slog.Default())
+	setup, err := buildApp(cfg)
 	if err != nil {
 		t.Fatal(err)
 	}
-	setup.Close()
+	closeApp(t, setup)
 
 	db, err := database.New("sqlite", dbPath, slog.Default())
 	if err != nil {
@@ -126,9 +147,9 @@ func TestAppFailsWhenSavedFileStorageBackendIsNotConfigured(t *testing.T) {
 	}
 	db.Close()
 
-	app, err := web.New(cfg, slog.Default())
+	built, err := buildApp(cfg)
 	if err == nil {
-		app.Close()
+		closeApp(t, built)
 		t.Fatal("expected missing storage backend to fail startup")
 	}
 	if !strings.Contains(err.Error(), `file storage backend "retired"`) {

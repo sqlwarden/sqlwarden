@@ -394,7 +394,7 @@ func TestWorkspaceDirectoryWritesVisibleFilePath(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	app.fileStores = &fileStoreRegistry{activeBackendID: database.DefaultFileStorageBackendID, stores: map[string]filestore.Store{database.DefaultFileStorageBackendID: store}}
+	app.fileStores = &testFileStores{activeBackendID: database.DefaultFileStorageBackendID, stores: map[string]filestore.Store{database.DefaultFileStorageBackendID: store}}
 	app.config.Files.StorageMode = config.FilesStorageModeFile
 
 	create := send(t, newAuthRequest(t, http.MethodPost, orgPrivateFilesURL(org.Slug, ws.ID), map[string]any{"name": "visible.sql"}, tok), app.routes())
@@ -550,7 +550,7 @@ func TestWorkspaceDirectoryMovesTrackedDescendantsAndRejectsExternalDestination(
 	if err != nil {
 		t.Fatal(err)
 	}
-	app.fileStores = &fileStoreRegistry{activeBackendID: database.DefaultFileStorageBackendID, stores: map[string]filestore.Store{database.DefaultFileStorageBackendID: store}}
+	app.fileStores = &testFileStores{activeBackendID: database.DefaultFileStorageBackendID, stores: map[string]filestore.Store{database.DefaultFileStorageBackendID: store}}
 	app.config.Files.StorageMode = config.FilesStorageModeFile
 	filesURL := orgPrivateFilesURL(org.Slug, ws.ID)
 	folder := decodeWorkspaceFile(t, send(t, newAuthRequest(t, http.MethodPost, filesURL, map[string]any{

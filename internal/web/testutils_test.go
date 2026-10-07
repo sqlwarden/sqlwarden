@@ -78,9 +78,11 @@ func newTestApplication(t *testing.T) *application {
 	// that surface directly, so enable it here and let the handful of
 	// gating tests opt back out via updateInstanceSettingsForTest.
 	settings.PersonalSpacesEnabled = true
-	if _, err := app.db.UpsertInstanceSettings(context.Background(), settings); err != nil {
+	settings, err = app.db.UpsertInstanceSettings(context.Background(), settings)
+	if err != nil {
 		t.Fatal(err)
 	}
+	app.initialSettings = settings
 	app.mailer = smtp.NewMockMailer("test@example.com")
 	app.queryCursors = connection.NewQueryCursorManager(30 * time.Minute)
 	t.Cleanup(func() { app.queryCursors.Close() })
@@ -89,7 +91,7 @@ func newTestApplication(t *testing.T) *application {
 		t.Fatal(err)
 	}
 	app.keyring = keyring
-	app.fileStores, err = newFileStoreRegistry(app.config)
+	app.fileStores, err = newTestFileStores(app.config)
 	if err != nil {
 		t.Fatal(err)
 	}

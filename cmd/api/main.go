@@ -9,17 +9,15 @@ import (
 	"runtime/debug"
 	"syscall"
 
+	"github.com/sqlwarden/internal/app"
 	"github.com/sqlwarden/internal/config"
 	"github.com/sqlwarden/internal/platform/observability"
 	"github.com/sqlwarden/internal/version"
-	"github.com/sqlwarden/internal/web"
 )
 
 func main() {
-	err := run(os.Args[1:])
-	if err != nil {
-		trace := string(debug.Stack())
-		bootstrapLogger().Error(err.Error(), "trace", trace)
+	if err := run(os.Args[1:]); err != nil {
+		bootstrapLogger().Error(err.Error(), "trace", string(debug.Stack()))
 		os.Exit(1)
 	}
 }
@@ -28,70 +26,71 @@ func bootstrapLogger() *slog.Logger {
 	return slog.New(slog.NewJSONHandler(os.Stdout, &slog.HandlerOptions{Level: slog.LevelInfo}))
 }
 
-func run(args []string) error {
-	if len(args) > 0 && args[0] == "rotate-keys" {
-		return runRotateKeys(args[1:])
+func parseCommand(args []string) (app.Command, []string) {
+	if len(args) == 0 {
+		return app.CommandServe, args
 	}
+	switch args[0] {
+	case "serve":
+		return app.CommandServe, args[1:]
+	case config.MigrateCommand:
+		return app.CommandMigrate, args[1:]
+	case "rotate-keys":
+		return app.CommandRotateKeys, args[1:]
+	default:
+		return app.CommandServe, args
+	}
+}
 
-	loaded, err := config.Load(args)
+func run(args []string) error {
+	command, rest := parseCommand(args)
+	loaded, err := config.Load(rest)
 	if err != nil {
 		return err
 	}
-	cfg := loaded.Config
-
 	if loaded.ShowVersion {
 		fmt.Printf("version: %s\n", version.Get())
 		return nil
 	}
-
-	logger, err := observability.NewLogger(cfg.Log.Format, os.Stdout)
+	logger, err := observability.NewLogger(loaded.Config.Log.Format, os.Stdout)
 	if err != nil {
 		return err
 	}
-
-	app, err := web.New(cfg, logger)
-	if err != nil {
-		return err
-	}
-	defer app.Close()
-
 	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
 	defer stop()
 
-	return app.ServeHTTP(ctx)
+	built, err := app.Build(ctx, app.Options{Config: loaded.Config, Logger: logger, Command: command})
+	if err != nil {
+		return err
+	}
+	defer func() {
+		if closeErr := built.Close(context.WithoutCancel(ctx)); closeErr != nil {
+			logger.Error("application close failed", "error", closeErr)
+		}
+	}()
+
+	switch command {
+	case app.CommandMigrate:
+		return nil
+	case app.CommandRotateKeys:
+		return rotateKeys(ctx, built, logger)
+	default:
+		return built.Run(ctx)
+	}
 }
 
-// runRotateKeys re-encrypts all application-encrypted data (connection DSNs,
-// SMTP credentials, and application-encrypted file content) with the configured primary
-// encryption key, decrypting through any retired keys in ENCRYPTION_PREVIOUS_KEYS.
+// rotateKeys re-encrypts all application-encrypted data with the primary key,
+// decrypting through any retired keys in encryption.previous_keys.
 //
-// It runs at infrastructure trust level: anyone who can execute the binary with
+// It runs at infrastructure trust level: anyone who can run the binary with
 // the deployment's config and database already holds the keys, so no
-// application-level authorization is applied. It is the CLI equivalent of the
-// instance-admin HTTP rotate endpoint.
-func runRotateKeys(args []string) error {
-	loaded, err := config.Load(args)
+// application authorization applies. It is the CLI equivalent of the
+// instance-admin rotate endpoint.
+func rotateKeys(ctx context.Context, built *app.Application, logger *slog.Logger) error {
+	report, err := built.RotateEncryptionKeys(ctx)
 	if err != nil {
 		return err
 	}
-	cfg := loaded.Config
-
-	logger, err := observability.NewLogger(cfg.Log.Format, os.Stdout)
-	if err != nil {
-		return err
-	}
-
-	app, err := web.New(cfg, logger)
-	if err != nil {
-		return err
-	}
-	defer app.Close()
-
-	report, err := app.RotateEncryptionKeys(context.Background())
-	if err != nil {
-		return err
-	}
-
 	logger.Info("encryption key rotation complete",
 		"connections_scanned", report.ConnectionsScanned,
 		"connections_rotated", report.ConnectionsRotated,
