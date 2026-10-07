@@ -32,6 +32,7 @@ var options = []option{
 	{key: "base_url", env: "BASE_URL", flagName: "base-url", defaultValue: defaultBaseURL, category: CategoryBootstrap, usage: "Initial instance base URL used only when bootstrapping runtime settings"},
 	{key: "http_port", env: "HTTP_PORT", flagName: "http-port", defaultValue: defaultHTTPPort, category: CategoryBootstrap, usage: "HTTP server port"},
 	{key: "profile", env: "PROFILE", flagName: "profile", defaultValue: defaultProfile, category: CategoryBootstrap, usage: "Product profile (server or desktop)"},
+	{key: "license", env: "LICENSE", flagName: "license", defaultValue: defaultLicense, category: CategorySecrets, sensitive: true, usage: "Enterprise license material"},
 	{key: "server.trusted_proxies", env: "SERVER_TRUSTED_PROXIES", flagName: "server-trusted-proxies", defaultValue: []string{}, category: CategoryBootstrap, usage: "Comma-separated CIDRs or IPs trusted to set X-Forwarded-For"},
 	{key: "process_kinds", env: "PROCESS_KINDS", flagName: "process-kinds", defaultValue: []string{ProcessKindAll}, category: CategoryBootstrap, usage: "Comma-separated runtime process kinds this process serves"},
 	{key: "log.format", env: "LOG_FORMAT", flagName: "log-format", defaultValue: defaultLogFormat, category: CategoryBootstrap, usage: "Log format (json or text)"},

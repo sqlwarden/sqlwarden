@@ -26,7 +26,7 @@ func TestBuildRejectsDesktopWithPostgres(t *testing.T) {
 	cfg := testConfig(t)
 	cfg.Profile = config.ProfileDesktop
 	cfg.DB.Driver = "postgres"
-	_, err := Build(t.Context(), Options{Config: cfg})
+	_, err := Build(t.Context(), Options{Config: cfg, Edition: testEdition()})
 	if err == nil || !strings.Contains(err.Error(), "profile desktop") {
 		t.Fatalf("expected profile desktop validation error, got %v", err)
 	}
@@ -38,7 +38,7 @@ func TestBuildDesktopPlacesDatabaseInAppDir(t *testing.T) {
 	cfg.Profile = config.ProfileDesktop
 	cfg.DB.DSN = config.Default().DB.DSN
 	cfg.Desktop.AppDir = t.TempDir()
-	built, err := Build(t.Context(), Options{Config: cfg, Command: CommandMigrate})
+	built, err := Build(t.Context(), Options{Config: cfg, Command: CommandMigrate, Edition: testEdition()})
 	if err != nil {
 		t.Fatal(err)
 	}

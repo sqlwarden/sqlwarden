@@ -5,7 +5,9 @@ import (
 	"database/sql"
 	"errors"
 	"fmt"
+	"io/fs"
 	"log/slog"
+	"net/url"
 	"strings"
 	"sync/atomic"
 	"time"
@@ -24,6 +26,10 @@ import (
 )
 
 const defaultTimeout = 3 * time.Second
+
+// CoreMigrationVersion is the latest ordered migration shipped by core.
+// Independently-versioned edition streams declare compatibility with it.
+const CoreMigrationVersion uint = 45
 
 type DB struct {
 	logger       *slog.Logger
@@ -101,12 +107,23 @@ func (db *DB) SetQueryTracing(enabled bool) {
 }
 
 func (db *DB) MigrateUp() error {
+	return db.MigrateStream(assets.EmbeddedFiles, "migrations_postgres", "migrations_sqlite", "schema_migrations")
+}
+
+// MigrateStream applies an independently-versioned migration stream using its
+// own history table.
+func (db *DB) MigrateStream(files fs.FS, postgresPath, sqlitePath, historyTable string) error {
+	if !validMigrationTable(historyTable) {
+		return fmt.Errorf("invalid migration history table %q", historyTable)
+	}
 	migrationPath := "migrations_postgres"
 	if db.driver == "sqlite" {
-		migrationPath = "migrations_sqlite"
+		migrationPath = sqlitePath
+	} else {
+		migrationPath = postgresPath
 	}
 
-	iofsDriver, err := iofs.New(assets.EmbeddedFiles, migrationPath)
+	iofsDriver, err := iofs.New(files, migrationPath)
 	if err != nil {
 		return err
 	}
@@ -114,17 +131,31 @@ func (db *DB) MigrateUp() error {
 	var databaseURL string
 	switch db.driver {
 	case "postgres":
-		databaseURL = "postgres://" + db.dsn
+		databaseURL = db.dsn
+		if !strings.HasPrefix(databaseURL, "postgres://") && !strings.HasPrefix(databaseURL, "postgresql://") {
+			databaseURL = "postgres://" + databaseURL
+		}
 	case "sqlite":
 		databaseURL = "sqlite://" + db.dsn
 	default:
 		return fmt.Errorf("unsupported database driver for migrations: %s", db.driver)
 	}
+	separator := "?"
+	if strings.Contains(databaseURL, "?") {
+		separator = "&"
+	}
+	databaseURL += separator + "x-migrations-table=" + url.QueryEscape(historyTable)
 
 	migrator, err := migrate.NewWithSourceInstance("iofs", iofsDriver, databaseURL)
 	if err != nil {
 		return err
 	}
+	defer func() {
+		sourceErr, dbErr := migrator.Close()
+		if closeErr := errors.Join(sourceErr, dbErr); closeErr != nil {
+			db.logger.Warn("migrator shutdown failed", "error", closeErr)
+		}
+	}()
 
 	err = migrator.Up()
 	switch {
@@ -133,6 +164,18 @@ func (db *DB) MigrateUp() error {
 	default:
 		return err
 	}
+}
+
+func validMigrationTable(table string) bool {
+	if table == "" {
+		return false
+	}
+	for _, character := range table {
+		if (character < 'a' || character > 'z') && (character < '0' || character > '9') && character != '_' {
+			return false
+		}
+	}
+	return true
 }
 
 // sqlSortDirection converts an API sort direction into one of the only two SQL

@@ -218,6 +218,7 @@ func configFromViper(v *viper.Viper) Config {
 	cfg.BootstrapBaseURL = v.GetString("base_url")
 	cfg.HTTPPort = v.GetInt("http_port")
 	cfg.Profile = strings.TrimSpace(v.GetString("profile"))
+	cfg.License = strings.TrimSpace(v.GetString("license"))
 	cfg.Server.TrustedProxies = splitStringList(v.GetStringSlice("server.trusted_proxies"))
 	cfg.ProcessKinds = splitStringList(v.GetStringSlice("process_kinds"))
 	cfg.Log.Format = strings.ToLower(strings.TrimSpace(v.GetString("log.format")))

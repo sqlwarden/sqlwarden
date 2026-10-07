@@ -33,8 +33,8 @@ func TestArchitectureRouteInventory(t *testing.T) {
 	digest := hex.EncodeToString(sum[:])
 
 	const (
-		wantCount  = 205
-		wantDigest = "b7a9ff0694e969afdd188d27a844cc61e3ac9968eb0dd11cef35d740a8f488ba"
+		wantCount  = 206
+		wantDigest = "4ca3afa59293d34fdf7e5ef5c5bfe87d567065ceec8142350a535768ac00c93b"
 	)
 	if len(routes) != wantCount || digest != wantDigest {
 		t.Fatalf("route inventory count=%d digest=%s, want count=%d digest=%s\n%s",

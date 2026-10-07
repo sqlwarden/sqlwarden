@@ -3,6 +3,7 @@ package web
 import (
 	"context"
 	"errors"
+	"fmt"
 	"io"
 	"log/slog"
 	"net/http"
@@ -44,15 +45,23 @@ type FileStores interface {
 // Dependencies are the already-constructed resources the web application
 // uses. The caller owns their lifecycle: closing the App never closes them.
 type Dependencies struct {
-	Config     config.Config
-	DB         *database.DB
-	Logger     *slog.Logger
-	Keyring    *encrypt.Keyring
-	Enforcer   *access.Enforcer
-	FileStores FileStores
-	Sessions   *connection.Manager
-	Cursors    *connection.QueryCursorManager
-	Audit      audit.Writer
+	Config                config.Config
+	DB                    *database.DB
+	Logger                *slog.Logger
+	Keyring               *encrypt.Keyring
+	Enforcer              *access.Enforcer
+	Policy                access.PolicyEvaluator
+	FileStores            FileStores
+	Sessions              *connection.Manager
+	Cursors               *connection.QueryCursorManager
+	Audit                 audit.Writer
+	Edition               EditionCapabilities
+	EditionHandler        http.Handler
+	EditionJobs           []jobs.Definition
+	Authenticators        []identity.Authenticator
+	DecorateAuthenticator func(identity.Authenticator) identity.Authenticator
+	RequestPolicies       []identity.RequestPolicy
+	PostureProviders      []identity.PostureProvider
 
 	TrustedProxies []netip.Prefix
 
@@ -62,35 +71,43 @@ type Dependencies struct {
 }
 
 type application struct {
-	config            config.Config
-	db                *database.DB
-	logger            *slog.Logger
-	mailer            *smtp.Mailer
-	mailerMu          sync.RWMutex
-	wg                sync.WaitGroup
-	connManager       *connection.Manager
-	queryCursors      *connection.QueryCursorManager
-	schemaNavigator   *schemaapp.Navigator
-	completionService *completionapp.Service
-	keyring           *encrypt.Keyring
-	enforcer          *access.Enforcer
-	fileStores        FileStores
-	fileLocks         sync.Map
-	fileReaperCancel  context.CancelFunc
-	jobStore          *jobs.Store
-	jobRegistry       *jobs.Registry
-	runtimeCancel     context.CancelFunc
-	runtimeStarted    atomic.Bool
-	runtimeUpdates    chan database.InstanceSettings
-	runtimeSettings   *runtimeSettingsService
-	initialSettings   database.InstanceSettings
-	accessLogsEnabled atomic.Bool
-	setupStrategy     identity.SetupStrategy
-	invitationPolicy  orgs.InvitationPolicy
-	signIn            identity.SignInStrategy
-	clientIPs         clientip.Resolver
-	authChain         identity.Chain
-	audit             audit.Writer
+	config                config.Config
+	db                    *database.DB
+	logger                *slog.Logger
+	mailer                *smtp.Mailer
+	mailerMu              sync.RWMutex
+	wg                    sync.WaitGroup
+	connManager           *connection.Manager
+	queryCursors          *connection.QueryCursorManager
+	schemaNavigator       *schemaapp.Navigator
+	completionService     *completionapp.Service
+	keyring               *encrypt.Keyring
+	enforcer              *access.Enforcer
+	policy                access.PolicyEvaluator
+	fileStores            FileStores
+	fileLocks             sync.Map
+	fileReaperCancel      context.CancelFunc
+	jobStore              *jobs.Store
+	jobRegistry           *jobs.Registry
+	runtimeCancel         context.CancelFunc
+	runtimeStarted        atomic.Bool
+	runtimeUpdates        chan database.InstanceSettings
+	runtimeSettings       *runtimeSettingsService
+	initialSettings       database.InstanceSettings
+	accessLogsEnabled     atomic.Bool
+	setupStrategy         identity.SetupStrategy
+	invitationPolicy      orgs.InvitationPolicy
+	signIn                identity.SignInStrategy
+	clientIPs             clientip.Resolver
+	authChain             identity.Chain
+	audit                 audit.Writer
+	edition               EditionCapabilities
+	editionHandler        http.Handler
+	editionJobs           []jobs.Definition
+	authenticators        []identity.Authenticator
+	decorateAuthenticator func(identity.Authenticator) identity.Authenticator
+	requestPolicies       []identity.RequestPolicy
+	postureProviders      []identity.PostureProvider
 }
 
 // NewApplication wires the web application from its dependencies. It applies
@@ -109,24 +126,35 @@ func NewApplication(deps Dependencies) (*App, error) {
 		auditWriter = audit.Discard
 	}
 	app := &application{
-		setupStrategy:     deps.Setup,
-		invitationPolicy:  deps.Invitations,
-		signIn:            deps.SignIn,
-		config:            deps.Config,
-		db:                deps.DB,
-		logger:            logger,
-		mailer:            smtp.NewDisabledMailer(""),
-		connManager:       deps.Sessions,
-		queryCursors:      deps.Cursors,
-		schemaNavigator:   schemaapp.NewNavigator(deps.DB, logger),
-		completionService: completionapp.NewService(),
-		keyring:           deps.Keyring,
-		enforcer:          deps.Enforcer,
-		fileStores:        deps.FileStores,
-		jobStore:          jobs.NewStore(deps.DB),
-		runtimeSettings:   newRuntimeSettingsService(deps.DB),
-		runtimeUpdates:    make(chan database.InstanceSettings, 1),
-		audit:             auditWriter,
+		setupStrategy:         deps.Setup,
+		invitationPolicy:      deps.Invitations,
+		signIn:                deps.SignIn,
+		config:                deps.Config,
+		db:                    deps.DB,
+		logger:                logger,
+		mailer:                smtp.NewDisabledMailer(""),
+		connManager:           deps.Sessions,
+		queryCursors:          deps.Cursors,
+		schemaNavigator:       schemaapp.NewNavigator(deps.DB, logger),
+		completionService:     completionapp.NewService(),
+		keyring:               deps.Keyring,
+		enforcer:              deps.Enforcer,
+		policy:                deps.Policy,
+		fileStores:            deps.FileStores,
+		jobStore:              jobs.NewStore(deps.DB),
+		runtimeSettings:       newRuntimeSettingsService(deps.DB),
+		runtimeUpdates:        make(chan database.InstanceSettings, 1),
+		audit:                 auditWriter,
+		edition:               deps.Edition,
+		editionHandler:        deps.EditionHandler,
+		editionJobs:           deps.EditionJobs,
+		authenticators:        deps.Authenticators,
+		decorateAuthenticator: deps.DecorateAuthenticator,
+		requestPolicies:       deps.RequestPolicies,
+		postureProviders:      deps.PostureProviders,
+	}
+	if app.policy == nil {
+		app.policy = app.enforcer
 	}
 	app.clientIPs = clientip.New(deps.TrustedProxies)
 	app.authChain = app.newAuthChain()
@@ -143,6 +171,12 @@ func NewApplication(deps Dependencies) (*App, error) {
 		logger.Warn("connection tls backfill failed; will retry next boot", slog.Any("error", err))
 	}
 	app.jobRegistry = app.defaultJobRegistry()
+	for _, definition := range app.editionJobs {
+		if _, exists := app.jobRegistry.Definition(definition.Type); exists {
+			return nil, fmt.Errorf("web: duplicate job definition %q", definition.Type)
+		}
+		app.jobRegistry.Register(definition)
+	}
 	return app, nil
 }
 

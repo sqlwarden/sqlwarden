@@ -34,6 +34,10 @@ func (app *application) routes() http.Handler {
 		r.Post("/auth/login", app.loginAccount)
 		r.Post("/auth/refresh", app.refreshToken)
 		r.Post("/auth/logout", app.logoutAccount)
+		r.With(app.requireAccount).Get("/instance/capabilities", app.getEditionCapabilities)
+		if app.editionHandler != nil {
+			r.With(app.requireAccount).Mount("/ee", app.editionHandler)
+		}
 		r.Get("/invitations/{token}", app.getOrganizationInvitation)
 		r.Post("/invitations/{token}/accept", app.acceptOrganizationInvitation)
 

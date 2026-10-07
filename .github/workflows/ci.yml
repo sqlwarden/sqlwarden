@@ -35,6 +35,7 @@ jobs:
               - 'assets/emails/**'
               - 'assets/migrations_postgres/**'
               - 'assets/migrations_sqlite/**'
+              - 'ee/**'
               - 'go.mod'
               - 'go.sum'
               - 'Makefile'
@@ -53,6 +54,14 @@ jobs:
       - name: Run Go tests
         if: steps.changes.outputs.go == 'true'
         run: go test -race -buildvcs ./...
+
+      - name: Run Enterprise Go tests
+        if: steps.changes.outputs.go == 'true'
+        run: go test -tags enterprise -race -buildvcs ./...
+
+      - name: Verify Community excludes Enterprise packages
+        if: steps.changes.outputs.go == 'true'
+        run: '! go list -deps ./cmd/sqlwarden | grep -E "^github.com/sqlwarden/ee(/|$)"'
 
   oracle-integration:
     name: Oracle Integration Tests
@@ -197,6 +206,11 @@ jobs:
         if: steps.changes.outputs.frontend == 'true'
         working-directory: frontend
         run: bun run build
+
+      - name: Build Enterprise frontend
+        if: steps.changes.outputs.frontend == 'true'
+        working-directory: frontend
+        run: bun run build:ee
 
   docker-build:
     name: Docker Build

@@ -2,6 +2,7 @@ package app
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"log/slog"
 	"net/http"
@@ -16,6 +17,7 @@ import (
 	"github.com/sqlwarden/internal/config"
 	"github.com/sqlwarden/internal/connection"
 	"github.com/sqlwarden/internal/database"
+	"github.com/sqlwarden/internal/edition"
 	"github.com/sqlwarden/internal/encrypt"
 	"github.com/sqlwarden/internal/web"
 )
@@ -24,10 +26,11 @@ import (
 // survives before its reaper closes it.
 const sessionIdleTimeout = 30 * time.Minute
 
-// Options configures Build. Only Config is required.
+// Options configures Build. Config and Edition are required.
 type Options struct {
-	Config config.Config
-	Logger *slog.Logger
+	Config  config.Config
+	Logger  *slog.Logger
+	Edition edition.Edition
 	// Command selects a one-shot command. One-shot commands build no process
 	// kinds, so they never listen or start background work.
 	Command Command
@@ -50,15 +53,18 @@ var (
 )
 
 // Build constructs the process in dependency order: configuration, database,
-// migrations, database-backed startup checks, enforcer, file stores, keyring,
-// the web application, then process kinds. If a step fails, every resource
-// already acquired is closed in reverse order.
+// edition composition, migrations, database-backed startup checks, enforcer,
+// file stores, keyring, the web application, then process kinds. If a step
+// fails, every resource already acquired is closed in reverse order.
 func Build(ctx context.Context, opts Options) (*Application, error) {
 	logger := opts.Logger
 	if logger == nil {
 		logger = discardLogger()
 	}
 	cfg := opts.Config
+	if opts.Edition == nil {
+		return nil, errors.New("edition is required")
+	}
 	prof, err := selectProfile(cfg.Profile)
 	if err != nil {
 		return nil, err
@@ -102,10 +108,25 @@ func Build(ctx context.Context, opts Options) (*Application, error) {
 		return nil
 	})
 
+	composition, err := edition.Compose(ctx, opts.Edition, edition.Dependencies{
+		SQL: db.DB, AuditEvents: audit.NewSQLStore(db.DB), Logger: logger, Now: time.Now,
+	})
+	if err != nil {
+		return fail(err)
+	}
+	if unwired := composition.Unwired(); len(unwired) > 0 {
+		return fail(fmt.Errorf("edition %q registers contributions this build does not support: %s", composition.Name(), strings.Join(unwired, ", ")))
+	}
+
 	if opts.Command == CommandMigrate || cfg.DB.Automigrate {
 		logger.Info("running database migrations", "lock_timeout_ms", cfg.DB.MigrationTimeout.Milliseconds())
 		migrateCtx, cancel := context.WithTimeout(ctx, cfg.DB.MigrationTimeout)
-		err := db.MigrateLocked(migrateCtx, func(context.Context) error { return db.MigrateUp() })
+		err := db.MigrateLocked(migrateCtx, func(migrationCtx context.Context) error {
+			if err := db.MigrateUp(); err != nil {
+				return err
+			}
+			return edition.Migrate(migrationCtx, db, composition.Migrations())
+		})
 		cancel()
 		if err != nil {
 			return fail(err)
@@ -151,16 +172,34 @@ func Build(ctx context.Context, opts Options) (*Application, error) {
 	if err != nil {
 		return fail(err)
 	}
+	auditWriter := composition.Audit(audit.NewCoreWriter(audit.NewSQLStore(db.DB), time.Now))
+	policy := composition.Policy(enforcer)
+	capabilities := composition.Capabilities()
+	webFeatures := make([]web.EditionFeature, 0, len(capabilities.Features))
+	for _, feature := range capabilities.Features {
+		webFeatures = append(webFeatures, web.EditionFeature{
+			Key: feature.Key, Label: feature.Label, Description: feature.Description,
+			DocsURL: feature.DocsURL, Navigation: feature.Navigation, State: string(feature.State),
+		})
+	}
 	webApp, err := web.NewApplication(web.Dependencies{
-		Config:     cfg,
-		DB:         db,
-		Logger:     logger,
-		Keyring:    keyring,
-		Enforcer:   enforcer,
-		FileStores: stores,
-		Sessions:   sessions,
-		Cursors:    cursors,
-		Audit:      audit.NewCoreWriter(audit.NewSQLStore(db.DB), time.Now),
+		Config:                cfg,
+		DB:                    db,
+		Logger:                logger,
+		Keyring:               keyring,
+		Enforcer:              enforcer,
+		Policy:                policy,
+		FileStores:            stores,
+		Sessions:              sessions,
+		Cursors:               cursors,
+		Audit:                 auditWriter,
+		Edition:               web.EditionCapabilities{Name: capabilities.Edition, Features: webFeatures},
+		EditionHandler:        composition.Handler(),
+		EditionJobs:           composition.Jobs(),
+		Authenticators:        composition.Authenticators(),
+		DecorateAuthenticator: composition.Authenticator,
+		RequestPolicies:       composition.RequestPolicies(),
+		PostureProviders:      composition.PostureProviders(),
 
 		TrustedProxies: trustedProxies,
 

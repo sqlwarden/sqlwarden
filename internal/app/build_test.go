@@ -28,7 +28,7 @@ func testConfig(t *testing.T) config.Config {
 }
 
 func TestBuildAllBuildsRuntimeAndHTTP(t *testing.T) {
-	built, err := Build(context.Background(), Options{Config: testConfig(t), Logger: discardLogger()})
+	built, err := Build(context.Background(), Options{Config: testConfig(t), Logger: discardLogger(), Edition: testEdition()})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -40,7 +40,7 @@ func TestBuildAllBuildsRuntimeAndHTTP(t *testing.T) {
 
 func TestBuildCommandsBuildNoProcessKinds(t *testing.T) {
 	for _, cmd := range []Command{CommandMigrate, CommandRotateKeys} {
-		built, err := Build(context.Background(), Options{Config: testConfig(t), Logger: discardLogger(), Command: cmd})
+		built, err := Build(context.Background(), Options{Config: testConfig(t), Logger: discardLogger(), Command: cmd, Edition: testEdition()})
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -54,8 +54,36 @@ func TestBuildCommandsBuildNoProcessKinds(t *testing.T) {
 func TestBuildRejectsInvalidConfiguration(t *testing.T) {
 	cfg := testConfig(t)
 	cfg.ProcessKinds = []string{config.ProcessKindRealtime}
-	if _, err := Build(context.Background(), Options{Config: cfg, Logger: discardLogger()}); err == nil {
+	if _, err := Build(context.Background(), Options{Config: cfg, Logger: discardLogger(), Edition: testEdition()}); err == nil {
 		t.Fatal("Build accepted an unimplemented process kind")
+	}
+}
+
+func TestBuildRejectsMissingEditionBeforeOpeningDatabase(t *testing.T) {
+	if _, err := Build(context.Background(), Options{Config: testConfig(t), Logger: discardLogger()}); err == nil {
+		t.Fatal("Build accepted a missing edition")
+	}
+	if openDatabases.Load() != 0 {
+		t.Fatalf("%d databases opened before edition validation", openDatabases.Load())
+	}
+}
+
+func TestBuildClosesDatabaseWhenModuleRegistrationFails(t *testing.T) {
+	if _, err := Build(context.Background(), Options{Config: testConfig(t), Logger: discardLogger(), Edition: failingEdition{}}); err == nil {
+		t.Fatal("Build accepted a failed module registration")
+	}
+	if openDatabases.Load() != 0 {
+		t.Fatalf("%d databases left open after module registration failed", openDatabases.Load())
+	}
+}
+
+func TestBuildRejectsUnwiredEditionContributions(t *testing.T) {
+	_, err := Build(context.Background(), Options{Config: testConfig(t), Logger: discardLogger(), Edition: settingEdition{}})
+	if err == nil || !strings.Contains(err.Error(), "settings") {
+		t.Fatalf("error = %v, want unsupported settings contribution", err)
+	}
+	if openDatabases.Load() != 0 {
+		t.Fatalf("%d databases left open after unwired contribution", openDatabases.Load())
 	}
 }
 
@@ -65,7 +93,7 @@ func TestBuildClosesDatabaseWhenWebConstructionFails(t *testing.T) {
 	t.Cleanup(func() { failWebConstruction = nil })
 	var logs bytes.Buffer
 	logger := slog.New(slog.NewJSONHandler(&logs, nil))
-	if _, err := Build(context.Background(), Options{Config: cfg, Logger: logger}); err == nil {
+	if _, err := Build(context.Background(), Options{Config: cfg, Logger: logger, Edition: testEdition()}); err == nil {
 		t.Fatal("Build did not return the injected error")
 	}
 	if openDatabases.Load() != 0 {
@@ -90,7 +118,7 @@ func TestBuildClosesDatabaseWhenWebConstructionFails(t *testing.T) {
 }
 
 func TestHealthRoutesOnAllProcess(t *testing.T) {
-	built, err := Build(context.Background(), Options{Config: testConfig(t), Logger: discardLogger()})
+	built, err := Build(context.Background(), Options{Config: testConfig(t), Logger: discardLogger(), Edition: testEdition()})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -106,7 +134,7 @@ func TestHealthRoutesOnAllProcess(t *testing.T) {
 }
 
 func TestBuildAcquiresResourcesInDependencyOrder(t *testing.T) {
-	built, err := Build(context.Background(), Options{Config: testConfig(t), Logger: discardLogger()})
+	built, err := Build(context.Background(), Options{Config: testConfig(t), Logger: discardLogger(), Edition: testEdition()})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -120,7 +148,7 @@ func TestBuildAcquiresResourcesInDependencyOrder(t *testing.T) {
 func TestBuildMigrateCommandOpensOnlyTheDatabase(t *testing.T) {
 	cfg := testConfig(t)
 	cfg.DB.Automigrate = false
-	built, err := Build(context.Background(), Options{Config: cfg, Logger: discardLogger(), Command: CommandMigrate})
+	built, err := Build(context.Background(), Options{Config: cfg, Logger: discardLogger(), Command: CommandMigrate, Edition: testEdition()})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -134,7 +162,7 @@ func TestBuildMigrateCommandOpensOnlyTheDatabase(t *testing.T) {
 }
 
 func TestBuildLeavesNoDatabaseOpenAfterClose(t *testing.T) {
-	built, err := Build(context.Background(), Options{Config: testConfig(t), Logger: discardLogger()})
+	built, err := Build(context.Background(), Options{Config: testConfig(t), Logger: discardLogger(), Edition: testEdition()})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -147,7 +175,7 @@ func TestBuildLeavesNoDatabaseOpenAfterClose(t *testing.T) {
 }
 
 func TestReadyzReportsStartState(t *testing.T) {
-	built, err := Build(context.Background(), Options{Config: testConfig(t), Logger: discardLogger()})
+	built, err := Build(context.Background(), Options{Config: testConfig(t), Logger: discardLogger(), Edition: testEdition()})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -171,7 +199,7 @@ func TestReadyzReportsStartState(t *testing.T) {
 func TestBuildStartCloseDoesNotLeakGoroutines(t *testing.T) {
 	cfg := testConfig(t)
 	cycle := func() {
-		built, err := Build(context.Background(), Options{Config: cfg, Logger: discardLogger()})
+		built, err := Build(context.Background(), Options{Config: cfg, Logger: discardLogger(), Edition: testEdition()})
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -199,7 +227,7 @@ func TestBuildStartCloseDoesNotLeakGoroutines(t *testing.T) {
 func TestEnsureSQLiteParentDir(t *testing.T) {
 	cfg := testConfig(t)
 	cfg.DB.DSN = filepath.Join(t.TempDir(), "nested", "sqlwarden.db")
-	built, err := Build(context.Background(), Options{Config: cfg, Logger: discardLogger()})
+	built, err := Build(context.Background(), Options{Config: cfg, Logger: discardLogger(), Edition: testEdition()})
 	if err != nil {
 		t.Fatalf("build against a nested sqlite path: %v", err)
 	}
