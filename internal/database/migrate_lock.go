@@ -3,6 +3,7 @@ package database
 import (
 	"context"
 	"database/sql"
+	"database/sql/driver"
 	"errors"
 	"fmt"
 	"time"
@@ -83,6 +84,11 @@ func (l *postgresMigrationLock) Acquire(ctx context.Context) (func(context.Conte
 	}
 	release := func(releaseCtx context.Context) error {
 		_, unlockErr := conn.ExecContext(releaseCtx, "SELECT pg_advisory_unlock($1)", migrationLockID)
+		if unlockErr != nil {
+			// A connection that failed to unlock may still hold the session
+			// lock; ErrBadConn makes database/sql drop it instead of pooling it.
+			_ = conn.Raw(func(any) error { return driver.ErrBadConn })
+		}
 		return errors.Join(unlockErr, conn.Close())
 	}
 

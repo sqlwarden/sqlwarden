@@ -145,3 +145,20 @@ func TestMigrateLockedSerializesPostgresRuns(t *testing.T) {
 		t.Fatal("migration callbacks overlapped")
 	}
 }
+
+func TestMigrateLockedRunsCallbackOnceAndReturnsItsError(t *testing.T) {
+	db := testMigrationDB(t)
+	sentinel := errors.New("migration failed")
+	var count int
+
+	err := db.MigrateLocked(context.Background(), func(context.Context) error {
+		count++
+		return sentinel
+	})
+	if !errors.Is(err, sentinel) {
+		t.Fatalf("MigrateLocked() error = %v, want sentinel", err)
+	}
+	if count != 1 {
+		t.Fatalf("callback ran %d times, want 1", count)
+	}
+}
