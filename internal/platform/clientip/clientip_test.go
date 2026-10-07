@@ -65,3 +65,19 @@ func TestResolveUnmapsIPv4InIPv6(t *testing.T) {
 		t.Fatalf("got %v", got)
 	}
 }
+
+func TestResolveTrustsIPv4MappedPrefix(t *testing.T) {
+	r := New(mustPrefixes(t, "::ffff:10.0.0.0/104"))
+	got := r.Resolve("10.0.0.2:443", []string{"198.51.100.1"})
+	if got != netip.MustParseAddr("198.51.100.1") {
+		t.Fatalf("got %v", got)
+	}
+}
+
+func TestResolveUnmapsForwardedHop(t *testing.T) {
+	r := New(mustPrefixes(t, "10.0.0.0/8"))
+	got := r.Resolve("10.0.0.2:443", []string{"::ffff:198.51.100.1"})
+	if got != netip.MustParseAddr("198.51.100.1") {
+		t.Fatalf("got %v", got)
+	}
+}

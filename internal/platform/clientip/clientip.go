@@ -13,9 +13,18 @@ type Resolver struct {
 	trusted []netip.Prefix
 }
 
-// New creates a resolver with the supplied trusted proxy networks.
+// New creates a resolver with the supplied trusted proxy networks. It
+// rewrites IPv4-mapped IPv6 prefixes as IPv4, because Resolve unmaps every
+// address before it checks trust.
 func New(trusted []netip.Prefix) Resolver {
-	return Resolver{trusted: trusted}
+	normalized := make([]netip.Prefix, 0, len(trusted))
+	for _, p := range trusted {
+		if p.Addr().Is4In6() && p.Bits() >= 96 {
+			p = netip.PrefixFrom(p.Addr().Unmap(), p.Bits()-96).Masked()
+		}
+		normalized = append(normalized, p)
+	}
+	return Resolver{trusted: normalized}
 }
 
 // Resolve returns the first address, walking from the direct peer leftward
