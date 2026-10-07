@@ -9,6 +9,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/sqlwarden/internal/config"
 	"github.com/sqlwarden/internal/database"
 	"github.com/sqlwarden/internal/validator"
 )
@@ -113,7 +114,7 @@ func validateInstanceSettings(settings database.InstanceSettings) error {
 	if settings.FileRevisionsKeepLatest < 0 {
 		return fmt.Errorf("validate runtime settings: file_revisions_keep_latest must be 0 or greater")
 	}
-	if !isSupportedLogLevel(settings.LogLevel) {
+	if !config.IsSupportedLogLevel(settings.LogLevel) {
 		return fmt.Errorf("validate runtime settings: log_level is unsupported")
 	}
 	if settings.JobsWorkerCount <= 0 || settings.JobsWorkerCount > 256 {

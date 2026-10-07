@@ -9,6 +9,7 @@ import (
 	"runtime/debug"
 	"syscall"
 
+	"github.com/sqlwarden/internal/config"
 	"github.com/sqlwarden/internal/version"
 	"github.com/sqlwarden/internal/web"
 )
@@ -31,12 +32,13 @@ func run(args []string) error {
 		return runRotateKeys(args[1:])
 	}
 
-	cfg, showVersion, err := web.LoadConfig(args)
+	loaded, err := config.Load(args)
 	if err != nil {
 		return err
 	}
+	cfg := loaded.Config
 
-	if showVersion {
+	if loaded.ShowVersion {
 		fmt.Printf("version: %s\n", version.Get())
 		return nil
 	}
@@ -67,10 +69,11 @@ func run(args []string) error {
 // application-level authorization is applied. It is the CLI equivalent of the
 // instance-admin HTTP rotate endpoint.
 func runRotateKeys(args []string) error {
-	cfg, _, err := web.LoadConfig(args)
+	loaded, err := config.Load(args)
 	if err != nil {
 		return err
 	}
+	cfg := loaded.Config
 
 	logger, err := web.NewLogger(cfg, os.Stdout)
 	if err != nil {

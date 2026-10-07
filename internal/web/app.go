@@ -17,6 +17,7 @@ import (
 
 	"github.com/sqlwarden/internal/access"
 	completionapp "github.com/sqlwarden/internal/completion"
+	"github.com/sqlwarden/internal/config"
 	"github.com/sqlwarden/internal/connection"
 	"github.com/sqlwarden/internal/database"
 	"github.com/sqlwarden/internal/encrypt"
@@ -35,7 +36,7 @@ const (
 type App = application
 
 type application struct {
-	config            Config
+	config            config.Config
 	db                *database.DB
 	logger            *slog.Logger
 	mailer            *smtp.Mailer
@@ -78,14 +79,14 @@ func (r *fileStoreRegistry) Store(_ context.Context, backendID string) (filestor
 	return store, nil
 }
 
-func New(cfg Config, logger *slog.Logger) (*App, error) {
+func New(cfg config.Config, logger *slog.Logger) (*App, error) {
 	if logger == nil {
 		logger = slog.New(slog.NewTextHandler(io.Discard, nil))
 	}
-	if err := normalizeConfigPaths(&cfg); err != nil {
+	if err := config.Normalize(&cfg); err != nil {
 		return nil, err
 	}
-	if err := validateConfig(cfg); err != nil {
+	if err := config.Validate(cfg); err != nil {
 		return nil, err
 	}
 	if err := ensureSQLiteParentDir(cfg); err != nil {
@@ -329,7 +330,7 @@ func (app *application) enqueueFileContentReapJob(ctx context.Context) error {
 	return err
 }
 
-func ensureSQLiteParentDir(cfg Config) error {
+func ensureSQLiteParentDir(cfg config.Config) error {
 	if cfg.DB.Driver != "sqlite" || cfg.DB.DSN == ":memory:" || strings.HasPrefix(cfg.DB.DSN, "file:") {
 		return nil
 	}
@@ -343,9 +344,9 @@ func ensureSQLiteParentDir(cfg Config) error {
 	return nil
 }
 
-func newFileStoreRegistry(cfg Config) (*fileStoreRegistry, error) {
+func newFileStoreRegistry(cfg config.Config) (*fileStoreRegistry, error) {
 	activeBackendID := cfg.Files.ActiveStorageBackend
-	if cfg.Files.StorageMode == FilesStorageModeFile || strings.TrimSpace(activeBackendID) == "" {
+	if cfg.Files.StorageMode == config.FilesStorageModeFile || strings.TrimSpace(activeBackendID) == "" {
 		activeBackendID = database.DefaultFileStorageBackendID
 	}
 	registry := &fileStoreRegistry{
@@ -354,7 +355,7 @@ func newFileStoreRegistry(cfg Config) (*fileStoreRegistry, error) {
 	}
 	for id, backend := range cfg.Files.StorageBackends {
 		switch backend.Type {
-		case FilesStorageBackendFilesystem:
+		case config.FilesStorageBackendFilesystem:
 			store, err := filestore.NewFilesystem(backend.RootDir)
 			if err != nil {
 				return nil, fmt.Errorf("backend %q: %w", id, err)

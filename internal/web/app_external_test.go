@@ -7,17 +7,18 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/sqlwarden/internal/config"
 	"github.com/sqlwarden/internal/database"
 	"github.com/sqlwarden/internal/web"
 )
 
 func TestAppCanBeConstructedFromExternalPackage(t *testing.T) {
-	cfg := web.DefaultConfig()
+	cfg := config.Default()
 	cfg.DB.Driver = "sqlite"
 	cfg.DB.DSN = t.TempDir() + "/sqlwarden.db"
 	cfg.DB.Automigrate = true
-	cfg.Files.StorageBackends["local"] = web.FileStorageBackend{
-		Type:    web.FilesStorageBackendFilesystem,
+	cfg.Files.StorageBackends["local"] = config.FileStorageBackend{
+		Type:    config.FilesStorageBackendFilesystem,
 		RootDir: t.TempDir() + "/files",
 	}
 
@@ -32,13 +33,13 @@ func TestAppCanBeConstructedFromExternalPackage(t *testing.T) {
 
 func TestBaseURLIsBootstrappedOnceAndThenDatabaseOwned(t *testing.T) {
 	dbPath := t.TempDir() + "/sqlwarden.db"
-	cfg := web.DefaultConfig()
+	cfg := config.Default()
 	cfg.BootstrapBaseURL = "https://first.example.com"
 	cfg.DB.Driver = "sqlite"
 	cfg.DB.DSN = dbPath
 	cfg.DB.Automigrate = true
-	cfg.Files.StorageBackends["local"] = web.FileStorageBackend{
-		Type:    web.FilesStorageBackendFilesystem,
+	cfg.Files.StorageBackends["local"] = config.FileStorageBackend{
+		Type:    config.FilesStorageBackendFilesystem,
 		RootDir: t.TempDir() + "/files",
 	}
 
@@ -71,12 +72,12 @@ func TestBaseURLIsBootstrappedOnceAndThenDatabaseOwned(t *testing.T) {
 
 func TestAppFailsWhenSavedFileStorageBackendIsNotConfigured(t *testing.T) {
 	dbPath := t.TempDir() + "/sqlwarden.db"
-	cfg := web.DefaultConfig()
+	cfg := config.Default()
 	cfg.DB.Driver = "sqlite"
 	cfg.DB.DSN = dbPath
 	cfg.DB.Automigrate = true
-	cfg.Files.StorageBackends["local"] = web.FileStorageBackend{
-		Type:    web.FilesStorageBackendFilesystem,
+	cfg.Files.StorageBackends["local"] = config.FileStorageBackend{
+		Type:    config.FilesStorageBackendFilesystem,
 		RootDir: t.TempDir() + "/files",
 	}
 

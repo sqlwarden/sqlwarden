@@ -11,13 +11,14 @@ import (
 	"testing"
 
 	"github.com/go-chi/chi/v5"
+	"github.com/sqlwarden/internal/config"
 )
 
 var errTestServerFailure = errors.New("test server failure")
 
 func TestLoggerLevelChangesAtRuntime(t *testing.T) {
 	var buf bytes.Buffer
-	logger, err := NewLogger(DefaultConfig(), &buf)
+	logger, err := NewLogger(config.Default(), &buf)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -25,14 +26,14 @@ func TestLoggerLevelChangesAtRuntime(t *testing.T) {
 	if buf.Len() != 0 {
 		t.Fatalf("debug log emitted at info level: %s", buf.String())
 	}
-	if err := setLoggerLevel(logger, LogLevelDebug); err != nil {
+	if err := setLoggerLevel(logger, config.LogLevelDebug); err != nil {
 		t.Fatal(err)
 	}
 	logger.Debug("visible")
 	if !strings.Contains(buf.String(), "visible") {
 		t.Fatalf("debug log missing after live level change: %s", buf.String())
 	}
-	if err := setLoggerLevel(logger, LogLevelError); err != nil {
+	if err := setLoggerLevel(logger, config.LogLevelError); err != nil {
 		t.Fatal(err)
 	}
 	before := buf.Len()

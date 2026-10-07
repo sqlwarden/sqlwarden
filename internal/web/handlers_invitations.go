@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"github.com/go-chi/chi/v5"
+	"github.com/sqlwarden/internal/config"
 	"github.com/sqlwarden/internal/database"
 	"github.com/sqlwarden/internal/password"
 	"github.com/sqlwarden/internal/request"
@@ -310,7 +311,7 @@ func (app *application) acceptOrganizationInvitation(w http.ResponseWriter, r *h
 }
 
 func (app *application) organizationInvitationsAvailable(w http.ResponseWriter, r *http.Request) bool {
-	if app.config.AccessMode == AccessModeSingleUser {
+	if app.config.AccessMode == config.AccessModeSingleUser {
 		app.notFound(w, r)
 		return false
 	}

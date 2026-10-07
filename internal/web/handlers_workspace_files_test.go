@@ -14,6 +14,7 @@ import (
 	"testing"
 
 	"github.com/sqlwarden/internal/assert"
+	"github.com/sqlwarden/internal/config"
 	"github.com/sqlwarden/internal/database"
 	"github.com/sqlwarden/internal/files"
 	"github.com/sqlwarden/internal/filestore"
@@ -394,7 +395,7 @@ func TestWorkspaceDirectoryWritesVisibleFilePath(t *testing.T) {
 		t.Fatal(err)
 	}
 	app.fileStores = &fileStoreRegistry{activeBackendID: database.DefaultFileStorageBackendID, stores: map[string]filestore.Store{database.DefaultFileStorageBackendID: store}}
-	app.config.Files.StorageMode = FilesStorageModeFile
+	app.config.Files.StorageMode = config.FilesStorageModeFile
 
 	create := send(t, newAuthRequest(t, http.MethodPost, orgPrivateFilesURL(org.Slug, ws.ID), map[string]any{"name": "visible.sql"}, tok), app.routes())
 	file := decodeWorkspaceFile(t, create)
@@ -550,7 +551,7 @@ func TestWorkspaceDirectoryMovesTrackedDescendantsAndRejectsExternalDestination(
 		t.Fatal(err)
 	}
 	app.fileStores = &fileStoreRegistry{activeBackendID: database.DefaultFileStorageBackendID, stores: map[string]filestore.Store{database.DefaultFileStorageBackendID: store}}
-	app.config.Files.StorageMode = FilesStorageModeFile
+	app.config.Files.StorageMode = config.FilesStorageModeFile
 	filesURL := orgPrivateFilesURL(org.Slug, ws.ID)
 	folder := decodeWorkspaceFile(t, send(t, newAuthRequest(t, http.MethodPost, filesURL, map[string]any{
 		"name": "queries", "object_type": "folder",
