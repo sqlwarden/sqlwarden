@@ -156,7 +156,7 @@ describe('useFileActions', () => {
     expect(toast.success).not.toHaveBeenCalled()
   })
 
-  it('duplicates a file without opening it and supports personal workspace routes', async () => {
+  it('duplicates a file without opening it', async () => {
     let orgBody: unknown
     server.use(
       http.post(
@@ -175,26 +175,6 @@ describe('useFileActions', () => {
     expect(orgBody).toEqual({ name: 'source copy.sql' })
     expect(store.getState().tabs).toHaveLength(0)
 
-    const personalWorkspace = { ...workspace, owner_type: 'space' as const, org_id: undefined }
-    let personalBody: unknown
-    server.use(
-      http.post('/api/v1/me/workspaces/3/files/private/16/duplicate', async ({ request }) => {
-        personalBody = await request.json()
-        return HttpResponse.json(file(18, 'personal copy.sql'), { status: 201 })
-      }),
-    )
-    const personalActions = renderHook(
-      () => useFileActions('ignored', personalWorkspace, 'private'),
-      { wrapper },
-    )
-    act(() =>
-      personalActions.result.current.duplicateFile.mutate({
-        nodeId: 16,
-        name: 'personal copy.sql',
-      }),
-    )
-    await waitFor(() => expect(personalActions.result.current.duplicateFile.isSuccess).toBe(true))
-    expect(personalBody).toEqual({ name: 'personal copy.sql' })
     expect(toast.success).not.toHaveBeenCalled()
   })
 

@@ -47,9 +47,7 @@ function LandingPage() {
   const hasToken = Boolean(getAccessToken())
   const session = useSession(hasToken)
   const shouldLoadOrganizations = Boolean(
-    hasToken &&
-    session.data &&
-    (session.data.personal_spaces_enabled || session.data.organizations.length !== 1),
+    hasToken && session.data && session.data.organizations.length !== 1,
   )
   const organizations = useQuery({
     ...accountOrganizationsQueryOptions({
@@ -82,7 +80,7 @@ function LandingPage() {
     return <NavigateToLogin />
   }
 
-  if (!session.data.personal_spaces_enabled && session.data.organizations.length === 1) {
+  if (session.data.organizations.length === 1) {
     return (
       <Navigate
         to="/ide/$org_slug"

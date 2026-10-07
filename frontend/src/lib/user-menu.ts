@@ -9,11 +9,11 @@ export type UserMenuItem = {
   icon: AppIcon
 }
 
-/** The landing hub at `/` redirects single-org sessions (without personal
- *  spaces) straight into the editor, so it is only a meaningful destination
- *  when there is actually a choice to make. */
+/** The landing hub at `/` redirects single-org sessions straight into the
+ *  editor, so it is only a meaningful destination when there is actually a
+ *  choice to make. */
 export function canReachLandingHub(session: SessionResponse): boolean {
-  return session.personal_spaces_enabled || session.organizations.length !== 1
+  return session.organizations.length !== 1
 }
 
 /** Single source of truth for the user menu shown on every surface

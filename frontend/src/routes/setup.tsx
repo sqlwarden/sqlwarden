@@ -7,7 +7,8 @@ import { useSetupStatus } from '#/hooks/use-setup-status'
 import { isApiError } from '#/lib/api/errors'
 import { api } from '#/lib/api/client'
 import type { SetupResponse } from '#/lib/api/types'
-import { clearAccessToken } from '#/lib/auth/access-token'
+import { clearAccessToken, setAccessToken } from '#/lib/auth/access-token'
+import { buildSetupPayload } from '#/lib/setup/setup-payload'
 import { queryKeys } from '#/lib/api/query'
 import { MAX_SLUG_LENGTH, slugify } from '#/lib/strings'
 import { cn } from '#/lib/utils'
@@ -34,6 +35,7 @@ function SetupPage() {
   const navigate = useNavigate()
   const queryClient = useQueryClient()
   const setupStatus = useSetupStatus()
+  const requiresInput = setupStatus.data?.setup_requires_input !== false
   const [values, setValues] = useState({
     name: '',
     email: '',
@@ -48,14 +50,28 @@ function SetupPage() {
 
   const mutation = useMutation({
     mutationFn: async () =>
-      api.post<SetupResponse>('/api/setup', setupPayload(values, setupStatus.data?.access_mode), {
-        skipAuth: true,
-      }),
+      api.post<SetupResponse>(
+        '/api/setup',
+        buildSetupPayload(
+          {
+            name: values.name.trim(),
+            email: values.email.trim(),
+            password: values.password,
+            organization_name: values.organizationName.trim(),
+            organization_slug: values.organizationSlug.trim(),
+          },
+          requiresInput,
+        ),
+        { skipAuth: true },
+      ),
     onSuccess: async (payload) => {
-      void payload
-      clearAccessToken()
+      if (requiresInput) {
+        clearAccessToken()
+      } else {
+        setAccessToken(payload.access_token)
+      }
       await queryClient.invalidateQueries({ queryKey: queryKeys.setupStatus() })
-      await navigate({ to: '/login', replace: true })
+      await navigate({ to: requiresInput ? '/login' : '/', replace: true })
     },
     onError: (error) => {
       if (isApiError(error) && error.fieldErrors) {
@@ -87,8 +103,36 @@ function SetupPage() {
     return <Navigate to="/" replace />
   }
 
-  const requiresOrganization = setupStatus.data?.access_mode !== 'single_user'
-  const onAccountStep = !requiresOrganization || step === 1
+  if (!requiresInput) {
+    return (
+      <main className="relative">
+        <AmbientBackground />
+        <LoginSurface
+          title="Set up SQLWarden"
+          description="Create the local workspace to get started."
+          className="max-w-[420px]"
+        >
+          <Button
+            className="h-10 w-full rounded-lg text-sm"
+            size="lg"
+            disabled={mutation.isPending}
+            onClick={() => mutation.mutate()}
+          >
+            {mutation.isPending ? (
+              <span className="flex items-center gap-2">
+                <Icon name="loading-03" size={14} className="animate-spin" />
+                Setting up…
+              </span>
+            ) : (
+              'Set up SQLWarden'
+            )}
+          </Button>
+        </LoginSurface>
+      </main>
+    )
+  }
+
+  const onAccountStep = step === 1
 
   function updateField<K extends keyof typeof values>(field: K, value: (typeof values)[K]) {
     setValues((current) => {
@@ -156,12 +200,12 @@ function SetupPage() {
       return
     }
 
-    if (requiresOrganization && step === 1) {
+    if (step === 1) {
       setStep(2)
       return
     }
 
-    if (requiresOrganization && !validateOrganizationFields()) {
+    if (!validateOrganizationFields()) {
       return
     }
 
@@ -177,14 +221,12 @@ function SetupPage() {
       <AmbientBackground />
       <LoginSurface
         eyebrow={
-          requiresOrganization ? (
-            <div className="mb-1 flex flex-col items-center gap-2.5">
-              <StepProgress step={step} />
-            </div>
-          ) : undefined
+          <div className="mb-1 flex flex-col items-center gap-2.5">
+            <StepProgress step={step} />
+          </div>
         }
-        title={stepTitle(requiresOrganization, step)}
-        description={stepDescription(requiresOrganization, step)}
+        title={stepTitle(step)}
+        description={stepDescription(step)}
         className="max-w-[420px]"
       >
         <form className="space-y-5" onSubmit={onSubmit}>
@@ -274,10 +316,8 @@ function SetupPage() {
                   <Icon name="loading-03" size={14} className="animate-spin" />
                   Setting up…
                 </span>
-              ) : requiresOrganization ? (
-                'Continue'
               ) : (
-                'Create admin account'
+                'Continue'
               )}
             </Button>
 
@@ -313,36 +353,10 @@ function StepProgress({ step }: { step: 1 | 2 }) {
   )
 }
 
-function setupPayload(
-  values: {
-    name: string
-    email: string
-    password: string
-    organizationName: string
-    organizationSlug: string
-  },
-  accessMode: 'multi_user' | 'single_user' | undefined,
-) {
-  const payload: Record<string, string> = {
-    name: values.name.trim(),
-    email: values.email.trim(),
-    password: values.password,
-  }
-
-  if (accessMode !== 'single_user') {
-    payload.organization_name = values.organizationName.trim()
-    payload.organization_slug = values.organizationSlug.trim()
-  }
-
-  return payload
-}
-
-function stepTitle(requiresOrganization: boolean, step: 1 | 2) {
-  if (!requiresOrganization) return 'Set up SQLWarden'
+function stepTitle(step: 1 | 2) {
   return step === 1 ? 'Create your administrator account' : 'Create your organization'
 }
 
-function stepDescription(requiresOrganization: boolean, step: 1 | 2) {
-  if (!requiresOrganization) return 'Create an administrator account to get started.'
+function stepDescription(step: 1 | 2) {
   return step === 2 ? 'You will own this organization as its first admin.' : undefined
 }

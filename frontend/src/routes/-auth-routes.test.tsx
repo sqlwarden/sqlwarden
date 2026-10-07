@@ -5,7 +5,7 @@ import { setAccessToken } from '#/lib/auth/access-token'
 import { renderRoute } from '#/test/render'
 import { server } from '#/test/server'
 import { setupStatusHandler } from '#/test/handlers'
-import { setupStatusFixture } from '#/test/fixtures'
+import { organizationFixture, sessionFixture, setupStatusFixture } from '#/test/fixtures'
 
 describe('authentication route behavior', () => {
   it('renders the login form for a configured instance', async () => {
@@ -71,15 +71,76 @@ describe('authentication route behavior', () => {
     expect(screen.getByPlaceholderText('Alex Ward')).toHaveValue('Alex Ward')
   })
 
-  it('skips the organization step in single-user access mode', async () => {
+  it('sets up with a single button when setup requires no input', async () => {
+    let body: unknown
     server.use(
-      setupStatusHandler(setupStatusFixture({ configured: false, access_mode: 'single_user' })),
+      setupStatusHandler(setupStatusFixture({ configured: false, setup_requires_input: false })),
+      http.post('/api/setup', async ({ request }) => {
+        body = await request.json()
+        return HttpResponse.json({
+          account: { id: 1, email: 'local@sqlwarden.local', name: 'Local', is_active: true },
+          access_token: 'local-token',
+          organization: { id: 1, slug: 'local', name: 'Local', created_at: '', updated_at: '' },
+        })
+      }),
     )
-    renderRoute('/setup')
+    const { router, user } = renderRoute('/setup')
 
-    expect(await screen.findByRole('heading', { name: 'Set up SQLWarden' })).toBeInTheDocument()
-    expect(screen.queryByPlaceholderText('Acme Cloud')).not.toBeInTheDocument()
-    expect(screen.getByRole('button', { name: 'Create admin account' })).toBeInTheDocument()
+    const button = await screen.findByRole('button', { name: 'Set up SQLWarden' })
+    expect(screen.queryByRole('textbox')).not.toBeInTheDocument()
+    expect(document.querySelector('input[type="password"]')).not.toBeInTheDocument()
+    await user.click(button)
+
+    await waitFor(() => expect(body).toEqual({}))
+    await waitFor(() => expect(localStorage.getItem('sqlwarden.access_token')).toBe('local-token'))
+    await waitFor(() => expect(router.state.location.pathname).toBe('/'))
+  })
+
+  it('redirects a single-organization session straight to that organization', async () => {
+    setAccessToken('existing-token')
+    server.use(
+      setupStatusHandler(),
+      http.get('/api/v1/session', () =>
+        HttpResponse.json(
+          sessionFixture({ organizations: [organizationFixture({ slug: 'acme' })] }),
+        ),
+      ),
+    )
+    const { router } = renderRoute('/')
+
+    await waitFor(() => expect(router.state.location.pathname).toBe('/ide/acme'))
+  })
+
+  it('shows the organization picker when the session has several organizations', async () => {
+    setAccessToken('existing-token')
+    server.use(
+      setupStatusHandler(),
+      http.get('/api/v1/session', () =>
+        HttpResponse.json(
+          sessionFixture({
+            organizations: [
+              organizationFixture({ id: 1, slug: 'acme', name: 'Acme Cloud' }),
+              organizationFixture({ id: 2, slug: 'globex', name: 'Globex' }),
+            ],
+          }),
+        ),
+      ),
+      http.get('/api/v1/account/orgs', () =>
+        HttpResponse.json({
+          items: [
+            organizationFixture({ id: 1, slug: 'acme', name: 'Acme Cloud' }),
+            organizationFixture({ id: 2, slug: 'globex', name: 'Globex' }),
+          ],
+          page: 1,
+          page_size: 50,
+          total: 2,
+        }),
+      ),
+    )
+    const { router } = renderRoute('/')
+
+    expect(await screen.findByText('Globex')).toBeInTheDocument()
+    expect(router.state.location.pathname).toBe('/')
   })
 
   it('submits credentials and redirects after login', async () => {
@@ -91,7 +152,6 @@ describe('authentication route behavior', () => {
           account: { id: 1, email: 'alex@example.com', name: 'Alex Ward', is_active: true },
           organizations: [],
           is_instance_admin: false,
-          personal_spaces_enabled: false,
         }),
       ),
       http.get('/api/v1/account/orgs', () =>
@@ -119,7 +179,6 @@ describe('authentication route behavior', () => {
           account: { id: 1, email: 'alex@example.com', name: 'Alex Ward', is_active: true },
           organizations: [],
           is_instance_admin: false,
-          personal_spaces_enabled: false,
         }),
       ),
       http.get('/api/v1/account', () =>
@@ -171,7 +230,6 @@ describe('authentication route behavior', () => {
           account: { id: 1, email: 'alex@example.com', name: 'Alex Ward', is_active: true },
           organizations: [],
           is_instance_admin: false,
-          personal_spaces_enabled: false,
         }),
       ),
       http.get('/api/v1/account/orgs', () =>

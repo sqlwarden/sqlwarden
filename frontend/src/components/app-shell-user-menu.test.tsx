@@ -32,7 +32,6 @@ const session: SessionResponse = {
   account: { id: 1, name: 'Ada Lovelace', email: 'ada@example.com', is_active: true },
   organizations: [{ id: 1, slug: 'acme', name: 'Acme', created_at: '', updated_at: '' }],
   is_instance_admin: false,
-  personal_spaces_enabled: false,
 }
 
 describe('AppShellUserMenu', () => {

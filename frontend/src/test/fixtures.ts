@@ -41,7 +41,6 @@ export function sessionFixture(overrides: Partial<SessionResponse> = {}): Sessio
     account: accountFixture(),
     organizations: [organizationFixture()],
     is_instance_admin: false,
-    personal_spaces_enabled: false,
     ...overrides,
   }
 }
@@ -51,7 +50,8 @@ export function setupStatusFixture(
 ): SetupStatusResponse {
   return {
     configured: true,
-    access_mode: 'multi_user',
+    setup_requires_input: true,
+    invitations_enabled: true,
     ...overrides,
   }
 }
@@ -64,7 +64,6 @@ export function instanceSettingsFixture(
     instance_description: '',
     support_email: '',
     base_url: 'https://sqlwarden.example.com',
-    personal_spaces_enabled: true,
     jwt_access_token_ttl_seconds: 3_600,
     sessions_revocation_enabled: false,
     query_max_result_rows: 1_000,
@@ -105,8 +104,7 @@ export function instanceConfigurationFixture(
     deployment_managed: true,
     restart_required: true,
     http_port: 8080,
-    deployment_mode: 'server',
-    access_mode: 'multi_user',
+    profile: 'server',
     log_format: 'json',
     database_driver: 'sqlite',
     database_automigrate: true,
