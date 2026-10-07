@@ -259,6 +259,8 @@ db:
 func TestLoadRejectsInternalRuntimeFlags(t *testing.T) {
 	for _, args := range [][]string{
 		{"--desktop-mode"},
+		{"--deployment-mode", DeploymentModeDesktop},
+		{"--access-mode", AccessModeSingleUser},
 		{"--files-storage-backends-local-type", FilesStorageBackendFilesystem},
 		{"--files-storage-backends-local-root-dir", "/tmp/sqlwarden-files"},
 		{"--log-level", "debug"},
