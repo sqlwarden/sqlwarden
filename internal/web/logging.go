@@ -1,18 +1,13 @@
 package web
 
 import (
-	"fmt"
-	"io"
 	"log/slog"
 	"net/http"
 	"strings"
 	"time"
 
 	"github.com/go-chi/chi/v5"
-	"github.com/lmittmann/tint"
-	"github.com/sqlwarden/internal/config"
 	"github.com/sqlwarden/internal/response"
-	"github.com/sqlwarden/internal/version"
 	"github.com/tomasen/realip"
 )
 
@@ -27,70 +22,6 @@ type requestLogContext struct {
 	WorkspaceID   int64
 	EnvironmentID int64
 	ConnectionID  int64
-}
-
-// NewLogger builds the process logger. Its level starts at info and is updated
-// from database-backed instance settings after the application database opens.
-func NewLogger(cfg config.Config, out io.Writer) (*slog.Logger, error) {
-	level := new(slog.LevelVar)
-	level.Set(slog.LevelInfo)
-	opts := &slog.HandlerOptions{Level: level}
-	var handler slog.Handler
-	switch cfg.Log.Format {
-	case config.LogFormatJSON:
-		handler = slog.NewJSONHandler(out, opts)
-	case config.LogFormatText:
-		handler = tint.NewHandler(out, &tint.Options{Level: level})
-	default:
-		return nil, fmt.Errorf("unsupported log format: %s", cfg.Log.Format)
-	}
-
-	handler = &runtimeLevelHandler{Handler: handler, level: level}
-	return slog.New(handler).With(
-		"service", "sqlwarden",
-		"version", version.Get(),
-	), nil
-}
-
-type runtimeLevelHandler struct {
-	slog.Handler
-	level *slog.LevelVar
-}
-
-func (h *runtimeLevelHandler) WithAttrs(attrs []slog.Attr) slog.Handler {
-	return &runtimeLevelHandler{Handler: h.Handler.WithAttrs(attrs), level: h.level}
-}
-
-func (h *runtimeLevelHandler) WithGroup(name string) slog.Handler {
-	return &runtimeLevelHandler{Handler: h.Handler.WithGroup(name), level: h.level}
-}
-
-func setLoggerLevel(logger *slog.Logger, value string) error {
-	level, err := parseLogLevel(value)
-	if err != nil {
-		return err
-	}
-	handler, ok := logger.Handler().(*runtimeLevelHandler)
-	if !ok {
-		return nil
-	}
-	handler.level.Set(level)
-	return nil
-}
-
-func parseLogLevel(level string) (slog.Level, error) {
-	switch strings.ToLower(strings.TrimSpace(level)) {
-	case config.LogLevelDebug:
-		return slog.LevelDebug, nil
-	case config.LogLevelInfo:
-		return slog.LevelInfo, nil
-	case config.LogLevelWarn:
-		return slog.LevelWarn, nil
-	case config.LogLevelError:
-		return slog.LevelError, nil
-	default:
-		return slog.LevelInfo, fmt.Errorf("unsupported log level: %s", level)
-	}
 }
 
 func accessLogLevel(status int) slog.Level {

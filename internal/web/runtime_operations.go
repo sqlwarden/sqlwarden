@@ -8,6 +8,7 @@ import (
 
 	"github.com/sqlwarden/internal/database"
 	"github.com/sqlwarden/internal/jobs"
+	"github.com/sqlwarden/internal/platform/observability"
 	"github.com/sqlwarden/internal/smtp"
 )
 
@@ -66,7 +67,7 @@ func (app *application) applyRuntimeOperations(settings database.InstanceSetting
 			return fmt.Errorf("configure SMTP: %w", err)
 		}
 	}
-	if err := setLoggerLevel(app.logger, settings.LogLevel); err != nil {
+	if err := observability.SetLevel(app.logger, settings.LogLevel); err != nil {
 		return fmt.Errorf("apply runtime log level: %w", err)
 	}
 	app.db.SetQueryTracing(settings.DatabaseQueryTracingEnabled)

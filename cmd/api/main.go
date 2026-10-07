@@ -10,6 +10,7 @@ import (
 	"syscall"
 
 	"github.com/sqlwarden/internal/config"
+	"github.com/sqlwarden/internal/platform/observability"
 	"github.com/sqlwarden/internal/version"
 	"github.com/sqlwarden/internal/web"
 )
@@ -43,7 +44,7 @@ func run(args []string) error {
 		return nil
 	}
 
-	logger, err := web.NewLogger(cfg, os.Stdout)
+	logger, err := observability.NewLogger(cfg.Log.Format, os.Stdout)
 	if err != nil {
 		return err
 	}
@@ -75,7 +76,7 @@ func runRotateKeys(args []string) error {
 	}
 	cfg := loaded.Config
 
-	logger, err := web.NewLogger(cfg, os.Stdout)
+	logger, err := observability.NewLogger(cfg.Log.Format, os.Stdout)
 	if err != nil {
 		return err
 	}

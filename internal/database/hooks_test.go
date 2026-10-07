@@ -12,7 +12,7 @@ import (
 	"time"
 
 	"github.com/sqlwarden/internal/assert"
-	"github.com/sqlwarden/internal/observability"
+	"github.com/sqlwarden/internal/platform/observability"
 	"github.com/uptrace/bun"
 )
 
