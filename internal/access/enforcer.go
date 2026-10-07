@@ -15,11 +15,22 @@ import (
 type Enforcer struct {
 	db    *bun.DB
 	cache AuthorizationCache
+	now   func() time.Time
+}
+
+// PolicyEvaluator is the read-only authorization contract exposed to edition
+// decorators and application services. Role management remains on Enforcer.
+type PolicyEvaluator interface {
+	Can(context.Context, int64, int64, string, string, int64, string) bool
+	EffectivePermissions(context.Context, int64, int64, string, string, int64) ([]string, error)
 }
 
 // New creates an Enforcer backed by the given database.
 func New(db *bun.DB) (*Enforcer, error) {
-	return &Enforcer{db: db, cache: NewMemoryAuthorizationCache()}, nil
+	if db == nil {
+		return nil, errors.New("access: database is required")
+	}
+	return &Enforcer{db: db, cache: NewMemoryAuthorizationCache(), now: time.Now}, nil
 }
 
 // Can returns true if accountID holds permission on the given resource within orgID.
@@ -251,10 +262,11 @@ func (e *Enforcer) orgPolicy(ctx context.Context, orgID int64) (*OrgPolicy, erro
 		SubjectID    int64
 		ResourceType string
 		ResourceID   int64
+		ExpiresAt    *time.Time
 	}
 	err = e.db.NewSelect().
 		TableExpr("role_bindings").
-		ColumnExpr("role_id, subject_type, subject_id, resource_type, resource_id").
+		ColumnExpr("role_id, subject_type, subject_id, resource_type, resource_id, expires_at").
 		Where("org_id = ?", orgID).
 		Scan(ctx, &rbRows)
 	if err != nil {
@@ -266,6 +278,7 @@ func (e *Enforcer) orgPolicy(ctx context.Context, orgID int64) (*OrgPolicy, erro
 			roleID:      r.RoleID,
 			subjectType: r.SubjectType,
 			subjectID:   r.SubjectID,
+			expiresAt:   r.ExpiresAt,
 		})
 	}
 
@@ -280,6 +293,9 @@ func (e *Enforcer) checkPolicy(policy *OrgPolicy, accountID int64, principals Pr
 
 		// Check role bindings at this level.
 		for _, rb := range policy.roleBindings[key] {
+			if rb.expiresAt != nil && !e.now().Before(*rb.expiresAt) {
+				continue
+			}
 			if !matchesPrincipal(rb.subjectType, rb.subjectID, accountID, principals) {
 				continue
 			}
@@ -298,6 +314,9 @@ func (e *Enforcer) effectivePolicyPermissions(policy *OrgPolicy, accountID int64
 	for _, level := range ancestors {
 		key := resourceKey{level.ResourceType, level.ResourceID}
 		for _, rb := range policy.roleBindings[key] {
+			if rb.expiresAt != nil && !e.now().Before(*rb.expiresAt) {
+				continue
+			}
 			if !matchesPrincipal(rb.subjectType, rb.subjectID, accountID, principals) {
 				continue
 			}
@@ -320,6 +339,8 @@ func (e *Enforcer) effectivePolicyPermissions(policy *OrgPolicy, accountID int64
 	}
 	return permissions
 }
+
+var _ PolicyEvaluator = (*Enforcer)(nil)
 
 func matchesPrincipal(subjectType string, subjectID, accountID int64, principals Principals) bool {
 	if subjectType == SubjectTypeAccount {
