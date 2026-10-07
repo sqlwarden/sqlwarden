@@ -153,3 +153,40 @@ func TestValidateRejectsNonPositiveTimeouts(t *testing.T) {
 		t.Fatal("Validate() accepted a zero migration timeout")
 	}
 }
+
+func TestValidateProfile(t *testing.T) {
+	cfg := Default()
+	if cfg.Profile != ProfileServer {
+		t.Fatalf("default profile = %q", cfg.Profile)
+	}
+	cfg.Profile = ProfileDesktop
+	if err := Validate(cfg); err != nil {
+		t.Fatalf("desktop: %v", err)
+	}
+	cfg.Profile = "single_user"
+	if err := Validate(cfg); err == nil {
+		t.Fatal("expected error for unknown profile")
+	}
+}
+
+func TestValidateTrustedProxies(t *testing.T) {
+	cfg := Default()
+	cfg.Server.TrustedProxies = []string{"10.0.0.0/8", "192.168.1.5", "::1"}
+	if err := Validate(cfg); err != nil {
+		t.Fatalf("valid proxies: %v", err)
+	}
+	cfg.Server.TrustedProxies = []string{"not-an-ip"}
+	if err := Validate(cfg); err == nil {
+		t.Fatal("expected error for invalid proxy")
+	}
+}
+
+func TestParseTrustedProxiesBareIPBecomesHostPrefix(t *testing.T) {
+	got, err := ParseTrustedProxies([]string{"192.168.1.5", "fd00::/8"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got[0].String() != "192.168.1.5/32" || got[1].String() != "fd00::/8" {
+		t.Fatalf("got %v", got)
+	}
+}

@@ -3,7 +3,6 @@ package web
 import (
 	"context"
 	"errors"
-	"fmt"
 	"log/slog"
 	"net/http"
 	"strconv"
@@ -13,7 +12,7 @@ import (
 	"github.com/go-chi/chi/v5"
 	"github.com/sqlwarden/internal/config"
 	"github.com/sqlwarden/internal/database"
-	"github.com/sqlwarden/internal/orgs"
+	"github.com/sqlwarden/internal/identity"
 	"github.com/sqlwarden/internal/password"
 	"github.com/sqlwarden/internal/request"
 	"github.com/sqlwarden/internal/response"
@@ -41,29 +40,14 @@ func (app *application) setup(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	input.Name = strings.TrimSpace(input.Name)
-	input.Email = strings.TrimSpace(input.Email)
-	input.OrganizationName = strings.TrimSpace(input.OrganizationName)
-	input.OrganizationSlug = strings.TrimSpace(input.OrganizationSlug)
-
-	input.V.CheckField(input.Name != "", "name", "Name is required.")
-	input.V.CheckField(input.Email != "", "email", "Email is required.")
-	input.V.CheckField(len(input.Password) >= 8, "password", "Password must be at least 8 characters.")
-
-	organizationName := input.OrganizationName
-	organizationSlug := input.OrganizationSlug
-	if app.config.AccessMode != config.AccessModeSingleUser {
-		input.V.CheckField(input.OrganizationName != "", "organization_name", "Organization name is required.")
-		if organizationSlug == "" {
-			organizationSlug = orgs.Slugify(input.OrganizationName)
+	plan, fieldErrors := app.setupStrategy.Plan(identity.SetupInput{
+		Name: input.Name, Email: input.Email, Password: input.Password,
+		OrganizationName: input.OrganizationName, OrganizationSlug: input.OrganizationSlug,
+	})
+	if len(fieldErrors) > 0 {
+		for field, message := range fieldErrors {
+			input.V.AddFieldError(field, message)
 		}
-		input.V.CheckField(organizationSlug != "", "organization_slug", "Organization slug is required.")
-		if organizationSlug != "" {
-			input.V.CheckField(orgs.ValidSlug(organizationSlug), "organization_slug", "Organization slug may only contain lowercase letters, numbers, and hyphens.")
-			input.V.CheckField(len(organizationSlug) <= orgs.MaxSlugLength, "organization_slug", "Organization slug must be 64 characters or fewer.")
-		}
-	}
-	if input.V.HasErrors() {
 		app.failedValidation(w, r, input.V)
 		return
 	}
@@ -78,37 +62,32 @@ func (app *application) setup(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if app.config.AccessMode != config.AccessModeSingleUser {
-		_, found, err := app.db.GetOrgBySlug(r.Context(), organizationSlug)
-		if err != nil {
-			app.serverError(w, r, err)
-			return
-		}
-		if found {
-			input.V.AddFieldError("organization_slug", "An organization with this slug already exists.")
-			app.failedValidation(w, r, input.V)
-			return
-		}
-	} else {
-		organizationName = singleUserDefaultOrgName
-		organizationSlug = singleUserDefaultOrgSlug
-		_, found, err := app.db.GetOrgBySlug(r.Context(), organizationSlug)
-		if err != nil {
-			app.serverError(w, r, err)
-			return
-		}
-		if found {
-			organizationSlug = singleUserDefaultOrgSlug + "-" + strings.ToLower(database.NewID())
-		}
-	}
-
-	hashedPassword, err := password.Hash(input.Password)
+	slug := plan.OrganizationSlug
+	_, found, err := app.db.GetOrgBySlug(r.Context(), slug)
 	if err != nil {
 		app.serverError(w, r, err)
 		return
 	}
+	if found {
+		if !plan.SlugFallback {
+			input.V.AddFieldError("organization_slug", "An organization with this slug already exists.")
+			app.failedValidation(w, r, input.V)
+			return
+		}
+		slug = plan.OrganizationSlug + "-" + strings.ToLower(database.NewID())
+	}
 
-	account, org, authSession, err := app.createFirstRunSetup(r.Context(), input.Email, input.Name, &hashedPassword, organizationSlug, organizationName, r.Header.Get("User-Agent"), r.RemoteAddr)
+	var hashedPassword *string
+	if plan.Password != nil {
+		hashed, err := password.Hash(*plan.Password)
+		if err != nil {
+			app.serverError(w, r, err)
+			return
+		}
+		hashedPassword = &hashed
+	}
+
+	account, org, authSession, err := app.createFirstRunSetup(r.Context(), plan.AccountEmail, plan.AccountName, hashedPassword, slug, plan.OrganizationName, r.Header.Get("User-Agent"), r.RemoteAddr)
 	if err != nil {
 		if isUniqueViolation(err) {
 			input.V.AddFieldError("email", "An account or organization with these details already exists.")
@@ -136,7 +115,7 @@ func (app *application) setup(w http.ResponseWriter, r *http.Request) {
 		"organization": org,
 	}
 
-	app.logInfo(r, "instance setup completed", slog.Int64("account_id", account.ID), slog.Int64("org_id", org.ID), slog.String("org_slug", org.Slug), slog.String("access_mode", app.config.AccessMode))
+	app.logInfo(r, "instance setup completed", slog.Int64("account_id", account.ID), slog.Int64("org_id", org.ID), slog.String("org_slug", org.Slug), slog.String("auth_method", plan.Method))
 	err = response.JSON(w, http.StatusCreated, body)
 	if err != nil {
 		app.serverError(w, r, err)
@@ -174,20 +153,6 @@ func (app *application) createFirstRunSetup(ctx context.Context, email, name str
 	return account, org, authSession, nil
 }
 
-func (app *application) seedSingleUserOrganization(ctx context.Context, accountID int64) (database.Organization, error) {
-	org, err := app.createOwnedOrganization(ctx, singleUserDefaultOrgSlug, singleUserDefaultOrgName, accountID)
-	if err == nil {
-		return org, nil
-	}
-	if !isUniqueViolation(err) {
-		return database.Organization{}, err
-	}
-
-	// The first-run path normally owns an empty database, but avoid making
-	// "local" a hard blocker if an operator pre-seeded data before setup.
-	return app.createOwnedOrganization(ctx, fmt.Sprintf("%s-%d", singleUserDefaultOrgSlug, accountID), singleUserDefaultOrgName, accountID)
-}
-
 // setupStatus reports whether the instance has already been bootstrapped.
 func (app *application) setupStatus(w http.ResponseWriter, r *http.Request) {
 	configured, err := app.db.HasAnyInstanceAdmin(r.Context())
@@ -197,8 +162,9 @@ func (app *application) setupStatus(w http.ResponseWriter, r *http.Request) {
 	}
 
 	err = response.JSON(w, http.StatusOK, map[string]any{
-		"configured":  configured,
-		"access_mode": app.config.AccessMode,
+		"configured":           configured,
+		"setup_requires_input": app.setupStrategy.RequiresInput(),
+		"invitations_enabled":  app.invitationPolicy.Enabled(),
 	})
 	if err != nil {
 		app.serverError(w, r, err)

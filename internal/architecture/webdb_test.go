@@ -13,7 +13,7 @@ import (
 // webDatabaseUseCeiling is the number of app.db selector expressions in
 // production web code. Lower it whenever a change removes uses. It must never
 // rise, and it reaches 0 when every handler goes through a service.
-const webDatabaseUseCeiling = 229
+const webDatabaseUseCeiling = 228
 
 func TestWebDatabaseUseOnlyDecreases(t *testing.T) {
 	dir := filepath.Join(repoRoot(t), "internal", "web")

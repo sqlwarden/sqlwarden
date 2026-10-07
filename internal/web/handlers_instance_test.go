@@ -9,8 +9,8 @@ import (
 
 	"github.com/sqlwarden/internal/access"
 	"github.com/sqlwarden/internal/assert"
-	"github.com/sqlwarden/internal/config"
 	"github.com/sqlwarden/internal/database"
+	"github.com/sqlwarden/internal/identity"
 	"github.com/sqlwarden/internal/orgs"
 )
 
@@ -22,7 +22,7 @@ func setupInstance(t *testing.T, app *application, email, name, password string)
 		"name":     name,
 		"password": password,
 	}
-	if app.config.AccessMode != config.AccessModeSingleUser {
+	if app.setupStrategy.RequiresInput() {
 		body["organization_name"] = "Default Organization"
 	}
 	res := send(t, newTestRequest(t, http.MethodPost, "/api/setup", body), app.routes())
@@ -61,7 +61,6 @@ func TestSetupCreatesFirstInstanceAdmin(t *testing.T) {
 func TestSetupInMultiUserModeSeedsFirstOrganizationAndOwnerPolicy(t *testing.T) {
 	t.Parallel()
 	app := newTestApp(t)
-	app.config.AccessMode = config.AccessModeMultiUser
 
 	res := send(t, newTestRequest(t, http.MethodPost, "/api/setup", map[string]any{
 		"email":             "admin@example.com",
@@ -91,7 +90,6 @@ func TestSetupInMultiUserModeSeedsFirstOrganizationAndOwnerPolicy(t *testing.T) 
 func TestSetupInMultiUserModeRequiresOrganization(t *testing.T) {
 	t.Parallel()
 	app := newTestApp(t)
-	app.config.AccessMode = config.AccessModeMultiUser
 
 	res := send(t, newTestRequest(t, http.MethodPost, "/api/setup", map[string]any{
 		"email":    "admin@example.com",
@@ -106,7 +104,6 @@ func TestSetupInMultiUserModeRequiresOrganization(t *testing.T) {
 func TestSetupInMultiUserModeRejectsInvalidOrganizationSlug(t *testing.T) {
 	t.Parallel()
 	app := newTestApp(t)
-	app.config.AccessMode = config.AccessModeMultiUser
 
 	res := send(t, newTestRequest(t, http.MethodPost, "/api/setup", map[string]any{
 		"email":             "admin@example.com",
@@ -122,7 +119,6 @@ func TestSetupInMultiUserModeRejectsInvalidOrganizationSlug(t *testing.T) {
 func TestSetupInMultiUserModeRejectsOverlongOrganizationSlug(t *testing.T) {
 	t.Parallel()
 	app := newTestApp(t)
-	app.config.AccessMode = config.AccessModeMultiUser
 
 	res := send(t, newTestRequest(t, http.MethodPost, "/api/setup", map[string]any{
 		"email":             "admin@example.com",
@@ -139,7 +135,6 @@ func TestSetupInMultiUserModeRejectsOverlongOrganizationSlug(t *testing.T) {
 func TestSetupInMultiUserModeRejectsDuplicateOrganizationSlug(t *testing.T) {
 	t.Parallel()
 	app := newTestApp(t)
-	app.config.AccessMode = config.AccessModeMultiUser
 
 	_, err := app.db.InsertOrg(t.Context(), "first-org", "Existing Organization")
 	assert.Nil(t, err)
@@ -162,7 +157,6 @@ func TestSetupInMultiUserModeRejectsDuplicateOrganizationSlug(t *testing.T) {
 func TestCreateFirstRunSetup_RollsBackAccountAdminAndSessionOnOrgFailure(t *testing.T) {
 	t.Parallel()
 	app := newTestApp(t)
-	app.config.AccessMode = config.AccessModeMultiUser
 
 	_, err := app.db.InsertOrg(t.Context(), "first-org", "Existing Organization")
 	assert.Nil(t, err)
@@ -190,11 +184,12 @@ func TestCreateFirstRunSetup_RollsBackAccountAdminAndSessionOnOrgFailure(t *test
 func TestSetupInSingleUserModeSeedsLocalOrganizationAndOwnerPolicy(t *testing.T) {
 	t.Parallel()
 	app := newTestApp(t)
-	app.config.AccessMode = config.AccessModeSingleUser
+	app.setupStrategy = identity.LocalSetup
+	app.invitationPolicy = orgs.InvitationsDisabled
 
 	token := setupInstance(t, app, "admin@example.com", "Admin", "securepass99")
 
-	account, found, err := app.db.GetAccountByEmail(t.Context(), "admin@example.com")
+	account, found, err := app.db.GetAccountByEmail(t.Context(), identity.LocalAccountEmail)
 	assert.Nil(t, err)
 	assert.True(t, found)
 
@@ -205,8 +200,8 @@ func TestSetupInSingleUserModeSeedsLocalOrganizationAndOwnerPolicy(t *testing.T)
 	})
 	assert.Nil(t, err)
 	assert.Equal(t, orgs.Total, 1)
-	assert.Equal(t, orgs.Items[0].Slug, singleUserDefaultOrgSlug)
-	assert.Equal(t, orgs.Items[0].Name, singleUserDefaultOrgName)
+	assert.Equal(t, orgs.Items[0].Slug, identity.LocalOrganizationSlug)
+	assert.Equal(t, orgs.Items[0].Name, identity.LocalOrganizationName)
 	assert.Equal(t, orgs.Items[0].Role, access.BuiltinOrgOwnerRole)
 
 	createWorkspaceRes := send(t, newAuthRequest(t, http.MethodPost, "/api/v1/orgs/local/workspaces", map[string]any{
@@ -255,8 +250,11 @@ func TestSetupStatus_ReturnsStableShape(t *testing.T) {
 
 	res := send(t, newTestRequest(t, http.MethodGet, "/api/setup/status", nil), app.routes())
 	assert.Equal(t, res.StatusCode, http.StatusOK)
-	assertBodyContainsJSONKeys(t, res.BodyBytes, "configured")
-	assert.Equal(t, res.BodyFields["access_mode"].(string), string(config.AccessModeMultiUser))
+	assertBodyContainsJSONKeys(t, res.BodyBytes, "configured", "setup_requires_input", "invitations_enabled")
+	assert.Equal(t, res.BodyFields["setup_requires_input"].(bool), true)
+	assert.Equal(t, res.BodyFields["invitations_enabled"].(bool), true)
+	_, hasProfile := res.BodyFields["profile"]
+	assert.Equal(t, hasProfile, false)
 }
 
 func TestSetupBlockedAfterFirstAdmin(t *testing.T) {
@@ -917,4 +915,33 @@ func TestInstanceSettingsOmitSchemaLazyThreshold(t *testing.T) {
 	}, adminTok), app.routes())
 	assert.Equal(t, res.StatusCode, unknownRes.StatusCode)
 	assert.NotEqual(t, res.StatusCode, http.StatusInternalServerError)
+}
+
+func TestSetupDesktopIsSelfSealing(t *testing.T) {
+	t.Parallel()
+	app := newTestApp(t)
+	app.setupStrategy = identity.LocalSetup
+	app.invitationPolicy = orgs.InvitationsDisabled
+
+	res := send(t, newTestRequest(t, http.MethodPost, "/api/setup", map[string]any{}), app.routes())
+	assert.Equal(t, res.StatusCode, http.StatusCreated)
+	assert.NotEqual(t, res.BodyFields["access_token"].(string), "")
+	org := res.BodyFields["organization"].(map[string]any)
+	assert.Equal(t, org["slug"].(string), identity.LocalOrganizationSlug)
+
+	again := send(t, newTestRequest(t, http.MethodPost, "/api/setup", map[string]any{}), app.routes())
+	assert.Equal(t, again.StatusCode, http.StatusConflict)
+}
+
+func TestSetupStatusReportsCapabilities(t *testing.T) {
+	t.Parallel()
+	app := newTestApp(t)
+	app.setupStrategy = identity.LocalSetup
+	app.invitationPolicy = orgs.InvitationsDisabled
+
+	res := send(t, newTestRequest(t, http.MethodGet, "/api/setup/status", nil), app.routes())
+	assert.Equal(t, res.StatusCode, http.StatusOK)
+	assert.Equal(t, res.BodyFields["configured"].(bool), false)
+	assert.Equal(t, res.BodyFields["setup_requires_input"].(bool), false)
+	assert.Equal(t, res.BodyFields["invitations_enabled"].(bool), false)
 }

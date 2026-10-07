@@ -158,6 +158,10 @@ func TestInstanceBootstrapConfigurationIsSanitized(t *testing.T) {
 	assert.Equal(t, res.StatusCode, http.StatusOK)
 	assert.Equal(t, res.BodyFields["deployment_managed"], true)
 	assert.Equal(t, res.BodyFields["restart_required"], true)
+	assert.Equal(t, res.BodyFields["profile"], any("server"))
+	if _, exists := res.BodyFields["access_mode"]; exists {
+		t.Fatal("configuration response exposed access_mode")
+	}
 	if _, exists := res.BodyFields["base_url"]; exists {
 		t.Fatal("bootstrap response exposed base_url")
 	}

@@ -17,7 +17,9 @@ import (
 	"github.com/sqlwarden/internal/encrypt"
 	"github.com/sqlwarden/internal/files"
 	"github.com/sqlwarden/internal/filestore"
+	"github.com/sqlwarden/internal/identity"
 	"github.com/sqlwarden/internal/jobs"
+	"github.com/sqlwarden/internal/orgs"
 )
 
 func newTestDependencies(t *testing.T) Dependencies {
@@ -57,6 +59,9 @@ func newTestDependencies(t *testing.T) Dependencies {
 		FileStores: stores,
 		Sessions:   sessions,
 		Cursors:    cursors,
+
+		Setup:       identity.FormSetup,
+		Invitations: orgs.InvitationsEnabled,
 	}
 }
 

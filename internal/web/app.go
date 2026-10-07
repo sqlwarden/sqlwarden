@@ -18,7 +18,9 @@ import (
 	"github.com/sqlwarden/internal/database"
 	"github.com/sqlwarden/internal/encrypt"
 	"github.com/sqlwarden/internal/filestore"
+	"github.com/sqlwarden/internal/identity"
 	"github.com/sqlwarden/internal/jobs"
+	"github.com/sqlwarden/internal/orgs"
 	schemaapp "github.com/sqlwarden/internal/schema"
 	"github.com/sqlwarden/internal/smtp"
 )
@@ -47,6 +49,9 @@ type Dependencies struct {
 	FileStores FileStores
 	Sessions   *connection.Manager
 	Cursors    *connection.QueryCursorManager
+
+	Setup       identity.SetupStrategy
+	Invitations orgs.InvitationPolicy
 }
 
 type application struct {
@@ -73,6 +78,8 @@ type application struct {
 	runtimeSettings   *runtimeSettingsService
 	initialSettings   database.InstanceSettings
 	accessLogsEnabled atomic.Bool
+	setupStrategy     identity.SetupStrategy
+	invitationPolicy  orgs.InvitationPolicy
 }
 
 // NewApplication wires the web application from its dependencies. It applies
@@ -83,7 +90,12 @@ func NewApplication(deps Dependencies) (*App, error) {
 	if logger == nil {
 		logger = slog.New(slog.NewTextHandler(io.Discard, nil))
 	}
+	if deps.Setup == nil || deps.Invitations == nil {
+		return nil, errors.New("web: setup strategy and invitation policy are required")
+	}
 	app := &application{
+		setupStrategy:     deps.Setup,
+		invitationPolicy:  deps.Invitations,
 		config:            deps.Config,
 		db:                deps.DB,
 		logger:            logger,

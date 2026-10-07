@@ -14,11 +14,11 @@ func Validate(cfg Config) error {
 	if strings.TrimSpace(cfg.BootstrapBaseURL) == "" || !validator.IsURL(cfg.BootstrapBaseURL) {
 		return fmt.Errorf("base_url must be a valid URL")
 	}
-	if cfg.DeploymentMode != DeploymentModeServer && cfg.DeploymentMode != DeploymentModeDesktop {
-		return fmt.Errorf("deployment_mode must be %q or %q", DeploymentModeServer, DeploymentModeDesktop)
+	if cfg.Profile != ProfileServer && cfg.Profile != ProfileDesktop {
+		return fmt.Errorf("profile must be %q or %q", ProfileServer, ProfileDesktop)
 	}
-	if cfg.AccessMode != AccessModeMultiUser && cfg.AccessMode != AccessModeSingleUser {
-		return fmt.Errorf("access_mode must be %q or %q", AccessModeMultiUser, AccessModeSingleUser)
+	if _, err := ParseTrustedProxies(cfg.Server.TrustedProxies); err != nil {
+		return err
 	}
 	if !IsSupportedLogFormat(cfg.Log.Format) {
 		return fmt.Errorf("log.format must be %q or %q", LogFormatJSON, LogFormatText)
@@ -171,9 +171,6 @@ func validateDesktopBackends(cfg Config) error {
 		}
 		if backend.Kind == DesktopBackendKindLocal && strings.TrimSpace(backend.URL) != "" {
 			return fmt.Errorf("desktop local backend %q must not set url", backend.ID)
-		}
-		if backend.AccessMode != "" && backend.AccessMode != AccessModeMultiUser && backend.AccessMode != AccessModeSingleUser {
-			return fmt.Errorf("desktop backend %q access_mode must be %q or %q", backend.ID, AccessModeMultiUser, AccessModeSingleUser)
 		}
 		if backend.ID == cfg.Desktop.ActiveBackend {
 			activeBackendFound = true

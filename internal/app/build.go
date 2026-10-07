@@ -61,7 +61,15 @@ func Build(ctx context.Context, opts Options) (*Application, error) {
 	if err := config.Normalize(&cfg); err != nil {
 		return nil, err
 	}
+	prof, err := selectProfile(cfg.Profile)
+	if err != nil {
+		return nil, err
+	}
+	prof.Defaults(&cfg)
 	if err := config.Validate(cfg); err != nil {
+		return nil, err
+	}
+	if err := prof.Validate(cfg); err != nil {
 		return nil, err
 	}
 	if err := ensureSQLiteParentDir(cfg); err != nil {
@@ -145,6 +153,9 @@ func Build(ctx context.Context, opts Options) (*Application, error) {
 		FileStores: stores,
 		Sessions:   sessions,
 		Cursors:    cursors,
+
+		Setup:       prof.Setup(),
+		Invitations: prof.Invitations(),
 	})
 	if err != nil {
 		return fail(err)
@@ -195,6 +206,7 @@ func (a *Application) httpHandler() http.Handler { return a.handler }
 func logConfiguration(logger *slog.Logger, cfg config.Config) {
 	logger.Info("application configuration loaded",
 		slog.Group("config",
+			"profile", cfg.Profile,
 			"log_format", cfg.Log.Format,
 			"bootstrap_base_url_configured", strings.TrimSpace(cfg.BootstrapBaseURL) != "",
 			"tls_enabled", cfg.TLS.Enabled,

@@ -20,6 +20,7 @@ import (
 	"github.com/sqlwarden/internal/connection"
 	"github.com/sqlwarden/internal/database"
 	"github.com/sqlwarden/internal/encrypt"
+	"github.com/sqlwarden/internal/identity"
 	"github.com/sqlwarden/internal/orgs"
 	"github.com/sqlwarden/internal/smtp"
 	"github.com/sqlwarden/internal/token"
@@ -53,11 +54,11 @@ func newTestClaims() jwt.Claims {
 func newTestApplication(t *testing.T) *application {
 	app := new(application)
 	app.config = config.Default()
+	app.setupStrategy = identity.FormSetup
+	app.invitationPolicy = orgs.InvitationsEnabled
 
 	app.config.JWT.SecretKey = "k7mp29rf4qxhwn8vbtaj6pgucmve53y9"
 	app.config.BootstrapBaseURL = "https://www.example.com"
-	app.config.DeploymentMode = config.DeploymentModeServer
-	app.config.AccessMode = config.AccessModeMultiUser
 	app.config.Files.StorageMode = config.FilesStorageModeObject
 	app.config.Files.ActiveStorageBackend = config.DefaultFilesActiveBackend
 	app.config.Files.StorageBackends = map[string]config.FileStorageBackend{

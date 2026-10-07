@@ -18,11 +18,6 @@ import (
 	"github.com/uptrace/bun"
 )
 
-const (
-	singleUserDefaultOrgName = "Local"
-	singleUserDefaultOrgSlug = "local"
-)
-
 func (app *application) createOwnedOrganization(ctx context.Context, slug, name string, ownerAccountID int64) (database.Organization, error) {
 	var org database.Organization
 	err := app.db.RunInTx(ctx, nil, func(ctx context.Context, tx bun.Tx) error {
