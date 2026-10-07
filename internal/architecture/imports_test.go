@@ -3,7 +3,6 @@ package architecture
 import (
 	"go/parser"
 	"go/token"
-	"io/fs"
 	"path/filepath"
 	"runtime"
 	"strconv"
@@ -22,20 +21,7 @@ func TestForbiddenProductionImports(t *testing.T) {
 		"jobs": true, "schema": true, "platform": true, "database": true,
 	}
 
-	err := filepath.WalkDir(repositoryRoot, func(path string, entry fs.DirEntry, walkErr error) error {
-		if walkErr != nil {
-			return walkErr
-		}
-		if entry.IsDir() {
-			if path != repositoryRoot && (entry.Name() == ".git" || entry.Name() == ".codegraph" || entry.Name() == "node_modules") {
-				return filepath.SkipDir
-			}
-			return nil
-		}
-		if !strings.HasSuffix(path, ".go") || strings.HasSuffix(path, "_test.go") {
-			return nil
-		}
-
+	err := walkProductionFiles(repositoryRoot, func(path string) error {
 		file, err := parser.ParseFile(fset, path, nil, parser.ImportsOnly)
 		if err != nil {
 			return err

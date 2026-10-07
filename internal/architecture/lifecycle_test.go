@@ -5,7 +5,6 @@ import (
 	"go/ast"
 	"go/parser"
 	"go/token"
-	"io/fs"
 	"os/exec"
 	"path/filepath"
 	"strings"
@@ -107,19 +106,7 @@ func walkProductionGo(t *testing.T, visit func(path, rel string, file *ast.File,
 	t.Helper()
 	root := repoRoot(t)
 	fset := token.NewFileSet()
-	err := filepath.WalkDir(root, func(path string, entry fs.DirEntry, walkErr error) error {
-		if walkErr != nil {
-			return walkErr
-		}
-		if entry.IsDir() {
-			if path != root && (entry.Name() == ".git" || entry.Name() == ".codegraph" || entry.Name() == "node_modules") {
-				return filepath.SkipDir
-			}
-			return nil
-		}
-		if !strings.HasSuffix(path, ".go") || strings.HasSuffix(path, "_test.go") {
-			return nil
-		}
+	err := walkProductionFiles(root, func(path string) error {
 		file, err := parser.ParseFile(fset, path, nil, 0)
 		if err != nil {
 			return fmt.Errorf("parse %s: %w", path, err)
