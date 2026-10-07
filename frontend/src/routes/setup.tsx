@@ -109,7 +109,7 @@ function SetupPage() {
         <AmbientBackground />
         <LoginSurface
           title="Set up SQLWarden"
-          description="Create the local workspace to get started."
+          description="Create the local account and organization to get started."
           className="max-w-[420px]"
         >
           <Button
