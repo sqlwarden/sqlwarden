@@ -13,6 +13,7 @@ import (
 	"github.com/go-chi/chi/v5"
 	"github.com/sqlwarden/internal/config"
 	"github.com/sqlwarden/internal/database"
+	"github.com/sqlwarden/internal/orgs"
 	"github.com/sqlwarden/internal/password"
 	"github.com/sqlwarden/internal/request"
 	"github.com/sqlwarden/internal/response"
@@ -54,12 +55,12 @@ func (app *application) setup(w http.ResponseWriter, r *http.Request) {
 	if app.config.AccessMode != config.AccessModeSingleUser {
 		input.V.CheckField(input.OrganizationName != "", "organization_name", "Organization name is required.")
 		if organizationSlug == "" {
-			organizationSlug = slugify(input.OrganizationName)
+			organizationSlug = orgs.Slugify(input.OrganizationName)
 		}
 		input.V.CheckField(organizationSlug != "", "organization_slug", "Organization slug is required.")
 		if organizationSlug != "" {
-			input.V.CheckField(isValidSlug(organizationSlug), "organization_slug", "Organization slug may only contain lowercase letters, numbers, and hyphens.")
-			input.V.CheckField(len(organizationSlug) <= maxOrganizationSlugLength, "organization_slug", "Organization slug must be 64 characters or fewer.")
+			input.V.CheckField(orgs.ValidSlug(organizationSlug), "organization_slug", "Organization slug may only contain lowercase letters, numbers, and hyphens.")
+			input.V.CheckField(len(organizationSlug) <= orgs.MaxSlugLength, "organization_slug", "Organization slug must be 64 characters or fewer.")
 		}
 	}
 	if input.V.HasErrors() {

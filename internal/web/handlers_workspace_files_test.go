@@ -18,6 +18,7 @@ import (
 	"github.com/sqlwarden/internal/database"
 	"github.com/sqlwarden/internal/files"
 	"github.com/sqlwarden/internal/filestore"
+	"github.com/sqlwarden/internal/orgs"
 )
 
 func orgPrivateFilesURL(orgSlug string, workspaceID int64) string {
@@ -37,7 +38,7 @@ func meSharedFilesURL(workspaceID int64) string {
 }
 
 func workspaceStorageSegment(ws database.Workspace) string {
-	return strconv.FormatInt(ws.ID, 10) + "-" + slugify(ws.Name)
+	return strconv.FormatInt(ws.ID, 10) + "-" + orgs.Slugify(ws.Name)
 }
 
 func newAuthContentRequest(t *testing.T, method, url, content, token, etag string) *http.Request {

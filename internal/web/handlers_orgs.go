@@ -11,6 +11,7 @@ import (
 	"github.com/go-chi/chi/v5"
 	"github.com/sqlwarden/internal/access"
 	"github.com/sqlwarden/internal/database"
+	"github.com/sqlwarden/internal/orgs"
 	"github.com/sqlwarden/internal/request"
 	"github.com/sqlwarden/internal/response"
 	"github.com/sqlwarden/internal/validator"
@@ -18,9 +19,8 @@ import (
 )
 
 const (
-	singleUserDefaultOrgName  = "Local"
-	singleUserDefaultOrgSlug  = "local"
-	maxOrganizationSlugLength = 64
+	singleUserDefaultOrgName = "Local"
+	singleUserDefaultOrgSlug = "local"
 )
 
 func (app *application) createOwnedOrganization(ctx context.Context, slug, name string, ownerAccountID int64) (database.Organization, error) {
@@ -154,13 +154,13 @@ func (app *application) createOrg(w http.ResponseWriter, r *http.Request) {
 
 	slug := input.Slug
 	if slug == "" {
-		slug = slugify(input.Name)
+		slug = orgs.Slugify(input.Name)
 	}
 
 	input.V.CheckField(slug != "", "slug", "Slug is required.")
 	if slug != "" {
-		input.V.CheckField(isValidSlug(slug), "slug", "Slug may only contain lowercase letters, numbers, and hyphens.")
-		input.V.CheckField(len(slug) <= maxOrganizationSlugLength, "slug", "Slug must be 64 characters or fewer.")
+		input.V.CheckField(orgs.ValidSlug(slug), "slug", "Slug may only contain lowercase letters, numbers, and hyphens.")
+		input.V.CheckField(len(slug) <= orgs.MaxSlugLength, "slug", "Slug must be 64 characters or fewer.")
 	}
 
 	if input.V.HasErrors() {
@@ -477,36 +477,4 @@ func (app *application) isLastOrgOwner(r *http.Request, orgID, accountID int64) 
 		return holds, nil
 	}
 	return false, nil
-}
-
-// slugify converts a name to a URL-safe slug.
-func slugify(name string) string {
-	s := strings.ToLower(name)
-	s = strings.Map(func(r rune) rune {
-		if (r >= 'a' && r <= 'z') || (r >= '0' && r <= '9') {
-			return r
-		}
-		if r == ' ' || r == '-' || r == '_' {
-			return '-'
-		}
-		return -1
-	}, s)
-	s = strings.Trim(s, "-")
-	if len(s) > maxOrganizationSlugLength {
-		s = s[:maxOrganizationSlugLength]
-	}
-	return s
-}
-
-// isValidSlug returns true if s contains only lowercase letters, digits, and hyphens.
-func isValidSlug(s string) bool {
-	if s == "" {
-		return false
-	}
-	for _, r := range s {
-		if !((r >= 'a' && r <= 'z') || (r >= '0' && r <= '9') || r == '-') {
-			return false
-		}
-	}
-	return true
 }

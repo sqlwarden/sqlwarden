@@ -11,6 +11,7 @@ import (
 	"github.com/sqlwarden/internal/access"
 	"github.com/sqlwarden/internal/assert"
 	"github.com/sqlwarden/internal/database"
+	"github.com/sqlwarden/internal/orgs"
 )
 
 // registerAndLogin seeds an instance-admin account, creates an org, and returns the account ID, access token, and org slug.
@@ -433,14 +434,14 @@ func TestCreateOrgLimitsSlugLength(t *testing.T) {
 	_, tok, _ := registerAndLogin(t, app, "long-slug@example.com", "User", "securepass99")
 
 	generated := send(t, newAuthRequest(t, http.MethodPost, "/api/v1/orgs", map[string]any{
-		"name": strings.Repeat("a", maxOrganizationSlugLength+10),
+		"name": strings.Repeat("a", orgs.MaxSlugLength+10),
 	}, tok), app.routes())
 	assert.Equal(t, generated.StatusCode, http.StatusCreated)
-	assert.Equal(t, generated.BodyFields["slug"].(string), strings.Repeat("a", maxOrganizationSlugLength))
+	assert.Equal(t, generated.BodyFields["slug"].(string), strings.Repeat("a", orgs.MaxSlugLength))
 
 	explicit := send(t, newAuthRequest(t, http.MethodPost, "/api/v1/orgs", map[string]any{
 		"name": "Overlong explicit slug",
-		"slug": strings.Repeat("b", maxOrganizationSlugLength+1),
+		"slug": strings.Repeat("b", orgs.MaxSlugLength+1),
 	}, tok), app.routes())
 	assert.Equal(t, explicit.StatusCode, http.StatusUnprocessableEntity)
 	assertValidationField(t, explicit, "slug")

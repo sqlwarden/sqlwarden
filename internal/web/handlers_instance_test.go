@@ -11,6 +11,7 @@ import (
 	"github.com/sqlwarden/internal/assert"
 	"github.com/sqlwarden/internal/config"
 	"github.com/sqlwarden/internal/database"
+	"github.com/sqlwarden/internal/orgs"
 )
 
 // setupInstance calls POST /api/setup and returns the access token.
@@ -128,7 +129,7 @@ func TestSetupInMultiUserModeRejectsOverlongOrganizationSlug(t *testing.T) {
 		"name":              "Admin",
 		"password":          "securepass99",
 		"organization_name": "First Organization",
-		"organization_slug": strings.Repeat("a", maxOrganizationSlugLength+1),
+		"organization_slug": strings.Repeat("a", orgs.MaxSlugLength+1),
 	}), app.routes())
 
 	assert.Equal(t, res.StatusCode, http.StatusUnprocessableEntity)

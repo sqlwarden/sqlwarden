@@ -20,6 +20,7 @@ import (
 	"github.com/sqlwarden/internal/connection"
 	"github.com/sqlwarden/internal/database"
 	"github.com/sqlwarden/internal/encrypt"
+	"github.com/sqlwarden/internal/orgs"
 	"github.com/sqlwarden/internal/smtp"
 	"github.com/sqlwarden/internal/token"
 
@@ -194,7 +195,7 @@ func seedInstanceAdminAccount(t *testing.T, app *application, email, name string
 func seedOrganizationForAccount(t *testing.T, app *application, account database.Account, orgName string) database.Organization {
 	t.Helper()
 
-	org, err := app.db.InsertOrg(context.Background(), slugify(orgName), orgName)
+	org, err := app.db.InsertOrg(context.Background(), orgs.Slugify(orgName), orgName)
 	if err != nil {
 		t.Fatal(err)
 	}
