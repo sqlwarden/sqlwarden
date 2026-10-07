@@ -1,6 +1,9 @@
 package app
 
 import (
+	"context"
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 
@@ -26,5 +29,21 @@ func TestBuildRejectsDesktopWithPostgres(t *testing.T) {
 	_, err := Build(t.Context(), Options{Config: cfg})
 	if err == nil || !strings.Contains(err.Error(), "profile desktop") {
 		t.Fatalf("expected profile desktop validation error, got %v", err)
+	}
+}
+
+func TestBuildDesktopPlacesDatabaseInAppDir(t *testing.T) {
+	t.Setenv("HOME", t.TempDir())
+	cfg := testConfig(t)
+	cfg.Profile = config.ProfileDesktop
+	cfg.DB.DSN = config.Default().DB.DSN
+	cfg.Desktop.AppDir = t.TempDir()
+	built, err := Build(t.Context(), Options{Config: cfg, Command: CommandMigrate})
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = built.Close(context.Background()) })
+	if _, err := os.Stat(filepath.Join(cfg.Desktop.AppDir, "sqlwarden.db")); err != nil {
+		t.Fatalf("expected database in app dir: %v", err)
 	}
 }

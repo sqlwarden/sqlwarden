@@ -58,14 +58,16 @@ func Build(ctx context.Context, opts Options) (*Application, error) {
 		logger = discardLogger()
 	}
 	cfg := opts.Config
-	if err := config.Normalize(&cfg); err != nil {
-		return nil, err
-	}
 	prof, err := selectProfile(cfg.Profile)
 	if err != nil {
 		return nil, err
 	}
+	// Profile defaults compare against the unexpanded config defaults, so
+	// they must run before Normalize expands home-relative paths.
 	prof.Defaults(&cfg)
+	if err := config.Normalize(&cfg); err != nil {
+		return nil, err
+	}
 	if err := config.Validate(cfg); err != nil {
 		return nil, err
 	}
