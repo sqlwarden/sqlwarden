@@ -160,6 +160,10 @@ func TestSessionAuthenticatorRevokedSession(t *testing.T) {
 		t.Fatal("valid bearer token was not claimed")
 	}
 	requireCredentialReason(t, err, "auth_session_revoked")
+	var credentialErr *CredentialError
+	if !errors.As(err, &credentialErr) || credentialErr.AccountID != 42 || credentialErr.CredentialID != "session-1" {
+		t.Fatalf("err = %#v, want account 42 and session-1", err)
+	}
 }
 
 func TestSessionAuthenticatorExpiredSession(t *testing.T) {

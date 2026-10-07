@@ -41,6 +41,10 @@ type RequestPolicy interface {
 // return to clients and to write to audit.
 type CredentialError struct {
 	Reason string
+
+	// AccountID and CredentialID are for logs only and are never returned to clients.
+	AccountID    int64
+	CredentialID string
 }
 
 func (e *CredentialError) Error() string { return "credential rejected: " + e.Reason }

@@ -417,6 +417,7 @@ func TestRevokedAuthSessionRejectsExistingAccessToken(t *testing.T) {
 	assert.True(t, strings.Contains(logs.String(), "authentication rejected"))
 	assert.True(t, strings.Contains(logs.String(), "auth_session_revoked"))
 	assert.Equal(t, res.ErrorReason(), "auth_session_revoked")
+	assert.True(t, strings.Contains(logs.String(), claims.AuthSessionID))
 	assert.False(t, strings.Contains(logs.String(), tok))
 }
 

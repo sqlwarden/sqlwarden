@@ -42,23 +42,26 @@ func (a sessionAuthenticator) Authenticate(ctx context.Context, p Presented) (Au
 	if err != nil {
 		return Authenticated{}, true, &CredentialError{Reason: "token_invalid"}
 	}
+	reject := func(reason string, accountID int64) error {
+		return &CredentialError{Reason: reason, AccountID: accountID, CredentialID: claims.AuthSessionID}
+	}
 	revocation := a.revocation(ctx)
 	if revocation && claims.AuthSessionID == "" {
-		return Authenticated{}, true, &CredentialError{Reason: "session_binding_missing"}
+		return Authenticated{}, true, reject("session_binding_missing", 0)
 	}
 	accountID, err := strconv.ParseInt(claims.AccountID, 10, 64)
 	if err != nil {
-		return Authenticated{}, true, &CredentialError{Reason: "token_invalid"}
+		return Authenticated{}, true, reject("token_invalid", 0)
 	}
 	account, found, err := a.store.GetAccount(ctx, accountID)
 	if err != nil {
 		return Authenticated{}, true, err
 	}
 	if !found {
-		return Authenticated{}, true, &CredentialError{Reason: "account_not_found"}
+		return Authenticated{}, true, reject("account_not_found", accountID)
 	}
 	if !account.IsActive {
-		return Authenticated{}, true, &CredentialError{Reason: "account_inactive"}
+		return Authenticated{}, true, reject("account_inactive", account.ID)
 	}
 
 	result := Authenticated{
@@ -80,11 +83,11 @@ func (a sessionAuthenticator) Authenticate(ctx context.Context, p Presented) (Au
 	}
 	switch {
 	case !found:
-		return Authenticated{}, true, &CredentialError{Reason: "auth_session_not_found"}
+		return Authenticated{}, true, reject("auth_session_not_found", account.ID)
 	case session.RevokedAt != nil:
-		return Authenticated{}, true, &CredentialError{Reason: "auth_session_revoked"}
+		return Authenticated{}, true, reject("auth_session_revoked", account.ID)
 	case a.now().After(session.ExpiresAt):
-		return Authenticated{}, true, &CredentialError{Reason: "auth_session_expired"}
+		return Authenticated{}, true, reject("auth_session_expired", account.ID)
 	}
 	if err := a.store.TouchAuthSession(ctx, session.ID); err != nil {
 		return Authenticated{}, true, err

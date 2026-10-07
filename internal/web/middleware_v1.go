@@ -36,7 +36,14 @@ func (app *application) authenticateV1(next http.Handler) http.Handler {
 		})
 		var credErr *identity.CredentialError
 		if errors.As(err, &credErr) {
-			app.logWarn(r, "authentication rejected", slog.String("reason", credErr.Reason))
+			attrs := []slog.Attr{slog.String("reason", credErr.Reason)}
+			if credErr.AccountID != 0 {
+				attrs = append(attrs, slog.Int64("account_id", credErr.AccountID))
+			}
+			if credErr.CredentialID != "" {
+				attrs = append(attrs, slog.String("auth_session_id", credErr.CredentialID))
+			}
+			app.logWarn(r, "authentication rejected", attrs...)
 			app.rejectCredential(w, r, credErr.Reason)
 			return
 		}
