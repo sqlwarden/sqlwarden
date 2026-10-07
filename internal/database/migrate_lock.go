@@ -41,10 +41,10 @@ func MigrationLockFor(driver string, db *sql.DB) (MigrationLock, error) {
 }
 
 // MigrateLocked runs migrate while holding the migration lock. The context
-// bounds lock acquisition and is passed to migrate so a context-aware runner
-// can stop at the deadline. If migrate does not return promptly after the
-// context ends, MigrateLocked keeps waiting: releasing the lock while schema
-// changes are still executing would allow a second migrator to interleave.
+// bounds only lock acquisition. Once the lock is held, migrate runs to
+// completion with a context that is not canceled when ctx ends: abandoning a
+// schema change midway, or releasing the lock while it still executes, would
+// leave the schema half-applied or let a second migrator interleave.
 func (db *DB) MigrateLocked(ctx context.Context, migrate func(context.Context) error) error {
 	lock, err := MigrationLockFor(db.driver, db.DB.DB)
 	if err != nil {
@@ -54,21 +54,13 @@ func (db *DB) MigrateLocked(ctx context.Context, migrate func(context.Context) e
 	if err != nil {
 		return err
 	}
+	detached := context.WithoutCancel(ctx)
 	defer func() {
-		if releaseErr := release(context.WithoutCancel(ctx)); releaseErr != nil {
+		if releaseErr := release(detached); releaseErr != nil {
 			db.logger.Warn("migration lock release failed", "error", releaseErr)
 		}
 	}()
-
-	done := make(chan error, 1)
-	go func() { done <- migrate(ctx) }()
-	select {
-	case err := <-done:
-		return err
-	case <-ctx.Done():
-		migrationErr := <-done
-		return errors.Join(fmt.Errorf("database migration did not finish in time: %w", ctx.Err()), migrationErr)
-	}
+	return migrate(detached)
 }
 
 // postgresMigrationLock holds a session-scoped advisory lock on a dedicated

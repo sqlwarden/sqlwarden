@@ -112,10 +112,9 @@ type Config struct {
 		// Automigrate runs migrations during Build. Validation rejects it when
 		// api or jobs is selected.
 		Automigrate bool
-		// MigrationTimeout bounds one migrate run, including the time spent
-		// waiting for the migration lock. Exceeding it fails the run, but a
-		// migration already executing is not aborted: the run waits for it
-		// to finish so the lock never releases mid-migration.
+		// MigrationTimeout bounds only the wait for the migration lock. Once
+		// the lock is held, the migration runs to completion regardless of
+		// how long it takes.
 		MigrationTimeout time.Duration
 	}
 	Encryption struct {

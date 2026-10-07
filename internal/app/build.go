@@ -92,7 +92,7 @@ func Build(ctx context.Context, opts Options) (*Application, error) {
 	})
 
 	if opts.Command == CommandMigrate || cfg.DB.Automigrate {
-		logger.Info("running database migrations", "timeout_ms", cfg.DB.MigrationTimeout.Milliseconds())
+		logger.Info("running database migrations", "lock_timeout_ms", cfg.DB.MigrationTimeout.Milliseconds())
 		migrateCtx, cancel := context.WithTimeout(ctx, cfg.DB.MigrationTimeout)
 		err := db.MigrateLocked(migrateCtx, func(context.Context) error { return db.MigrateUp() })
 		cancel()

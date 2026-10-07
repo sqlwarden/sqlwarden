@@ -38,44 +38,22 @@ func TestMigrateLockedAppliesMigrations(t *testing.T) {
 	}
 }
 
-func TestMigrateLockedReportsTimeout(t *testing.T) {
-	db := testMigrationDB(t)
-
-	ctx, cancel := context.WithTimeout(context.Background(), 50*time.Millisecond)
-	defer cancel()
-
-	err := db.MigrateLocked(ctx, func(ctx context.Context) error {
-		<-ctx.Done()
-		return ctx.Err()
-	})
-	if !errors.Is(err, context.DeadlineExceeded) {
-		t.Fatalf("MigrateLocked() error = %v, want a deadline error", err)
-	}
-}
-
-func TestMigrateLockedDoesNotReleaseBeforeTimedOutMigrationStops(t *testing.T) {
+func TestMigrateLockedTimeoutDoesNotBoundTheMigration(t *testing.T) {
 	db := testMigrationDB(t)
 	ctx, cancel := context.WithTimeout(context.Background(), 20*time.Millisecond)
 	defer cancel()
 
-	stopped := make(chan struct{})
-	done := make(chan error, 1)
-	go func() {
-		done <- db.MigrateLocked(ctx, func(context.Context) error {
-			time.Sleep(75 * time.Millisecond)
-			close(stopped)
-			return nil
-		})
-	}()
-
-	select {
-	case err := <-done:
-		t.Fatalf("MigrateLocked returned before migration stopped: %v", err)
-	case <-time.After(40 * time.Millisecond):
+	var callbackCtxErr error
+	err := db.MigrateLocked(ctx, func(migrateCtx context.Context) error {
+		time.Sleep(100 * time.Millisecond)
+		callbackCtxErr = migrateCtx.Err()
+		return nil
+	})
+	if err != nil {
+		t.Fatalf("MigrateLocked() error = %v, want nil for a slow migration that succeeds", err)
 	}
-	<-stopped
-	if err := <-done; !errors.Is(err, context.DeadlineExceeded) {
-		t.Fatalf("MigrateLocked() error = %v, want deadline exceeded", err)
+	if callbackCtxErr != nil {
+		t.Fatalf("migration context was canceled: %v", callbackCtxErr)
 	}
 }
 
