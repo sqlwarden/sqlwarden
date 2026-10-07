@@ -18,7 +18,7 @@ func TestForbiddenProductionImports(t *testing.T) {
 	fset := token.NewFileSet()
 	applicationModules := map[string]bool{
 		"access": true, "completion": true, "config": true, "files": true,
-		"jobs": true, "schema": true, "platform": true, "database": true, "orgs": true,
+		"identity": true, "jobs": true, "schema": true, "platform": true, "database": true, "orgs": true,
 	}
 
 	err := walkProductionFiles(repositoryRoot, func(path string) error {
