@@ -1,6 +1,7 @@
 package web
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"net/http"
@@ -9,6 +10,7 @@ import (
 
 	"github.com/sqlwarden/internal/access"
 	"github.com/sqlwarden/internal/assert"
+	"github.com/sqlwarden/internal/audit"
 	"github.com/sqlwarden/internal/database"
 	"github.com/sqlwarden/internal/identity"
 	"github.com/sqlwarden/internal/orgs"
@@ -56,6 +58,43 @@ func TestSetupCreatesFirstInstanceAdmin(t *testing.T) {
 	assert.Equal(t, hasOrg, true)
 	assert.Equal(t, org["slug"], "acme-cloud")
 	assert.Equal(t, org["name"], "Acme Cloud")
+}
+
+func TestSetupWritesAuditEvent(t *testing.T) {
+	app := newTestApp(t)
+	var events []audit.Event
+	app.audit = audit.WriterFunc(func(_ context.Context, event audit.Event) error {
+		events = append(events, event)
+		return nil
+	})
+
+	input := identity.SetupInput{
+		Email: "admin@example.com", Name: "Admin", Password: "securepass99",
+		OrganizationName: "Acme Cloud",
+	}
+	plan, fieldErrors := app.setupStrategy.Plan(input)
+	if len(fieldErrors) != 0 {
+		t.Fatalf("setup plan errors: %v", fieldErrors)
+	}
+	res := send(t, newTestRequest(t, http.MethodPost, "/api/setup", map[string]any{
+		"email": input.Email, "name": input.Name, "password": input.Password,
+		"organization_name": input.OrganizationName,
+	}), app.routes())
+	assert.Equal(t, res.StatusCode, http.StatusCreated)
+
+	if len(events) != 1 {
+		t.Fatalf("audit events = %d, want 1", len(events))
+	}
+	event := events[0]
+	if event.Action != audit.ActionSetupCompleted || event.Outcome != audit.OutcomeSuccess {
+		t.Fatalf("audit action/outcome = %q/%q", event.Action, event.Outcome)
+	}
+	if event.Actor.SubjectKind != "account" || event.Actor.AuthMethod != plan.Method {
+		t.Fatalf("audit actor = %+v", event.Actor)
+	}
+	if event.OrgID == nil {
+		t.Fatal("audit org id is nil")
+	}
 }
 
 func TestSetupInMultiUserModeSeedsFirstOrganizationAndOwnerPolicy(t *testing.T) {

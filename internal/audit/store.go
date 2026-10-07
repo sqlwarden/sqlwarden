@@ -1,0 +1,126 @@
+package audit
+
+import (
+	"context"
+	"time"
+
+	"github.com/uptrace/bun"
+)
+
+type record struct {
+	bun.BaseModel `bun:"table:audit_events"`
+
+	Sequence       int64             `bun:"sequence,pk,autoincrement"`
+	ID             string            `bun:"id,unique,notnull"`
+	OccurredAt     time.Time         `bun:"occurred_at,notnull"`
+	OrgID          *int64            `bun:"org_id"`
+	SubjectKind    string            `bun:"subject_kind,notnull"`
+	SubjectID      *int64            `bun:"subject_id"`
+	OnBehalfOfKind string            `bun:"on_behalf_of_kind,notnull"`
+	OnBehalfOfID   *int64            `bun:"on_behalf_of_id"`
+	CredentialKind string            `bun:"credential_kind,notnull"`
+	CredentialID   string            `bun:"credential_id,notnull"`
+	ClientID       string            `bun:"client_id,notnull"`
+	AuthMethod     string            `bun:"auth_method,notnull"`
+	Assurance      string            `bun:"assurance,notnull"`
+	Action         string            `bun:"action,notnull"`
+	Resource       string            `bun:"resource,notnull"`
+	ResourceID     string            `bun:"resource_id,notnull"`
+	Outcome        string            `bun:"outcome,notnull"`
+	DecisionReason string            `bun:"decision_reason,notnull"`
+	Metadata       map[string]string `bun:"metadata,notnull"`
+}
+
+// SQLStore persists audit events in the SQLWarden metadata database.
+type SQLStore struct {
+	db bun.IDB
+}
+
+// NewSQLStore returns a database-backed audit store.
+func NewSQLStore(db bun.IDB) *SQLStore { return &SQLStore{db: db} }
+
+// InsertEvent implements [Store].
+func (s *SQLStore) InsertEvent(ctx context.Context, event Event) error {
+	metadata := event.Metadata
+	if metadata == nil {
+		metadata = map[string]string{}
+	}
+	row := record{
+		ID:             event.ID,
+		OccurredAt:     event.OccurredAt,
+		OrgID:          event.OrgID,
+		SubjectKind:    event.Actor.SubjectKind,
+		SubjectID:      event.Actor.SubjectID,
+		OnBehalfOfKind: event.Actor.OnBehalfOfKind,
+		OnBehalfOfID:   event.Actor.OnBehalfOfID,
+		CredentialKind: event.Actor.CredentialKind,
+		CredentialID:   event.Actor.CredentialID,
+		ClientID:       event.Actor.ClientID,
+		AuthMethod:     event.Actor.AuthMethod,
+		Assurance:      event.Actor.Assurance,
+		Action:         event.Action,
+		Resource:       event.Resource,
+		ResourceID:     event.ResourceID,
+		Outcome:        event.Outcome,
+		DecisionReason: event.DecisionReason,
+		Metadata:       metadata,
+	}
+	_, err := s.db.NewInsert().Model(&row).Exec(ctx)
+	return err
+}
+
+// Events returns recorded events in durable insertion order, oldest first. A
+// limit of zero or less returns every event.
+func (s *SQLStore) Events(ctx context.Context, limit int) ([]Event, error) {
+	return s.EventsAfter(ctx, "", limit)
+}
+
+// EventsAfter returns records inserted after afterID, oldest first.
+func (s *SQLStore) EventsAfter(ctx context.Context, afterID string, limit int) ([]Event, error) {
+	var rows []record
+	query := s.db.NewSelect().Model(&rows).Order("sequence ASC")
+	if afterID != "" {
+		query = query.Where(
+			"sequence > COALESCE((SELECT sequence FROM audit_events WHERE id = ?), 0)",
+			afterID,
+		)
+	}
+	if limit > 0 {
+		query = query.Limit(limit)
+	}
+	if err := query.Scan(ctx); err != nil {
+		return nil, err
+	}
+	events := make([]Event, 0, len(rows))
+	for _, row := range rows {
+		events = append(events, Event{
+			Sequence:   row.Sequence,
+			ID:         row.ID,
+			OccurredAt: row.OccurredAt.UTC(),
+			OrgID:      row.OrgID,
+			Actor: Actor{
+				SubjectKind:    row.SubjectKind,
+				SubjectID:      row.SubjectID,
+				OnBehalfOfKind: row.OnBehalfOfKind,
+				OnBehalfOfID:   row.OnBehalfOfID,
+				CredentialKind: row.CredentialKind,
+				CredentialID:   row.CredentialID,
+				ClientID:       row.ClientID,
+				AuthMethod:     row.AuthMethod,
+				Assurance:      row.Assurance,
+			},
+			Action:         row.Action,
+			Resource:       row.Resource,
+			ResourceID:     row.ResourceID,
+			Outcome:        row.Outcome,
+			DecisionReason: row.DecisionReason,
+			Metadata:       row.Metadata,
+		})
+	}
+	return events, nil
+}
+
+var (
+	_ Store  = (*SQLStore)(nil)
+	_ Reader = (*SQLStore)(nil)
+)

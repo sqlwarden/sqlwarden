@@ -12,6 +12,7 @@ import (
 	"time"
 
 	"github.com/sqlwarden/internal/access"
+	"github.com/sqlwarden/internal/audit"
 	"github.com/sqlwarden/internal/config"
 	"github.com/sqlwarden/internal/connection"
 	"github.com/sqlwarden/internal/database"
@@ -159,6 +160,7 @@ func Build(ctx context.Context, opts Options) (*Application, error) {
 		FileStores: stores,
 		Sessions:   sessions,
 		Cursors:    cursors,
+		Audit:      audit.NewCoreWriter(audit.NewSQLStore(db.DB), time.Now),
 
 		TrustedProxies: trustedProxies,
 

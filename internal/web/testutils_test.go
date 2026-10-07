@@ -16,6 +16,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/sqlwarden/internal/audit"
 	"github.com/sqlwarden/internal/config"
 	"github.com/sqlwarden/internal/connection"
 	"github.com/sqlwarden/internal/database"
@@ -70,6 +71,7 @@ func newTestApplication(t *testing.T) *application {
 	}
 	app.logger = slog.New(slog.NewTextHandler(io.Discard, nil))
 	app.db = newTestDB(t)
+	app.audit = audit.NewCoreWriter(audit.NewSQLStore(app.db.DB), time.Now)
 	app.clientIPs = clientip.New(nil)
 	app.authChain = app.newAuthChain()
 	settings, found, err := app.db.GetInstanceSettings(context.Background())

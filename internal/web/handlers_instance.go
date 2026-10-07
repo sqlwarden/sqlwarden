@@ -10,6 +10,8 @@ import (
 	"time"
 
 	"github.com/go-chi/chi/v5"
+	"github.com/sqlwarden/internal/access"
+	"github.com/sqlwarden/internal/audit"
 	"github.com/sqlwarden/internal/config"
 	"github.com/sqlwarden/internal/database"
 	"github.com/sqlwarden/internal/identity"
@@ -113,6 +115,20 @@ func (app *application) setup(w http.ResponseWriter, r *http.Request) {
 		"account":      account,
 		"access_token": accessToken,
 		"organization": org,
+	}
+	principal := access.Principal{
+		Subject: access.SubjectRef{Kind: access.SubjectAccount, ID: account.ID},
+		Credential: access.CredentialInfo{
+			Kind: access.CredentialSession, ID: authSession.ID,
+			Method: plan.Method, Assurance: access.AAL1,
+		},
+	}
+	if err := audit.Emit(r.Context(), app.audit, audit.Event{
+		OrgID: &org.ID, Actor: audit.ActorFromPrincipal(principal),
+		Action: audit.ActionSetupCompleted, Resource: "organization",
+		ResourceID: strconv.FormatInt(org.ID, 10), Outcome: audit.OutcomeSuccess,
+	}); err != nil {
+		app.logWarn(r, "audit write failed", slog.String("action", audit.ActionSetupCompleted), slog.Any("error", err))
 	}
 
 	app.logInfo(r, "instance setup completed", slog.Int64("account_id", account.ID), slog.Int64("org_id", org.ID), slog.String("org_slug", org.Slug), slog.String("auth_method", plan.Method))

@@ -17,7 +17,7 @@ func TestForbiddenProductionImports(t *testing.T) {
 	repositoryRoot := repoRoot(t)
 	fset := token.NewFileSet()
 	applicationModules := map[string]bool{
-		"access": true, "completion": true, "config": true, "files": true,
+		"access": true, "audit": true, "completion": true, "config": true, "files": true,
 		"identity": true, "jobs": true, "schema": true, "platform": true, "database": true, "orgs": true, "profile": true,
 	}
 

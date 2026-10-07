@@ -22,6 +22,7 @@ func TestMigrateUpFromVersion40DropsSchemaSyncJobsAndLazyThreshold(t *testing.T)
 		ALTER TABLE instance_settings ADD COLUMN schema_snapshot_freshness_seconds INTEGER NOT NULL DEFAULT 86400;
 		ALTER TABLE organization_runtime_settings ADD COLUMN schema_snapshot_freshness_seconds INTEGER;
 		ALTER TABLE instance_settings ADD COLUMN personal_spaces_enabled BOOLEAN NOT NULL DEFAULT TRUE;
+		DROP TABLE audit_events;
 	`)
 	assert.Nil(t, err)
 	_, err = db.ExecContext(ctx, `INSERT INTO jobs (id, type, visibility, status, run_at) VALUES

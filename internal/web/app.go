@@ -13,6 +13,7 @@ import (
 	"time"
 
 	"github.com/sqlwarden/internal/access"
+	"github.com/sqlwarden/internal/audit"
 	completionapp "github.com/sqlwarden/internal/completion"
 	"github.com/sqlwarden/internal/config"
 	"github.com/sqlwarden/internal/connection"
@@ -51,6 +52,7 @@ type Dependencies struct {
 	FileStores FileStores
 	Sessions   *connection.Manager
 	Cursors    *connection.QueryCursorManager
+	Audit      audit.Writer
 
 	TrustedProxies []netip.Prefix
 
@@ -86,6 +88,7 @@ type application struct {
 	invitationPolicy  orgs.InvitationPolicy
 	clientIPs         clientip.Resolver
 	authChain         identity.Chain
+	audit             audit.Writer
 }
 
 // NewApplication wires the web application from its dependencies. It applies
@@ -98,6 +101,10 @@ func NewApplication(deps Dependencies) (*App, error) {
 	}
 	if deps.Setup == nil || deps.Invitations == nil {
 		return nil, errors.New("web: setup strategy and invitation policy are required")
+	}
+	auditWriter := deps.Audit
+	if auditWriter == nil {
+		auditWriter = audit.Discard
 	}
 	app := &application{
 		setupStrategy:     deps.Setup,
@@ -116,6 +123,7 @@ func NewApplication(deps Dependencies) (*App, error) {
 		jobStore:          jobs.NewStore(deps.DB),
 		runtimeSettings:   newRuntimeSettingsService(deps.DB),
 		runtimeUpdates:    make(chan database.InstanceSettings, 1),
+		audit:             auditWriter,
 	}
 	app.clientIPs = clientip.New(deps.TrustedProxies)
 	app.authChain = app.newAuthChain()
