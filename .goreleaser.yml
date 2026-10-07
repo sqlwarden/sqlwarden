@@ -9,7 +9,7 @@ before:
     - go mod tidy
 
 builds:
-  - main: ./cmd/api
+  - main: ./cmd/sqlwarden
     binary: sqlwarden
     env:
       - CGO_ENABLED=0
