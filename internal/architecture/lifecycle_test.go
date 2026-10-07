@@ -1,0 +1,99 @@
+package architecture
+
+import (
+	"fmt"
+	"go/ast"
+	"go/parser"
+	"go/token"
+	"io/fs"
+	"os/exec"
+	"path/filepath"
+	"strings"
+	"testing"
+)
+
+func TestPackageGraphHasNoCycles(t *testing.T) {
+	cmd := exec.Command("go", "list", "-deps", "./...")
+	cmd.Dir = repoRoot(t)
+	output, err := cmd.CombinedOutput()
+	if err != nil {
+		t.Fatalf("go list rejected the package graph: %v\n%s", err, output)
+	}
+}
+
+// backgroundFreeConstructors lists constructors that must stay pure. The
+// connection manager and cursor manager constructors are excluded because
+// they start reapers today.
+var backgroundFreeConstructors = map[string]bool{
+	"internal/web:NewApplication": true,
+	"internal/jobs:NewStore":      true,
+}
+
+func TestConstructorsDoNotStartBackgroundWork(t *testing.T) {
+	seen := make(map[string]bool)
+	t.Cleanup(func() {
+		for name := range backgroundFreeConstructors {
+			if !seen[name] {
+				t.Errorf("constructor %s not found; update backgroundFreeConstructors", name)
+			}
+		}
+	})
+	walkProductionGo(t, func(_ string, rel string, file *ast.File, fset *token.FileSet) {
+		for _, declaration := range file.Decls {
+			function, ok := declaration.(*ast.FuncDecl)
+			if !ok || function.Recv != nil || function.Body == nil {
+				continue
+			}
+			key := filepath.ToSlash(filepath.Dir(rel)) + ":" + function.Name.Name
+			if !backgroundFreeConstructors[key] {
+				continue
+			}
+			seen[key] = true
+			ast.Inspect(function.Body, func(node ast.Node) bool {
+				switch current := node.(type) {
+				case *ast.GoStmt:
+					t.Errorf("%s:%d constructor %s launches a goroutine", rel, fset.Position(current.Go).Line, function.Name.Name)
+				case *ast.CallExpr:
+					selector, ok := current.Fun.(*ast.SelectorExpr)
+					if ok && strings.HasPrefix(selector.Sel.Name, "Start") {
+						t.Errorf("%s:%d constructor %s invokes lifecycle method %s", rel, fset.Position(current.Pos()).Line, function.Name.Name, selector.Sel.Name)
+					}
+				}
+				return true
+			})
+		}
+	})
+}
+
+func walkProductionGo(t *testing.T, visit func(path, rel string, file *ast.File, fset *token.FileSet)) {
+	t.Helper()
+	root := repoRoot(t)
+	fset := token.NewFileSet()
+	err := filepath.WalkDir(root, func(path string, entry fs.DirEntry, walkErr error) error {
+		if walkErr != nil {
+			return walkErr
+		}
+		if entry.IsDir() {
+			if path != root && (entry.Name() == ".git" || entry.Name() == ".codegraph" || entry.Name() == "node_modules") {
+				return filepath.SkipDir
+			}
+			return nil
+		}
+		if !strings.HasSuffix(path, ".go") || strings.HasSuffix(path, "_test.go") {
+			return nil
+		}
+		file, err := parser.ParseFile(fset, path, nil, 0)
+		if err != nil {
+			return fmt.Errorf("parse %s: %w", path, err)
+		}
+		rel, err := filepath.Rel(root, path)
+		if err != nil {
+			return err
+		}
+		visit(path, filepath.ToSlash(rel), file, fset)
+		return nil
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+}
