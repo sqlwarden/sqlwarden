@@ -1,4 +1,6 @@
 import { createRouter as createTanStackRouter, type RouterHistory } from '@tanstack/react-router'
+import { editionRegistry } from '@edition'
+import { validateEditionRegistry } from '#/edition/types'
 import { routeTree } from './routeTree.gen'
 
 interface RouterOptions {
@@ -6,6 +8,9 @@ interface RouterOptions {
 }
 
 export function getRouter(options: RouterOptions = {}) {
+  // Validation eagerly resolves the build-selected registry. Initial
+  // registries are empty; later consumers compose their typed contributions.
+  validateEditionRegistry(editionRegistry)
   const router = createTanStackRouter({
     routeTree,
     history: options.history,

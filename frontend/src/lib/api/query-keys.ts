@@ -48,6 +48,7 @@ export const queryKeys = {
     [...queryKeys.instanceOrganizationsScope(), query ?? {}] as const,
   instanceSettings: () => ['instance-settings'] as const,
   instanceConfiguration: () => ['instance-configuration'] as const,
+  editionCapabilities: () => ['edition-capabilities'] as const,
   orgEffectivePermissions: (
     slug: string,
     resourceType: ResourceType,
