@@ -394,3 +394,13 @@ func TestLoadKeepsMainConfigurationKeys(t *testing.T) {
 		t.Fatalf("ProcessKinds = %v, want [all]", got)
 	}
 }
+
+func TestLoadExposesPositionalArguments(t *testing.T) {
+	loaded, err := Load([]string{"--http-port", "7000", "migrate"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(loaded.Args) != 1 || loaded.Args[0] != "migrate" {
+		t.Fatalf("Args = %v, want [migrate]", loaded.Args)
+	}
+}

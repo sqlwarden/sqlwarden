@@ -7,6 +7,7 @@ import (
 	"os"
 	"os/signal"
 	"runtime/debug"
+	"strings"
 	"syscall"
 
 	"github.com/sqlwarden/internal/app"
@@ -26,25 +27,67 @@ func bootstrapLogger() *slog.Logger {
 	return slog.New(slog.NewJSONHandler(os.Stdout, &slog.HandlerOptions{Level: slog.LevelInfo}))
 }
 
-func parseCommand(args []string) (app.Command, []string) {
-	if len(args) == 0 {
-		return app.CommandServe, args
-	}
-	switch args[0] {
+var subcommands = []string{"serve", config.MigrateCommand, "rotate-keys"}
+
+func commandByName(name string) (app.Command, bool) {
+	switch name {
 	case "serve":
-		return app.CommandServe, args[1:]
+		return app.CommandServe, true
 	case config.MigrateCommand:
-		return app.CommandMigrate, args[1:]
+		return app.CommandMigrate, true
 	case "rotate-keys":
-		return app.CommandRotateKeys, args[1:]
-	default:
-		return app.CommandServe, args
+		return app.CommandRotateKeys, true
 	}
+	return app.CommandServe, false
+}
+
+func unknownSubcommandError(name string) error {
+	return fmt.Errorf("unknown subcommand %q; valid subcommands are %s", name, strings.Join(subcommands, ", "))
+}
+
+// parseCommand splits a leading subcommand from the flags. Arguments that
+// start with "-" belong to the default serve command, and so does an empty
+// argument list. Any other first argument must be a known subcommand.
+func parseCommand(args []string) (command app.Command, rest []string, explicit bool, err error) {
+	if len(args) == 0 || strings.HasPrefix(args[0], "-") {
+		return app.CommandServe, args, false, nil
+	}
+	command, ok := commandByName(args[0])
+	if !ok {
+		return app.CommandServe, nil, false, unknownSubcommandError(args[0])
+	}
+	return command, args[1:], true, nil
+}
+
+// resolveCommand accepts one subcommand placed after the flags, such as
+// "--config x.yaml migrate", when no subcommand led the argument list.
+func resolveCommand(command app.Command, explicit bool, positional []string) (app.Command, error) {
+	if len(positional) == 0 {
+		return command, nil
+	}
+	if explicit {
+		return command, fmt.Errorf("unexpected argument %q after the subcommand", positional[0])
+	}
+	trailing, ok := commandByName(positional[0])
+	if !ok {
+		return command, unknownSubcommandError(positional[0])
+	}
+	if len(positional) > 1 {
+		return command, fmt.Errorf("unexpected argument %q after subcommand %q", positional[1], positional[0])
+	}
+	return trailing, nil
 }
 
 func run(args []string) error {
-	command, rest := parseCommand(args)
+	command, rest, explicit, err := parseCommand(args)
+	if err != nil {
+		return err
+	}
 	loaded, err := config.Load(rest)
+	if err != nil {
+		return err
+	}
+	command, err = resolveCommand(command, explicit, loaded.Args)
 	if err != nil {
 		return err
 	}

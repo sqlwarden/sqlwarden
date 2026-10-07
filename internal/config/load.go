@@ -36,6 +36,8 @@ const secretFileEnvSuffix = "_FILE"
 type Loaded struct {
 	Config      Config
 	ShowVersion bool
+	// Args holds the positional arguments left over after flag parsing.
+	Args []string
 	// Diagnostic reports the effective value and origin of every key with
 	// sensitive values redacted.
 	Diagnostic Diagnostic
@@ -129,6 +131,7 @@ func Load(args []string) (Loaded, error) {
 	return Loaded{
 		Config:      cfg,
 		ShowVersion: *showVersion,
+		Args:        flagSet.Args(),
 		Diagnostic:  newDiagnostic(v, sources),
 	}, nil
 }
