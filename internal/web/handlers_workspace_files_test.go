@@ -29,14 +29,6 @@ func orgSharedFilesURL(orgSlug string, workspaceID int64) string {
 	return fmt.Sprintf("/api/v1/orgs/%s/workspaces/%d/files/shared", orgSlug, workspaceID)
 }
 
-func mePrivateFilesURL(workspaceID int64) string {
-	return fmt.Sprintf("/api/v1/me/workspaces/%d/files/private", workspaceID)
-}
-
-func meSharedFilesURL(workspaceID int64) string {
-	return fmt.Sprintf("/api/v1/me/workspaces/%d/files/shared", workspaceID)
-}
-
 func workspaceStorageSegment(ws database.Workspace) string {
 	return strconv.FormatInt(ws.ID, 10) + "-" + orgs.Slugify(ws.Name)
 }
@@ -270,9 +262,6 @@ func TestWorkspaceFileSearchEndpoints(t *testing.T) {
 	_, memberTok := addWorkspaceMemberForFiles(t, app, org, ws, uniqueEmail(t, "search-member"))
 	denied := send(t, newAuthRequest(t, http.MethodGet, orgSharedFilesURL(org.Slug, ws.ID)+"/search?q=orders", nil, memberTok), app.routes())
 	assert.Equal(t, denied.StatusCode, http.StatusForbidden)
-
-	meDenied := send(t, newAuthRequest(t, http.MethodGet, mePrivateFilesURL(ws.ID)+"/search?q=orders", nil, tok), app.routes())
-	assert.Equal(t, meDenied.StatusCode, http.StatusNotFound)
 }
 
 func TestWorkspacePrivateFilesAllowTeamMembersAndRejectCrossWorkspaceRoute(t *testing.T) {
@@ -312,41 +301,6 @@ func TestWorkspacePrivateFilesAllowTeamMembersAndRejectCrossWorkspaceRoute(t *te
 	assert.Equal(t, crossWorkspace.StatusCode, http.StatusNotFound)
 	crossOrg := send(t, newAuthRequest(t, http.MethodGet, orgPrivateFilesURL(otherOrg.Slug, wsOtherOrg.ID)+"/"+strconv.FormatInt(file.ID, 10), nil, ownerTok), app.routes())
 	assert.Equal(t, crossOrg.StatusCode, http.StatusNotFound)
-}
-
-func TestPersonalWorkspaceFilesArePrivateAndFeatureGated(t *testing.T) {
-	app := newTestApp(t)
-	account, tok := seedAccountWithToken(t, app, uniqueEmail(t, "personal-files"), "Personal Files")
-	_, otherTok := seedAccountWithToken(t, app, uniqueEmail(t, "personal-files-other"), "Other")
-	ws, err := app.db.InsertWorkspace(context.Background(), nil, "space", account.ID, "Experiments", "")
-	if err != nil {
-		t.Fatal(err)
-	}
-
-	shared := send(t, newAuthRequest(t, http.MethodPost, meSharedFilesURL(ws.ID), map[string]any{"name": "bad.sql"}, tok), app.routes())
-	assert.Equal(t, shared.StatusCode, http.StatusNotFound)
-
-	create := send(t, newAuthRequest(t, http.MethodPost, mePrivateFilesURL(ws.ID), map[string]any{"name": "mine.sql"}, tok), app.routes())
-	assert.Equal(t, create.StatusCode, http.StatusCreated)
-	file := decodeWorkspaceFile(t, create)
-	assert.Equal(t, file.Visibility, database.FileVisibilityPrivate)
-	assert.Equal(t, *file.OwnerAccountID, account.ID)
-	duplicate := send(t, newAuthRequest(t, http.MethodPost, mePrivateFilesURL(ws.ID)+"/"+strconv.FormatInt(file.ID, 10)+"/duplicate", map[string]any{"name": "mine copy.sql"}, tok), app.routes())
-	assert.Equal(t, duplicate.StatusCode, http.StatusCreated)
-
-	rename := send(t, newAuthRequest(t, http.MethodPatch, mePrivateFilesURL(ws.ID)+"/"+strconv.FormatInt(file.ID, 10), map[string]any{"name": "renamed.sql"}, tok), app.routes())
-	assert.Equal(t, rename.StatusCode, http.StatusOK)
-	remove := send(t, newAuthRequest(t, http.MethodDelete, mePrivateFilesURL(ws.ID)+"/"+strconv.FormatInt(file.ID, 10), nil, tok), app.routes())
-	assert.Equal(t, remove.StatusCode, http.StatusNoContent)
-	deleted := send(t, newAuthRequest(t, http.MethodGet, mePrivateFilesURL(ws.ID)+"/"+strconv.FormatInt(file.ID, 10), nil, tok), app.routes())
-	assert.Equal(t, deleted.StatusCode, http.StatusNotFound)
-
-	crossOwner := send(t, newAuthRequest(t, http.MethodGet, mePrivateFilesURL(ws.ID), nil, otherTok), app.routes())
-	assert.Equal(t, crossOwner.StatusCode, http.StatusNotFound)
-
-	updateInstanceSettingsForTest(t, app, func(settings *database.InstanceSettings) { settings.PersonalSpacesEnabled = false })
-	gated := send(t, newAuthRequest(t, http.MethodGet, mePrivateFilesURL(ws.ID), nil, tok), app.routes())
-	assert.Equal(t, gated.StatusCode, http.StatusNotFound)
 }
 
 func TestWorkspaceFileContentRejectsStaleExternalWrite(t *testing.T) {

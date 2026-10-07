@@ -452,7 +452,6 @@ func TestGetInstanceSettings(t *testing.T) {
 	assert.Equal(t, res.StatusCode, http.StatusOK)
 	assert.Equal(t, res.BodyFields["instance_name"], "SQLWarden")
 	assert.Equal(t, res.BodyFields["base_url"], any(app.config.BootstrapBaseURL))
-	assert.Equal(t, res.BodyFields["personal_spaces_enabled"], true)
 }
 
 func TestUpdateInstanceSettings(t *testing.T) {
@@ -461,18 +460,16 @@ func TestUpdateInstanceSettings(t *testing.T) {
 	adminTok := setupInstance(t, app, "admin@example.com", "Admin", "securepass99")
 
 	res := send(t, newAuthRequest(t, http.MethodPatch, "/api/v1/instance/settings", map[string]any{
-		"instance_name":           "Acme SQLWarden",
-		"instance_description":    "Shared database access for Acme.",
-		"support_email":           "support@example.com",
-		"base_url":                "https://sqlwarden.example.com",
-		"personal_spaces_enabled": false,
+		"instance_name":        "Acme SQLWarden",
+		"instance_description": "Shared database access for Acme.",
+		"support_email":        "support@example.com",
+		"base_url":             "https://sqlwarden.example.com",
 	}, adminTok), app.routes())
 	assert.Equal(t, res.StatusCode, http.StatusOK)
 	assert.Equal(t, res.BodyFields["instance_name"], "Acme SQLWarden")
 	assert.Equal(t, res.BodyFields["instance_description"], "Shared database access for Acme.")
 	assert.Equal(t, res.BodyFields["support_email"], "support@example.com")
 	assert.Equal(t, res.BodyFields["base_url"], "https://sqlwarden.example.com")
-	assert.Equal(t, res.BodyFields["personal_spaces_enabled"], false)
 
 	getRes := send(t, newAuthRequest(t, http.MethodGet, "/api/v1/instance/settings", nil, adminTok), app.routes())
 	assert.Equal(t, getRes.StatusCode, http.StatusOK)
@@ -480,7 +477,6 @@ func TestUpdateInstanceSettings(t *testing.T) {
 	assert.Equal(t, getRes.BodyFields["instance_description"], "Shared database access for Acme.")
 	assert.Equal(t, getRes.BodyFields["support_email"], "support@example.com")
 	assert.Equal(t, getRes.BodyFields["base_url"], "https://sqlwarden.example.com")
-	assert.Equal(t, getRes.BodyFields["personal_spaces_enabled"], false)
 }
 
 func TestUpdateInstanceSettingsSQLiteLocalTargets(t *testing.T) {
@@ -603,7 +599,7 @@ func TestUpdateInstanceSettingsRequiresInstanceAdmin(t *testing.T) {
 	tok := extractAccessToken(t, loginRes)
 
 	res := send(t, newAuthRequest(t, http.MethodPatch, "/api/v1/instance/settings",
-		map[string]any{"personal_spaces_enabled": false}, tok), app.routes())
+		map[string]any{"instance_name": "Denied"}, tok), app.routes())
 	assert.Equal(t, res.StatusCode, http.StatusForbidden)
 }
 

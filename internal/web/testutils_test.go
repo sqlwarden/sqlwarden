@@ -76,10 +76,6 @@ func newTestApplication(t *testing.T) *application {
 	settings.BaseURL = app.config.BootstrapBaseURL
 	settings.FileRevisionsEnabled = false
 	settings.SQLiteInMemoryTargetsEnabled = true
-	// Personal spaces default off in production; most /me tests exercise
-	// that surface directly, so enable it here and let the handful of
-	// gating tests opt back out via updateInstanceSettingsForTest.
-	settings.PersonalSpacesEnabled = true
 	settings, err = app.db.UpsertInstanceSettings(context.Background(), settings)
 	if err != nil {
 		t.Fatal(err)
@@ -520,10 +516,6 @@ func orgEnvConnectionsURL(orgSlug string, workspaceID, environmentID int64) stri
 
 func orgConnectionURL(orgSlug string, workspaceID, environmentID int64, connectionID string) string {
 	return fmt.Sprintf("/api/v1/orgs/%s/workspaces/%d/environments/%d/connections/%s", orgSlug, workspaceID, environmentID, connectionID)
-}
-
-func meEnvConnectionsURL(workspaceID, environmentID string) string {
-	return fmt.Sprintf("/api/v1/me/workspaces/%s/environments/%s/connections", workspaceID, environmentID)
 }
 
 func newOrgJSONRequest(t *testing.T, method, path, body, token string) *http.Request {

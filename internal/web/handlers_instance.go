@@ -343,7 +343,6 @@ func (app *application) updateInstanceSettings(w http.ResponseWriter, r *http.Re
 		InstanceDescription           *string               `json:"instance_description"`
 		SupportEmail                  *string               `json:"support_email"`
 		BaseURL                       *string               `json:"base_url"`
-		PersonalSpacesEnabled         *bool                 `json:"personal_spaces_enabled"`
 		JWTAccessTokenTTLSeconds      *int64                `json:"jwt_access_token_ttl_seconds"`
 		SessionsRevocationEnabled     *bool                 `json:"sessions_revocation_enabled"`
 		QueryMaxResultRows            *int                  `json:"query_max_result_rows"`
@@ -386,7 +385,6 @@ func (app *application) updateInstanceSettings(w http.ResponseWriter, r *http.Re
 		input.InstanceDescription != nil ||
 		input.SupportEmail != nil ||
 		input.BaseURL != nil ||
-		input.PersonalSpacesEnabled != nil ||
 		input.JWTAccessTokenTTLSeconds != nil ||
 		input.SessionsRevocationEnabled != nil ||
 		input.QueryMaxResultRows != nil ||
@@ -519,9 +517,6 @@ func (app *application) updateInstanceSettings(w http.ResponseWriter, r *http.Re
 	if input.BaseURL != nil {
 		nextSettings.BaseURL = *input.BaseURL
 	}
-	if input.PersonalSpacesEnabled != nil {
-		nextSettings.PersonalSpacesEnabled = *input.PersonalSpacesEnabled
-	}
 	if input.JWTAccessTokenTTLSeconds != nil {
 		nextSettings.JWTAccessTokenTTLSeconds = *input.JWTAccessTokenTTLSeconds
 	}
@@ -634,14 +629,7 @@ func (app *application) updateInstanceSettings(w http.ResponseWriter, r *http.Re
 	}
 	app.queueRuntimeOperations(settings)
 
-	if currentSettings.PersonalSpacesEnabled && !settings.PersonalSpacesEnabled {
-		if err := app.dropPersonalSpaceSessions(r.Context()); err != nil {
-			app.serverError(w, r, err)
-			return
-		}
-	}
-
-	app.logInfo(r, "instance settings updated", slog.Bool("personal_spaces_enabled", settings.PersonalSpacesEnabled))
+	app.logInfo(r, "instance settings updated")
 	err = response.JSON(w, http.StatusOK, app.instanceSettingsResponse(settings))
 	if err != nil {
 		app.serverError(w, r, err)
