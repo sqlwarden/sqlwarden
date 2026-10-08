@@ -11,10 +11,9 @@ import (
 // directly under parent for the connection form's default-scope pickers. When
 // the driver flags a current scope, discovery descends one level into it so a
 // single test connection yields both database and schema choices.
-func DiscoverScopes(ctx context.Context, inspector metadata.SchemaInspector, parent metadata.ScopePath) (metadata.ScopeDiscovery, error) {
-	tree := inspector.Tree()
+func DiscoverScopes(ctx context.Context, tree metadata.Tree, live Live, parent metadata.ScopePath) (metadata.ScopeDiscovery, error) {
 	discovery := metadata.ScopeDiscovery{Current: parent, Scopes: []metadata.ScopePath{}}
-	scopes, current, err := scopeChildren(ctx, tree, inspector, parent)
+	scopes, current, err := scopeChildren(ctx, tree, live, parent)
 	if err != nil {
 		return metadata.ScopeDiscovery{}, err
 	}
@@ -23,7 +22,7 @@ func DiscoverScopes(ctx context.Context, inspector metadata.SchemaInspector, par
 		return discovery, nil
 	}
 	discovery.Current = current
-	nested, nestedCurrent, err := scopeChildren(ctx, tree, inspector, current)
+	nested, nestedCurrent, err := scopeChildren(ctx, tree, live, current)
 	if err != nil {
 		return metadata.ScopeDiscovery{}, err
 	}
@@ -34,7 +33,7 @@ func DiscoverScopes(ctx context.Context, inspector metadata.SchemaInspector, par
 	return discovery, nil
 }
 
-func scopeChildren(ctx context.Context, tree metadata.Tree, inspector metadata.SchemaInspector, parent metadata.ScopePath) ([]metadata.ScopePath, metadata.ScopePath, error) {
+func scopeChildren(ctx context.Context, tree metadata.Tree, live Live, parent metadata.ScopePath) ([]metadata.ScopePath, metadata.ScopePath, error) {
 	node, ok := tree.Node(tree.NodeKindOf(parent))
 	if !ok {
 		return nil, "", fmt.Errorf("discover scopes: unknown node kind for %q", parent)
@@ -48,14 +47,11 @@ func scopeChildren(ctx context.Context, tree metadata.Tree, inspector metadata.S
 	if len(folders) == 0 {
 		return nil, "", nil
 	}
-	q, err := inspector.Querier(ctx, tree.DatabaseOf(parent))
-	if err != nil {
-		return nil, "", err
-	}
+	database := tree.DatabaseOf(parent)
 	var scopes []metadata.ScopePath
 	var current metadata.ScopePath
 	for _, folder := range folders {
-		children, err := folder.List(ctx, q, []metadata.ScopePath{parent})
+		children, err := live.LoadChildren(ctx, database, folder, []metadata.ScopePath{parent})
 		if err != nil {
 			return nil, "", err
 		}

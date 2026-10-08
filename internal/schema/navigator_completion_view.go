@@ -16,7 +16,7 @@ import (
 // presentation as the tree, and subtrees of items it hides are pruned. The
 // live session, when present, supplies the current scope that fills in the
 // levels the configured default scope leaves open.
-func (n *Navigator) CompletionView(ctx context.Context, conn Connection, tree metadata.Tree, live metadata.SchemaInspector) (*metadata.CompletionView, error) {
+func (n *Navigator) CompletionView(ctx context.Context, conn Connection, tree metadata.Tree, live Live) (*metadata.CompletionView, error) {
 	read := n.decoded.begin(conn.ID)
 	listings, err := n.cachedWithin(ctx, conn, "", read)
 	if err != nil {
@@ -83,9 +83,8 @@ type sessionScopeMemo struct {
 // connection. A failed lookup yields no fill-in and is memoized like a
 // result, so a session that cannot report its scope is not asked on every
 // keystroke.
-func (n *Navigator) sessionScope(ctx context.Context, connID int64, live metadata.SchemaInspector) metadata.ScopePath {
-	scoper, ok := live.(metadata.SessionScoper)
-	if !ok {
+func (n *Navigator) sessionScope(ctx context.Context, connID int64, live Live) metadata.ScopePath {
+	if live == nil {
 		return ""
 	}
 	now := n.now()
@@ -97,7 +96,7 @@ func (n *Navigator) sessionScope(ctx context.Context, connID int64, live metadat
 	}
 	lookupCtx, cancel := context.WithTimeout(ctx, sessionScopeTimeout)
 	defer cancel()
-	scope, err := scoper.CurrentScope(lookupCtx)
+	scope, err := live.CurrentScope(lookupCtx)
 	if err != nil {
 		if ctx.Err() != nil {
 			return ""

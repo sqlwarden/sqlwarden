@@ -17,15 +17,16 @@ import (
 	"github.com/sqlwarden/internal/audit"
 	completionapp "github.com/sqlwarden/internal/completion"
 	"github.com/sqlwarden/internal/config"
-	"github.com/sqlwarden/internal/connection"
 	"github.com/sqlwarden/internal/database"
 	"github.com/sqlwarden/internal/encrypt"
+	"github.com/sqlwarden/internal/execution"
 	"github.com/sqlwarden/internal/filestore"
 	"github.com/sqlwarden/internal/identity"
 	"github.com/sqlwarden/internal/jobs"
 	"github.com/sqlwarden/internal/orgs"
 	"github.com/sqlwarden/internal/platform/clientip"
 	schemaapp "github.com/sqlwarden/internal/schema"
+	"github.com/sqlwarden/internal/settings"
 	"github.com/sqlwarden/internal/smtp"
 )
 
@@ -45,15 +46,17 @@ type FileStores interface {
 // Dependencies are the already-constructed resources the web application
 // uses. The caller owns their lifecycle: closing the App never closes them.
 type Dependencies struct {
-	Config                config.Config
-	DB                    *database.DB
-	Logger                *slog.Logger
-	Keyring               *encrypt.Keyring
-	Enforcer              *access.Enforcer
-	Policy                access.PolicyEvaluator
-	FileStores            FileStores
-	Sessions              *connection.Manager
-	Cursors               *connection.QueryCursorManager
+	Config     config.Config
+	DB         *database.DB
+	Logger     *slog.Logger
+	Keyring    *encrypt.Keyring
+	Enforcer   *access.Enforcer
+	Policy     access.PolicyEvaluator
+	FileStores FileStores
+	Runtime    execution.Runtime
+	// TargetPolicy vets target drivers and DSNs before they are stored or
+	// probed. It defaults to the instance settings policy over DB.
+	TargetPolicy          execution.TargetPolicy
 	Audit                 audit.Writer
 	Edition               EditionCapabilities
 	EditionHandler        http.Handler
@@ -77,8 +80,9 @@ type application struct {
 	mailer                *smtp.Mailer
 	mailerMu              sync.RWMutex
 	wg                    sync.WaitGroup
-	connManager           *connection.Manager
-	queryCursors          *connection.QueryCursorManager
+	runtime               execution.Runtime
+	revoker               execution.Revoker
+	targetPolicy          execution.TargetPolicy
 	schemaNavigator       *schemaapp.Navigator
 	completionService     *completionapp.Service
 	keyring               *encrypt.Keyring
@@ -133,8 +137,9 @@ func NewApplication(deps Dependencies) (*App, error) {
 		db:                    deps.DB,
 		logger:                logger,
 		mailer:                smtp.NewDisabledMailer(""),
-		connManager:           deps.Sessions,
-		queryCursors:          deps.Cursors,
+		runtime:               deps.Runtime,
+		revoker:               deps.Runtime,
+		targetPolicy:          deps.TargetPolicy,
 		schemaNavigator:       schemaapp.NewNavigator(deps.DB, logger),
 		completionService:     completionapp.NewService(),
 		keyring:               deps.Keyring,
@@ -155,6 +160,9 @@ func NewApplication(deps Dependencies) (*App, error) {
 	}
 	if app.policy == nil {
 		app.policy = app.enforcer
+	}
+	if app.targetPolicy == nil {
+		app.targetPolicy = settings.NewTargetPolicy(deps.DB)
 	}
 	app.clientIPs = clientip.New(deps.TrustedProxies)
 	app.authChain = app.newAuthChain()
@@ -215,11 +223,18 @@ func (app *application) Close() {
 	app.logger.Info("background workers stopped", "duration_ms", time.Since(startedAt).Milliseconds())
 }
 
+// connectionEmptyNotifier is implemented by runtimes that can report when the
+// last live session of a connection closes.
+type connectionEmptyNotifier interface {
+	OnConnectionEmpty(func(connectionID string))
+}
+
 func (app *application) configureConnectionCacheInvalidation() {
-	if app.connManager == nil {
+	notifier, ok := app.runtime.(connectionEmptyNotifier)
+	if !ok {
 		return
 	}
-	app.connManager.SetOnConnectionEmpty(func(connectionID string) {
+	notifier.OnConnectionEmpty(func(connectionID string) {
 		if app.schemaNavigator != nil {
 			if id, err := strconv.ParseInt(connectionID, 10, 64); err == nil {
 				app.schemaNavigator.ForgetConnection(id)
@@ -266,6 +281,14 @@ func (app *application) defaultJobRegistry() *jobs.Registry {
 		Handler: jobs.HandlerFunc(func(ctx context.Context, runtime jobs.Runtime) (any, error) {
 			return app.handleExportJob(ctx, runtime)
 		}),
+	})
+	registry.Register(jobs.Definition{
+		Type:        jobs.TypeSessionRevoke,
+		MaxAttempts: sessionRevokeMaxAttempts,
+		Backoff: func(attempt int) time.Duration {
+			return time.Duration(attempt) * 15 * time.Second
+		},
+		Handler: jobs.HandlerFunc(app.handleSessionRevoke),
 	})
 	return registry
 }

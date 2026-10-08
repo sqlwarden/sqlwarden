@@ -1,104 +1,25 @@
 package web
 
 import (
-	"encoding/json"
-	"fmt"
 	"log/slog"
 	"net/http"
 	"strings"
 
-	"github.com/sqlwarden/internal/connection"
-	"github.com/sqlwarden/internal/database"
+	"github.com/sqlwarden/internal/credentials"
 	"github.com/sqlwarden/internal/engine"
 	"github.com/sqlwarden/internal/response"
 	"github.com/sqlwarden/internal/validator"
 	"golang.org/x/crypto/ssh"
 )
 
-// sshConfigDocument is the decrypted plaintext shape of
-// connections.ssh_config_encrypted. Password, private key, and passphrase never
-// appear in a Connection JSON response or the reveal endpoint.
-type sshConfigDocument struct {
-	Enabled             bool   `json:"enabled"`
-	Host                string `json:"host,omitempty"`
-	Port                int    `json:"port,omitempty"`
-	User                string `json:"user,omitempty"`
-	AuthMethod          string `json:"auth_method,omitempty"`
-	Password            string `json:"password,omitempty"`
-	PrivateKeyPEM       string `json:"private_key_pem,omitempty"`
-	Passphrase          string `json:"passphrase,omitempty"`
-	KnownHostsEntry     string `json:"known_hosts_entry,omitempty"`
-	Fingerprint         string `json:"fingerprint,omitempty"`
-	InsecureSkipHostKey bool   `json:"insecure_skip_host_key,omitempty"`
-
-	// Clear* are request-only signals on update: drop the matching stored secret
-	// instead of inheriting it when the incoming field is blank. updateConnection
-	// zeroes them before sealing, so they never reach the encrypted document.
-	ClearPassword   bool `json:"clear_password,omitempty"`
-	ClearPrivateKey bool `json:"clear_private_key,omitempty"`
-	ClearPassphrase bool `json:"clear_passphrase,omitempty"`
-}
-
-func (d sshConfigDocument) isEmpty() bool {
-	return !d.Enabled &&
-		d.Host == "" && d.User == "" && d.AuthMethod == "" &&
-		d.Password == "" && d.PrivateKeyPEM == "" && d.Passphrase == "" &&
-		d.KnownHostsEntry == "" && d.Fingerprint == "" && !d.InsecureSkipHostKey
-}
-
-func (d sshConfigDocument) toConnection() *connection.SSHConfig {
-	if !d.Enabled {
-		return nil
-	}
-	return &connection.SSHConfig{
-		Host:                d.Host,
-		Port:                d.Port,
-		User:                d.User,
-		AuthMethod:          connection.SSHAuthMethod(d.AuthMethod),
-		Password:            d.Password,
-		PrivateKeyPEM:       d.PrivateKeyPEM,
-		Passphrase:          d.Passphrase,
-		KnownHostsEntry:     d.KnownHostsEntry,
-		Fingerprint:         d.Fingerprint,
-		InsecureSkipHostKey: d.InsecureSkipHostKey,
-	}
-}
+type sshConfigDocument = credentials.SSHDocument
 
 func (app *application) sealSSHDocument(d sshConfigDocument) (string, error) {
-	if d.isEmpty() {
-		return "", nil
-	}
-	raw, err := json.Marshal(d)
-	if err != nil {
-		return "", fmt.Errorf("seal ssh config: marshal: %w", err)
-	}
-	return app.keyring.Encrypt(string(raw))
+	return credentials.EncodeSSHDocument(app.keyring, d)
 }
 
 func (app *application) decodeSSHDocument(encrypted string) (sshConfigDocument, bool, error) {
-	if strings.TrimSpace(encrypted) == "" {
-		return sshConfigDocument{}, false, nil
-	}
-	plain, err := app.keyring.Decrypt(encrypted)
-	if err != nil {
-		return sshConfigDocument{}, false, fmt.Errorf("decode ssh config: decrypt: %w", err)
-	}
-	var d sshConfigDocument
-	if err := json.Unmarshal([]byte(plain), &d); err != nil {
-		return sshConfigDocument{}, false, fmt.Errorf("decode ssh config: unmarshal: %w", err)
-	}
-	return d, true, nil
-}
-
-func (app *application) openSSHConfig(conn database.Connection) (*connection.SSHConfig, error) {
-	doc, has, err := app.decodeSSHDocument(conn.SSHConfigEncrypted)
-	if err != nil {
-		return nil, err
-	}
-	if !has {
-		return nil, nil
-	}
-	return doc.toConnection(), nil
+	return credentials.DecodeSSHDocument(app.keyring, encrypted)
 }
 
 // sshTunnelSupported reports whether the engine can route its transport through
@@ -113,7 +34,7 @@ func sshTunnelSupported(driver string) bool {
 }
 
 func (app *application) validateSSHDocument(driver string, doc sshConfigDocument, v *validator.Validator) {
-	if doc.isEmpty() || !doc.Enabled {
+	if doc.IsEmpty() || !doc.Enabled {
 		return
 	}
 	if !sshTunnelSupported(driver) {
@@ -129,12 +50,12 @@ func (app *application) validateSSHDocument(driver string, doc sshConfigDocument
 	if doc.Port != 0 && (doc.Port < 1 || doc.Port > 65535) {
 		v.AddFieldError("ssh", "SSH port must be between 1 and 65535.")
 	}
-	switch connection.SSHAuthMethod(doc.AuthMethod) {
-	case connection.SSHAuthPassword:
+	switch credentials.SSHAuthMethod(doc.AuthMethod) {
+	case credentials.SSHAuthPassword:
 		if doc.Password == "" {
 			v.AddFieldError("ssh", "SSH password is required for password authentication.")
 		}
-	case connection.SSHAuthPrivateKey:
+	case credentials.SSHAuthPrivateKey:
 		if doc.PrivateKeyPEM == "" {
 			v.AddFieldError("ssh", "SSH private key is required for key authentication.")
 		} else if _, err := parseSSHPrivateKey(doc.PrivateKeyPEM, doc.Passphrase); err != nil {

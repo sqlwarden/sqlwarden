@@ -11,6 +11,7 @@ import (
 	"testing"
 
 	"github.com/sqlwarden/internal/assert"
+	"github.com/sqlwarden/internal/connection"
 	"github.com/sqlwarden/internal/database"
 	"github.com/sqlwarden/internal/engine"
 	"github.com/sqlwarden/internal/engine/completer"
@@ -196,6 +197,7 @@ type navFixture struct {
 	conn  database.Connection
 	acct  database.Account
 	orgID int64
+	wsID  int64
 }
 
 func newNavFixture(t *testing.T, driver string) navFixture {
@@ -205,12 +207,18 @@ func newNavFixture(t *testing.T, driver string) navFixture {
 	ws := seedWorkspaceForAccount(t, app, org, owner, "Nav WS", "")
 	envID := defaultEnvironmentID(t, app, ws.ID)
 	conn := seedConnection(t, app, ws.ID, &envID, org.ID, driver, "Nav Conn", "open")
-	return navFixture{app: app, tok: tok, conn: conn, acct: owner, orgID: org.ID, base: orgConnectionURL(org.Slug, ws.ID, envID, strconv.FormatInt(conn.ID, 10))}
+	return navFixture{app: app, tok: tok, conn: conn, acct: owner, orgID: org.ID, wsID: ws.ID, base: orgConnectionURL(org.Slug, ws.ID, envID, strconv.FormatInt(conn.ID, 10))}
 }
 
 func (f navFixture) attach(t *testing.T, drv engine.Driver) string {
 	t.Helper()
-	sess, _, err := f.app.connManager.GetOrCreate(strconv.FormatInt(f.acct.ID, 10), strconv.FormatInt(f.conn.ID, 10),
+	return f.attachTo(t, f.conn.ID, drv)
+}
+
+func (f navFixture) attachTo(t *testing.T, connID int64, drv engine.Driver) string {
+	t.Helper()
+	meta := connection.SessionMetadata{OrgID: strconv.FormatInt(f.orgID, 10), WorkspaceID: strconv.FormatInt(f.wsID, 10)}
+	sess, _, err := testConnManager(t, f.app).GetOrCreateWithMetadata(strconv.FormatInt(f.acct.ID, 10), strconv.FormatInt(connID, 10), meta,
 		func() (engine.Driver, func(), error) { return drv, nil, nil })
 	if err != nil {
 		t.Fatal(err)
@@ -274,7 +282,7 @@ func TestSchemaNodesWithoutSessionNeverConnects(t *testing.T) {
 
 	expired := f.nodes(t, "expired-session-id", "", "databases")
 	assert.Equal(t, expired.StatusCode, http.StatusGone)
-	assert.Equal(t, f.app.connManager.CountForConnection(strconv.FormatInt(f.conn.ID, 10)), 0)
+	assert.Equal(t, testConnManager(t, f.app).CountForConnection(strconv.FormatInt(f.conn.ID, 10)), 0)
 }
 
 func TestSchemaNodesLiveThenMemoryThenStore(t *testing.T) {
@@ -304,7 +312,7 @@ func TestSchemaNodesEphemeralForgetsOnLastSessionClose(t *testing.T) {
 	disableSchemaSnapshots(t, f.app, f.conn.ID)
 	sessionID := f.attach(t, newNavTestDriver())
 	assert.Equal(t, f.nodes(t, sessionID, "", "databases").StatusCode, http.StatusOK)
-	f.app.connManager.Remove(sessionID)
+	testConnManager(t, f.app).Remove(sessionID)
 	assert.Equal(t, f.nodes(t, "", "", "databases").StatusCode, http.StatusConflict)
 }
 
@@ -368,13 +376,9 @@ func TestSchemaRefreshRelistsCachedSubtree(t *testing.T) {
 func TestSchemaNodesRejectsSessionForAnotherConnection(t *testing.T) {
 	t.Parallel()
 	f := newNavFixture(t, navTestEngine)
-	other, _, err := f.app.connManager.GetOrCreate(strconv.FormatInt(f.acct.ID, 10), strconv.FormatInt(f.conn.ID+1_000_000, 10),
-		func() (engine.Driver, func(), error) { return newNavTestDriver(), nil, nil })
-	if err != nil {
-		t.Fatal(err)
-	}
-	res := f.nodes(t, other.ID, "", "databases")
-	assert.Equal(t, res.StatusCode, http.StatusForbidden)
+	other := f.attachTo(t, f.conn.ID+1_000_000, newNavTestDriver())
+	res := f.nodes(t, other, "", "databases")
+	assert.Equal(t, res.StatusCode, http.StatusGone)
 }
 
 func (*navTestDriver) InspectRelationshipsInScope(_ context.Context, scope metadata.ScopePath) (*metadata.RelationshipGraph, error) {
@@ -537,7 +541,7 @@ func TestSchemaReadPathsNeverOpenTargetConnections(t *testing.T) {
 			t.Fatalf("%s %s: status %d body %s", read.method, read.suffix, res.StatusCode, res.BodyBytes)
 		}
 	}
-	assert.Equal(t, f.app.connManager.CountForConnection(strconv.FormatInt(f.conn.ID, 10)), 0)
+	assert.Equal(t, testConnManager(t, f.app).CountForConnection(strconv.FormatInt(f.conn.ID, 10)), 0)
 }
 
 func TestCompleteConnectionSQLFetchesUnexpandedRelations(t *testing.T) {

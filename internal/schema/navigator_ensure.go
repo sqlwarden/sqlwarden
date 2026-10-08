@@ -31,7 +31,7 @@ type EnsureReport struct {
 // live session. It returns when every load finished or ctx ended; loads
 // already started keep running detached and still populate the cache. Load
 // failures are logged and counted, never returned.
-func (n *Navigator) EnsureForCompletion(ctx context.Context, conn Connection, tree metadata.Tree, live metadata.SchemaInspector, demands []metadata.Demand) EnsureReport {
+func (n *Navigator) EnsureForCompletion(ctx context.Context, conn Connection, tree metadata.Tree, live Live, demands []metadata.Demand) EnsureReport {
 	var report EnsureReport
 	if live == nil {
 		return report

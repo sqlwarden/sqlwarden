@@ -305,7 +305,7 @@ func (app *application) removeTeamMember(w http.ResponseWriter, r *http.Request)
 		return
 	}
 	for _, workspaceID := range workspaceIDs {
-		app.connManager.RemoveForWorkspaceAccount(strconv.FormatInt(workspaceID, 10), strconv.FormatInt(accountID, 10))
+		app.revokeSessions(r, sessionRevokeInput{Kind: sessionRevokeWorkspaceAccount, WorkspaceID: strconv.FormatInt(workspaceID, 10), AccountID: strconv.FormatInt(accountID, 10)})
 	}
 
 	app.enforcer.InvalidatePrincipals(org.ID, accountID)

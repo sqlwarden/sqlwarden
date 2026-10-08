@@ -6,9 +6,10 @@ import (
 	"testing"
 
 	"github.com/sqlwarden/internal/database"
+	"github.com/sqlwarden/internal/settings"
 )
 
-func TestValidateTargetConnectionSQLiteFilePolicy(t *testing.T) {
+func TestTargetPolicySQLiteFilePolicy(t *testing.T) {
 	t.Parallel()
 
 	tests := []struct {
@@ -34,7 +35,7 @@ func TestValidateTargetConnectionSQLiteFilePolicy(t *testing.T) {
 			driverName: "sqlite",
 			dsn:        "/tmp/customer.db",
 			wantErr:    true,
-			wantErrIs:  errSQLiteTargetDisabled,
+			wantErrIs:  settings.ErrSQLiteFileTargetDisabled,
 		},
 		{
 			name: "in-memory sqlite targets allowed when file targets are disabled",
@@ -66,7 +67,7 @@ func TestValidateTargetConnectionSQLiteFilePolicy(t *testing.T) {
 			driverName: "sqlite",
 			dsn:        ":memory:",
 			wantErr:    true,
-			wantErrIs:  errSQLiteInMemoryTargetDisabled,
+			wantErrIs:  settings.ErrSQLiteInMemoryTargetDisabled,
 		},
 		{
 			name: "disabled instance rejects shared in-memory sqlite targets",
@@ -78,7 +79,7 @@ func TestValidateTargetConnectionSQLiteFilePolicy(t *testing.T) {
 			driverName: "sqlite",
 			dsn:        "file::memory:?cache=shared",
 			wantErr:    true,
-			wantErrIs:  errSQLiteInMemoryTargetDisabled,
+			wantErrIs:  settings.ErrSQLiteInMemoryTargetDisabled,
 		},
 		{
 			name: "file targets still allowed when in-memory targets are disabled",
@@ -100,6 +101,7 @@ func TestValidateTargetConnectionSQLiteFilePolicy(t *testing.T) {
 			driverName: "db2",
 			dsn:        "example",
 			wantErr:    true,
+			wantErrIs:  settings.ErrUnsupportedDriver,
 		},
 	}
 
@@ -111,18 +113,18 @@ func TestValidateTargetConnectionSQLiteFilePolicy(t *testing.T) {
 				tt.configure(t, app)
 			}
 
-			err := app.validateTargetConnection(context.Background(), tt.driverName, tt.dsn)
+			err := app.targetPolicy.Check(context.Background(), tt.driverName, tt.dsn)
 			if !tt.wantErr {
 				if err != nil {
-					t.Fatalf("validateTargetConnection returned error: %v", err)
+					t.Fatalf("target policy returned error: %v", err)
 				}
 				return
 			}
 			if err == nil {
-				t.Fatal("validateTargetConnection returned nil error")
+				t.Fatal("target policy returned nil error")
 			}
 			if tt.wantErrIs != nil && !errors.Is(err, tt.wantErrIs) {
-				t.Fatalf("validateTargetConnection error = %v, want %v", err, tt.wantErrIs)
+				t.Fatalf("target policy error = %v, want %v", err, tt.wantErrIs)
 			}
 		})
 	}

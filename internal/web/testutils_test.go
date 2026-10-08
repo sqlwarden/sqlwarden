@@ -12,6 +12,7 @@ import (
 	"os"
 	"strconv"
 	"strings"
+	"sync"
 	"sync/atomic"
 	"testing"
 	"time"
@@ -19,11 +20,14 @@ import (
 	"github.com/sqlwarden/internal/audit"
 	"github.com/sqlwarden/internal/config"
 	"github.com/sqlwarden/internal/connection"
+	"github.com/sqlwarden/internal/credentials"
 	"github.com/sqlwarden/internal/database"
 	"github.com/sqlwarden/internal/encrypt"
+	"github.com/sqlwarden/internal/execution"
 	"github.com/sqlwarden/internal/identity"
 	"github.com/sqlwarden/internal/orgs"
 	"github.com/sqlwarden/internal/platform/clientip"
+	"github.com/sqlwarden/internal/settings"
 	"github.com/sqlwarden/internal/smtp"
 	"github.com/sqlwarden/internal/token"
 
@@ -88,8 +92,6 @@ func newTestApplication(t *testing.T) *application {
 	}
 	app.initialSettings = settings
 	app.mailer = smtp.NewMockMailer("test@example.com")
-	app.queryCursors = connection.NewQueryCursorManager(30 * time.Minute)
-	t.Cleanup(func() { app.queryCursors.Close() })
 	keyring, err := encrypt.NewKeyring("test-encryption-key-32bytes!!!!!")
 	if err != nil {
 		t.Fatal(err)
@@ -99,8 +101,61 @@ func newTestApplication(t *testing.T) *application {
 	if err != nil {
 		t.Fatal(err)
 	}
+	installTestRuntime(t, app)
 
 	return app
+}
+
+type testRuntimeBackends struct {
+	manager *connection.Manager
+	cursors *connection.QueryCursorManager
+}
+
+// testRuntimes maps each test application to the session and cursor managers
+// its runtime runs on, so tests can seed sessions over fake drivers.
+var testRuntimes sync.Map
+
+func installTestRuntime(t *testing.T, app *application) {
+	t.Helper()
+	backends := testRuntimeBackends{
+		manager: connection.New(30 * time.Minute),
+		cursors: connection.NewQueryCursorManager(30 * time.Minute),
+	}
+	policy := settings.NewTargetPolicy(app.db)
+	runtime := execution.NewLocal(execution.LocalConfig{
+		Credentials: credentials.NewLegacyDSNProvider(app.db, app.keyring),
+		Policy:      policy,
+		Logger:      app.logger,
+		Manager:     backends.manager,
+		Cursors:     backends.cursors,
+	})
+	app.runtime = runtime
+	app.revoker = runtime
+	app.targetPolicy = policy
+	testRuntimes.Store(app, backends)
+	t.Cleanup(func() {
+		runtime.Shutdown()
+		testRuntimes.Delete(app)
+	})
+}
+
+func testBackends(t *testing.T, app *application) testRuntimeBackends {
+	t.Helper()
+	backends, ok := testRuntimes.Load(app)
+	if !ok {
+		t.Fatal("test application has no runtime installed")
+	}
+	return backends.(testRuntimeBackends)
+}
+
+func testConnManager(t *testing.T, app *application) *connection.Manager {
+	t.Helper()
+	return testBackends(t, app).manager
+}
+
+func testQueryCursorManager(t *testing.T, app *application) *connection.QueryCursorManager {
+	t.Helper()
+	return testBackends(t, app).cursors
 }
 
 func updateInstanceSettingsForTest(t *testing.T, app *application, mutate func(*database.InstanceSettings)) {

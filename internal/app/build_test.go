@@ -112,7 +112,7 @@ func TestBuildClosesDatabaseWhenWebConstructionFails(t *testing.T) {
 			closed = append(closed, entry.Resource)
 		}
 	}
-	if want := []string{"cursors", "sessions", "database"}; !slices.Equal(closed, want) {
+	if want := []string{"execution", "database"}; !slices.Equal(closed, want) {
 		t.Fatalf("closed resources = %v, want %v", closed, want)
 	}
 }
@@ -139,7 +139,7 @@ func TestBuildAcquiresResourcesInDependencyOrder(t *testing.T) {
 		t.Fatal(err)
 	}
 	t.Cleanup(func() { _ = built.Close(context.Background()) })
-	want := []string{"database", "sessions", "cursors", "web"}
+	want := []string{"database", "execution", "web"}
 	if got := built.ResourceOrder(); !slices.Equal(got, want) {
 		t.Fatalf("ResourceOrder() = %v, want %v", got, want)
 	}

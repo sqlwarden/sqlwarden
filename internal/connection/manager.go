@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"math/rand"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/oklog/ulid/v2"
@@ -65,10 +66,12 @@ type Session struct {
 	ConnectionID      string
 	OrgID             string
 	WorkspaceID       string
-	Conn              engine.Driver // open connection
-	teardown          func()        // released after Conn.Close(); nil when nothing to tear down
-	tunnelHealth      func() *bool  // SSH tunnel health probe; nil when the session has no tunnel
-	mu                sync.Mutex    // serializes Query/Execute on this session
+	Driver            string                       // registered driver name the session was opened with
+	private           bool                         // not reachable through the (account, connection) pool key
+	Conn              engine.Driver                // open connection
+	teardown          func()                       // released after Conn.Close(); nil when nothing to tear down
+	tunnelHealth      atomic.Pointer[func() *bool] // SSH tunnel health probe; unset when the session has no tunnel; lock-free so listing never waits on a running statement
+	mu                sync.Mutex                   // serializes Query/Execute on this session
 	cursors           map[string]*QueryCursorHandle
 	lastUsed          time.Time
 	txMode            TxMode
@@ -85,6 +88,7 @@ type QueryCursorHandle struct {
 type SessionMetadata struct {
 	OrgID       string
 	WorkspaceID string
+	Driver      string
 }
 
 // runInTransaction lazily begins a transaction on the first statement after
@@ -426,16 +430,6 @@ func (s *Session) CloseCursor(cursorID string) error {
 	return handle.Close()
 }
 
-func (s *Session) CloseAllCursors() {
-	s.mu.Lock()
-	handles := s.takeCursorsLocked()
-	s.mu.Unlock()
-
-	for _, handle := range handles {
-		_ = handle.Close()
-	}
-}
-
 // takeCursorsLocked removes every tracked cursor from the session and returns
 // the handles. Must be called with s.mu held.
 func (s *Session) takeCursorsLocked() []*QueryCursorHandle {
@@ -520,10 +514,16 @@ func (m *Manager) GetOrCreateWithMetadata(accountID, connID string, metadata Ses
 	key := fmt.Sprintf("%s:%s", accountID, connID)
 	if sess, ok := m.byKey[key]; ok {
 		sess.lastUsed = time.Now()
-		if metadata.OrgID != "" {
+		// Identity fields are only back-filled, never rewritten, so readers
+		// holding the session after the manager lock is released never race a
+		// writer.
+		if sess.Driver == "" && metadata.Driver != "" {
+			sess.Driver = metadata.Driver
+		}
+		if sess.OrgID == "" && metadata.OrgID != "" {
 			sess.OrgID = metadata.OrgID
 		}
-		if metadata.WorkspaceID != "" {
+		if sess.WorkspaceID == "" && metadata.WorkspaceID != "" {
 			sess.WorkspaceID = metadata.WorkspaceID
 		}
 		return sess, false, nil
@@ -534,22 +534,50 @@ func (m *Manager) GetOrCreateWithMetadata(accountID, connID string, metadata Ses
 		return nil, false, err
 	}
 
-	sess := &Session{
+	sess := newSession(accountID, connID, metadata, d, teardown)
+	m.byKey[key] = sess
+	m.byID[sess.ID] = sess
+
+	return sess, true, nil
+}
+
+// CreatePrivate opens a session that is never shared: it is not stored under
+// the (accountID, connID) pool key, so it cannot be returned by, or evict, a
+// pooled session for the same pair. It is reachable only by its ID.
+func (m *Manager) CreatePrivate(accountID, connID string, metadata SessionMetadata, open func() (engine.Driver, func(), error)) (*Session, error) {
+	d, teardown, err := open()
+	if err != nil {
+		return nil, err
+	}
+	sess := newSession(accountID, connID, metadata, d, teardown)
+	sess.private = true
+	m.mu.Lock()
+	m.byID[sess.ID] = sess
+	m.mu.Unlock()
+	return sess, nil
+}
+
+func newSession(accountID, connID string, metadata SessionMetadata, d engine.Driver, teardown func()) *Session {
+	return &Session{
 		ID:           newULID(),
 		AccountID:    accountID,
 		ConnectionID: connID,
 		OrgID:        metadata.OrgID,
 		WorkspaceID:  metadata.WorkspaceID,
+		Driver:       metadata.Driver,
 		Conn:         d,
 		teardown:     teardown,
 		lastUsed:     time.Now(),
 		txMode:       TxModeAuto,
 	}
+}
 
-	m.byKey[key] = sess
-	m.byID[sess.ID] = sess
-
-	return sess, true, nil
+// unlinkLocked removes sess from both indexes. Must be called with m.mu held.
+func (m *Manager) unlinkLocked(sess *Session) {
+	if !sess.private {
+		delete(m.byKey, sess.AccountID+":"+sess.ConnectionID)
+	}
+	delete(m.byID, sess.ID)
 }
 
 // SessionRef is a lightweight summary of an active session returned by AllForAccount.
@@ -559,6 +587,7 @@ type SessionRef struct {
 	ConnectionID string
 	OrgID        string
 	WorkspaceID  string
+	Driver       string
 	LastUsedAt   time.Time
 	// TunnelHealthy is nil when the session has no SSH tunnel; otherwise it
 	// points to the tunnel's current health.
@@ -569,19 +598,28 @@ type SessionRef struct {
 // fn returns nil when there is no tunnel. Safe to call once, right after the
 // session is created.
 func (s *Session) SetTunnelHealth(fn func() *bool) {
-	s.mu.Lock()
-	s.tunnelHealth = fn
-	s.mu.Unlock()
+	s.tunnelHealth.Store(&fn)
+}
+
+// TunnelHealthy reports the SSH tunnel's health, or nil when the session has
+// no tunnel.
+func (s *Session) TunnelHealthy() *bool {
+	fn := s.tunnelHealth.Load()
+	if fn == nil {
+		return nil
+	}
+	return (*fn)()
 }
 
 // AllForAccount returns a SessionRef for every active session owned by accountID.
+// Private sessions are internal to their opener and are not listed.
 // It does not update lastUsed; use Get to both fetch and refresh a session.
 func (m *Manager) AllForAccount(accountID string) []SessionRef {
 	m.mu.RLock()
 	defer m.mu.RUnlock()
 	var refs []SessionRef
 	for _, sess := range m.byID {
-		if sess.AccountID == accountID {
+		if sess.AccountID == accountID && !sess.private {
 			refs = append(refs, sess.ref())
 		}
 	}
@@ -590,18 +628,14 @@ func (m *Manager) AllForAccount(accountID string) []SessionRef {
 
 // ref builds a SessionRef snapshot, probing tunnel health under s.mu.
 func (s *Session) ref() SessionRef {
-	s.mu.Lock()
-	var tunnelHealthy *bool
-	if s.tunnelHealth != nil {
-		tunnelHealthy = s.tunnelHealth()
-	}
-	s.mu.Unlock()
+	tunnelHealthy := s.TunnelHealthy()
 	return SessionRef{
 		SessionID:     s.ID,
 		AccountID:     s.AccountID,
 		ConnectionID:  s.ConnectionID,
 		OrgID:         s.OrgID,
 		WorkspaceID:   s.WorkspaceID,
+		Driver:        s.Driver,
 		LastUsedAt:    s.lastUsed,
 		TunnelHealthy: tunnelHealthy,
 	}
@@ -613,7 +647,7 @@ func (m *Manager) AllForWorkspace(workspaceID string) []SessionRef {
 	defer m.mu.RUnlock()
 	var refs []SessionRef
 	for _, sess := range m.byID {
-		if sess.WorkspaceID == workspaceID {
+		if sess.WorkspaceID == workspaceID && !sess.private {
 			refs = append(refs, sess.ref())
 		}
 	}
@@ -643,22 +677,22 @@ func (m *Manager) Remove(sessionID string) {
 	}
 
 	sess.close()
-	key := sess.AccountID + ":" + sess.ConnectionID
-	delete(m.byKey, key)
-	delete(m.byID, sessionID)
+	m.unlinkLocked(sess)
 	connectionID := sess.ConnectionID
 	m.mu.Unlock()
 	m.notifyConnectionEmpty(connectionID)
 }
 
-// CountForConnection returns the number of live sessions for the given connection ID.
+// CountForConnection returns the number of live user-visible sessions for the
+// given connection ID. Private sessions are not counted, but are still closed by
+// the Remove* methods.
 func (m *Manager) CountForConnection(connID string) int {
 	m.mu.RLock()
 	defer m.mu.RUnlock()
 
 	count := 0
 	for _, sess := range m.byID {
-		if sess.ConnectionID == connID {
+		if sess.ConnectionID == connID && !sess.private {
 			count++
 		}
 	}
@@ -670,14 +704,12 @@ func (m *Manager) CountForConnection(connID string) int {
 func (m *Manager) RemoveForConnection(connID string) int {
 	m.mu.Lock()
 	removed := 0
-	for id, sess := range m.byID {
+	for _, sess := range m.byID {
 		if sess.ConnectionID != connID {
 			continue
 		}
 		sess.close()
-		key := sess.AccountID + ":" + sess.ConnectionID
-		delete(m.byKey, key)
-		delete(m.byID, id)
+		m.unlinkLocked(sess)
 		removed++
 	}
 	m.mu.Unlock()
@@ -692,14 +724,12 @@ func (m *Manager) RemoveForAccount(accountID string) int {
 	m.mu.Lock()
 	connectionIDs := make(map[string]struct{})
 	removed := 0
-	for id, sess := range m.byID {
+	for _, sess := range m.byID {
 		if sess.AccountID != accountID {
 			continue
 		}
 		sess.close()
-		key := sess.AccountID + ":" + sess.ConnectionID
-		delete(m.byKey, key)
-		delete(m.byID, id)
+		m.unlinkLocked(sess)
 		removed++
 		connectionIDs[sess.ConnectionID] = struct{}{}
 	}
@@ -714,14 +744,12 @@ func (m *Manager) RemoveForWorkspaceAccount(workspaceID, accountID string) int {
 	m.mu.Lock()
 	connectionIDs := make(map[string]struct{})
 	removed := 0
-	for id, sess := range m.byID {
+	for _, sess := range m.byID {
 		if sess.WorkspaceID != workspaceID || sess.AccountID != accountID {
 			continue
 		}
 		sess.close()
-		key := sess.AccountID + ":" + sess.ConnectionID
-		delete(m.byKey, key)
-		delete(m.byID, id)
+		m.unlinkLocked(sess)
 		removed++
 		connectionIDs[sess.ConnectionID] = struct{}{}
 	}
@@ -736,14 +764,12 @@ func (m *Manager) RemoveForOrgAccount(orgID, accountID string) int {
 	m.mu.Lock()
 	connectionIDs := make(map[string]struct{})
 	removed := 0
-	for id, sess := range m.byID {
+	for _, sess := range m.byID {
 		if sess.OrgID != orgID || sess.AccountID != accountID {
 			continue
 		}
 		sess.close()
-		key := sess.AccountID + ":" + sess.ConnectionID
-		delete(m.byKey, key)
-		delete(m.byID, id)
+		m.unlinkLocked(sess)
 		removed++
 		connectionIDs[sess.ConnectionID] = struct{}{}
 	}
@@ -761,11 +787,9 @@ func (m *Manager) Close() {
 
 	m.mu.Lock()
 	connectionIDs := make(map[string]struct{})
-	for id, sess := range m.byID {
+	for _, sess := range m.byID {
 		sess.close()
-		key := sess.AccountID + ":" + sess.ConnectionID
-		delete(m.byKey, key)
-		delete(m.byID, id)
+		m.unlinkLocked(sess)
 		connectionIDs[sess.ConnectionID] = struct{}{}
 	}
 	m.mu.Unlock()
@@ -790,12 +814,10 @@ func (m *Manager) reapIdle() {
 	m.mu.Lock()
 	connectionIDs := make(map[string]struct{})
 	now := time.Now()
-	for id, sess := range m.byID {
+	for _, sess := range m.byID {
 		if now.Sub(sess.lastUsed) > m.idleTimeout {
 			sess.close()
-			key := sess.AccountID + ":" + sess.ConnectionID
-			delete(m.byKey, key)
-			delete(m.byID, id)
+			m.unlinkLocked(sess)
 			connectionIDs[sess.ConnectionID] = struct{}{}
 		}
 	}

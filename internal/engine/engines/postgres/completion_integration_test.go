@@ -9,6 +9,7 @@ import (
 	"github.com/sqlwarden/internal/engine/completer"
 	"github.com/sqlwarden/internal/engine/metadata"
 	"github.com/sqlwarden/internal/schema"
+	"github.com/sqlwarden/internal/schema/schematest"
 )
 
 type completionTestLoader struct {
@@ -19,13 +20,13 @@ type completionTestLoader struct {
 }
 
 func (l completionTestLoader) View(ctx context.Context) (*metadata.CompletionView, error) {
-	return l.nav.CompletionView(ctx, l.conn, l.tree, l.live)
+	return l.nav.CompletionView(ctx, l.conn, l.tree, schematest.Live(l.live))
 }
 
 func (l completionTestLoader) Live() bool { return l.live != nil }
 
 func (l completionTestLoader) Ensure(ctx context.Context, demands []metadata.Demand) completion.LoadReport {
-	return completion.LoadReport(l.nav.EnsureForCompletion(ctx, l.conn, l.tree, l.live, demands))
+	return completion.LoadReport(l.nav.EnsureForCompletion(ctx, l.conn, l.tree, schematest.Live(l.live), demands))
 }
 
 func hasCompletionLabel(result completer.Result, label string) bool {

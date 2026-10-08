@@ -123,7 +123,7 @@ func (n *Navigator) ForgetConnection(connID int64) {
 	n.decoded.forget(connID)
 }
 
-func (n *Navigator) Children(ctx context.Context, conn Connection, tree metadata.Tree, live metadata.SchemaInspector, parent metadata.ScopePath, folderKind string) (Listing, error) {
+func (n *Navigator) Children(ctx context.Context, conn Connection, tree metadata.Tree, live Live, parent metadata.ScopePath, folderKind string) (Listing, error) {
 	folder, ok := tree.Folder(tree.NodeKindOf(parent), folderKind)
 	if !ok {
 		return Listing{}, ErrUnknownFolder
@@ -152,7 +152,7 @@ func flightKeyFor(connID int64, parent metadata.ScopePath, folder string) string
 
 // cachedOrLoad serves the listing from memory, then the store, then a shared
 // live load bounded by timeout. No live load starts once ctx is done.
-func (n *Navigator) cachedOrLoad(ctx context.Context, conn Connection, tree metadata.Tree, live metadata.SchemaInspector, parent metadata.ScopePath, folder metadata.Folder, timeout time.Duration) (Listing, loadOrigin, error) {
+func (n *Navigator) cachedOrLoad(ctx context.Context, conn Connection, tree metadata.Tree, live Live, parent metadata.ScopePath, folder metadata.Folder, timeout time.Duration) (Listing, loadOrigin, error) {
 	key := listingKey{parent: parent, folder: folder.Kind}
 	n.mu.Lock()
 	cached, ok := n.memoryFor(conn.ID).listings[key]
@@ -234,12 +234,8 @@ func (n *Navigator) cachedOrLoad(ctx context.Context, conn Connection, tree meta
 
 // load runs folder's loader once for all parents, which must share database.
 // Every parent gets a listing, empty when the loader returned nothing for it.
-func (n *Navigator) load(ctx context.Context, live metadata.SchemaInspector, database string, folder metadata.Folder, parents []metadata.ScopePath) ([]Listing, error) {
-	q, err := live.Querier(ctx, database)
-	if err != nil {
-		return nil, err
-	}
-	children, err := folder.List(ctx, q, parents)
+func (n *Navigator) load(ctx context.Context, live Live, database string, folder metadata.Folder, parents []metadata.ScopePath) ([]Listing, error) {
+	children, err := live.LoadChildren(ctx, database, folder, parents)
 	if err != nil {
 		return nil, err
 	}

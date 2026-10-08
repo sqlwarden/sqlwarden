@@ -2,6 +2,7 @@ package schema
 
 import (
 	"context"
+	"errors"
 	"sort"
 	"strconv"
 	"sync"
@@ -25,14 +26,15 @@ func tablePathOf(db, schema, table string) metadata.ScopePath {
 	return schemaPathOf(db, schema).Child(seg("table", table))
 }
 
-// fakeCatalog is a SchemaInspector whose loaders read an in-memory catalog
-// and record every call as "folder:parentCount".
+// fakeCatalog is a Live whose folder loaders read an in-memory catalog and
+// record every call as "folder:parentCount".
 type fakeCatalog struct {
 	mu        sync.Mutex
 	children  map[string][]metadata.Child
 	objects   map[metadata.ObjectRef]metadata.Object
 	calls     []string
 	databases []string
+	batches   [][]metadata.ScopePath
 	fail      error
 	// entered and release, when set, make every loader signal entry and
 	// block until release is closed.
@@ -102,12 +104,19 @@ func (c *fakeCatalog) Tree() metadata.Tree {
 	}
 }
 
-func (c *fakeCatalog) Querier(_ context.Context, database string) (metadata.Querier, error) {
+func (c *fakeCatalog) LoadChildren(ctx context.Context, database string, folder metadata.Folder, parents []metadata.ScopePath) (map[metadata.ScopePath][]metadata.Child, error) {
 	c.mu.Lock()
-	defer c.mu.Unlock()
 	c.databases = append(c.databases, database)
-	return nil, nil
+	c.batches = append(c.batches, append([]metadata.ScopePath(nil), parents...))
+	c.mu.Unlock()
+	return folder.List(ctx, nil, parents)
 }
+
+func (c *fakeCatalog) InspectRelationships(context.Context, metadata.ScopePath) (*metadata.RelationshipGraph, error) {
+	return nil, errors.New("fakeCatalog: relationships unsupported")
+}
+
+func (c *fakeCatalog) CurrentScope(context.Context) (metadata.ScopePath, error) { return "", nil }
 
 func (c *fakeCatalog) InspectObjects(_ context.Context, refs []metadata.ObjectRef) ([]metadata.Object, error) {
 	c.mu.Lock()

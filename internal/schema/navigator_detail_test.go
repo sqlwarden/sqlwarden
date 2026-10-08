@@ -10,11 +10,12 @@ import (
 )
 
 type fakeRelationships struct {
+	Live
 	calls int
 	graph *metadata.RelationshipGraph
 }
 
-func (f *fakeRelationships) InspectRelationshipsInScope(_ context.Context, scope metadata.ScopePath) (*metadata.RelationshipGraph, error) {
+func (f *fakeRelationships) InspectRelationships(_ context.Context, scope metadata.ScopePath) (*metadata.RelationshipGraph, error) {
 	f.calls++
 	return &metadata.RelationshipGraph{Scope: scope, Relationships: f.graph.Relationships}, nil
 }

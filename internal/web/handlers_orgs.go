@@ -317,7 +317,7 @@ func (app *application) removeOrgMember(w http.ResponseWriter, r *http.Request) 
 		app.serverError(w, r, err)
 		return
 	}
-	app.connManager.RemoveForOrgAccount(strconv.FormatInt(org.ID, 10), strconv.FormatInt(accountID, 10))
+	app.revokeSessions(r, sessionRevokeInput{Kind: sessionRevokeOrgAccount, OrgID: strconv.FormatInt(org.ID, 10), AccountID: strconv.FormatInt(accountID, 10)})
 
 	app.enforcer.InvalidatePrincipals(org.ID, accountID)
 	app.logInfo(r, "organization member removed", slog.Int64("target_account_id", accountID), slog.Int64("org_id", org.ID), slog.String("org_slug", org.Slug))

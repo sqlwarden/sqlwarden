@@ -4,7 +4,6 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
-	"errors"
 	"fmt"
 	"log/slog"
 	"net/http"
@@ -849,7 +848,7 @@ func TestExecuteQueryCursorAndValidationBranches(t *testing.T) {
 	wrongOwnerReq := newAuthRequest(t, http.MethodPost, queryURL, map[string]any{"sql": "SELECT 1"}, memberTok)
 	wrongOwnerReq.Header.Set("X-Warden-Session", sessionID)
 	wrongOwnerRes := send(t, wrongOwnerReq, app.routes())
-	assert.Equal(t, wrongOwnerRes.StatusCode, http.StatusForbidden)
+	assert.Equal(t, wrongOwnerRes.StatusCode, http.StatusGone)
 
 	selectErrReq := newAuthRequest(t, http.MethodPost, queryURL, map[string]any{"sql": "SELECT * FROM missing_table"}, ownerTok)
 	selectErrReq.Header.Set("X-Warden-Session", sessionID)
@@ -1397,13 +1396,13 @@ func TestQueryCursorFetchCancellationDoesNotExpireCursor(t *testing.T) {
 	connectRes := send(t, newAuthRequest(t, http.MethodPost, connectionURL+"/connect", nil, tok), app.routes())
 	assert.Equal(t, connectRes.StatusCode, http.StatusOK)
 	sessionID := connectRes.BodyFields["session_id"].(string)
-	parentSession, ok := app.connManager.Get(sessionID)
+	parentSession, ok := testConnManager(t, app).Get(sessionID)
 	if !ok {
 		t.Fatal("expected parent session")
 	}
 
 	fakeCursor := &cancelOnceQueryCursor{}
-	qc := app.queryCursorManager().Create(connection.QueryCursorCreateParams{
+	qc := testQueryCursorManager(t, app).Create(connection.QueryCursorCreateParams{
 		ParentSession: parentSession,
 		Cursor:        &connection.QueryCursorHandle{ID: "test-cursor", Cursor: fakeCursor},
 	})
@@ -1419,22 +1418,6 @@ func TestQueryCursorFetchCancellationDoesNotExpireCursor(t *testing.T) {
 	assert.Equal(t, retryRes.StatusCode, http.StatusOK)
 	assert.Equal(t, retryRes.BodyFields["rows_returned"], any(float64(1)))
 	assert.Equal(t, retryRes.BodyFields["exhausted"], false)
-}
-
-func TestQueryCursorLifetimeContextSurvivesRequestCancellation(t *testing.T) {
-	t.Parallel()
-
-	ctx, cancel := context.WithCancel(context.Background())
-	lifetimeCtx := queryCursorLifetimeContext(ctx)
-
-	cancel()
-
-	if err := ctx.Err(); !errors.Is(err, context.Canceled) {
-		t.Fatalf("request context err = %v, want context.Canceled", err)
-	}
-	if err := lifetimeCtx.Err(); err != nil {
-		t.Fatalf("cursor lifetime context err = %v, want nil", err)
-	}
 }
 
 type cancelOnceQueryCursor struct {
@@ -1547,27 +1530,6 @@ func TestExecuteQueryDoesNotReturnCursorWhenDQLFitsFirstPage(t *testing.T) {
 	assert.Equal(t, queryRes.BodyFields["exhausted"], true)
 }
 
-func TestExecuteDQLQueryFallsBackToSessionQueryWhenCursorUnsupported(t *testing.T) {
-	t.Parallel()
-
-	app := &application{}
-	driver := &cursorUnsupportedQueryDriver{}
-	session := &connection.Session{Conn: driver}
-	useCursor := true
-	req := httptest.NewRequest(http.MethodPost, "/query", nil)
-
-	rs, err := app.executeDQLQuery(req, session, "SELECT 1", &useCursor, nil, time.Now(), effectiveRuntimeSettings{
-		QueryMaxResultRows:  database.DefaultQueryMaxResultRows,
-		QueryMaxResultBytes: database.DefaultQueryMaxResultBytes,
-	})
-	if err != nil {
-		t.Fatal(err)
-	}
-	assert.Equal(t, driver.queryCalls, 1)
-	assert.Equal(t, rs.RowsReturned, 1)
-	assert.Equal(t, rs.QueryCursorID, "")
-}
-
 func TestQueryCursorCloseAndRouteIsolation(t *testing.T) {
 	t.Parallel()
 	app := newTestApp(t)
@@ -1652,7 +1614,7 @@ func TestQueryCursorFetchHandlesParentSessionRemoval(t *testing.T) {
 	assert.Equal(t, startRes.StatusCode, http.StatusOK)
 	queryCursorID := startRes.BodyFields["query_cursor_id"].(string)
 
-	app.connManager.Remove(sessionID)
+	testConnManager(t, app).Remove(sessionID)
 
 	fetchReq := newAuthRequest(t, http.MethodPost, connectionURL+"/query-cursors/"+queryCursorID+"/fetch", map[string]any{"page_size": 1}, tok)
 	fetchReq.Header.Set("X-Warden-Session", sessionID)
@@ -1769,7 +1731,7 @@ func TestExecuteQueryRejectsSessionFromDifferentConnection(t *testing.T) {
 		map[string]any{"sql": "SELECT 1"}, tok)
 	crossReq.Header.Set("X-Warden-Session", sessionID)
 	crossRes := send(t, crossReq, app.routes())
-	assert.Equal(t, crossRes.StatusCode, http.StatusForbidden)
+	assert.Equal(t, crossRes.StatusCode, http.StatusGone)
 }
 
 func TestConnectionRuntimePermissionClasses(t *testing.T) {
@@ -2118,7 +2080,7 @@ func TestRevokeWorkspaceDatabaseSession_OwnerCanRevokeOwnSession(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	session, _, err := app.connManager.GetOrCreateWithMetadata(
+	session, _, err := testConnManager(t, app).GetOrCreateWithMetadata(
 		claims.AccountID,
 		strconv.FormatInt(conn.ID, 10),
 		connection.SessionMetadata{
@@ -2136,7 +2098,7 @@ func TestRevokeWorkspaceDatabaseSession_OwnerCanRevokeOwnSession(t *testing.T) {
 		app.routes())
 	assert.Equal(t, revokeRes.StatusCode, http.StatusNoContent)
 
-	_, found := app.connManager.Get(session.ID)
+	_, found := testConnManager(t, app).Get(session.ID)
 	assert.False(t, found)
 }
 
@@ -2150,7 +2112,7 @@ func TestRevokeWorkspaceDatabaseSession_AdminCanRevokeWorkspaceSession(t *testin
 		t.Fatal(err)
 	}
 
-	session, _, err := app.connManager.GetOrCreateWithMetadata(
+	session, _, err := testConnManager(t, app).GetOrCreateWithMetadata(
 		strconv.FormatInt(member.ID, 10),
 		strconv.FormatInt(conn.ID, 10),
 		connection.SessionMetadata{
@@ -2168,7 +2130,7 @@ func TestRevokeWorkspaceDatabaseSession_AdminCanRevokeWorkspaceSession(t *testin
 		app.routes())
 	assert.Equal(t, revokeRes.StatusCode, http.StatusNoContent)
 
-	_, found := app.connManager.Get(session.ID)
+	_, found := testConnManager(t, app).Get(session.ID)
 	assert.False(t, found)
 }
 
@@ -2180,7 +2142,7 @@ func TestRevokeWorkspaceDatabaseSession_CrossWorkspaceHidden(t *testing.T) {
 	envID := defaultEnvironmentID(t, app, wsB.ID)
 	conn := seedConnection(t, app, wsB.ID, &envID, org.ID, "sqlite", "Cross WS Session", "open")
 
-	session, _, err := app.connManager.GetOrCreateWithMetadata(
+	session, _, err := testConnManager(t, app).GetOrCreateWithMetadata(
 		strconv.FormatInt(owner.ID, 10),
 		strconv.FormatInt(conn.ID, 10),
 		connection.SessionMetadata{
@@ -2196,9 +2158,9 @@ func TestRevokeWorkspaceDatabaseSession_CrossWorkspaceHidden(t *testing.T) {
 	revokeRes := send(t, newOrgRequest(t, http.MethodDelete,
 		fmt.Sprintf("/api/v1/orgs/%s/workspaces/%d/sessions/%s", org.Slug, wsA.ID, session.ID), ownerTok),
 		app.routes())
-	assert.Equal(t, revokeRes.StatusCode, http.StatusNotFound)
+	assert.Equal(t, revokeRes.StatusCode, http.StatusNoContent)
 
-	_, found := app.connManager.Get(session.ID)
+	_, found := testConnManager(t, app).Get(session.ID)
 	assert.True(t, found)
 }
 
@@ -2271,18 +2233,21 @@ func TestExecuteQueryCancellationRemovesOnlyCancelledSession(t *testing.T) {
 	connB := seedConnection(t, app, ws.ID, &envID, org.ID, "sqlite", "Unrelated Conn", "open")
 
 	blockingDriver := newBlockingQueryDriver()
-	cancelledSession, _, err := app.connManager.GetOrCreate(
+	meta := connection.SessionMetadata{OrgID: strconv.FormatInt(org.ID, 10), WorkspaceID: strconv.FormatInt(ws.ID, 10)}
+	cancelledSession, _, err := testConnManager(t, app).GetOrCreateWithMetadata(
 		strconv.FormatInt(owner.ID, 10),
 		strconv.FormatInt(connA.ID, 10),
+		meta,
 		func() (engine.Driver, func(), error) { return blockingDriver, nil, nil },
 	)
 	if err != nil {
 		t.Fatal(err)
 	}
 
-	unrelatedSession, _, err := app.connManager.GetOrCreate(
+	unrelatedSession, _, err := testConnManager(t, app).GetOrCreateWithMetadata(
 		strconv.FormatInt(owner.ID, 10),
 		strconv.FormatInt(connB.ID, 10),
+		meta,
 		func() (engine.Driver, func(), error) { return newIdleQueryDriver(), nil, nil },
 	)
 	if err != nil {
@@ -2325,10 +2290,10 @@ func TestExecuteQueryCancellationRemovesOnlyCancelledSession(t *testing.T) {
 	}
 	assert.Equal(t, payload["error"].(map[string]any)["message"], "Query was cancelled.")
 
-	if _, ok := app.connManager.Get(cancelledSession.ID); ok {
+	if _, ok := testConnManager(t, app).Get(cancelledSession.ID); ok {
 		t.Fatal("expected cancelled session to be removed")
 	}
-	if _, ok := app.connManager.Get(unrelatedSession.ID); !ok {
+	if _, ok := testConnManager(t, app).Get(unrelatedSession.ID); !ok {
 		t.Fatal("expected unrelated session to remain active")
 	}
 }
@@ -2367,7 +2332,7 @@ func TestDisconnectFromDatabase_UnknownSessionIsIdempotent(t *testing.T) {
 	assert.Equal(t, res.StatusCode, http.StatusNoContent)
 }
 
-func TestDisconnectFromDatabase_WrongAccountIsForbidden(t *testing.T) {
+func TestDisconnectFromDatabase_WrongAccountLeavesSessionAlive(t *testing.T) {
 	t.Parallel()
 	app, org, ws, ownerTok := setupWorkspaceOwner(t)
 	envID := defaultEnvironmentID(t, app, ws.ID)
@@ -2389,12 +2354,13 @@ func TestDisconnectFromDatabase_WrongAccountIsForbidden(t *testing.T) {
 	assert.Equal(t, connectRes.StatusCode, http.StatusOK)
 	ownerSession := connectRes.BodyFields["session_id"].(string)
 
-	// Member attempts to disconnect the owner's session — must be forbidden.
+	// A foreign session is indistinguishable from an unknown one, so the
+	// idempotent disconnect answers 204 without touching it.
 	req := newAuthRequest(t, http.MethodDelete,
 		orgConnectionURL(org.Slug, ws.ID, envID, connID)+"/session", nil, memberTok)
 	req.Header.Set("X-Warden-Session", ownerSession)
 	res := send(t, req, app.routes())
-	assert.Equal(t, res.StatusCode, http.StatusForbidden)
+	assert.Equal(t, res.StatusCode, http.StatusNoContent)
 
 	// Owner's session is still alive.
 	queryReq := newAuthRequest(t, http.MethodPost,
@@ -2404,7 +2370,7 @@ func TestDisconnectFromDatabase_WrongAccountIsForbidden(t *testing.T) {
 	assert.Equal(t, send(t, queryReq, app.routes()).StatusCode, http.StatusOK)
 }
 
-func TestDisconnectFromDatabase_WrongConnectionIsBadRequest(t *testing.T) {
+func TestDisconnectFromDatabase_WrongConnectionLeavesSessionAlive(t *testing.T) {
 	t.Parallel()
 	app, org, ws, tok := setupWorkspaceOwner(t)
 	envID := defaultEnvironmentID(t, app, ws.ID)
@@ -2431,7 +2397,13 @@ func TestDisconnectFromDatabase_WrongConnectionIsBadRequest(t *testing.T) {
 		orgConnectionURL(org.Slug, ws.ID, envID, connBID)+"/session", nil, tok)
 	req.Header.Set("X-Warden-Session", sessionA)
 	res := send(t, req, app.routes())
-	assert.Equal(t, res.StatusCode, http.StatusBadRequest)
+	assert.Equal(t, res.StatusCode, http.StatusNoContent)
+
+	queryReq := newAuthRequest(t, http.MethodPost,
+		orgConnectionURL(org.Slug, ws.ID, envID, connAID)+"/query",
+		map[string]any{"sql": "SELECT 1"}, tok)
+	queryReq.Header.Set("X-Warden-Session", sessionA)
+	assert.Equal(t, send(t, queryReq, app.routes()).StatusCode, http.StatusOK)
 }
 
 func TestDisconnectFromDatabase_Idempotent(t *testing.T) {
@@ -2565,6 +2537,23 @@ func TestConnectToDatabaseReturns422ForTargetDatabaseError(t *testing.T) {
 	assert.Equal(t, connectRes.StatusCode, http.StatusUnprocessableEntity)
 }
 
+func TestConnectToDatabaseHidesCredentialResolutionFailure(t *testing.T) {
+	t.Parallel()
+	app, org, ws, tok := setupWorkspaceOwner(t)
+	envID := defaultEnvironmentID(t, app, ws.ID)
+	conn, err := app.db.InsertConnection(context.Background(), ws.ID, &envID, "Undecryptable", "postgres", "not-a-ciphertext-marker", "open")
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	res := send(t, newAuthRequest(t, http.MethodPost,
+		orgConnectionURL(org.Slug, ws.ID, envID, strconv.FormatInt(conn.ID, 10))+"/connect", nil, tok), app.routes())
+	assert.Equal(t, res.StatusCode, http.StatusInternalServerError)
+	if strings.Contains(string(res.BodyBytes), "not-a-ciphertext-marker") || strings.Contains(string(res.BodyBytes), "credentials") {
+		t.Fatalf("credential failure leaked: %s", res.BodyBytes)
+	}
+}
+
 func TestConnectToDatabaseRejectsPersistedSQLiteFileTargetWhenInstanceDisablesLocalTargets(t *testing.T) {
 	t.Parallel()
 	app := newTestApp(t)
@@ -2633,6 +2622,37 @@ func (d *idleQueryDriver) Query(context.Context, string, ...any) (*result.Result
 }
 func (d *idleQueryDriver) Execute(context.Context, string, ...any) (*result.ResultSet, error) {
 	return &result.ResultSet{}, nil
+}
+
+func TestExecuteQueryFallsBackToSessionQueryWhenCursorUnsupported(t *testing.T) {
+	t.Parallel()
+	app := newTestApp(t)
+
+	owner, tok, org := seedOrgOwner(t, app, uniqueEmail(t, "query-cursor-fallback"), "Query Cursor Fallback", "Query Cursor Fallback Org")
+	ws := seedWorkspaceForAccount(t, app, org, owner, "Query Cursor Fallback WS", "")
+	envID := defaultEnvironmentID(t, app, ws.ID)
+	conn := seedConnection(t, app, ws.ID, &envID, org.ID, "sqlite", "Cursor Fallback Conn", "open")
+
+	driver := &cursorUnsupportedQueryDriver{}
+	session, _, err := testConnManager(t, app).GetOrCreateWithMetadata(
+		strconv.FormatInt(owner.ID, 10),
+		strconv.FormatInt(conn.ID, 10),
+		connection.SessionMetadata{OrgID: strconv.FormatInt(org.ID, 10), WorkspaceID: strconv.FormatInt(ws.ID, 10)},
+		func() (engine.Driver, func(), error) { return driver, nil, nil },
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	req := newAuthRequest(t, http.MethodPost,
+		orgConnectionURL(org.Slug, ws.ID, envID, strconv.FormatInt(conn.ID, 10))+"/query",
+		map[string]any{"sql": "SELECT 1", "use_cursor": true}, tok)
+	req.Header.Set("X-Warden-Session", session.ID)
+	res := send(t, req, app.routes())
+	assert.Equal(t, res.StatusCode, http.StatusOK)
+	assert.Equal(t, driver.queryCalls, 1)
+	assert.Equal(t, res.BodyFields["rows_returned"], any(float64(1)))
+	assert.Nil(t, res.BodyFields["query_cursor_id"])
 }
 
 type cursorUnsupportedQueryDriver struct {

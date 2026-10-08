@@ -17,7 +17,7 @@ type refreshGroup struct {
 	parents    []metadata.ScopePath
 }
 
-func (n *Navigator) Refresh(ctx context.Context, conn Connection, tree metadata.Tree, live metadata.SchemaInspector, root metadata.ScopePath) ([]Listing, error) {
+func (n *Navigator) Refresh(ctx context.Context, conn Connection, tree metadata.Tree, live Live, root metadata.ScopePath) ([]Listing, error) {
 	if live == nil {
 		return nil, ErrSessionRequired
 	}

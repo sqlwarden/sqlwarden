@@ -76,7 +76,7 @@ func TestBackfillConnectionTLSConfig(t *testing.T) {
 	if err != nil || !has || doc.Mode != "" {
 		t.Fatalf("unspecified conn: mode=%q has=%v err=%v want empty", doc.Mode, has, err)
 	}
-	if eng := doc.toEngine(); eng != nil {
+	if eng := doc.ToEngine(); eng != nil {
 		t.Fatalf("unspecified conn: toEngine=%+v, want nil", eng)
 	}
 

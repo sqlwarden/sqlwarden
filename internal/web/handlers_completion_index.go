@@ -68,7 +68,7 @@ func (app *application) getConnectionCompletionIndex(w http.ResponseWriter, r *h
 	}
 	var view *metadata.CompletionView
 	if tree, ok := app.optionalNavigatorTree(conn); ok {
-		view, err = app.schemaNavigator.CompletionView(r.Context(), navConn, tree, navigatorLive(session))
+		view, err = app.schemaNavigator.CompletionView(r.Context(), navConn, tree, app.navigatorLive(r, session))
 		if err != nil {
 			app.serverError(w, r, err)
 			return

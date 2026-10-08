@@ -43,7 +43,7 @@ func TestChildrenLoadsLiveThenServesMemory(t *testing.T) {
 	}
 }
 
-func TestChildrenRoutesQuerierByDatabase(t *testing.T) {
+func TestChildrenRoutesLoadByDatabase(t *testing.T) {
 	cat := newFakeCatalog()
 	cat.set(dbPath("sales"), "schemas", metadata.Child{Kind: "schema", Name: "public"})
 	n := newTestNavigator(nil)
@@ -51,7 +51,10 @@ func TestChildrenRoutesQuerierByDatabase(t *testing.T) {
 		t.Fatal(err)
 	}
 	if !slices.Equal(cat.databases, []string{"sales"}) {
-		t.Fatalf("querier databases = %v", cat.databases)
+		t.Fatalf("databases = %v", cat.databases)
+	}
+	if len(cat.batches) != 1 || !slices.Equal(cat.batches[0], []metadata.ScopePath{dbPath("sales")}) {
+		t.Fatalf("batches = %v", cat.batches)
 	}
 }
 

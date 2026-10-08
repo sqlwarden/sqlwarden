@@ -172,9 +172,18 @@ func schemaScopeParam(scope metadata.ScopePath) string {
 func openSchemaSession(t *testing.T, app *application, accountID, connectionID int64, drv engine.Driver) *connection.Session {
 	t.Helper()
 	disableSchemaSnapshots(t, app, connectionID)
-	sess, _, err := app.connManager.GetOrCreate(
+	conn, found, err := app.db.GetConnection(context.Background(), connectionID)
+	if err != nil || !found {
+		t.Fatalf("get schema test connection: found=%v err=%v", found, err)
+	}
+	ws, found, err := app.db.GetWorkspace(context.Background(), conn.WorkspaceID)
+	if err != nil || !found || ws.OrgID == nil {
+		t.Fatalf("get schema test workspace: found=%v err=%v", found, err)
+	}
+	sess, _, err := testConnManager(t, app).GetOrCreateWithMetadata(
 		strconv.FormatInt(accountID, 10),
 		strconv.FormatInt(connectionID, 10),
+		connection.SessionMetadata{OrgID: strconv.FormatInt(*ws.OrgID, 10), WorkspaceID: strconv.FormatInt(ws.ID, 10)},
 		func() (engine.Driver, func(), error) { return drv, nil, nil },
 	)
 	if err != nil {

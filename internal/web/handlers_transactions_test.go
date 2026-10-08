@@ -141,7 +141,7 @@ func TestTransactionEndpoints_AfterSessionReaped(t *testing.T) {
 
 	// Simulate the session going away out from under the client — the same
 	// path idle-reap and connection-drop cleanup both take.
-	app.connManager.Remove(sessionID)
+	testConnManager(t, app).Remove(sessionID)
 
 	commitReq := newAuthRequest(t, http.MethodPost, connURL+"/transaction/commit", nil, tok)
 	commitReq.Header.Set("X-Warden-Session", sessionID)
@@ -207,12 +207,12 @@ func TestTransactionEndpoints_RejectSessionFromDifferentConnection(t *testing.T)
 	statusReq := newAuthRequest(t, http.MethodGet, connTwoURL+"/transaction", nil, tok)
 	statusReq.Header.Set("X-Warden-Session", sessionOneID)
 	statusRes := send(t, statusReq, app.routes())
-	assert.Equal(t, statusRes.StatusCode, http.StatusForbidden)
+	assert.Equal(t, statusRes.StatusCode, http.StatusGone)
 
 	commitReq := newAuthRequest(t, http.MethodPost, connTwoURL+"/transaction/commit", nil, tok)
 	commitReq.Header.Set("X-Warden-Session", sessionOneID)
 	commitRes := send(t, commitReq, app.routes())
-	assert.Equal(t, commitRes.StatusCode, http.StatusForbidden)
+	assert.Equal(t, commitRes.StatusCode, http.StatusGone)
 }
 
 func TestGetTransactionStatus_ExpiredSession(t *testing.T) {

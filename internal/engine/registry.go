@@ -4,6 +4,8 @@ import (
 	"fmt"
 	"sort"
 	"sync"
+
+	"github.com/sqlwarden/internal/engine/statement"
 )
 
 // Registration declares one engine: its identity plus a factory that returns a
@@ -49,6 +51,17 @@ func New(name string) (Driver, error) {
 		return nil, fmt.Errorf("%w: %q", ErrUnknownEngine, name)
 	}
 	return reg.New(), nil
+}
+
+// StatementGenerator returns the statement generator of the engine registered
+// under name. Generation is pure, so it uses an unconnected driver instance.
+func StatementGenerator(name string) (statement.Generator, bool) {
+	d, err := New(name)
+	if err != nil {
+		return nil, false
+	}
+	g, ok := d.(statement.Generator)
+	return g, ok
 }
 
 // Describe returns the static capability report for one engine.
