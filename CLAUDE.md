@@ -23,7 +23,8 @@ SQLWarden is a Go API plus embedded React SPA.
 - `internal/web` owns routes, middleware, handlers, and static frontend serving.
 - `internal/database` stores SQLWarden metadata through Bun against SQLite/PostgreSQL.
 - `internal/access` is the custom RBAC enforcer and permissions catalog.
-- `internal/connection` manages live target database sessions.
+- `internal/execution` owns live target database sessions behind the `Runtime` interfaces; handlers never touch `internal/connection`, which is internal to execution (and `internal/credentials`).
+- `internal/credentials` decrypts stored connection secrets, TLS, and SSH settings for execution.
 - `internal/engine` contains external data-system integrations and capabilities; current engines support PostgreSQL, MySQL, and SQLite.
 - `internal/files` and `internal/filestore` implement workspace file metadata/content storage.
 - `frontend/` is the React app using TanStack Router, TanStack Query, Tailwind CSS, shadcn/ui, Base UI, CodeMirror, Zustand, IndexedDB, Y.js, and BroadcastChannel.

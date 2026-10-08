@@ -24,7 +24,7 @@ Implemented today:
 - Custom additive RBAC enforcer in `internal/access`.
 - Effective permissions API and permissions catalog API for frontend capability gating.
 - Workspace direct/team membership model and `workspace_members` policy principal.
-- Live target database sessions through `internal/connection`.
+- Live target database sessions through `internal/execution`.
 - Foreground query cancellation through request cancellation.
 - Target database drivers for PostgreSQL, MySQL, SQLite, SQL Server, Oracle, MariaDB, TiDB, CockroachDB, YugabyteDB, Neon, and Supabase.
 - Server-side SQLite target connection gating through database-backed instance settings for local-file and in-memory sources.
@@ -81,10 +81,12 @@ sqlwarden/
 │       └── lib/
 ├── internal/
 │   ├── access/                       # custom RBAC enforcer and permissions catalog
-│   ├── connection/                   # live target DB sessions
+│   ├── connection/                   # live target DB sessions (internal to execution)
+│   ├── credentials/                  # connection credential, TLS, and SSH providers
 │   ├── database/                     # Bun models and query helpers
 │   ├── engine/                       # external data-system engines and capabilities
 │   ├── encrypt/                      # AES-GCM/keyring helpers
+│   ├── execution/                    # runtime contract for live target DB execution
 │   ├── files/                        # workspace file service
 │   ├── filestore/                    # filesystem object storage
 │   ├── password/                     # bcrypt hashing
@@ -627,7 +629,53 @@ as ER diagrams. Engine adapters map completion candidates into the stable
 by connection and metadata version. This boundary allows more resolution to
 move into Omni later without changing metadata storage or the editor protocol.
 
-`internal/connection` manages live target database sessions:
+### Execution
+
+`internal/execution` owns every live target-database session. Handlers, jobs,
+and the schema navigator reach target databases only through its interfaces and
+never import `internal/connection`. `internal/architecture` enforces that
+`internal/connection` is imported in production code only by `internal/execution`
+and `internal/credentials` (which adapts stored TLS/SSH documents into the
+connection package's inputs).
+
+The contract is a set of narrow interfaces composed into `Runtime`:
+
+- `Sessions`: open, get, list, close.
+- `Queries`: query, fetch, close cursor, execute, cancel, stream.
+- `Transactions`: status, set mode, commit, rollback.
+- `Metadata`: load children, inspect objects/relationships/definitions, current scope.
+- `Capabilities`: session capabilities and DDL application.
+- `Revoker`: count and revoke sessions by connection, workspace account, or org account.
+- `Prober`: connect and ping a target, then run a callback against a short-lived inspector.
+- `TargetPolicy`: vets a driver and DSN before any connection attempt.
+
+`LocalRuntime` is the in-process implementation and the only code that wraps
+`connection.Manager`. `internal/execution/executiontest` holds the shared
+contract suite that any implementation must pass.
+
+Rules every implementation follows:
+
+- Every operation takes a `Scope`, which is never empty. Sessions and cursors owned by another scope and ids that do not exist are indistinguishable to the caller.
+- Operations are keyed by opaque session and cursor ids. Request contexts bound only the single operation, never the lifetime of a session or cursor.
+- Failures map to stable codes: `session_not_found`, `session_lost`, `cursor_lost`, `transaction_lost`, `execution_outcome_unknown`, and `limit_exceeded`. A statement is never retried automatically, because the outcome of a statement that was in flight when the session was lost is unknown.
+- Credentials arrive through the `credentials.Provider` seam, which decrypts stored connection secrets, TLS documents, and SSH tunnel settings. Background exports go through the same path, so they now honor the connection's stored TLS and SSH settings.
+
+Schema access has two modes over the same inspector. `schema.Navigator` is the
+cached, persisted navigator used by interactive routes and applies its cache
+policy. `schema.Live`, built with `execution.NewLive`, reads straight from the
+target through a session with no cache, for callers that need current catalog
+state.
+
+Session revocation runs through `app.revokeSessions` in `internal/web`. It is
+called only after the access change (membership removal, connection deletion,
+and similar) has committed in the database. If revocation fails, the HTTP
+outcome is unchanged and a `session_revoke` job is enqueued with
+`EnqueueSingleton` (keyed by the revoke kind and ids) and up to 5 attempts.
+Retries only help when the jobs worker shares the API process, because sessions
+are process-local; a split API/jobs deployment needs a cross-process runtime
+(SQLW-164).
+
+Live sessions are implemented by `internal/connection`, which works as follows:
 
 - Sessions are keyed by account and connection.
 - Session IDs are passed through `X-Warden-Session`.
