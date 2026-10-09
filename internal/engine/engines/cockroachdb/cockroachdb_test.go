@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"github.com/sqlwarden/internal/engine"
+	"github.com/sqlwarden/internal/engine/connectionspectest"
 	"github.com/sqlwarden/internal/engine/explain"
 	"github.com/sqlwarden/internal/engine/metadata"
 
@@ -18,6 +19,9 @@ import (
 var testDSN string
 
 func TestMain(m *testing.M) {
+	if connectionspectest.OnlyRequested() {
+		os.Exit(m.Run())
+	}
 	ctx := context.Background()
 
 	container, err := tccockroachdb.Run(ctx,

@@ -21,7 +21,7 @@ export interface Organization {
   slug: string
   name: string
   schema_snapshots_enabled?: boolean
-  mask_connection_credentials_on_edit?: boolean
+  allow_connection_secret_reveal?: boolean
   member_count?: number
   team_count?: number
   created_at: string
@@ -180,6 +180,67 @@ export interface Connection {
   show_all_databases: boolean
   created_at: string
   updated_at: string
+}
+
+export const connectionSecretNames = [
+  'password',
+  'ssh_password',
+  'ssh_private_key',
+  'ssh_passphrase',
+  'tls_client_key',
+] as const
+export type ConnectionSecretName = (typeof connectionSecretNames)[number]
+
+/** Describes a stored secret without its value. `source` is `stored` for
+ *  secrets SQLWarden holds and `reference` for secrets managed externally. */
+export interface ConnectionSecretView {
+  set: boolean
+  source?: string
+  revealable: boolean
+}
+
+export type ConnectionSecretViews = Partial<Record<ConnectionSecretName, ConnectionSecretView>>
+
+/** Secret writes: an absent key keeps the stored value, `null` clears it, and
+ *  a string replaces it. */
+export type ConnectionSecretsPayload = Partial<Record<ConnectionSecretName, string | null>>
+
+export type ConnectionParams = Record<string, string>
+
+export interface ConnectionTlsConfig {
+  mode: 'disable' | 'require' | 'verify-ca' | 'verify-full'
+  server_name?: string
+  ca_pem?: string
+  client_cert_pem?: string
+}
+
+export interface ConnectionSshConfig {
+  enabled: boolean
+  host?: string
+  port?: number
+  user?: string
+  auth_method?: 'password' | 'private_key'
+  known_hosts_entry?: string
+  fingerprint?: string
+  insecure_skip_host_key?: boolean
+}
+
+/** A single connection as returned by the detail endpoint. */
+export interface ConnectionDetail extends Connection {
+  params: ConnectionParams
+  tls_config?: ConnectionTlsConfig
+  ssh_config?: ConnectionSshConfig
+  secrets: ConnectionSecretViews
+}
+
+export interface ConnectionFieldSpec {
+  key: string
+  label: string
+  type: 'string' | 'int' | 'bool' | 'enum'
+  required: boolean
+  default?: string
+  secret: boolean
+  options?: string[]
 }
 
 export type QueryHistoryMode = 'backend' | 'local' | 'off'

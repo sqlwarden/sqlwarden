@@ -160,17 +160,28 @@ export function ConnectionDialog({
                         </div>
                       ) : null}
 
-                      <DriverFields
-                        driver={form.currentDriver}
-                        values={form.fields}
-                        errors={form.errors.fields}
-                        disabled={isPending}
-                        onChange={form.changeField}
-                        scopeDiscovery={form.scopeDiscovery}
-                        defaultScope={form.defaultScope}
-                        onDatabaseChange={form.selectDatabase}
-                        onSchemaChange={form.selectSchema}
-                      />
+                      {form.fieldSpec.isError ? (
+                        <p className="col-span-6 text-xs text-destructive">
+                          Connection fields could not be loaded.
+                        </p>
+                      ) : !form.fieldSpec.isSuccess ? (
+                        <p className="col-span-6 text-xs text-muted-foreground">
+                          Loading connection fields…
+                        </p>
+                      ) : (
+                        <DriverFields
+                          fields={form.resolvedFields}
+                          bindSecret={form.bindSecret}
+                          values={form.fields}
+                          errors={form.errors.fields}
+                          disabled={isPending}
+                          onChange={form.changeField}
+                          scopeDiscovery={form.scopeDiscovery}
+                          defaultScope={form.defaultScope}
+                          onDatabaseChange={form.selectDatabase}
+                          onSchemaChange={form.selectSchema}
+                        />
+                      )}
 
                       {form.showAllDatabasesSupported ? (
                         <div className="col-span-6">
@@ -200,6 +211,7 @@ export function ConnectionDialog({
                         spec={form.tlsSpec}
                         value={form.tls}
                         disabled={isPending}
+                        bindSecret={form.bindSecret}
                         onChange={form.changeTls}
                       />
                     </TabsContent>
@@ -210,6 +222,7 @@ export function ConnectionDialog({
                       <ConnectionSshFields
                         value={form.ssh}
                         disabled={isPending}
+                        bindSecret={form.bindSecret}
                         onChange={form.changeSsh}
                       />
                     </TabsContent>

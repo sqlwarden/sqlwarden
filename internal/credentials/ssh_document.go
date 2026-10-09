@@ -26,13 +26,6 @@ type SSHDocument struct {
 	KnownHostsEntry     string `json:"known_hosts_entry,omitempty"`
 	Fingerprint         string `json:"fingerprint,omitempty"`
 	InsecureSkipHostKey bool   `json:"insecure_skip_host_key,omitempty"`
-
-	// Clear* are request-only signals on update: drop the matching stored secret
-	// instead of inheriting it when the incoming field is blank. They are zeroed
-	// before sealing, so they never reach the encrypted document.
-	ClearPassword   bool `json:"clear_password,omitempty"`
-	ClearPrivateKey bool `json:"clear_private_key,omitempty"`
-	ClearPassphrase bool `json:"clear_passphrase,omitempty"`
 }
 
 // IsEmpty reports whether the document carries no SSH configuration at all.

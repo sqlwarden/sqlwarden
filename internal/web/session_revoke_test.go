@@ -10,6 +10,7 @@ import (
 	"log/slog"
 	"net/http"
 	"net/http/httptest"
+	"path/filepath"
 	"strconv"
 	"sync"
 	"testing"
@@ -285,13 +286,13 @@ func TestSessionRevokeHandlersEnqueueRetryOnFailure(t *testing.T) {
 			run: func(t *testing.T, app *application, org database.Organization, ws database.Workspace, tok string, member database.Account) (*http.Response, []sessionRevokeInput) {
 				envID := defaultEnvironmentID(t, app, ws.ID)
 				createRes := send(t, newAuthRequest(t, http.MethodPost, orgEnvConnectionsURL(org.Slug, ws.ID, envID),
-					map[string]any{"name": "Primary", "driver": "sqlite", "dsn": ":memory:"}, tok), app.routes())
+					map[string]any{"name": "Primary", "driver": "sqlite", "params": map[string]any{"path": ":memory:"}}, tok), app.routes())
 				if createRes.StatusCode != http.StatusCreated {
 					t.Fatalf("create connection status = %d", createRes.StatusCode)
 				}
 				connID := fmt.Sprintf("%v", createRes.BodyFields["id"])
 				res := send(t, newAuthRequest(t, http.MethodPatch, orgConnectionURL(org.Slug, ws.ID, envID, connID),
-					map[string]any{"name": "Primary", "dsn": "file::memory:?cache=shared", "access_mode": "open", "force": true}, tok), app.routes())
+					map[string]any{"name": "Primary", "params": map[string]any{"path": filepath.Join(t.TempDir(), "rotated.db")}, "access_mode": "open", "force": true}, tok), app.routes())
 				return res.Response, []sessionRevokeInput{{Kind: sessionRevokeConnection, ConnectionID: connID}}
 			},
 		},

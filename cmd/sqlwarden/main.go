@@ -139,8 +139,9 @@ func rotateKeys(ctx context.Context, built *app.Application, logger *slog.Logger
 		return err
 	}
 	logger.Info("encryption key rotation complete",
-		"connections_scanned", report.ConnectionsScanned,
-		"connections_rotated", report.ConnectionsRotated,
+		"connections_split", report.ConnectionsSplit,
+		"connection_secrets_rotated", report.ConnectionSecretsRotated,
+		"connection_secrets_skipped", report.ConnectionSecretsSkipped,
 		"file_contents_scanned", report.FileContentsScanned,
 		"file_contents_rotated", report.FileContentsRotated,
 	)

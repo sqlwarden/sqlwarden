@@ -12,12 +12,12 @@ import (
 
 func TestSelectProfile(t *testing.T) {
 	for _, name := range []string{config.ProfileServer, config.ProfileDesktop} {
-		p, err := selectProfile(name)
+		p, err := selectProfile(name, nil)
 		if err != nil || p.Name() != name {
 			t.Fatalf("selectProfile(%q) = %v, %v", name, p, err)
 		}
 	}
-	if _, err := selectProfile("single_user"); err == nil {
+	if _, err := selectProfile("single_user", nil); err == nil {
 		t.Fatal("expected error")
 	}
 }

@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"github.com/sqlwarden/internal/engine"
+	"github.com/sqlwarden/internal/engine/connectionspectest"
 	"github.com/sqlwarden/internal/engine/cursor"
 	"github.com/sqlwarden/internal/engine/metadata"
 	"github.com/sqlwarden/pkg/result"
@@ -21,6 +22,9 @@ import (
 var testDSN string
 
 func TestMain(m *testing.M) {
+	if connectionspectest.OnlyRequested() {
+		os.Exit(m.Run())
+	}
 	ctx := context.Background()
 
 	pgContainer, err := tcpostgres.Run(ctx,

@@ -29,7 +29,7 @@ const defaultTimeout = 3 * time.Second
 
 // CoreMigrationVersion is the latest ordered migration shipped by core.
 // Independently-versioned edition streams declare compatibility with it.
-const CoreMigrationVersion uint = 45
+const CoreMigrationVersion uint = 46
 
 type DB struct {
 	logger       *slog.Logger

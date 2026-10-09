@@ -132,6 +132,12 @@ func TestMigrateUpAddsQueryCursorPageSizeAfterVersion29(t *testing.T) {
 	_, err = db.ExecContext(context.Background(), "ALTER TABLE instance_settings RENAME COLUMN base_url TO public_url")
 	assert.Nil(t, err)
 	_, err = db.ExecContext(context.Background(), `
+		DROP TABLE connection_secrets;
+		ALTER TABLE organizations ADD COLUMN mask_connection_credentials_on_edit INTEGER NOT NULL DEFAULT 0;
+		ALTER TABLE organizations DROP COLUMN allow_connection_secret_reveal;
+		ALTER TABLE connections DROP COLUMN params;
+		ALTER TABLE connections DROP COLUMN tls_config;
+		ALTER TABLE connections DROP COLUMN ssh_config;
 		ALTER TABLE instance_settings DROP COLUMN query_history_mode;
 		ALTER TABLE instance_settings DROP COLUMN query_history_retention_count;
 		ALTER TABLE instance_settings DROP COLUMN query_history_retention_count_max;

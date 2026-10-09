@@ -14,6 +14,7 @@ import (
 	"testing"
 
 	"github.com/sqlwarden/internal/config"
+	"github.com/sqlwarden/internal/execution"
 )
 
 func testConfig(t *testing.T) config.Config {
@@ -35,6 +36,27 @@ func TestBuildAllBuildsRuntimeAndHTTP(t *testing.T) {
 	t.Cleanup(func() { _ = built.Close(context.Background()) })
 	if got := built.ProcessKindNames(); !slices.Equal(got, []string{"runtime", "http"}) {
 		t.Fatalf("ProcessKindNames() = %v", got)
+	}
+}
+
+func TestBuildWiresComposedCredentialProviderIntoRuntime(t *testing.T) {
+	resolveCalls := 0
+	built, err := Build(context.Background(), Options{
+		Config: testConfig(t), Logger: discardLogger(), Edition: credentialEdition{resolveCalls: &resolveCalls},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = built.Close(context.Background()) })
+
+	_, err = built.runtime.Open(context.Background(), execution.OpenRequest{Scope: execution.Scope{
+		OrgID: "1", WorkspaceID: "1", AccountID: "1", ConnectionID: "1",
+	}})
+	if err == nil {
+		t.Fatal("runtime opened a missing connection")
+	}
+	if resolveCalls != 1 {
+		t.Fatalf("credential decorator Resolve calls = %d, want 1", resolveCalls)
 	}
 }
 

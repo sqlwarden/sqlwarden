@@ -11,7 +11,9 @@ import {
 } from '#/components/ui/select'
 import { Textarea } from '#/components/ui/textarea'
 import { cn } from '#/lib/utils'
-import { FormField, PasswordInput, StoredSecretRow } from './ConnectionFormFields'
+import { FormField } from './ConnectionFormFields'
+import { SecretField } from './SecretField'
+import type { BindSecret } from './useSecretFields'
 
 export type SshAuthMethod = 'password' | 'private_key'
 
@@ -21,20 +23,9 @@ export interface SshFormState {
   port: string
   user: string
   authMethod: SshAuthMethod
-  password: string
-  privateKeyPem: string
-  passphrase: string
   knownHostsEntry: string
   fingerprint: string
   insecureSkipHostKey: boolean
-  /** Edit mode: a password is already stored server-side. */
-  passwordSet: boolean
-  /** Edit mode: a private key is already stored server-side. */
-  privateKeySet: boolean
-  /** Edit mode: drop the stored password on save. */
-  clearPassword: boolean
-  /** Edit mode: drop the stored private key (and its passphrase) on save. */
-  clearPrivateKey: boolean
 }
 
 export const emptySshState: SshFormState = {
@@ -43,16 +34,9 @@ export const emptySshState: SshFormState = {
   port: '22',
   user: '',
   authMethod: 'password',
-  password: '',
-  privateKeyPem: '',
-  passphrase: '',
   knownHostsEntry: '',
   fingerprint: '',
   insecureSkipHostKey: true,
-  passwordSet: false,
-  privateKeySet: false,
-  clearPassword: false,
-  clearPrivateKey: false,
 }
 
 const AUTH_METHOD_LABELS: Record<SshAuthMethod, string> = {
@@ -63,15 +47,16 @@ const AUTH_METHOD_LABELS: Record<SshAuthMethod, string> = {
 export function ConnectionSshFields({
   value,
   disabled,
+  bindSecret,
   onChange,
 }: {
   value: SshFormState
   disabled?: boolean
+  bindSecret: BindSecret
   onChange: (next: SshFormState) => void
 }): JSX.Element {
   const set = <K extends keyof SshFormState>(key: K, v: SshFormState[K]) =>
     onChange({ ...value, [key]: v })
-  const patch = (next: Partial<SshFormState>) => onChange({ ...value, ...next })
 
   // Fields stay mounted when the tunnel is off so toggling it never discards
   // what the user typed; they are only disabled.
@@ -138,64 +123,32 @@ export function ConnectionSshFields({
 
       {value.authMethod === 'password' ? (
         <FormField label="SSH password" disabled={fieldsDisabled}>
-          <PasswordInput
-            aria-label="SSH password"
-            value={value.password}
-            placeholder={
-              value.clearPassword
-                ? 'Will be removed on save'
-                : value.passwordSet
-                  ? 'Stored — leave blank to keep the existing password'
-                  : undefined
-            }
-            disabled={fieldsDisabled || value.clearPassword}
-            onChange={(next) => set('password', next)}
+          <SecretField
+            binding={bindSecret('ssh_password')}
+            noun="password"
+            label="SSH password"
+            disabled={fieldsDisabled}
           />
-          {value.passwordSet ? (
-            <StoredSecretRow
-              noun="password"
-              cleared={value.clearPassword}
-              disabled={fieldsDisabled}
-              onClear={() => set('clearPassword', true)}
-              onRestore={() => set('clearPassword', false)}
-            />
-          ) : null}
         </FormField>
       ) : (
         <>
           <FormField label="Private key (PEM)" disabled={fieldsDisabled}>
-            <Textarea
-              aria-label="Private key (PEM)"
-              className="min-h-24 font-mono text-xs"
-              spellCheck={false}
-              value={value.privateKeyPem}
-              placeholder={
-                value.clearPrivateKey
-                  ? 'Will be removed on save'
-                  : value.privateKeySet
-                    ? 'Stored — leave blank to keep the existing key'
-                    : '-----BEGIN OPENSSH PRIVATE KEY-----'
-              }
-              disabled={fieldsDisabled || value.clearPrivateKey}
-              onChange={(e) => set('privateKeyPem', e.target.value)}
+            <SecretField
+              binding={bindSecret('ssh_private_key')}
+              noun="key"
+              label="Private key (PEM)"
+              multiline
+              placeholder="-----BEGIN OPENSSH PRIVATE KEY-----"
+              disabled={fieldsDisabled}
             />
-            {value.privateKeySet ? (
-              <StoredSecretRow
-                noun="key"
-                cleared={value.clearPrivateKey}
-                disabled={fieldsDisabled}
-                onClear={() => patch({ clearPrivateKey: true })}
-                onRestore={() => patch({ clearPrivateKey: false })}
-              />
-            ) : null}
           </FormField>
 
           <FormField label="Key passphrase (optional)" disabled={fieldsDisabled}>
-            <PasswordInput
-              aria-label="Key passphrase (optional)"
-              value={value.passphrase}
-              disabled={fieldsDisabled || value.clearPrivateKey}
-              onChange={(next) => set('passphrase', next)}
+            <SecretField
+              binding={bindSecret('ssh_passphrase')}
+              noun="passphrase"
+              label="Key passphrase (optional)"
+              disabled={fieldsDisabled}
             />
           </FormField>
         </>

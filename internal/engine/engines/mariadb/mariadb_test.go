@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"github.com/sqlwarden/internal/engine"
+	"github.com/sqlwarden/internal/engine/connectionspectest"
 	"github.com/sqlwarden/internal/engine/metadata"
 
 	tcmariadb "github.com/testcontainers/testcontainers-go/modules/mariadb"
@@ -17,6 +18,9 @@ import (
 var testDSN string
 
 func TestMain(m *testing.M) {
+	if connectionspectest.OnlyRequested() {
+		os.Exit(m.Run())
+	}
 	ctx := context.Background()
 
 	container, err := tcmariadb.Run(ctx,

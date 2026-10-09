@@ -7,6 +7,7 @@ import type { ListQuery, ObjectRef, ResourceType, ScopePath } from '#/lib/api/ty
 export const queryKeys = {
   setupStatus: () => ['setup-status'] as const,
   engine: (engineID: string) => ['engine', engineID] as const,
+  engineConnectionFields: (driver: string) => ['engine-connection-fields', driver] as const,
   connectionSchemaScope: (
     slug: string,
     workspaceId: string | number,
@@ -188,12 +189,8 @@ export const queryKeys = {
     ['export-job-log', slug, workspaceId, jobId] as const,
   exportJobLatestEvent: (slug: string, workspaceId: string | number, jobId: string) =>
     ['export-job-latest-event', slug, workspaceId, jobId] as const,
-  connectionDsn: (slug: string, workspaceId: string | number, connectionId: string | number) =>
-    ['connection-dsn', slug, workspaceId, connectionId] as const,
-  connectionTls: (slug: string, workspaceId: string | number, connectionId: string | number) =>
-    ['connection-tls', slug, workspaceId, connectionId] as const,
-  connectionSsh: (slug: string, workspaceId: string | number, connectionId: string | number) =>
-    ['connection-ssh', slug, workspaceId, connectionId] as const,
+  connectionDetail: (slug: string, workspaceId: string | number, connectionId: string | number) =>
+    ['connection-detail', slug, workspaceId, connectionId] as const,
   connectionPreviewCount: (
     slug: string,
     workspaceId: string | number,

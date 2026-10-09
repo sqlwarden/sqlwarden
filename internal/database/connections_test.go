@@ -60,7 +60,7 @@ func TestConnectionCRUD(t *testing.T) {
 		t.Fatalf("expected only env-tagged connection ID %d, got %v", connInEnv.ID, ids)
 	}
 
-	err = db.UpdateConnection(context.Background(), conn.ID, "my-db-updated", "new-encrypted-dsn", "restricted")
+	err = db.UpdateConnectionWithScopeAndPolicy(context.Background(), conn.ID, "my-db-updated", "restricted", SchemaSnapshotPolicyInherit, conn.DefaultScope, false, false)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -129,21 +129,9 @@ func TestConnectionDefaultScopeRoundTrips(t *testing.T) {
 		t.Fatalf("default scope = %q, want %q", stored.DefaultScope, initial)
 	}
 
-	// The compatibility update path must not silently erase the selected scope.
-	if err := db.UpdateConnection(ctx, conn.ID, "renamed", "encrypted-2", "restricted"); err != nil {
-		t.Fatal(err)
-	}
-	stored, _, err = db.GetConnection(ctx, conn.ID)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if stored.DefaultScope != initial {
-		t.Fatalf("compatibility update erased scope: got %q", stored.DefaultScope)
-	}
-
 	replacement := metadata.NewScopePath(metadata.ScopeSegment{Kind: "database", Name: "warehouse"})
 	if err := db.UpdateConnectionWithScopeAndPolicy(
-		ctx, conn.ID, "renamed", "encrypted-2", "restricted",
+		ctx, conn.ID, "renamed", "restricted",
 		SchemaSnapshotPolicyInherit, replacement, false, false,
 	); err != nil {
 		t.Fatal(err)
@@ -177,7 +165,7 @@ func TestConnectionShowAllDatabasesRoundTrip(t *testing.T) {
 	if err != nil || !got.ShowAllDatabases {
 		t.Fatalf("after insert: %+v, %v", got, err)
 	}
-	if err := db.UpdateConnectionWithScopeAndPolicy(ctx, conn.ID, "c", "dsn", "open", SchemaSnapshotPolicyInherit, scope, false, false); err != nil {
+	if err := db.UpdateConnectionWithScopeAndPolicy(ctx, conn.ID, "c", "open", SchemaSnapshotPolicyInherit, scope, false, false); err != nil {
 		t.Fatal(err)
 	}
 	got, _, err = db.GetConnection(ctx, conn.ID)
@@ -309,67 +297,5 @@ func TestDeleteConnection_RemovesHierarchyAtomically(t *testing.T) {
 				t.Fatalf("expected connection hierarchy to be deleted, got %d rows", got)
 			}
 		})
-	}
-}
-
-func TestUpdateConnectionTLSConfigRoundTrips(t *testing.T) {
-	db := newTestDB(t)
-	ctx := context.Background()
-
-	org, _ := db.InsertOrg(ctx, "tls-org", "TLS Org")
-	ws, _ := db.InsertWorkspace(ctx, &org.ID, "org", org.ID, "Main", "")
-	conn, err := db.InsertConnection(ctx, ws.ID, nil, "tls-db", "postgres", "dsn", "open")
-	if err != nil {
-		t.Fatal(err)
-	}
-
-	if err := db.UpdateConnectionTLSConfig(ctx, conn.ID, "k2.key.blob"); err != nil {
-		t.Fatal(err)
-	}
-	got, ok, err := db.GetConnection(ctx, conn.ID)
-	if err != nil || !ok {
-		t.Fatalf("get: %v ok=%v", err, ok)
-	}
-	if got.TLSConfigEncrypted != "k2.key.blob" {
-		t.Fatalf("TLSConfigEncrypted=%q", got.TLSConfigEncrypted)
-	}
-
-	if err := db.UpdateConnectionTLSConfig(ctx, conn.ID, ""); err != nil {
-		t.Fatal(err)
-	}
-	got, _, _ = db.GetConnection(ctx, conn.ID)
-	if got.TLSConfigEncrypted != "" {
-		t.Fatalf("after clear TLSConfigEncrypted=%q", got.TLSConfigEncrypted)
-	}
-}
-
-func TestUpdateConnectionSSHConfigRoundTrips(t *testing.T) {
-	db := newTestDB(t)
-	ctx := context.Background()
-
-	org, _ := db.InsertOrg(ctx, "ssh-org", "SSH Org")
-	ws, _ := db.InsertWorkspace(ctx, &org.ID, "org", org.ID, "Main", "")
-	conn, err := db.InsertConnection(ctx, ws.ID, nil, "ssh-db", "postgres", "dsn", "open")
-	if err != nil {
-		t.Fatal(err)
-	}
-
-	if err := db.UpdateConnectionSSHConfig(ctx, conn.ID, "sealed-blob"); err != nil {
-		t.Fatal(err)
-	}
-	got, ok, err := db.GetConnection(ctx, conn.ID)
-	if err != nil || !ok {
-		t.Fatalf("get: %v ok=%v", err, ok)
-	}
-	if got.SSHConfigEncrypted != "sealed-blob" {
-		t.Fatalf("SSHConfigEncrypted=%q", got.SSHConfigEncrypted)
-	}
-
-	if err := db.UpdateConnectionSSHConfig(ctx, conn.ID, ""); err != nil {
-		t.Fatal(err)
-	}
-	got, _, _ = db.GetConnection(ctx, conn.ID)
-	if got.SSHConfigEncrypted != "" {
-		t.Fatalf("after clear SSHConfigEncrypted=%q", got.SSHConfigEncrypted)
 	}
 }

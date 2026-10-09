@@ -256,7 +256,6 @@ function WorkspaceConnectionsPage() {
           orgSlug={orgSlug}
           workspaceId={Number(workspaceId)}
           connection={editingConnection ?? undefined}
-          canRevealDsn={canEditConnection}
         />
       ) : null}
     </div>

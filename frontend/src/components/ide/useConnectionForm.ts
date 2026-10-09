@@ -1,17 +1,25 @@
-import { useEffect, useState } from 'react'
-import { useMutation, useQueryClient } from '@tanstack/react-query'
+import { useEffect, useMemo, useState } from 'react'
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { toast } from 'sonner'
 import { api } from '#/lib/api/client'
 import { errorMessage, isApiError } from '#/lib/api/errors'
+import { engineConnectionFieldsQueryOptions } from '#/lib/api/queries/workspace'
 import { queryKeys } from '#/lib/api/query-keys'
 import type { Environment, ScopePath } from '#/lib/api/types'
-import { defaultFieldValues, driverMap, drivers } from './connection-drivers'
+import { driverMap, drivers } from './connection-drivers'
+import {
+  fieldDefaults,
+  paramsFromValues,
+  requiredFieldErrors,
+  resolveFields,
+} from './connection-drivers/resolveFields'
+import { mapConnectionFieldErrors } from './connectionFormErrors'
 import { emptySshState, type SshFormState } from './ConnectionSshFields'
 import { emptyTlsState, type TlsFormState } from './ConnectionTlsFields'
-import { sshStateToPayload } from './connectionSshPayload'
-import { tlsStateToPayload } from './connectionTlsPayload'
+import { applicableSecrets, sshRequestConfig, tlsRequestConfig } from './connectionConfigPayload'
 import { findFrontendEngine } from './engines/registry'
 import { useEngineNavigatorOptions } from './useEngineNavigatorOptions'
+import { useSecretFields } from './useSecretFields'
 
 export type ConnectionFormStage = 'driver' | 'form'
 export type ScopeDiscovery = {
@@ -51,7 +59,7 @@ export function useConnectionForm({
   const [driverId, setDriverId] = useState(drivers[0].id)
   const [name, setName] = useState('')
   const [environmentId, setEnvironmentId] = useState('')
-  const [fields, setFields] = useState<Record<string, string>>(() => defaultFieldValues(drivers[0]))
+  const [edited, setFields] = useState<Record<string, string>>({})
   const [errors, setErrors] = useState<ConnectionFormErrors>({ fields: {} })
   const [testState, setTestState] = useState<ConnectionTestState>({ status: 'idle' })
   const [scopeDiscovery, setScopeDiscovery] = useState<ScopeDiscovery>()
@@ -60,6 +68,19 @@ export function useConnectionForm({
   const [ssh, setSsh] = useState<SshFormState>(emptySshState)
   const [showSystemSchemas, setShowSystemSchemas] = useState(false)
   const currentDriver = driverMap.get(driverId) ?? drivers[0]
+  const fieldSpec = useQuery({
+    ...engineConnectionFieldsQueryOptions(driverId),
+    enabled: open && stage === 'form',
+  })
+  const resolvedFields = useMemo(
+    () => resolveFields(fieldSpec.data ?? [], currentDriver.fields),
+    [fieldSpec.data, currentDriver],
+  )
+  const fields = useMemo(
+    () => ({ ...fieldDefaults(resolvedFields), ...edited }),
+    [resolvedFields, edited],
+  )
+  const secrets = useSecretFields()
   const tlsSpec = findFrontendEngine(driverId)?.tls
   const sshSupported = findFrontendEngine(driverId)?.sshTunnel ?? false
   const [showAllDatabases, setShowAllDatabases] = useState(false)
@@ -83,7 +104,8 @@ export function useConnectionForm({
     const definition = driverMap.get(nextDriverId)
     if (!definition) return
     if (nextDriverId !== driverId) {
-      setFields(defaultFieldValues(definition))
+      setFields({})
+      secrets.load(undefined)
       setErrors({ fields: {} })
       setTestState({ status: 'idle' })
       setScopeDiscovery(undefined)
@@ -149,7 +171,8 @@ export function useConnectionForm({
           ? String(environments[0].id)
           : '',
     )
-    setFields(defaultFieldValues(drivers[0]))
+    setFields({})
+    secrets.load(undefined)
     setErrors({ fields: {} })
     setTestState({ status: 'idle' })
     setScopeDiscovery(undefined)
@@ -165,19 +188,27 @@ export function useConnectionForm({
     onOpenChange(nextOpen)
   }
 
-  function buildDSN() {
-    return currentDriver.buildDSN(fields)
+  function connectionPayload() {
+    return {
+      driver: driverId,
+      params: paramsFromValues(resolvedFields, fields),
+      ...tlsRequestConfig(tls, { supported: Boolean(tlsSpec), stored: false }),
+      ...sshRequestConfig(ssh, { supported: sshSupported, stored: false }),
+      secrets: applicableSecrets(secrets.payload, {
+        tlsSupported: Boolean(tlsSpec),
+        tls,
+        sshSupported,
+        ssh,
+      }),
+    }
   }
 
   function validate(): boolean {
-    const nextErrors: ConnectionFormErrors = { fields: {} }
+    const nextErrors: ConnectionFormErrors = {
+      fields: requiredFieldErrors(resolvedFields, fields),
+    }
     if (!name.trim()) nextErrors.name = 'Name is required.'
     if (!environmentId) nextErrors.environmentId = 'Environment is required.'
-    for (const field of currentDriver.fields) {
-      if (field.required && !fields[field.key]?.trim()) {
-        nextErrors.fields[field.key] = `${field.label} is required.`
-      }
-    }
     setErrors(nextErrors)
     return (
       !nextErrors.name && !nextErrors.environmentId && Object.keys(nextErrors.fields).length === 0
@@ -192,12 +223,7 @@ export function useConnectionForm({
         error?: string
         scope_discovery?: ScopeDiscovery
         scope_discovery_error?: string
-      }>(`/api/v1/orgs/${orgSlug}/workspaces/${workspaceId}/connections/test`, {
-        driver: driverId,
-        dsn: buildDSN(),
-        tls: tlsStateToPayload(tls),
-        ...(ssh.enabled ? { ssh: sshStateToPayload(ssh) } : {}),
-      }),
+      }>(`/api/v1/orgs/${orgSlug}/workspaces/${workspaceId}/connections/test`, connectionPayload()),
     onMutate: () => setTestState({ status: 'pending' }),
     onSuccess: (data) => {
       if (data.ok && data.scope_discovery) {
@@ -268,16 +294,13 @@ export function useConnectionForm({
   const createConnection = useMutation({
     mutationFn: () =>
       api.post(`/api/v1/orgs/${orgSlug}/workspaces/${workspaceId}/connections`, {
+        ...connectionPayload(),
         name: name.trim(),
-        driver: driverId,
-        dsn: buildDSN(),
         environment_id: Number(environmentId),
         access_mode: 'open',
         default_scope: defaultScope,
         show_system_schemas: showSystemSchemas,
         show_all_databases: effectiveShowAllDatabases,
-        tls: tlsStateToPayload(tls),
-        ssh: sshStateToPayload(ssh),
       }),
     onSuccess: async () => {
       onOpenChange(false)
@@ -289,12 +312,13 @@ export function useConnectionForm({
     },
     onError: (error) => {
       if (isApiError(error) && error.fieldErrors) {
-        const nextErrors: ConnectionFormErrors = { fields: {} }
-        if (error.fieldErrors.name) nextErrors.name = error.fieldErrors.name
-        if (error.fieldErrors.driver || error.fieldErrors.dsn) {
-          nextErrors._form = error.fieldErrors.driver ?? error.fieldErrors.dsn
-        }
-        setErrors(nextErrors)
+        const mapped = mapConnectionFieldErrors(error.fieldErrors)
+        setErrors({
+          name: mapped.name,
+          environmentId: mapped.environmentId,
+          fields: mapped.fields,
+          _form: mapped.form,
+        })
         return
       }
       toast.error(errorMessage(error, 'Failed to create connection'))
@@ -306,9 +330,8 @@ export function useConnectionForm({
     void createConnection.mutateAsync().catch(() => {})
   }
 
-  const requiredFieldsFilled = currentDriver.fields
-    .filter((field) => field.required)
-    .every((field) => fields[field.key]?.trim())
+  const requiredFieldsFilled =
+    fieldSpec.isSuccess && Object.keys(requiredFieldErrors(resolvedFields, fields)).length === 0
   const selectedEnvironmentName =
     environments.find((environment) => String(environment.id) === environmentId)?.name ?? ''
 
@@ -323,6 +346,9 @@ export function useConnectionForm({
     environmentId,
     errors,
     fields,
+    fieldSpec,
+    resolvedFields,
+    bindSecret: secrets.bind,
     handleOpenChange,
     name,
     pickDriver,

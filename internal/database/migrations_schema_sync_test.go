@@ -18,6 +18,12 @@ func TestMigrateUpFromVersion40DropsSchemaSyncJobsAndLazyThreshold(t *testing.T)
 
 	assert.Nil(t, db.MigrateUp())
 	_, err = db.ExecContext(ctx, `
+		DROP TABLE connection_secrets;
+		ALTER TABLE organizations ADD COLUMN mask_connection_credentials_on_edit INTEGER NOT NULL DEFAULT 0;
+		ALTER TABLE organizations DROP COLUMN allow_connection_secret_reveal;
+		ALTER TABLE connections DROP COLUMN params;
+		ALTER TABLE connections DROP COLUMN tls_config;
+		ALTER TABLE connections DROP COLUMN ssh_config;
 		ALTER TABLE instance_settings ADD COLUMN schema_lazy_threshold INTEGER NOT NULL DEFAULT 500;
 		ALTER TABLE instance_settings ADD COLUMN schema_snapshot_freshness_seconds INTEGER NOT NULL DEFAULT 86400;
 		ALTER TABLE organization_runtime_settings ADD COLUMN schema_snapshot_freshness_seconds INTEGER;

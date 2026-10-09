@@ -9,6 +9,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/sqlwarden/internal/execution"
 	"github.com/sqlwarden/internal/web"
 )
 
@@ -20,6 +21,7 @@ var ErrNotStarted = errors.New("application has not started")
 // [Application.Start] or [Application.Run], and always close it.
 type Application struct {
 	web     *web.App
+	runtime *execution.LocalRuntime
 	handler http.Handler
 	kinds   []ProcessKind
 

@@ -6,6 +6,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest'
 import type { Environment } from '#/lib/api/types'
 import { createTestQueryClient } from '#/test/render'
 import { server } from '#/test/server'
+import { connectionFieldsHandler } from '#/test/handlers'
 import { emptySshState } from './ConnectionSshFields'
 import { drivers } from './connection-drivers'
 import { useConnectionForm } from './useConnectionForm'
@@ -53,6 +54,7 @@ describe('useConnectionForm', () => {
     queryClient.clear()
     onOpenChange = vi.fn()
     stubEngine()
+    server.use(connectionFieldsHandler())
   })
 
   function wrapper({ children }: PropsWithChildren) {
@@ -76,11 +78,12 @@ describe('useConnectionForm', () => {
     )
   }
 
-  function fillRequiredFields(result: ReturnType<typeof renderForm>['result']) {
+  async function fillRequiredFields(result: ReturnType<typeof renderForm>['result']) {
+    await waitFor(() => expect(result.current.fieldSpec.isSuccess).toBe(true))
     act(() => {
       result.current.changeName('Warehouse')
-      for (const field of result.current.currentDriver.fields.filter(
-        (candidate) => candidate.required,
+      for (const field of result.current.resolvedFields.filter(
+        (candidate) => candidate.required && !candidate.secret,
       )) {
         result.current.changeField(field.key, field.default ?? `${field.key}-value`)
       }
@@ -101,19 +104,19 @@ describe('useConnectionForm', () => {
     expect(result.current.environmentId).toBe('5')
   })
 
-  it('validates connection name, environment, and every required driver field', () => {
+  it('validates connection name, environment, and every required spec field', async () => {
     const { result } = renderForm({ environments: [] })
     act(() => result.current.pickDriver(drivers[0].id))
+    await waitFor(() => expect(result.current.fieldSpec.isSuccess).toBe(true))
 
     act(() => result.current.submit())
 
     expect(result.current.errors.name).toBe('Name is required.')
     expect(result.current.errors.environmentId).toBe('Environment is required.')
-    for (const field of result.current.currentDriver.fields.filter(
-      (candidate) => candidate.required && !candidate.default,
-    )) {
-      expect(result.current.errors.fields[field.key]).toBe(`${field.label} is required.`)
-    }
+    expect(result.current.errors.fields).toEqual({
+      host: 'Host is required.',
+      username: 'Username is required.',
+    })
   })
 
   it('resets driver fields and connection-test state when the driver changes', async () => {
@@ -133,15 +136,12 @@ describe('useConnectionForm', () => {
     act(() => result.current.pickDriver(alternate!.id))
 
     expect(result.current.driverId).toBe(alternate!.id)
-    expect(result.current.fields).toEqual(
-      expect.objectContaining(
-        Object.fromEntries(alternate!.fields.map((field) => [field.key, field.default ?? ''])),
-      ),
-    )
+    expect(result.current.fields.host).not.toBe('db.internal')
     expect(result.current.testState).toEqual({ status: 'idle' })
+    await waitFor(() => expect(result.current.fields.host).toBe(''))
   })
 
-  it('creates a validated connection with the driver DSN and invalidates the list', async () => {
+  it('creates a validated connection from structured params and invalidates the list', async () => {
     let body: Record<string, unknown> = {}
     server.use(
       http.post('/api/v1/orgs/acme/workspaces/3/connections', async ({ request }) => {
@@ -153,8 +153,7 @@ describe('useConnectionForm', () => {
     const { result } = renderForm()
     await waitFor(() => expect(result.current.environmentId).toBe('4'))
     act(() => result.current.pickDriver(drivers[0].id))
-    fillRequiredFields(result)
-    const expectedDsn = drivers[0].buildDSN(result.current.fields)
+    await fillRequiredFields(result)
 
     act(() => result.current.submit())
 
@@ -165,9 +164,11 @@ describe('useConnectionForm', () => {
         driver: drivers[0].id,
         environment_id: 4,
         access_mode: 'open',
-        dsn: expectedDsn,
+        params: { host: 'host-value', port: '5432', username: 'username-value' },
+        secrets: {},
       }),
     )
+    expect(body).not.toHaveProperty('dsn')
     expect(invalidate).toHaveBeenCalledWith({ queryKey: ['org-workspace-connections', 'acme', 3] })
   })
 
@@ -182,30 +183,46 @@ describe('useConnectionForm', () => {
     const { result } = renderForm()
     await waitFor(() => expect(result.current.environmentId).toBe('4'))
     act(() => result.current.pickDriver(drivers[0].id))
-    fillRequiredFields(result)
+    await fillRequiredFields(result)
     act(() =>
       result.current.changeTls({
         mode: 'verify-full',
         serverName: 'db.internal',
         caPem: '-----BEGIN CERTIFICATE-----\nca\n-----END CERTIFICATE-----',
         clientCertPem: '',
-        clientKeyPem: '',
-        clientKeySet: false,
-        clearClientKey: false,
       }),
     )
 
     act(() => result.current.submit())
 
     await waitFor(() => expect(onOpenChange).toHaveBeenCalledWith(false))
-    expect(body.tls).toEqual({
+    expect(body.tls_config).toEqual({
       mode: 'verify-full',
       server_name: 'db.internal',
       ca_pem: '-----BEGIN CERTIFICATE-----\nca\n-----END CERTIFICATE-----',
       client_cert_pem: '',
-      client_key_pem: '',
-      clear_client_key: false,
     })
+  })
+
+  it('sends typed secrets in the secrets payload and never in params', async () => {
+    let body: Record<string, unknown> = {}
+    server.use(
+      http.post('/api/v1/orgs/acme/workspaces/3/connections', async ({ request }) => {
+        body = (await request.json()) as Record<string, unknown>
+        return HttpResponse.json({ id: 8 }, { status: 201 })
+      }),
+    )
+    const { result } = renderForm()
+    await waitFor(() => expect(result.current.environmentId).toBe('4'))
+    act(() => result.current.pickDriver(drivers[0].id))
+    await fillRequiredFields(result)
+    act(() => result.current.bindSecret('password').dispatch({ type: 'edit', value: 'hunter2' }))
+
+    act(() => result.current.submit())
+
+    await waitFor(() => expect(onOpenChange).toHaveBeenCalledWith(false))
+    expect(body.secrets).toEqual({ password: 'hunter2' })
+    expect(body.params).not.toHaveProperty('password')
   })
 
   it('includes ssh in the create payload when enabled', async () => {
@@ -219,7 +236,7 @@ describe('useConnectionForm', () => {
     const { result } = renderForm()
     await waitFor(() => expect(result.current.environmentId).toBe('4'))
     act(() => result.current.pickDriver(drivers[0].id))
-    fillRequiredFields(result)
+    await fillRequiredFields(result)
     act(() =>
       result.current.changeSsh({
         ...emptySshState,
@@ -227,28 +244,85 @@ describe('useConnectionForm', () => {
         host: 'bastion.internal',
         user: 'jump',
         authMethod: 'password',
-        password: 'pw',
         insecureSkipHostKey: true,
       }),
     )
+    act(() => result.current.bindSecret('ssh_password').dispatch({ type: 'edit', value: 'pw' }))
 
     act(() => result.current.submit())
 
     await waitFor(() => expect(onOpenChange).toHaveBeenCalledWith(false))
-    expect(body.ssh).toEqual(
+    expect(body.ssh_config).toEqual(
       expect.objectContaining({
         enabled: true,
         host: 'bastion.internal',
         user: 'jump',
         auth_method: 'password',
-        password: 'pw',
         port: 22,
         insecure_skip_host_key: true,
       }),
     )
+    expect(body.secrets).toEqual({ ssh_password: 'pw' })
   })
 
-  it('sends ssh disabled when the tunnel was never enabled', async () => {
+  it('omits tls_config for mode disable and drops secrets that do not apply', async () => {
+    let body: Record<string, unknown> = {}
+    server.use(
+      http.post('/api/v1/orgs/acme/workspaces/3/connections', async ({ request }) => {
+        body = (await request.json()) as Record<string, unknown>
+        return HttpResponse.json({ id: 8 }, { status: 201 })
+      }),
+    )
+    const { result } = renderForm()
+    await waitFor(() => expect(result.current.environmentId).toBe('4'))
+    act(() => result.current.pickDriver(drivers[0].id))
+    await fillRequiredFields(result)
+    act(() => {
+      result.current.bindSecret('ssh_password').dispatch({ type: 'edit', value: 'sp' })
+      result.current.bindSecret('tls_client_key').dispatch({ type: 'edit', value: 'tk' })
+    })
+
+    act(() => result.current.submit())
+
+    await waitFor(() => expect(onOpenChange).toHaveBeenCalledWith(false))
+    expect(body).not.toHaveProperty('tls_config')
+    expect(body).not.toHaveProperty('ssh_config')
+    expect(body.secrets).toEqual({})
+  })
+
+  it('does not send ssh_password when the tunnel uses a private key', async () => {
+    let body: Record<string, unknown> = {}
+    server.use(
+      http.post('/api/v1/orgs/acme/workspaces/3/connections', async ({ request }) => {
+        body = (await request.json()) as Record<string, unknown>
+        return HttpResponse.json({ id: 8 }, { status: 201 })
+      }),
+    )
+    const { result } = renderForm()
+    await waitFor(() => expect(result.current.environmentId).toBe('4'))
+    act(() => result.current.pickDriver(drivers[0].id))
+    await fillRequiredFields(result)
+    act(() =>
+      result.current.changeSsh({
+        ...emptySshState,
+        enabled: true,
+        host: 'bastion.internal',
+        user: 'jump',
+        authMethod: 'private_key',
+      }),
+    )
+    act(() => {
+      result.current.bindSecret('ssh_password').dispatch({ type: 'edit', value: 'stale' })
+      result.current.bindSecret('ssh_private_key').dispatch({ type: 'edit', value: 'KEY' })
+    })
+
+    act(() => result.current.submit())
+
+    await waitFor(() => expect(onOpenChange).toHaveBeenCalledWith(false))
+    expect(body.secrets).toEqual({ ssh_private_key: 'KEY' })
+  })
+
+  it('omits ssh_config when the tunnel was never enabled', async () => {
     let body: Record<string, unknown> = {}
     server.use(
       http.post('/api/v1/orgs/acme/workspaces/3/connections', async ({ request }) => {
@@ -259,12 +333,12 @@ describe('useConnectionForm', () => {
     const { result } = renderForm()
     await waitFor(() => expect(result.current.environmentId).toBe('4'))
     act(() => result.current.pickDriver(drivers[0].id))
-    fillRequiredFields(result)
+    await fillRequiredFields(result)
 
     act(() => result.current.submit())
 
     await waitFor(() => expect(onOpenChange).toHaveBeenCalledWith(false))
-    expect(body.ssh).toMatchObject({ enabled: false })
+    expect(body).not.toHaveProperty('ssh_config')
   })
 
   it('allows an explicitly unscoped connection after discovery', async () => {
@@ -285,7 +359,7 @@ describe('useConnectionForm', () => {
     )
     const { result } = renderForm()
     act(() => result.current.pickDriver(drivers[0].id))
-    fillRequiredFields(result)
+    await fillRequiredFields(result)
     await act(() => result.current.testConnection.mutateAsync())
     expect(result.current.defaultScope).toHaveLength(2)
 
@@ -309,7 +383,7 @@ describe('useConnectionForm', () => {
     act(() => result.current.pickDriver('postgres'))
     await waitFor(() => expect(result.current.showAllDatabasesSupported).toBe(true))
     expect(result.current.systemObjectsSupported).toBe(true)
-    fillRequiredFields(result)
+    await fillRequiredFields(result)
     act(() => result.current.changeField('database', ''))
 
     expect(result.current.showAllDatabasesForced).toBe(true)

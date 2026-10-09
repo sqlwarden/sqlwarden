@@ -2,6 +2,9 @@ import { keepPreviousData, queryOptions } from '@tanstack/react-query'
 import { api } from '#/lib/api/client'
 import type {
   Connection,
+  ConnectionDetail,
+  ConnectionFieldSpec,
+  ConnectionSecretName,
   Environment,
   JobRecord,
   ListQuery,
@@ -13,19 +16,6 @@ import type {
   WorkspaceTeam,
 } from '#/lib/api/types'
 import { queryKeys } from '#/lib/api/query-keys'
-import type { TlsMode } from '#/components/ide/engines/types'
-import type { ConnectionSshReveal } from '#/components/ide/connectionSshPayload'
-
-export type { ConnectionSshReveal }
-
-export interface ConnectionTlsReveal {
-  configured: boolean
-  mode: TlsMode
-  server_name: string
-  ca_pem: string
-  client_cert_pem: string
-  client_key_set: boolean
-}
 
 export function orgWorkspacesQueryOptions(slug: string, query?: ListQuery) {
   return queryOptions({
@@ -178,52 +168,47 @@ export function allOrgWorkspaceConnectionsQueryOptions(slug: string, workspaceId
   return orgWorkspaceConnectionsQueryOptions(slug, workspaceId, allWorkspaceConnectionsQuery)
 }
 
-export function connectionDsnQueryOptions(
+export function connectionDetailQueryOptions(
   slug: string,
   workspaceId: string | number,
   connectionId: string | number,
 ) {
   return queryOptions({
-    queryKey: queryKeys.connectionDsn(slug, workspaceId, connectionId),
+    queryKey: queryKeys.connectionDetail(slug, workspaceId, connectionId),
     queryFn: () =>
-      api.get<{ dsn: string }>(
-        `/api/v1/orgs/${slug}/workspaces/${workspaceId}/connections/${connectionId}/dsn`,
+      api.get<ConnectionDetail>(
+        `/api/v1/orgs/${slug}/workspaces/${workspaceId}/connections/${connectionId}`,
       ),
     staleTime: 0,
     gcTime: 0,
   })
 }
 
-export function connectionTlsQueryOptions(
-  slug: string,
-  workspaceId: string | number,
-  connectionId: string | number,
-) {
+export function engineConnectionFieldsQueryOptions(driver: string) {
   return queryOptions({
-    queryKey: queryKeys.connectionTls(slug, workspaceId, connectionId),
-    queryFn: () =>
-      api.get<ConnectionTlsReveal>(
-        `/api/v1/orgs/${slug}/workspaces/${workspaceId}/connections/${connectionId}/tls`,
-      ),
-    staleTime: 0,
-    gcTime: 0,
+    queryKey: queryKeys.engineConnectionFields(driver),
+    queryFn: async () =>
+      (
+        await api.get<{ fields: ConnectionFieldSpec[] }>(
+          `/api/v1/engines/${driver}/connection-fields`,
+        )
+      ).fields,
+    staleTime: Infinity,
   })
 }
 
-export function connectionSshQueryOptions(
+/** Requests one stored secret's value. The response is `Cache-Control: no-store`;
+ *  callers keep the value in transient component state only. */
+export async function revealConnectionSecret(
   slug: string,
   workspaceId: string | number,
   connectionId: string | number,
-) {
-  return queryOptions({
-    queryKey: queryKeys.connectionSsh(slug, workspaceId, connectionId),
-    queryFn: () =>
-      api.get<ConnectionSshReveal>(
-        `/api/v1/orgs/${slug}/workspaces/${workspaceId}/connections/${connectionId}/ssh`,
-      ),
-    staleTime: 0,
-    gcTime: 0,
-  })
+  name: ConnectionSecretName,
+): Promise<string> {
+  const { value } = await api.post<{ value: string }>(
+    `/api/v1/orgs/${slug}/workspaces/${workspaceId}/connections/${connectionId}/secrets/${name}/reveal`,
+  )
+  return value
 }
 
 export function orgWorkspaceJobsQueryOptions(

@@ -29,7 +29,6 @@ type Props = {
   orgSlug: string
   workspaceId: number
   connection: Connection | undefined
-  canRevealDsn: boolean
 }
 
 export function EditConnectionDialog({
@@ -38,7 +37,6 @@ export function EditConnectionDialog({
   orgSlug,
   workspaceId,
   connection,
-  canRevealDsn,
 }: Props) {
   const form = useEditConnectionForm({
     open,
@@ -46,7 +44,6 @@ export function EditConnectionDialog({
     orgSlug,
     workspaceId,
     connection,
-    canRevealDsn,
   })
 
   function handleSubmit(e: React.FormEvent) {
@@ -54,7 +51,7 @@ export function EditConnectionDialog({
     form.submit()
   }
   const isPending = form.updateConnection.isPending
-  const fieldsDisabled = isPending || form.revealDsnPending
+  const fieldsDisabled = isPending || form.loading
 
   return (
     <Dialog open={open} onOpenChange={form.handleOpenChange}>
@@ -83,12 +80,6 @@ export function EditConnectionDialog({
               </TabsList>
 
               <TabsContent value="general" className="flex flex-col gap-4">
-                <p className="text-xs text-muted-foreground">
-                  {form.revealDsnAllowed
-                    ? 'Connection credentials are shown below because you can manage this connection.'
-                    : "For security, connection credentials are never shown after they're saved. Re-enter the full connection details below to update this connection."}
-                </p>
-
                 <div className="grid grid-cols-6 gap-3">
                   <div className="col-span-6">
                     <FormField label="Name" error={form.errors.name}>
@@ -102,17 +93,28 @@ export function EditConnectionDialog({
                     </FormField>
                   </div>
 
-                  <DriverFields
-                    driver={form.driver}
-                    values={form.fields}
-                    errors={form.errors.fields}
-                    disabled={fieldsDisabled}
-                    onChange={form.changeField}
-                    scopeDiscovery={form.scopeDiscovery}
-                    defaultScope={form.defaultScope}
-                    onDatabaseChange={form.selectDatabase}
-                    onSchemaChange={form.selectSchema}
-                  />
+                  {form.loadFailed ? (
+                    <p className="col-span-6 text-xs text-destructive">
+                      Connection details could not be loaded.
+                    </p>
+                  ) : form.loading ? (
+                    <p className="col-span-6 text-xs text-muted-foreground">
+                      Loading connection details…
+                    </p>
+                  ) : (
+                    <DriverFields
+                      fields={form.resolvedFields}
+                      bindSecret={form.bindSecret}
+                      values={form.fields}
+                      errors={form.errors.fields}
+                      disabled={fieldsDisabled}
+                      onChange={form.changeField}
+                      scopeDiscovery={form.scopeDiscovery}
+                      defaultScope={form.defaultScope}
+                      onDatabaseChange={form.selectDatabase}
+                      onSchemaChange={form.selectSchema}
+                    />
+                  )}
 
                   {form.showAllDatabasesSupported ? (
                     <div className="col-span-6">
@@ -142,16 +144,9 @@ export function EditConnectionDialog({
                     spec={form.tlsSpec}
                     value={form.tls}
                     disabled={fieldsDisabled}
+                    bindSecret={form.bindSecret}
                     onChange={form.changeTls}
                   />
-                  {form.tlsConfigured ? (
-                    <RemoveConfigRow
-                      label="Remove TLS configuration"
-                      pending={form.removeTls.isPending}
-                      disabled={fieldsDisabled || form.removeTls.isPending}
-                      onRemove={() => void form.removeTls.mutateAsync().catch(() => {})}
-                    />
-                  ) : null}
                 </TabsContent>
               ) : null}
 
@@ -160,16 +155,9 @@ export function EditConnectionDialog({
                   <ConnectionSshFields
                     value={form.ssh}
                     disabled={fieldsDisabled}
+                    bindSecret={form.bindSecret}
                     onChange={form.changeSsh}
                   />
-                  {form.sshConfigured ? (
-                    <RemoveConfigRow
-                      label="Remove SSH configuration"
-                      pending={form.removeSsh.isPending}
-                      disabled={fieldsDisabled || form.removeSsh.isPending}
-                      onRemove={() => void form.removeSsh.mutateAsync().catch(() => {})}
-                    />
-                  ) : null}
                 </TabsContent>
               ) : null}
             </Tabs>
@@ -222,37 +210,5 @@ export function EditConnectionDialog({
         </form>
       </DialogContent>
     </Dialog>
-  )
-}
-
-/** Prunes a stored SSH/TLS document from the connection outright, distinct from
- *  toggling it off (which keeps the document for later re-enable). */
-function RemoveConfigRow({
-  label,
-  pending,
-  disabled,
-  onRemove,
-}: {
-  label: string
-  pending: boolean
-  disabled: boolean
-  onRemove: () => void
-}) {
-  return (
-    <div className="flex items-center justify-between gap-3 border-t border-border/60 pt-3">
-      <p className="text-xs text-muted-foreground">
-        Deletes the saved configuration from this connection.
-      </p>
-      <Button
-        type="button"
-        variant="ghost"
-        size="sm"
-        className="shrink-0 text-destructive hover:text-destructive"
-        disabled={disabled}
-        onClick={onRemove}
-      >
-        {pending ? 'Removing…' : label}
-      </Button>
-    </div>
   )
 }

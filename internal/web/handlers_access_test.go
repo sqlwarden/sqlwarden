@@ -108,7 +108,7 @@ func createWorkspaceConnection(t *testing.T, app *application, ownerTok, orgSlug
 	body := map[string]any{
 		"name":   name,
 		"driver": "postgres",
-		"dsn":    "postgres://localhost/testdb",
+		"params": map[string]any{"host": "localhost", "port": "5432", "database": "testdb", "username": "u"},
 	}
 
 	res := send(t, newAuthRequest(t, http.MethodPost,
@@ -454,7 +454,7 @@ func TestGrantConnectionPolicyBinding(t *testing.T) {
 		map[string]any{
 			"name":   "TestConn",
 			"driver": "postgres",
-			"dsn":    "postgres://localhost/testdb",
+			"params": map[string]any{"host": "localhost", "port": "5432", "database": "testdb", "username": "u"},
 		}, ownerTok), app.routes())
 	assert.Equal(t, connRes.StatusCode, http.StatusCreated)
 	connIDFloat := connRes.BodyFields["id"].(float64)
@@ -508,7 +508,7 @@ func TestGrantConnectionPolicyWrongWorkspace(t *testing.T) {
 		map[string]any{
 			"name":   "OtherConn",
 			"driver": "postgres",
-			"dsn":    "postgres://localhost/testdb",
+			"params": map[string]any{"host": "localhost", "port": "5432", "database": "testdb", "username": "u"},
 		}, ownerTok), app.routes())
 	assert.Equal(t, connRes.StatusCode, http.StatusCreated)
 	connIDFloat := connRes.BodyFields["id"].(float64)
@@ -531,7 +531,7 @@ func TestGetConnectionRequiresAccessibleBinding(t *testing.T) {
 		map[string]any{
 			"name":   "Primary DB",
 			"driver": "postgres",
-			"dsn":    "postgres://localhost/testdb",
+			"params": map[string]any{"host": "localhost", "port": "5432", "database": "testdb", "username": "u"},
 		}, ownerTok), app.routes())
 	assert.Equal(t, connRes.StatusCode, http.StatusCreated)
 	connID := fmt.Sprintf("%v", connRes.BodyFields["id"])
@@ -560,7 +560,7 @@ func TestGetConnectionAccessibleViaWorkspacePermission(t *testing.T) {
 		map[string]any{
 			"name":   "Workspace Scoped DB",
 			"driver": "postgres",
-			"dsn":    "postgres://localhost/testdb",
+			"params": map[string]any{"host": "localhost", "port": "5432", "database": "testdb", "username": "u"},
 		}, ownerTok), app.routes())
 	assert.Equal(t, connRes.StatusCode, http.StatusCreated)
 	connID := fmt.Sprintf("%v", connRes.BodyFields["id"])
@@ -591,7 +591,7 @@ func TestGetConnectionAccessibleViaEnvironmentPermission(t *testing.T) {
 		map[string]any{
 			"name":           "Env Scoped DB",
 			"driver":         "postgres",
-			"dsn":            "postgres://localhost/testdb",
+			"params":         map[string]any{"host": "localhost", "port": "5432", "database": "testdb", "username": "u"},
 			"environment_id": envID,
 		}, ownerTok), app.routes())
 	assert.Equal(t, connRes.StatusCode, http.StatusCreated)
@@ -635,7 +635,7 @@ func TestGetConnectionAccessibleViaOrgPermission(t *testing.T) {
 		map[string]any{
 			"name":   "Org Scoped DB",
 			"driver": "postgres",
-			"dsn":    "postgres://localhost/testdb",
+			"params": map[string]any{"host": "localhost", "port": "5432", "database": "testdb", "username": "u"},
 		}, ownerTok), app.routes())
 	assert.Equal(t, connRes.StatusCode, http.StatusCreated)
 	connID := fmt.Sprintf("%v", connRes.BodyFields["id"])
@@ -1070,7 +1070,7 @@ func TestListPoliciesShowsAllResourceTypes(t *testing.T) {
 		map[string]any{
 			"name":   "ProdDB",
 			"driver": "postgres",
-			"dsn":    "postgres://localhost/prod",
+			"params": map[string]any{"host": "localhost", "port": "5432", "database": "prod", "username": "u"},
 		}, ownerTok), app.routes())
 	assert.Equal(t, connRes.StatusCode, http.StatusCreated)
 	connIDFloat := connRes.BodyFields["id"].(float64)
@@ -1137,21 +1137,21 @@ func TestEnvScopedRoleGrantsConnectionListAndConnect(t *testing.T) {
 
 	// Create one connection tagged to env A, one tagged to env B, one untagged.
 	connARes := send(t, newAuthRequest(t, http.MethodPost, baseURL+"/connections", map[string]any{
-		"name": "conn-a", "driver": "sqlite", "dsn": "file::memory:?cache=shared",
+		"name": "conn-a", "driver": "sqlite", "params": map[string]any{"path": ":memory:"},
 		"environment_id": envAID,
 	}, ownerTok), app.routes())
 	assert.Equal(t, connARes.StatusCode, http.StatusCreated)
 	connAID := fmt.Sprintf("%v", connARes.BodyFields["id"])
 
 	connBRes := send(t, newAuthRequest(t, http.MethodPost, baseURL+"/connections", map[string]any{
-		"name": "conn-b", "driver": "sqlite", "dsn": "file::memory:?cache=shared",
+		"name": "conn-b", "driver": "sqlite", "params": map[string]any{"path": ":memory:"},
 		"environment_id": envBID,
 	}, ownerTok), app.routes())
 	assert.Equal(t, connBRes.StatusCode, http.StatusCreated)
 	connBID := fmt.Sprintf("%v", connBRes.BodyFields["id"])
 
 	send(t, newAuthRequest(t, http.MethodPost, baseURL+"/connections", map[string]any{
-		"name": "conn-untagged", "driver": "sqlite", "dsn": "file::memory:?cache=shared",
+		"name": "conn-untagged", "driver": "sqlite", "params": map[string]any{"path": ":memory:"},
 	}, ownerTok), app.routes())
 
 	roleID := createRoleForTest(t, app, org.ID, nil, "environment", "conn:read", "conn:dql")
