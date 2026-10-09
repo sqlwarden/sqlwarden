@@ -20,14 +20,17 @@ SQLWarden is a Go API plus embedded React SPA.
 - `cmd/sqlwarden` is a thin server entrypoint with `serve`, `migrate`, and `rotate-keys` subcommands.
 - `internal/app` is the composition root. It builds the database, migrations, keyring, enforcer, and stores, and runs the selected process kinds (`all`, `api`, `jobs`). Only `cmd/*` imports it.
 - `internal/config` loads and validates configuration.
-- `internal/web` owns routes, middleware, handlers, and static frontend serving.
+- `internal/web` owns routes, middleware, handlers, and static frontend serving. Query, file, export, job, history, and favorite handlers only decode, call services, map errors, and encode; their services authorize each method.
 - `internal/database` stores SQLWarden metadata through Bun against SQLite/PostgreSQL.
-- `internal/access` is the custom RBAC enforcer and permissions catalog.
+- `internal/access` owns the RBAC enforcer and `Requirer` (`Org`, `Workspace`, `WorkspaceMember`, `Connection`, `ConnectionMember`, `ResolveConnection`, and the resolve-free `Can`), shared `ErrForbidden`/`ErrNotFound`, and the `CredentialJob` principal kind.
 - `internal/execution` owns live target database sessions behind the `Runtime` interfaces; handlers never touch `internal/connection`, which is internal to execution (and `internal/credentials`).
 - `internal/credentials` owns connection secret values behind the `Provider`, `Writer`, `Sealer`, and `RevealPolicy` ports; `EncryptedColumnProvider` is the only built-in provider and `credentialstest` is its contract suite. Nothing else reads secret values; editions wrap the provider through `edition.CredentialDecorator`.
 - `internal/catalog` is the connection service: it authorizes, validates against the engine `ConnectionSpec`, writes secrets, and owns secret reveal.
+- `internal/query` owns authorized connect/disconnect, classified execution and per-class permissions, cursors, transactions, session list/revoke, history, and favorites.
+- `internal/exportjob` owns export requests, bounded downloads, and background export jobs; `internal/jobs.Service` owns user job list/get/events/cancel routes.
 - `internal/engine` contains external data-system integrations and capabilities; current engines support PostgreSQL, MySQL, and SQLite.
-- `internal/files` and `internal/filestore` implement workspace file metadata/content storage.
+- `internal/files` takes an `access.Principal` and authorizes workspace file operations; `internal/filestore` implements content storage.
+- `internal/architecture` enforces context-plus-Principal service contracts and ratchets direct `app.db` use in `internal/web` at 187.
 - `frontend/` is the React app using TanStack Router, TanStack Query, Tailwind CSS, shadcn/ui, Base UI, CodeMirror, Zustand, IndexedDB, Y.js, and BroadcastChannel.
 
 Future Wails desktop work should reuse `internal/web`; do not put reusable web logic in `cmd/sqlwarden`.

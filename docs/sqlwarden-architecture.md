@@ -1,6 +1,6 @@
 # SQLWarden Architecture
 
-Updated: 2026-09-22
+Updated: 2026-10-09
 
 SQLWarden is a self-hosted database access platform and SQL editor. The current repository contains a Go backend, embedded React SPA, custom RBAC engine, database connection/session manager, and workspace file storage foundation. Future product direction includes Wails desktop packaging, SSO/SCIM, stronger audit/compliance features, connector agents, and broader file/storage backends.
 
@@ -88,9 +88,12 @@ sqlwarden/
 │   ├── engine/                       # external data-system engines and capabilities
 │   ├── encrypt/                      # AES-GCM/keyring helpers
 │   ├── execution/                    # runtime contract for live target DB execution
+│   ├── exportjob/                    # synchronous and background query export service
 │   ├── files/                        # workspace file service
 │   ├── filestore/                    # filesystem object storage
+│   ├── jobs/                         # background job runtime and user-facing job service
 │   ├── password/                     # bcrypt hashing
+│   ├── query/                        # authorized query, session, history, and favorites service
 │   ├── request/                      # JSON decoding helpers
 │   ├── response/                     # JSON, pagination, API error envelopes
 │   ├── smtp/                         # SMTP mailer
@@ -158,6 +161,8 @@ Concrete permission middleware variants are preferred:
 - `requireConnectionPermission`
 
 The old generic permission middleware was removed to keep route authorization readable.
+
+For query, file, export, job, history, and favorite routes, handlers are transport adapters only: they decode input, call the domain service, map service errors, and encode the response. Each service method authorizes its `access.Principal` before validation, storage, or runtime work; route middleware is not the authorization boundary for these areas.
 
 ## API Contract
 
@@ -378,7 +383,7 @@ Permission namespaces:
 - `ws:*`: workspace read/write/create/delete actions.
 - `wsfile:*`: workspace file read/create/write/delete actions.
 - `env:*`: environment read/write/create/delete/deploy actions.
-- `conn:*`: connection read/write/create/delete/query actions, plus `conn:reveal_secret` for revealing stored connection secrets. The builtin `Owner` and `Administrator` roles hold it.
+- `conn:*`: connection read/write/create/delete/query actions, plus `conn:reveal_secret` for revealing stored connection secrets. The builtin org `Owner` and `Administrator` roles hold it across the organization, and the builtin workspace admin role holds it for connections in its own workspace only. Existing workspaces seeded before this grant are not backfilled.
 - `policy:*`: role binding and policy read/modify actions.
 
 Query permissions:
@@ -476,6 +481,8 @@ Evaluation flow:
 Handlers call the composed `access.PolicyEvaluator`, not the enforcer directly. An edition may wrap the enforcer with policy decorators. A decorator can deny a grant, but it cannot grant a permission the enforcer denied.
 
 Inheritance is additive. Parent bindings can grant access to children. There are no deny rules, so revocation means removing the granting binding or membership source.
+
+`access.Requirer` is the shared authorization boundary used by services that operate on org-owned resources. Its `Org`, `Workspace`, `WorkspaceMember`, `Connection`, `ConnectionMember`, and `ResolveConnection` methods resolve hierarchy facts, enforce organization and workspace membership, and apply permissions where required (`Connection` takes any-of permissions; `ResolveConnection` checks no permission and is for operations whose authorization the execution runtime owns). `Can` only reports whether a principal holds a permission on an already-resolved resource; it does not resolve the resource or check membership. These methods return the shared `access.ErrForbidden` and `access.ErrNotFound` sentinels so services and HTTP error mapping use one denial contract. Background work uses an `access.Principal` with `access.CredentialJob` and is authorized again when the job runs.
 
 ### Effective Permissions
 
@@ -667,6 +674,8 @@ policy. `schema.Live`, built with `execution.NewLive`, reads straight from the
 target through a session with no cache, for callers that need current catalog
 state.
 
+`internal/query.Service` is the authorization boundary for interactive query behavior. It connects and disconnects live sessions; classifies SQL and checks the per-class `conn:dql`, `conn:dml`, `conn:ddl`, or `conn:execute` permission before execution; starts, fetches, and closes cursors; reports and changes transaction state; lists and revokes workspace sessions; and owns query history and favorites. Every exported request-facing method takes a context and `access.Principal` and authorizes within the method before reaching settings, storage, classifiers, or the execution runtime.
+
 Session revocation runs through `app.revokeSessions` in `internal/web`. It is
 called only after the access change (membership removal, connection deletion,
 and similar) has committed in the database. If revocation fails, the HTTP
@@ -694,7 +703,7 @@ Interactive query execution has two server APIs:
 
 HTTP query cursors are in-memory and process-local. They are tied to the authenticated account, route context, live DB session, workspace, environment when present, and connection. They must not be treated as durable query history. Server restart, live DB session removal, cursor close, exhaustion, or idle reaping makes the query cursor unavailable and clients should run the query again.
 
-Query-cursor authorization uses the same SQL classification as direct query execution. `conn:execute` can run any query class. Otherwise `conn:dql`, `conn:dml`, or `conn:ddl` is required based on the query. Authorization is checked when the query cursor is opened. Fetch requests validate authentication, route scope, live parent session ownership, and cursor lifecycle state; they do not reclassify or reauthorize the already-open SQL text.
+Query-cursor authorization uses the same SQL classification as direct query execution. `conn:execute` can run any query class. Otherwise `conn:dql`, `conn:dml`, or `conn:ddl` is required based on the query. Authorization is checked when the query cursor is opened, and fetch checks that the principal still holds a runtime query permission without reclassifying the already-open SQL text. Close validates route scope and live parent session ownership without requiring a query permission.
 
 The initial response and each fetch page apply `query.max_result_rows` and `query.max_result_bytes`. Page boundaries are not truncation; `exhausted=false` means more rows can be fetched. Byte-limit truncation is reported on the page and the cursor remains available when more rows exist.
 
@@ -780,6 +789,8 @@ Startup verifies the schema and counts legacy rows. If the schema predates struc
 
 Exports are intentionally built on top of the query, job, and file foundations rather than as a separate database-specific subsystem.
 
+`internal/exportjob.Service` owns export request validation and enqueueing, bounded synchronous downloads, and background export execution. `Request` and `Download` authorize the caller's principal and require a read-class query; `RunJob` reconstructs a job principal, reauthorizes the org/workspace/connection hierarchy and read access, then streams through the query runtime into the file service.
+
 Implemented:
 
 - CSV export format.
@@ -815,7 +826,7 @@ Authorization differs by visibility:
 - Private files require effective workspace membership and ownership of the file.
 - Shared files require the relevant `wsfile:*` permission on the workspace.
 
-This logic lives in `internal/files.Service` rather than only in route middleware because the same route family handles private and shared file behavior.
+This logic lives in `internal/files.Service` rather than only in route middleware because the same route family handles private and shared file behavior. Request-facing service methods take an `access.Principal` and authorize the workspace and file operation internally; only the system-level content reaper methods are principal-free.
 
 Implemented:
 
@@ -833,6 +844,7 @@ Implemented:
 Background jobs:
 
 - Jobs are persisted in the application database with user/internal visibility and lifecycle state.
+- `internal/jobs.Service` owns the user job routes: list, get, event retrieval, and cancellation. Each method requires workspace membership and scopes `jobs.DatabaseStore` access to the principal's account.
 - The API process runs in-process workers using database claim leases, cooperative cancellation, retry policy, priority-aware best-effort claiming, stale-claim recovery, and completed-job retention pruning.
 - Singleton internal jobs use a database-enforced active `singleton_key` so multiple API pods can safely race to schedule maintenance work without creating duplicate queued/running jobs.
 - User-visible job APIs are scoped under organization workspace routes and currently expose only the authenticated user's jobs in that workspace.
@@ -971,6 +983,8 @@ Backend tests are substantial and should be extended with every behavior change:
 - `internal/access/*_test.go`: enforcer, permissions, inheritance, policy behavior.
 - `internal/database/*_test.go`: query helpers and persistence behavior.
 - `internal/files/*_test.go` and `internal/filestore/*_test.go`: file service/storage behavior.
+- `internal/architecture/authz_contract_test.go`: exported request-facing service methods in query, files, exportjob, and jobs must take `context.Context` and `access.Principal`; explicit system-runner exemptions are checked for continued existence.
+- `internal/architecture/webdb_test.go`: direct `app.db` use in `internal/web` is ratcheted at an exact ceiling of 187 so domain work continues moving behind services.
 
 Database tests use testcontainers where needed; Docker must be available locally.
 
