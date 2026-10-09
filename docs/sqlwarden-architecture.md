@@ -33,7 +33,7 @@ Implemented today:
 - Workspace file content retention reaper.
 - Database-backed background job framework for durable one-off and scheduled work.
 - User-facing job event timeline for progress updates on background jobs.
-- DSN and file encryption key rotation foundation.
+- Structured connection storage with per-secret encryption, explicit secret reveal, and a `rotate-keys` command for connection secret and file encryption key rotation.
 - Database engine registry and capability abstractions for schema inspection, query classification, parsing, rewriting, completion, and cursor-backed result paging.
 - Schema introspection abstraction, cache, and API.
 - React 19 frontend with TanStack Router, TanStack Query, Tailwind CSS 4, shadcn/ui, Base UI primitives, CodeMirror 6, Zustand, IndexedDB, Y.js, and BroadcastChannel.
@@ -81,8 +81,9 @@ sqlwarden/
 │       └── lib/
 ├── internal/
 │   ├── access/                       # custom RBAC enforcer and permissions catalog
+│   ├── catalog/                      # connection service: authorization, validation, secret writes and reveal
 │   ├── connection/                   # live target DB sessions (internal to execution)
-│   ├── credentials/                  # connection credential, TLS, and SSH providers
+│   ├── credentials/                  # connection secret ports and the encrypted-column provider
 │   ├── database/                     # Bun models and query helpers
 │   ├── engine/                       # external data-system engines and capabilities
 │   ├── encrypt/                      # AES-GCM/keyring helpers
@@ -290,6 +291,7 @@ Important tables:
 - `workspace_teams`
 - `environments`
 - `connections`
+- `connection_secrets`
 - `workspace_files`
 - `workspace_file_contents`
 - `workspace_file_content_deletions`
@@ -376,7 +378,7 @@ Permission namespaces:
 - `ws:*`: workspace read/write/create/delete actions.
 - `wsfile:*`: workspace file read/create/write/delete actions.
 - `env:*`: environment read/write/create/delete/deploy actions.
-- `conn:*`: connection read/write/create/delete/query actions.
+- `conn:*`: connection read/write/create/delete/query actions, plus `conn:reveal_secret` for revealing stored connection secrets. The builtin `Owner` and `Administrator` roles hold it.
 - `policy:*`: role binding and policy read/modify actions.
 
 Query permissions:
@@ -635,8 +637,7 @@ move into Omni later without changing metadata storage or the editor protocol.
 and the schema navigator reach target databases only through its interfaces and
 never import `internal/connection`. `internal/architecture` enforces that
 `internal/connection` is imported in production code only by `internal/execution`
-and `internal/credentials` (which adapts stored TLS/SSH documents into the
-connection package's inputs).
+and `internal/credentials` (which aliases the connection package's SSH types).
 
 The contract is a set of narrow interfaces composed into `Runtime`:
 
@@ -647,7 +648,7 @@ The contract is a set of narrow interfaces composed into `Runtime`:
 - `Capabilities`: session capabilities and DDL application.
 - `Revoker`: count and revoke sessions by connection, workspace account, or org account.
 - `Prober`: connect and ping a target, then run a callback against a short-lived inspector.
-- `TargetPolicy`: vets a driver and DSN before any connection attempt.
+- `TargetPolicy`: vets a driver and the resolved DSN before any connection attempt.
 
 `LocalRuntime` is the in-process implementation and the only code that wraps
 `connection.Manager`. `internal/execution/executiontest` holds the shared
@@ -658,7 +659,7 @@ Rules every implementation follows:
 - Every operation takes a `Scope`, which is never empty. Sessions and cursors owned by another scope and ids that do not exist are indistinguishable to the caller.
 - Operations are keyed by opaque session and cursor ids. Request contexts bound only the single operation, never the lifetime of a session or cursor.
 - Failures map to stable codes: `session_not_found`, `session_lost`, `cursor_lost`, `transaction_lost`, `execution_outcome_unknown`, and `limit_exceeded`. A statement is never retried automatically, because the outcome of a statement that was in flight when the session was lost is unknown.
-- Credentials arrive through the `credentials.Provider` seam, which decrypts stored connection secrets, TLS documents, and SSH tunnel settings. Background exports go through the same path, so they now honor the connection's stored TLS and SSH settings.
+- Credentials arrive through the `credentials.Provider` seam, which resolves a connection's driver, DSN, TLS settings, and SSH tunnel settings from its structured storage (see Connection Credentials). Background exports go through the same path, so they honor the connection's stored TLS and SSH settings.
 
 Schema access has two modes over the same inspector. `schema.Navigator` is the
 cached, persisted navigator used by interactive routes and applies its cache
@@ -707,6 +708,73 @@ Future phases:
 - Query-run listing/observability.
 - Admin cancellation.
 - WebSocket updates for query state.
+
+## Connection Credentials
+
+### Storage
+
+A `connections` row stores structured, non-secret settings in JSON columns:
+
+- `params`: engine fields such as host, port, database, and username. Keys are the non-secret fields of the engine's `ConnectionSpec`.
+- `tls_config`: TLS mode, server name, CA PEM, and client certificate PEM.
+- `ssh_config`: tunnel host, port, user, auth method, and host-key settings.
+
+Secret values live one per row in `connection_secrets`, keyed by `(connection_id, name)` with `source`, `value_encrypted`, `key_id`, and `updated_at`. Rows cascade with the connection. The stable secret names are `password`, `ssh_password`, `ssh_private_key`, `ssh_passphrase`, and `tls_client_key`. `source` is `stored` for values SQLWarden encrypts itself and `reference` for values a provider manages elsewhere.
+
+The legacy `dsn_encrypted` column is nullable and remains only so `rotate-keys` can split pre-structured rows into the structured form. After the split, the legacy columns are cleared and nothing reads them.
+
+### Engine Connection Specs
+
+Each engine implements `engine.ConnectionSpec` on its driver: `Fields()` describes the accepted parameters and secrets, `BuildDSN` assembles the driver DSN from params and secrets, and `ParseDSN` converts a legacy DSN into params and secrets. `ParseDSN` rejects unmodeled DSN parameters so rotation cannot silently discard connection behavior. Engines whose DSN carries a native TLS mode also implement `engine.LegacyTLSMapper`, which maps that value to the structured TLS mode during the split. `engine.ConnectionSpecFor` resolves a spec by driver name.
+
+PostgreSQL and its wire-compatible variants use host, port, database, username, and a password secret. MySQL, MariaDB, and TiDB use host, port, optional database, username, and a password secret. SQL Server follows the same shape. Oracle uses host, port, `serviceName`, username, and a password secret. SQLite uses a single `path` field with no secrets. Structured TLS settings are the only source of TLS configuration; `BuildDSN` ignores any native TLS mode.
+
+`GET /api/v1/engines/{driver}/connection-fields` returns the spec's fields so clients render connection forms from the backend. An unknown driver returns 404.
+
+### Ports
+
+`internal/credentials` is the only package that reads or writes connection secret values. Runtimes, handlers, and exports never touch `connection_secrets` or the legacy columns directly.
+
+- `Provider` combines `Resolve`, `Reveal`, and `Describe`. `Resolve` returns the driver, default scope, finished DSN, SSH config, and TLS config for a `ConnectionRef` (org, workspace, connection). A ref whose workspace or organization does not own the connection resolves as not found. `Describe` returns a `SecretState` (`set` and `source`) per secret name and never a value. `Reveal` returns one stored value.
+- `Writer` provides `Set` and `Clear` for a single secret.
+- `Sealer` seals new plaintext and opens ciphertext. The built-in sealer wraps the application keyring and records the primary key id with each value.
+- `RevealPolicy` decides whether the product profile permits reveal. It does not authorize the caller.
+- `Credentials` redacts itself in JSON, `fmt` verbs, and structured logs.
+
+`EncryptedColumnProvider` is the only built-in provider. It implements `Provider` and `Writer` over the metadata store and a `Sealer`. A provider that sources a secret elsewhere reports it with `source: reference`, which makes it non-revealable. `internal/credentials/credentialstest` holds the contract suite every provider must pass.
+
+`catalog.Service` in `internal/catalog` owns connection create, read, update, delete, test, and secret reveal. It authorizes against the policy evaluator, validates params against the engine spec, and drives the `Writer`. Handlers translate its results and errors to HTTP and do not read or write secrets themselves. `GET` connection responses carry `params`, `tls_config`, `ssh_config`, and a `secrets` map of `{set, source, revealable}` per name. They never carry a secret value.
+
+### Reveal
+
+`POST .../connections/{conn_id}/secrets/{name}/reveal` returns `{ "value": "..." }` for one stored secret. The route exists under both the environment and workspace connection paths and always sets `Cache-Control: no-store`. The service applies these gates in order:
+
+1. The caller holds `conn:read` on the connection.
+2. The secret name is supported, and the secret is set with `source: stored`. Reference-sourced and unset secrets return 409 `secret_not_revealable`.
+3. The profile `RevealPolicy` allows reveal. The server profile reads the organization flag `allow_connection_secret_reveal`, which defaults to false; a false flag returns 403 `reveal_disabled`. The desktop profile always allows.
+4. The caller holds `conn:reveal_secret` on the connection.
+
+A successful reveal emits the `connection.secret_revealed` audit event with the secret name and workspace id in its metadata. A failed audit write fails the reveal. Secret values, ciphertext, and DSNs are never logged.
+
+### Routes
+
+Connection create, update, and test accept `params`, `tls_config`, `ssh_config`, and a `secrets` map. In `secrets`, a non-empty string sets the value, `null` clears it, and an omitted name is unchanged. An actor who passes the same organization-policy and `conn:reveal_secret` checks used by the reveal endpoint can keep saved secrets across connection edits; Update preserves those values without opening them. When Test with `connection_id` reuses a saved secret against a changed target for such an actor, it emits one successful `connection.secret_revealed` audit event per reused secret with `via: test` before using the value, and an audit failure fails the test operation. Reuse against the unchanged stored target is not audited.
+
+For actors who cannot reveal, any canonical target change requires re-entry or an explicit `null` clear for every omitted stored secret that exists. The target comprises all network parameters identified by the driver connection spec, TLS mode, TLS server name, CA PEM, TLS client certificate, port-relevant parameters, and every SSH setting: enabled, host, port, user, authentication method, known-hosts entry, fingerprint, and insecure host-key verification. Pure metadata edits and non-network parameter changes such as the database name do not trigger re-entry. Stored and submitted targets are normalized before comparison, including empty TLS mode as `disable`, SSH port `0` as `22`, and empty SSH authentication method as `password`, so unchanged legacy rows do not appear changed. Reference-sourced secrets remain immutable, and updates cannot repoint a target while leaving one in place. Connection routes expose secret operations through the reveal endpoint rather than per-document DSN, TLS, or SSH routes. Organization settings use `allow_connection_secret_reveal` to control stored-secret reveal; desktop's always-allow reveal policy therefore never prompts for re-entry on edits.
+
+### Provider Decoration
+
+`edition.CredentialDecorator` wraps a `credentials.Provider`. The edition composition applies registered decorators to the built-in provider, and the composed provider is the one passed to execution, background exports, and `catalog.Service`. The `Writer` is the undecorated built-in provider, so decorators observe and constrain resolve, describe, and reveal without owning writes.
+
+### Upgrade And Rotation
+
+Rows created before structured storage must be converted before the server starts:
+
+1. Run `sqlwarden migrate` to add the structured columns and `connection_secrets`.
+2. Run `sqlwarden rotate-keys`. It decrypts each legacy row with the keyring, splits it into `params`, `tls_config`, `ssh_config`, and sealed secrets, writes them in one transaction per connection, and clears the legacy columns. It then re-seals stored secrets, file content, and the SMTP password that are not sealed with the primary key. The command is idempotent and does not run the startup check. If a legacy DSN cannot be converted, the command stops and names the connection id; edit that row's structured columns manually or delete the connection, then rerun `rotate-keys`.
+3. Start the server.
+
+Startup verifies the schema and counts legacy rows. If the schema predates structured storage, the server refuses to start with `database schema predates structured connections; run migrate first`. If any legacy row remains, it refuses to start with `N connections use the legacy format. Run sqlwarden rotate-keys.` A row that cannot be converted fails the command with only the connection id in the error; earlier connections stay converted.
 
 ## Query Result Exports
 
@@ -938,8 +1006,8 @@ When upgrading Go:
 
 Current implemented controls:
 
-- Credentials encrypted at rest.
-- Key rotation foundation for DSNs and file content.
+- Connection secrets encrypted individually at rest and revealed only through an audited, policy-gated route.
+- Key rotation for connection secrets, file content, and SMTP credentials.
 - Server-side target driver validation/gating.
 - SQLite target connection allowed-source controls.
 - Org membership gate before org-scoped RBAC.

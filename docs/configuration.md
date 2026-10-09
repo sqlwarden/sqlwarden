@@ -165,11 +165,23 @@ Use PostgreSQL for larger deployments, environments with multiple server replica
 | --- | --- | --- | --- | --- |
 | `cookie.secret_key` | `COOKIE_SECRET_KEY` | `--cookie-secret-key` | Development-only secret | Cookie signing secret. Replace in every real deployment. |
 | `jwt.secret_key` | `JWT_SECRET_KEY` | `--jwt-secret-key` | Development-only secret | JWT signing secret. Replace in every real deployment. |
-| `encryption.key` | `ENCRYPTION_KEY` | `--encryption-key` | Development-only secret | Application encryption key for encrypted values such as DSNs and SMTP credentials. Replace in every real deployment. |
+| `encryption.key` | `ENCRYPTION_KEY` | `--encryption-key` | Development-only secret | Application encryption key for encrypted values such as connection secrets and SMTP credentials. Replace in every real deployment. |
 | `encryption.previous_keys` | `ENCRYPTION_PREVIOUS_KEYS` | `--encryption-previous-keys` | Empty | Comma-separated retired encryption keys retained for decrypting old ciphertext during rotation. |
 | `license` | `LICENSE` | `--license` | Empty | Enterprise license material. Only the enterprise build accepts it. The community build refuses to start when it is set. |
 
 Do not use the default secrets outside local development.
+
+### Connection Secret Re-entry
+
+Actors who can reveal connection secrets keep saved secrets across every connection edit, including database host or port corrections, enabling or repointing SSH, and TLS changes. An Update preserves those values without opening them. A connection test that uses `connection_id` may reuse them; reuse against a changed target emits a `connection.secret_revealed` audit event per secret with `via: test`, while reuse against the unchanged stored target is not audited.
+
+For actors who cannot reveal secrets, any canonical target change requires every omitted stored secret to be entered again or explicitly cleared with `null`. The target includes driver-defined network parameters; TLS mode, server name, CA PEM, client certificate, and port-relevant parameters; and SSH enabled state, host, port, user, authentication method, known-hosts entry, fingerprint, and insecure host-key verification. Name, description, and non-network parameters such as database name do not trigger re-entry. Empty TLS mode, SSH port `0`, and empty SSH authentication method are normalized to `disable`, `22`, and `password` before comparison. Reference-sourced secrets cannot be changed, and a target cannot be changed while leaving one in place.
+
+### Rotating Encryption Keys And Upgrading Connections
+
+`sqlwarden rotate-keys` re-encrypts stored connection secrets, file content, and the SMTP password with the primary `encryption.key`. To rotate, set the new key as `encryption.key`, list the old key in `encryption.previous_keys`, run `sqlwarden rotate-keys`, then remove the retired key. The command is idempotent.
+
+`rotate-keys` also converts connections stored in the legacy single-DSN format to the structured format. Upgrade in this order: run `sqlwarden migrate`, run `sqlwarden rotate-keys`, then start the server. While any legacy connection remains, the server refuses to start with `N connections use the legacy format. Run sqlwarden rotate-keys.` If a legacy DSN cannot be converted, the command stops and names the connection id; edit that row's structured columns manually or delete the connection, then rerun `rotate-keys`. The decryption keys that sealed the legacy data must still be configured when `rotate-keys` runs.
 
 ## Interactive Queries
 
