@@ -5,6 +5,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/sqlwarden/internal/access/accesstest"
 	"github.com/sqlwarden/internal/database"
 )
 
@@ -57,45 +58,43 @@ func TestScanContentForMatches(t *testing.T) {
 
 func TestSearchMatchesTextFilesAndRanksByCount(t *testing.T) {
 	f := newServiceFixture(t, Config{StorageMode: StorageModeObject, RevisionPolicy: RevisionPolicyDisabled})
-	scope := f.privateScope(f.member)
+	principal, scope := f.as(f.member), f.privateTree()
 
-	if _, err := f.service.Search(f.ctx, scope, SearchInput{Query: "o"}); !errors.Is(err, ErrInvalidSearchQuery) {
+	if _, err := f.service.Search(f.ctx, principal, scope, SearchInput{Query: "o"}); !errors.Is(err, ErrInvalidSearchQuery) {
 		t.Fatalf("short query error = %v, want %v", err, ErrInvalidSearchQuery)
 	}
 
-	folder, err := f.service.Create(f.ctx, scope, CreateInput{Name: "reports", ObjectType: database.FileObjectTypeFolder})
+	folder, err := f.service.Create(f.ctx, principal, scope, CreateInput{Name: "reports", ObjectType: database.FileObjectTypeFolder})
 	if err != nil {
 		t.Fatal(err)
 	}
-	orders, err := f.service.Create(f.ctx, scope, CreateInput{Name: "orders.sql", ParentID: &folder.ID})
+	orders, err := f.service.Create(f.ctx, principal, scope, CreateInput{Name: "orders.sql", ParentID: &folder.ID})
 	if err != nil {
 		t.Fatal(err)
 	}
-	if _, err := f.service.WriteContent(f.ctx, scope, orders.ID, "", strings.NewReader(
+	if _, err := f.service.WriteContent(f.ctx, principal, scope, orders.ID, "", strings.NewReader(
 		"select * from orders\nwhere orders.id = 1\n-- orders report\nselect orders_alias")); err != nil {
 		t.Fatal(err)
 	}
-	customers, err := f.service.Create(f.ctx, scope, CreateInput{Name: "customers.sql"})
+	customers, err := f.service.Create(f.ctx, principal, scope, CreateInput{Name: "customers.sql"})
 	if err != nil {
 		t.Fatal(err)
 	}
-	if _, err := f.service.WriteContent(f.ctx, scope, customers.ID, "", strings.NewReader("select * from customers")); err != nil {
+	if _, err := f.service.WriteContent(f.ctx, principal, scope, customers.ID, "", strings.NewReader("select * from customers")); err != nil {
 		t.Fatal(err)
 	}
-	binary, err := f.service.Create(f.ctx, scope, CreateInput{Name: "orders.bin"})
+	binary, err := f.service.Create(f.ctx, principal, scope, CreateInput{Name: "orders.bin"})
 	if err != nil {
 		t.Fatal(err)
 	}
-	if _, err := f.service.WriteContent(f.ctx, scope, binary.ID, "", strings.NewReader("orders binary payload")); err != nil {
+	if _, err := f.service.WriteContent(f.ctx, principal, scope, binary.ID, "", strings.NewReader("orders binary payload")); err != nil {
 		t.Fatal(err)
 	}
 
-	sharedScope := f.sharedScope(f.member)
-	if _, err := f.service.Search(f.ctx, sharedScope, SearchInput{Query: "orders"}); !errors.Is(err, ErrForbidden) {
-		t.Fatalf("shared search without permission error = %v, want %v", err, ErrForbidden)
-	}
+	sharedPrincipal, sharedScope := f.as(f.member), f.sharedTree()
+	accesstest.AssertForbidden(t, accesstest.Err(f.service.Search(f.ctx, sharedPrincipal, sharedScope, SearchInput{Query: "orders"})), "shared search without permission")
 
-	result, err := f.service.Search(f.ctx, scope, SearchInput{Query: "ORDERS"})
+	result, err := f.service.Search(f.ctx, principal, scope, SearchInput{Query: "ORDERS"})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -129,26 +128,26 @@ func TestSearchMatchesTextFilesAndRanksByCount(t *testing.T) {
 func TestSearchDoesNotLeakPrivateFilesAcrossAccounts(t *testing.T) {
 	f := newServiceFixture(t, Config{StorageMode: StorageModeObject, RevisionPolicy: RevisionPolicyDisabled})
 
-	ownerScope := f.privateScope(f.owner)
-	memberScope := f.privateScope(f.member)
+	ownerPrincipal, ownerScope := f.as(f.owner), f.privateTree()
+	memberPrincipal, memberScope := f.as(f.member), f.privateTree()
 
-	ownerFile, err := f.service.Create(f.ctx, ownerScope, CreateInput{Name: "owner-orders.sql"})
+	ownerFile, err := f.service.Create(f.ctx, ownerPrincipal, ownerScope, CreateInput{Name: "owner-orders.sql"})
 	if err != nil {
 		t.Fatal(err)
 	}
-	if _, err := f.service.WriteContent(f.ctx, ownerScope, ownerFile.ID, "", strings.NewReader("select * from orders")); err != nil {
+	if _, err := f.service.WriteContent(f.ctx, ownerPrincipal, ownerScope, ownerFile.ID, "", strings.NewReader("select * from orders")); err != nil {
 		t.Fatal(err)
 	}
 
-	memberFile, err := f.service.Create(f.ctx, memberScope, CreateInput{Name: "member-orders.sql"})
+	memberFile, err := f.service.Create(f.ctx, memberPrincipal, memberScope, CreateInput{Name: "member-orders.sql"})
 	if err != nil {
 		t.Fatal(err)
 	}
-	if _, err := f.service.WriteContent(f.ctx, memberScope, memberFile.ID, "", strings.NewReader("select * from orders")); err != nil {
+	if _, err := f.service.WriteContent(f.ctx, memberPrincipal, memberScope, memberFile.ID, "", strings.NewReader("select * from orders")); err != nil {
 		t.Fatal(err)
 	}
 
-	memberResult, err := f.service.Search(f.ctx, memberScope, SearchInput{Query: "orders"})
+	memberResult, err := f.service.Search(f.ctx, memberPrincipal, memberScope, SearchInput{Query: "orders"})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -156,7 +155,7 @@ func TestSearchDoesNotLeakPrivateFilesAcrossAccounts(t *testing.T) {
 		t.Fatalf("member search results = %+v, want only member-orders.sql (owner's private file must not leak)", memberResult.Results)
 	}
 
-	ownerResult, err := f.service.Search(f.ctx, ownerScope, SearchInput{Query: "orders"})
+	ownerResult, err := f.service.Search(f.ctx, ownerPrincipal, ownerScope, SearchInput{Query: "orders"})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -176,27 +175,27 @@ func TestSearchDoesNotLeakFilesAcrossWorkspaces(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	scope := f.privateScope(f.owner)
+	principal, scope := f.as(f.owner), f.privateTree()
 	otherScope := scope
-	otherScope.Workspace = otherWs
+	otherScope.WorkspaceID = otherWs.ID
 
-	file, err := f.service.Create(f.ctx, scope, CreateInput{Name: "orders.sql"})
+	file, err := f.service.Create(f.ctx, principal, scope, CreateInput{Name: "orders.sql"})
 	if err != nil {
 		t.Fatal(err)
 	}
-	if _, err := f.service.WriteContent(f.ctx, scope, file.ID, "", strings.NewReader("select * from orders")); err != nil {
+	if _, err := f.service.WriteContent(f.ctx, principal, scope, file.ID, "", strings.NewReader("select * from orders")); err != nil {
 		t.Fatal(err)
 	}
 
-	otherFile, err := f.service.Create(f.ctx, otherScope, CreateInput{Name: "other-orders.sql"})
+	otherFile, err := f.service.Create(f.ctx, principal, otherScope, CreateInput{Name: "other-orders.sql"})
 	if err != nil {
 		t.Fatal(err)
 	}
-	if _, err := f.service.WriteContent(f.ctx, otherScope, otherFile.ID, "", strings.NewReader("select * from orders")); err != nil {
+	if _, err := f.service.WriteContent(f.ctx, principal, otherScope, otherFile.ID, "", strings.NewReader("select * from orders")); err != nil {
 		t.Fatal(err)
 	}
 
-	result, err := f.service.Search(f.ctx, scope, SearchInput{Query: "orders"})
+	result, err := f.service.Search(f.ctx, principal, scope, SearchInput{Query: "orders"})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -207,28 +206,28 @@ func TestSearchDoesNotLeakFilesAcrossWorkspaces(t *testing.T) {
 
 func TestSearchTruncatesAtMaxFilesScanned(t *testing.T) {
 	f := newServiceFixture(t, Config{StorageMode: StorageModeObject, RevisionPolicy: RevisionPolicyDisabled})
-	scope := f.privateScope(f.member)
+	principal, scope := f.as(f.member), f.privateTree()
 
 	originalMax := maxSearchFilesScanned
 	maxSearchFilesScanned = 1
 	t.Cleanup(func() { maxSearchFilesScanned = originalMax })
 
-	first, err := f.service.Create(f.ctx, scope, CreateInput{Name: "a.sql"})
+	first, err := f.service.Create(f.ctx, principal, scope, CreateInput{Name: "a.sql"})
 	if err != nil {
 		t.Fatal(err)
 	}
-	if _, err := f.service.WriteContent(f.ctx, scope, first.ID, "", strings.NewReader("select 1")); err != nil {
+	if _, err := f.service.WriteContent(f.ctx, principal, scope, first.ID, "", strings.NewReader("select 1")); err != nil {
 		t.Fatal(err)
 	}
-	second, err := f.service.Create(f.ctx, scope, CreateInput{Name: "b.sql"})
+	second, err := f.service.Create(f.ctx, principal, scope, CreateInput{Name: "b.sql"})
 	if err != nil {
 		t.Fatal(err)
 	}
-	if _, err := f.service.WriteContent(f.ctx, scope, second.ID, "", strings.NewReader("select 1")); err != nil {
+	if _, err := f.service.WriteContent(f.ctx, principal, scope, second.ID, "", strings.NewReader("select 1")); err != nil {
 		t.Fatal(err)
 	}
 
-	result, err := f.service.Search(f.ctx, scope, SearchInput{Query: "select"})
+	result, err := f.service.Search(f.ctx, principal, scope, SearchInput{Query: "select"})
 	if err != nil {
 		t.Fatal(err)
 	}

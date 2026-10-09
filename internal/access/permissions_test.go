@@ -165,10 +165,8 @@ func TestWorkspaceBuiltinRoles(t *testing.T) {
 		if p == "ws:create" || p == "ws:delete" {
 			t.Fatalf("%s must not have %s", access.BuiltinWorkspaceAdminRole, p)
 		}
-		if p == access.PermConnRevealSecret {
-			t.Fatalf("%s must not have %s", access.BuiltinWorkspaceAdminRole, p)
-		}
 	}
+	assertPermissionPresent(t, adminPerms, access.PermConnRevealSecret, string(access.BuiltinWorkspaceAdminRole))
 
 	memberPerms := access.WorkspaceBuiltinRoles[access.BuiltinWorkspaceMemberRole]
 	if len(memberPerms) != 1 || memberPerms[0] != access.PermWsRead {

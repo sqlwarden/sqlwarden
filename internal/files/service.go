@@ -5,6 +5,7 @@ import (
 	"database/sql"
 	"errors"
 	"io"
+	"log/slog"
 	"os"
 	"path"
 	"strconv"
@@ -13,6 +14,7 @@ import (
 	"time"
 
 	"github.com/sqlwarden/internal/access"
+	"github.com/sqlwarden/internal/audit"
 	"github.com/sqlwarden/internal/database"
 	"github.com/sqlwarden/internal/filestore"
 )
@@ -25,8 +27,8 @@ const (
 )
 
 var (
-	ErrForbidden                 = errors.New("workspace file access forbidden")
-	ErrNotFound                  = errors.New("workspace file not found")
+	ErrForbidden                 = access.ErrForbidden
+	ErrNotFound                  = access.ErrNotFound
 	ErrStorageBackendUnavailable = errors.New("workspace file storage backend is unavailable")
 	ErrInvalidName               = errors.New("workspace file name is invalid")
 	ErrInvalidObjectType         = errors.New("workspace file object type is invalid")
@@ -42,6 +44,7 @@ var (
 )
 
 // Enforcer is the permission check used for shared workspace-file operations.
+// access.PolicyEvaluator satisfies it so edition deny decorators apply.
 type Enforcer interface {
 	Can(ctx context.Context, accountID, orgID int64, ownerType, resourceType string, resourceID int64, permission string) bool
 }
@@ -83,9 +86,18 @@ func (r singleStoreResolver) Store(_ context.Context, backendID string) (filesto
 	return r.store, nil
 }
 
-// Scope identifies the actor, workspace, organization, and file tree for one
-// workspace-file operation.
+// Scope identifies the organization, workspace, and file tree for one
+// workspace-file operation. The caller supplies only identifiers; the service
+// resolves and authorizes them against the acting principal.
 type Scope struct {
+	OrgID       int64
+	WorkspaceID int64
+	Visibility  string
+}
+
+// treeScope is a Scope after the organization and workspace were resolved and
+// authorized for the acting account.
+type treeScope struct {
 	AccountID  int64
 	OrgID      int64
 	OrgSlug    string
@@ -136,12 +148,25 @@ type BrowserResult struct {
 	Children []database.WorkspaceFile `json:"children"`
 }
 
+// Deps are the collaborators of a Service. Audit and Logger are optional.
+type Deps struct {
+	DB       *database.DB
+	Stores   StoreResolver
+	Enforcer Enforcer
+	Requirer *access.Requirer
+	Audit    audit.Writer
+	Logger   *slog.Logger
+}
+
 // Service owns workspace-file authorization, metadata mutations, storage-key
 // planning, and content IO orchestration.
 type Service struct {
 	db       *database.DB
 	stores   StoreResolver
 	enforcer Enforcer
+	requirer *access.Requirer
+	audit    audit.Writer
+	logger   *slog.Logger
 	config   Config
 	locks    *sync.Map
 }
@@ -149,24 +174,75 @@ type Service struct {
 // New creates a workspace-file service over a database, byte store, and RBAC
 // enforcer. locks may be shared across service instances for process-local
 // serialization.
-func New(db *database.DB, store filestore.Store, enforcer Enforcer, config Config, locks *sync.Map) *Service {
-	return NewWithStoreResolver(db, singleStoreResolver{backendID: config.ActiveStorageBackendID, store: store}, enforcer, config, locks)
+func New(db *database.DB, store filestore.Store, enforcer Enforcer, requirer *access.Requirer, config Config, locks *sync.Map) *Service {
+	return NewService(Deps{
+		DB:       db,
+		Stores:   singleStoreResolver{backendID: config.ActiveStorageBackendID, store: store},
+		Enforcer: enforcer,
+		Requirer: requirer,
+	}, config, locks)
 }
 
-// NewWithStoreResolver creates a workspace-file service that can read content
-// from any configured backend and write new content to the active backend.
-func NewWithStoreResolver(db *database.DB, stores StoreResolver, enforcer Enforcer, config Config, locks *sync.Map) *Service {
+// NewService creates a workspace-file service that can read content from any
+// configured backend and write new content to the active backend.
+func NewService(deps Deps, config Config, locks *sync.Map) *Service {
 	if locks == nil {
 		locks = &sync.Map{}
 	}
 	if config.ActiveStorageBackendID == "" {
 		config.ActiveStorageBackendID = database.DefaultFileStorageBackendID
 	}
-	return &Service{db: db, stores: stores, enforcer: enforcer, config: config, locks: locks}
+	return &Service{
+		db:       deps.DB,
+		stores:   deps.Stores,
+		enforcer: deps.Enforcer,
+		requirer: deps.Requirer,
+		audit:    deps.Audit,
+		logger:   deps.Logger,
+		config:   config,
+		locks:    locks,
+	}
+}
+
+// resolve authorizes the principal against the scope's organization and
+// workspace and returns the tree the file rules then apply to. Only org-owned
+// workspaces resolve.
+func (s *Service) resolve(ctx context.Context, p access.Principal, scope Scope) (treeScope, error) {
+	if s.requirer == nil {
+		return treeScope{}, ErrForbidden
+	}
+	ws, err := s.requirer.Workspace(ctx, p, scope.OrgID, scope.WorkspaceID, "")
+	if err != nil {
+		return treeScope{}, err
+	}
+	tree := treeScope{
+		AccountID: p.Subject.ID,
+		OrgID:     scope.OrgID,
+		Workspace: database.Workspace{
+			ID:        ws.ID,
+			OrgID:     ws.OrgID,
+			OwnerType: ws.OwnerType,
+			OwnerID:   ws.OwnerID,
+			Name:      ws.Name,
+		},
+		Visibility: scope.Visibility,
+	}
+	if s.config.StorageMode == StorageModeFile {
+		org, err := s.requirer.Org(ctx, p, scope.OrgID)
+		if err != nil {
+			return treeScope{}, err
+		}
+		tree.OrgSlug = org.Slug
+	}
+	return tree, nil
 }
 
 // List returns direct children from the requested private or shared file tree.
-func (s *Service) List(ctx context.Context, scope Scope, parentID *int64) ([]database.WorkspaceFile, error) {
+func (s *Service) List(ctx context.Context, p access.Principal, req Scope, parentID *int64) ([]database.WorkspaceFile, error) {
+	scope, err := s.resolve(ctx, p, req)
+	if err != nil {
+		return nil, err
+	}
 	ownerID, err := s.authorizeTree(ctx, scope, access.PermWsFileRead)
 	if err != nil {
 		return nil, err
@@ -188,16 +264,16 @@ func (s *Service) List(ctx context.Context, scope Scope, parentID *int64) ([]dat
 
 // Browser returns the current node, breadcrumb path, and direct children for an
 // Editor file browser location. A nil fileID represents the file-tree root.
-func (s *Service) Browser(ctx context.Context, scope Scope, fileID *int64) (BrowserResult, error) {
+func (s *Service) Browser(ctx context.Context, p access.Principal, scope Scope, fileID *int64) (BrowserResult, error) {
 	if fileID == nil {
-		children, err := s.List(ctx, scope, nil)
+		children, err := s.List(ctx, p, scope, nil)
 		if err != nil {
 			return BrowserResult{}, err
 		}
 		return BrowserResult{Path: []PathSegment{}, Children: children}, nil
 	}
 
-	file, err := s.Get(ctx, scope, *fileID)
+	file, err := s.Get(ctx, p, scope, *fileID)
 	if err != nil {
 		return BrowserResult{}, err
 	}
@@ -207,7 +283,7 @@ func (s *Service) Browser(ctx context.Context, scope Scope, fileID *int64) (Brow
 	}
 	children := []database.WorkspaceFile{}
 	if file.ObjectType == database.FileObjectTypeFolder {
-		children, err = s.List(ctx, scope, &file.ID)
+		children, err = s.List(ctx, p, scope, &file.ID)
 		if err != nil {
 			return BrowserResult{}, err
 		}
@@ -217,7 +293,11 @@ func (s *Service) Browser(ctx context.Context, scope Scope, fileID *int64) (Brow
 
 // Recent returns recently updated files from the authorized private or shared
 // file tree. It excludes folders because editor recent entries must be openable.
-func (s *Service) Recent(ctx context.Context, scope Scope, limit int) ([]database.WorkspaceFile, error) {
+func (s *Service) Recent(ctx context.Context, p access.Principal, req Scope, limit int) ([]database.WorkspaceFile, error) {
+	scope, err := s.resolve(ctx, p, req)
+	if err != nil {
+		return nil, err
+	}
 	ownerID, err := s.authorizeTree(ctx, scope, access.PermWsFileRead)
 	if err != nil {
 		return nil, err
@@ -233,7 +313,11 @@ func (s *Service) Recent(ctx context.Context, scope Scope, limit int) ([]databas
 }
 
 // Create inserts a file or folder in the requested private or shared file tree.
-func (s *Service) Create(ctx context.Context, scope Scope, input CreateInput) (database.WorkspaceFile, error) {
+func (s *Service) Create(ctx context.Context, p access.Principal, req Scope, input CreateInput) (database.WorkspaceFile, error) {
+	scope, err := s.resolve(ctx, p, req)
+	if err != nil {
+		return database.WorkspaceFile{}, err
+	}
 	if input.ObjectType == "" {
 		input.ObjectType = database.FileObjectTypeFile
 	}
@@ -278,7 +362,11 @@ func (s *Service) Create(ctx context.Context, scope Scope, input CreateInput) (d
 
 // Get returns metadata for one authorized file/folder and enriches it with
 // current content metadata when the node is a file with content.
-func (s *Service) Get(ctx context.Context, scope Scope, fileID int64) (database.WorkspaceFile, error) {
+func (s *Service) Get(ctx context.Context, p access.Principal, req Scope, fileID int64) (database.WorkspaceFile, error) {
+	scope, err := s.resolve(ctx, p, req)
+	if err != nil {
+		return database.WorkspaceFile{}, err
+	}
 	file, err := s.authorizedFile(ctx, scope, access.PermWsFileRead, fileID)
 	if err != nil {
 		return database.WorkspaceFile{}, err
@@ -291,7 +379,11 @@ func (s *Service) Get(ctx context.Context, scope Scope, fileID int64) (database.
 
 // Update renames and/or moves an authorized file/folder and keeps file-mode
 // storage paths in sync when that mode is active.
-func (s *Service) Update(ctx context.Context, scope Scope, fileID int64, input UpdateInput) (database.WorkspaceFile, error) {
+func (s *Service) Update(ctx context.Context, p access.Principal, req Scope, fileID int64, input UpdateInput) (database.WorkspaceFile, error) {
+	scope, err := s.resolve(ctx, p, req)
+	if err != nil {
+		return database.WorkspaceFile{}, err
+	}
 	lock := s.workspaceLock(scope.Workspace.ID)
 	lock.Lock()
 	defer lock.Unlock()
@@ -368,7 +460,11 @@ func (s *Service) Update(ctx context.Context, scope Scope, fileID int64, input U
 
 // Duplicate copies a file's current content into an independent file beside
 // the source. Revision history is intentionally not copied.
-func (s *Service) Duplicate(ctx context.Context, scope Scope, fileID int64, input DuplicateInput) (database.WorkspaceFile, error) {
+func (s *Service) Duplicate(ctx context.Context, p access.Principal, req Scope, fileID int64, input DuplicateInput) (database.WorkspaceFile, error) {
+	scope, err := s.resolve(ctx, p, req)
+	if err != nil {
+		return database.WorkspaceFile{}, err
+	}
 	lock := s.workspaceLock(scope.Workspace.ID)
 	lock.Lock()
 	defer lock.Unlock()
@@ -383,7 +479,7 @@ func (s *Service) Duplicate(ctx context.Context, scope Scope, fileID int64, inpu
 
 	// Creating the destination performs the independent create authorization,
 	// parent validation, name validation, and uniqueness enforcement.
-	duplicate, err := s.Create(ctx, scope, CreateInput{
+	duplicate, err := s.Create(ctx, p, req, CreateInput{
 		Name:       input.Name,
 		ObjectType: database.FileObjectTypeFile,
 		ParentID:   source.ParentID,
@@ -469,7 +565,11 @@ func (s *Service) Duplicate(ctx context.Context, scope Scope, fileID int64, inpu
 
 // Delete tombstones an authorized file/folder subtree and removes all tracked
 // stored content for that subtree.
-func (s *Service) Delete(ctx context.Context, scope Scope, fileID int64) error {
+func (s *Service) Delete(ctx context.Context, p access.Principal, req Scope, fileID int64) error {
+	scope, err := s.resolve(ctx, p, req)
+	if err != nil {
+		return err
+	}
 	lock := s.workspaceLock(scope.Workspace.ID)
 	lock.Lock()
 	defer lock.Unlock()
@@ -499,11 +599,38 @@ func (s *Service) Delete(ctx context.Context, scope Scope, fileID int64) error {
 		}
 	}
 	s.planner().Prune(ctx, s, scope, file)
+	s.auditDeleted(ctx, p, scope, file)
 	return nil
 }
 
+// auditDeleted records the deletion on a best-effort basis; a failed audit
+// write must not undo or fail a delete that already happened.
+func (s *Service) auditDeleted(ctx context.Context, p access.Principal, scope treeScope, file database.WorkspaceFile) {
+	orgID := scope.OrgID
+	err := audit.Emit(ctx, s.audit, audit.Event{
+		OrgID:      &orgID,
+		Actor:      audit.ActorFromPrincipal(p),
+		Action:     "file.deleted",
+		Resource:   "workspace_file",
+		ResourceID: strconv.FormatInt(file.ID, 10),
+		Outcome:    audit.OutcomeSuccess,
+		Metadata: map[string]string{
+			"workspace_id": strconv.FormatInt(scope.Workspace.ID, 10),
+			"visibility":   file.Visibility,
+			"object_type":  file.ObjectType,
+		},
+	})
+	if err != nil && s.logger != nil {
+		s.logger.WarnContext(ctx, "workspace file delete audit failed", slog.Int64("file_id", file.ID), slog.Any("error", err))
+	}
+}
+
 // ReadContent opens the current stored bytes for an authorized file.
-func (s *Service) ReadContent(ctx context.Context, scope Scope, fileID int64) (ReadContentResult, error) {
+func (s *Service) ReadContent(ctx context.Context, p access.Principal, req Scope, fileID int64) (ReadContentResult, error) {
+	scope, err := s.resolve(ctx, p, req)
+	if err != nil {
+		return ReadContentResult{}, err
+	}
 	file, err := s.authorizedFile(ctx, scope, access.PermWsFileRead, fileID)
 	if err != nil {
 		return ReadContentResult{}, err
@@ -531,7 +658,11 @@ func (s *Service) ReadContent(ctx context.Context, scope Scope, fileID int64) (R
 
 // WriteContent stores new bytes for an authorized file, enforcing If-Match for
 // existing content and applying the configured revision strategy.
-func (s *Service) WriteContent(ctx context.Context, scope Scope, fileID int64, expectedHash string, content io.Reader) (database.WorkspaceFileContent, error) {
+func (s *Service) WriteContent(ctx context.Context, p access.Principal, req Scope, fileID int64, expectedHash string, content io.Reader) (database.WorkspaceFileContent, error) {
+	scope, err := s.resolve(ctx, p, req)
+	if err != nil {
+		return database.WorkspaceFileContent{}, err
+	}
 	lock := s.workspaceLock(scope.Workspace.ID)
 	lock.Lock()
 	defer lock.Unlock()
@@ -663,7 +794,7 @@ func ValidName(name string) bool {
 
 // authorizedFile loads a file and enforces that it belongs to the requested
 // workspace, tree, and actor.
-func (s *Service) authorizedFile(ctx context.Context, scope Scope, permission string, fileID int64) (database.WorkspaceFile, error) {
+func (s *Service) authorizedFile(ctx context.Context, scope treeScope, permission string, fileID int64) (database.WorkspaceFile, error) {
 	file, found, err := s.db.GetWorkspaceFile(ctx, fileID)
 	if err != nil {
 		return database.WorkspaceFile{}, err
@@ -693,14 +824,7 @@ func (s *Service) authorizedFile(ctx context.Context, scope Scope, permission st
 
 // authorizeTree returns the owner account ID for private trees and nil for
 // shared trees after enforcing the relevant access model.
-func (s *Service) authorizeTree(ctx context.Context, scope Scope, permission string) (*int64, error) {
-	if scope.Workspace.OwnerType == "space" {
-		if scope.Visibility != database.FileVisibilityPrivate {
-			return nil, ErrNotFound
-		}
-		ownerID := scope.AccountID
-		return &ownerID, nil
-	}
+func (s *Service) authorizeTree(ctx context.Context, scope treeScope, permission string) (*int64, error) {
 	switch scope.Visibility {
 	case database.FileVisibilityPrivate:
 		member, err := s.db.IsEffectiveWorkspaceMember(ctx, scope.OrgID, scope.Workspace.ID, scope.AccountID)
@@ -724,7 +848,7 @@ func (s *Service) authorizeTree(ctx context.Context, scope Scope, permission str
 
 // validateParent checks that a parent folder belongs to the same workspace,
 // visibility tree, and private owner as the file being created or moved.
-func (s *Service) validateParent(ctx context.Context, scope Scope, parentID int64, ownerID *int64) error {
+func (s *Service) validateParent(ctx context.Context, scope treeScope, parentID int64, ownerID *int64) error {
 	parent, found, err := s.db.GetWorkspaceFile(ctx, parentID)
 	if err != nil {
 		return err
@@ -819,9 +943,9 @@ func (s *Service) storeForBackend(ctx context.Context, backendID string) (filest
 }
 
 type storagePlanner interface {
-	ContentKey(context.Context, *Service, Scope, database.WorkspaceFile, database.WorkspaceFileContent, bool) (string, error)
-	Relocations(context.Context, *Service, Scope, database.WorkspaceFile, database.WorkspaceFile) ([]relocation, error)
-	Prune(context.Context, *Service, Scope, database.WorkspaceFile)
+	ContentKey(context.Context, *Service, treeScope, database.WorkspaceFile, database.WorkspaceFileContent, bool) (string, error)
+	Relocations(context.Context, *Service, treeScope, database.WorkspaceFile, database.WorkspaceFile) ([]relocation, error)
+	Prune(context.Context, *Service, treeScope, database.WorkspaceFile)
 	UsesRevisions(database.WorkspaceFile) bool
 }
 
@@ -837,7 +961,7 @@ type objectStorePlanner struct {
 }
 
 // ContentKey returns an opaque object key independent of user-visible names.
-func (p objectStorePlanner) ContentKey(_ context.Context, _ *Service, _ Scope, file database.WorkspaceFile, current database.WorkspaceFileContent, hasCurrent bool) (string, error) {
+func (p objectStorePlanner) ContentKey(_ context.Context, _ *Service, _ treeScope, file database.WorkspaceFile, current database.WorkspaceFileContent, hasCurrent bool) (string, error) {
 	suffix := "current"
 	if p.UsesRevisions(file) {
 		version := 1
@@ -851,12 +975,12 @@ func (p objectStorePlanner) ContentKey(_ context.Context, _ *Service, _ Scope, f
 
 // Relocations are unnecessary for opaque object keys because rename/move only
 // changes metadata.
-func (p objectStorePlanner) Relocations(context.Context, *Service, Scope, database.WorkspaceFile, database.WorkspaceFile) ([]relocation, error) {
+func (p objectStorePlanner) Relocations(context.Context, *Service, treeScope, database.WorkspaceFile, database.WorkspaceFile) ([]relocation, error) {
 	return nil, nil
 }
 
 // Prune is a no-op for opaque object storage.
-func (p objectStorePlanner) Prune(context.Context, *Service, Scope, database.WorkspaceFile) {}
+func (p objectStorePlanner) Prune(context.Context, *Service, treeScope, database.WorkspaceFile) {}
 
 // UsesRevisions reports whether this file should write immutable versions.
 func (p objectStorePlanner) UsesRevisions(file database.WorkspaceFile) bool {
@@ -869,7 +993,7 @@ func (p objectStorePlanner) UsesRevisions(file database.WorkspaceFile) bool {
 type workspaceDirectoryPlanner struct{}
 
 // ContentKey mirrors the user-visible workspace file path on the byte store.
-func (p workspaceDirectoryPlanner) ContentKey(ctx context.Context, svc *Service, scope Scope, file database.WorkspaceFile, _ database.WorkspaceFileContent, _ bool) (string, error) {
+func (p workspaceDirectoryPlanner) ContentKey(ctx context.Context, svc *Service, scope treeScope, file database.WorkspaceFile, _ database.WorkspaceFileContent, _ bool) (string, error) {
 	names, err := svc.db.WorkspaceFilePath(ctx, file)
 	if err != nil {
 		return "", err
@@ -891,7 +1015,7 @@ func (p workspaceDirectoryPlanner) ContentKey(ctx context.Context, svc *Service,
 
 // Relocations plans content-key changes for all tracked descendants when the
 // visible path of a file or folder changes.
-func (p workspaceDirectoryPlanner) Relocations(ctx context.Context, svc *Service, scope Scope, current, updated database.WorkspaceFile) ([]relocation, error) {
+func (p workspaceDirectoryPlanner) Relocations(ctx context.Context, svc *Service, scope treeScope, current, updated database.WorkspaceFile) ([]relocation, error) {
 	if current.Name == updated.Name && sameNullableID(current.ParentID, updated.ParentID) {
 		return nil, nil
 	}
@@ -927,7 +1051,7 @@ func (p workspaceDirectoryPlanner) Relocations(ctx context.Context, svc *Service
 }
 
 // Prune removes empty visible directories left behind after moves/deletes.
-func (p workspaceDirectoryPlanner) Prune(ctx context.Context, svc *Service, scope Scope, file database.WorkspaceFile) {
+func (p workspaceDirectoryPlanner) Prune(ctx context.Context, svc *Service, scope treeScope, file database.WorkspaceFile) {
 	store, err := svc.storeForBackend(ctx, svc.activeBackendID())
 	if err != nil {
 		return
@@ -1015,7 +1139,7 @@ func (s *Service) rollbackRelocations(ctx context.Context, relocations []relocat
 
 // finishRelocations removes old tracked byte keys after metadata points at the
 // new keys.
-func (s *Service) finishRelocations(ctx context.Context, planner storagePlanner, scope Scope, original database.WorkspaceFile, relocations []relocation) {
+func (s *Service) finishRelocations(ctx context.Context, planner storagePlanner, scope treeScope, original database.WorkspaceFile, relocations []relocation) {
 	for _, relocation := range relocations {
 		if relocation.copied {
 			if store, err := s.storeForBackend(ctx, relocation.backendID); err == nil {

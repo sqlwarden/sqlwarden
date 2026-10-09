@@ -126,7 +126,11 @@ type SearchResult struct {
 // storage backend, or a read error) is skipped rather than failing the
 // whole request, since one bad blob should not take down search for the
 // rest of the workspace.
-func (s *Service) Search(ctx context.Context, scope Scope, input SearchInput) (SearchResult, error) {
+func (s *Service) Search(ctx context.Context, p access.Principal, req Scope, input SearchInput) (SearchResult, error) {
+	scope, err := s.resolve(ctx, p, req)
+	if err != nil {
+		return SearchResult{}, err
+	}
 	query := strings.TrimSpace(input.Query)
 	if len(query) < minSearchQueryLength {
 		return SearchResult{}, ErrInvalidSearchQuery

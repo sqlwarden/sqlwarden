@@ -50,7 +50,7 @@ const (
 	// clause so the runtime can require explicit confirmation before running
 	// them. Dialects without a registered checker fall back to a heuristic,
 	// which is why this capability can read false while confirmation gating
-	// still applies (see connectionSafetyChecker in internal/web).
+	// still applies (see EngineAnalyzers.SafetyChecker in internal/query).
 	CapabilitySQLSafetyCheck Capability = "sql.safety_check"
 	// CapabilitySQLExplain produces an EXPLAIN form of a single statement
 	// without executing it as-is. See explain.Explainer for the analyze-mode

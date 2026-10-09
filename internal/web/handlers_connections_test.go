@@ -22,65 +22,11 @@ import (
 	"github.com/sqlwarden/internal/credentials"
 	"github.com/sqlwarden/internal/database"
 	"github.com/sqlwarden/internal/engine"
-	"github.com/sqlwarden/internal/engine/classifier"
 	"github.com/sqlwarden/internal/engine/cursor"
 	"github.com/sqlwarden/internal/execution"
 	"github.com/sqlwarden/internal/token"
 	"github.com/sqlwarden/pkg/result"
 )
-
-func TestConnectionClassifierFallsBackToHeuristic(t *testing.T) {
-	// Every registered engine now ships a real classifier, so the heuristic
-	// fallback is only reachable for a driver name that resolves to no engine.
-	if _, ok := registeredConnectionClassifier("driver-with-no-engine"); ok {
-		t.Fatal("an unregistered driver must not advertise a registered classifier")
-	}
-
-	c := connectionClassifier("driver-with-no-engine")
-	tests := []struct {
-		sql  string
-		want classifier.Kind
-	}{
-		{sql: "SELECT 1", want: classifier.KindDQL},
-		{sql: "UPDATE widgets SET active = false", want: classifier.KindDML},
-		{sql: "DROP TABLE widgets", want: classifier.KindDDL},
-		{sql: "VACUUM", want: classifier.KindUnknown},
-	}
-	for _, test := range tests {
-		got, err := c.Classify(context.Background(), classifier.Request{SQL: test.sql})
-		if err != nil {
-			t.Fatalf("Classify(%q): %v", test.sql, err)
-		}
-		if got.Kind != test.want || got.Source != "heuristic" {
-			t.Errorf("Classify(%q) = %+v, want kind=%q source=heuristic", test.sql, got, test.want)
-		}
-	}
-}
-
-func TestConnectionClassifierUsesRegisteredSQLiteEngine(t *testing.T) {
-	c, ok := registeredConnectionClassifier("sqlite")
-	if !ok {
-		t.Fatal("sqlite must advertise a registered classifier")
-	}
-
-	tests := []struct {
-		sql  string
-		want classifier.Kind
-	}{
-		{sql: "SELECT 1", want: classifier.KindDQL},
-		{sql: "DELETE FROM t", want: classifier.KindDML},
-		{sql: "PRAGMA foreign_keys", want: classifier.KindUnknown},
-	}
-	for _, test := range tests {
-		got, err := c.Classify(context.Background(), classifier.Request{SQL: test.sql})
-		if err != nil {
-			t.Fatalf("Classify(%q): %v", test.sql, err)
-		}
-		if got.Kind != test.want {
-			t.Errorf("Classify(%q) kind = %q, want %q", test.sql, got.Kind, test.want)
-		}
-	}
-}
 
 func TestTestConnectionUnknownDriver(t *testing.T) {
 	t.Parallel()
@@ -827,7 +773,16 @@ func TestExecuteQueryCursorAndValidationBranches(t *testing.T) {
 	wrongOwnerReq := newAuthRequest(t, http.MethodPost, queryURL, map[string]any{"sql": "SELECT 1"}, memberTok)
 	wrongOwnerReq.Header.Set("X-Warden-Session", sessionID)
 	wrongOwnerRes := send(t, wrongOwnerReq, app.routes())
-	assert.Equal(t, wrongOwnerRes.StatusCode, http.StatusGone)
+	assert.Equal(t, wrongOwnerRes.StatusCode, http.StatusForbidden)
+
+	connIDInt, _ := strconv.ParseInt(connID, 10, 64)
+	roleID := createRoleForTest(t, app, org.ID, nil, "connection", access.PermConnRead, access.PermConnDQL)
+	grant := grantWorkspacePolicyRole(t, app, ownerTok, org.Slug, strconv.FormatInt(ws.ID, 10), roleID, access.SubjectTypeAccount, member.ID, "connection", connIDInt)
+	assert.Equal(t, grant.StatusCode, http.StatusNoContent)
+	permittedWrongOwnerReq := newAuthRequest(t, http.MethodPost, queryURL, map[string]any{"sql": "SELECT 1"}, memberTok)
+	permittedWrongOwnerReq.Header.Set("X-Warden-Session", sessionID)
+	permittedWrongOwnerRes := send(t, permittedWrongOwnerReq, app.routes())
+	assert.Equal(t, permittedWrongOwnerRes.StatusCode, http.StatusGone)
 
 	selectErrReq := newAuthRequest(t, http.MethodPost, queryURL, map[string]any{"sql": "SELECT * FROM missing_table"}, ownerTok)
 	selectErrReq.Header.Set("X-Warden-Session", sessionID)
@@ -1008,13 +963,6 @@ func TestExecuteQueryExplainRejectsInvalidMode(t *testing.T) {
 	fieldErrors := res.BodyFields["error"].(map[string]any)["field_errors"].(map[string]any)
 	if _, ok := fieldErrors["explain"]; !ok {
 		t.Fatalf("expected explain field error, got %+v", fieldErrors)
-	}
-}
-
-func TestRegisteredConnectionExplainerUnknownDriverReturnsNotOK(t *testing.T) {
-	t.Parallel()
-	if _, ok := registeredConnectionExplainer("not-a-real-driver"); ok {
-		t.Fatal("expected an unregistered driver to report no Explainer")
 	}
 }
 
@@ -1600,7 +1548,7 @@ func TestQueryCursorFetchHandlesParentSessionRemoval(t *testing.T) {
 	assert.Equal(t, send(t, fetchReq, app.routes()).StatusCode, http.StatusGone)
 }
 
-func TestQueryCursorFetchDoesNotRecheckRevokedPermission(t *testing.T) {
+func TestQueryCursorFetchRequiresRuntimePermission(t *testing.T) {
 	t.Parallel()
 	app := newTestApp(t)
 
@@ -1670,8 +1618,8 @@ func TestQueryCursorFetchDoesNotRecheckRevokedPermission(t *testing.T) {
 	fetchReq := newAuthRequest(t, http.MethodPost, connectionURL+"/query-cursors/"+queryCursorID+"/fetch", map[string]any{"page_size": 1}, memberTok)
 	fetchReq.Header.Set("X-Warden-Session", memberSessionID)
 	fetchRes := send(t, fetchReq, app.routes())
-	assert.Equal(t, fetchRes.StatusCode, http.StatusOK)
-	assert.Equal(t, fetchRes.BodyFields["rows_returned"], any(float64(1)))
+	assert.Equal(t, fetchRes.StatusCode, http.StatusForbidden)
+	assert.Equal(t, fetchRes.ErrorCode(), apiErrorNotPermitted)
 }
 
 func TestExecuteQueryRejectsSessionFromDifferentConnection(t *testing.T) {

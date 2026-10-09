@@ -14,6 +14,7 @@ import (
 	"time"
 
 	"github.com/sqlwarden/internal/access"
+	"github.com/sqlwarden/internal/access/accesstest"
 	"github.com/sqlwarden/internal/database"
 	"github.com/sqlwarden/internal/filestore"
 )
@@ -23,6 +24,7 @@ type serviceFixture struct {
 	db       *database.DB
 	store    *filestore.Filesystem
 	enforcer *fakeEnforcer
+	requirer *access.Requirer
 	service  *Service
 	org      database.Organization
 	ws       database.Workspace
@@ -117,8 +119,9 @@ func newServiceFixture(t *testing.T, config Config) serviceFixture {
 	}
 
 	enforcer := &fakeEnforcer{allowed: map[string]bool{}}
-	service := New(db, store, enforcer, config, &sync.Map{})
-	return serviceFixture{ctx: ctx, db: db, store: store, enforcer: enforcer, service: service, org: org, ws: ws, owner: owner, member: member, other: other}
+	requirer := access.NewRequirer(dbDirectory{db}, policyEvaluator{enforcer})
+	service := New(db, store, enforcer, requirer, config, &sync.Map{})
+	return serviceFixture{ctx: ctx, db: db, store: store, enforcer: enforcer, requirer: requirer, service: service, org: org, ws: ws, owner: owner, member: member, other: other}
 }
 
 func insertTestAccount(t *testing.T, db *database.DB, email, name string) database.Account {
@@ -130,24 +133,16 @@ func insertTestAccount(t *testing.T, db *database.DB, email, name string) databa
 	return account
 }
 
-func (f serviceFixture) privateScope(account database.Account) Scope {
-	return Scope{
-		AccountID:  account.ID,
-		OrgID:      f.org.ID,
-		OrgSlug:    f.org.Slug,
-		Workspace:  f.ws,
-		Visibility: database.FileVisibilityPrivate,
-	}
+func (f serviceFixture) as(account database.Account) access.Principal {
+	return accountPrincipal(account.ID)
 }
 
-func (f serviceFixture) sharedScope(account database.Account) Scope {
-	return Scope{
-		AccountID:  account.ID,
-		OrgID:      f.org.ID,
-		OrgSlug:    f.org.Slug,
-		Workspace:  f.ws,
-		Visibility: database.FileVisibilityShared,
-	}
+func (f serviceFixture) privateTree() Scope {
+	return Scope{OrgID: f.org.ID, WorkspaceID: f.ws.ID, Visibility: database.FileVisibilityPrivate}
+}
+
+func (f serviceFixture) sharedTree() Scope {
+	return Scope{OrgID: f.org.ID, WorkspaceID: f.ws.ID, Visibility: database.FileVisibilityShared}
 }
 
 func TestValidName(t *testing.T) {
@@ -166,7 +161,7 @@ func TestValidName(t *testing.T) {
 func TestPrivateFilesAreOwnerOnlyAndRequireEffectiveWorkspaceMembership(t *testing.T) {
 	f := newServiceFixture(t, Config{StorageMode: StorageModeObject, RevisionPolicy: RevisionPolicyDisabled})
 
-	file, err := f.service.Create(f.ctx, f.privateScope(f.member), CreateInput{Name: "scratch.sql"})
+	file, err := f.service.Create(f.ctx, f.as(f.member), f.privateTree(), CreateInput{Name: "scratch.sql"})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -174,12 +169,8 @@ func TestPrivateFilesAreOwnerOnlyAndRequireEffectiveWorkspaceMembership(t *testi
 		t.Fatalf("private file owner = %v, want %d", file.OwnerAccountID, f.member.ID)
 	}
 
-	if _, err := f.service.Get(f.ctx, f.privateScope(f.owner), file.ID); !errors.Is(err, ErrNotFound) {
-		t.Fatalf("owner reading another private file error = %v, want %v", err, ErrNotFound)
-	}
-	if _, err := f.service.List(f.ctx, f.privateScope(f.other), nil); !errors.Is(err, ErrForbidden) {
-		t.Fatalf("non-workspace member list error = %v, want %v", err, ErrForbidden)
-	}
+	accesstest.AssertNotFound(t, accesstest.Err(f.service.Get(f.ctx, f.as(f.owner), f.privateTree(), file.ID)), "owner reading another private file")
+	accesstest.AssertForbidden(t, accesstest.Err(f.service.List(f.ctx, f.as(f.other), f.privateTree(), nil)), "non-workspace member list")
 
 	teamMember := insertTestAccount(t, f.db, "team-member-"+strconv.FormatInt(time.Now().UnixNano(), 36)+"@example.com", "Team Member")
 	if err := f.db.AddOrgMember(f.ctx, f.org.ID, teamMember.ID); err != nil {
@@ -195,64 +186,56 @@ func TestPrivateFilesAreOwnerOnlyAndRequireEffectiveWorkspaceMembership(t *testi
 	if err := f.db.AddWorkspaceTeam(f.ctx, f.ws.ID, team.ID, nil); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := f.service.Create(f.ctx, f.privateScope(teamMember), CreateInput{Name: "team-scratch.sql"}); err != nil {
+	if _, err := f.service.Create(f.ctx, f.as(teamMember), f.privateTree(), CreateInput{Name: "team-scratch.sql"}); err != nil {
 		t.Fatalf("team-derived workspace member create private file: %v", err)
 	}
 }
 
 func TestSharedFilesRequireSharedFilePermissions(t *testing.T) {
 	f := newServiceFixture(t, Config{StorageMode: StorageModeObject, RevisionPolicy: RevisionPolicyDisabled})
-	scope := f.sharedScope(f.member)
+	principal, scope := f.as(f.member), f.sharedTree()
 
-	if _, err := f.service.Create(f.ctx, scope, CreateInput{Name: "team.sql"}); !errors.Is(err, ErrForbidden) {
-		t.Fatalf("create without permission error = %v, want %v", err, ErrForbidden)
-	}
+	accesstest.AssertForbidden(t, accesstest.Err(f.service.Create(f.ctx, principal, scope, CreateInput{Name: "team.sql"})), "create without permission")
 
 	f.enforcer.allowed[access.PermWsFileCreate] = true
-	file, err := f.service.Create(f.ctx, scope, CreateInput{Name: "team.sql"})
+	file, err := f.service.Create(f.ctx, principal, scope, CreateInput{Name: "team.sql"})
 	if err != nil {
 		t.Fatal(err)
 	}
 	if file.OwnerAccountID != nil {
 		t.Fatalf("shared file owner = %v, want nil", file.OwnerAccountID)
 	}
-	if _, err := f.service.Get(f.ctx, scope, file.ID); !errors.Is(err, ErrForbidden) {
-		t.Fatalf("read without permission error = %v, want %v", err, ErrForbidden)
-	}
+	accesstest.AssertForbidden(t, accesstest.Err(f.service.Get(f.ctx, principal, scope, file.ID)), "read without permission")
 
 	f.enforcer.allowed[access.PermWsFileRead] = true
-	if _, err := f.service.Get(f.ctx, scope, file.ID); err != nil {
+	if _, err := f.service.Get(f.ctx, principal, scope, file.ID); err != nil {
 		t.Fatalf("read with permission: %v", err)
 	}
 }
 
 func TestCreateRejectsInvalidObjectsAndParents(t *testing.T) {
 	f := newServiceFixture(t, Config{StorageMode: StorageModeObject, RevisionPolicy: RevisionPolicyDisabled})
-	scope := f.privateScope(f.member)
+	principal, scope := f.as(f.member), f.privateTree()
 
-	if _, err := f.service.Create(f.ctx, scope, CreateInput{Name: "bad/folder.sql"}); !errors.Is(err, ErrInvalidName) {
+	if _, err := f.service.Create(f.ctx, principal, scope, CreateInput{Name: "bad/folder.sql"}); !errors.Is(err, ErrInvalidName) {
 		t.Fatalf("invalid name error = %v, want %v", err, ErrInvalidName)
 	}
-	if _, err := f.service.Create(f.ctx, scope, CreateInput{Name: "folder", ObjectType: database.FileObjectTypeFolder, MediaType: "text/plain"}); !errors.Is(err, ErrInvalidObjectType) {
+	if _, err := f.service.Create(f.ctx, principal, scope, CreateInput{Name: "folder", ObjectType: database.FileObjectTypeFolder, MediaType: "text/plain"}); !errors.Is(err, ErrInvalidObjectType) {
 		t.Fatalf("folder media error = %v, want %v", err, ErrInvalidObjectType)
 	}
 
-	parentFile, err := f.service.Create(f.ctx, scope, CreateInput{Name: "not-a-folder.sql"})
+	parentFile, err := f.service.Create(f.ctx, principal, scope, CreateInput{Name: "not-a-folder.sql"})
 	if err != nil {
 		t.Fatal(err)
 	}
-	if _, err := f.service.Create(f.ctx, scope, CreateInput{Name: "child.sql", ParentID: &parentFile.ID}); !errors.Is(err, ErrNotFound) {
-		t.Fatalf("file parent error = %v, want %v", err, ErrNotFound)
-	}
+	accesstest.AssertNotFound(t, accesstest.Err(f.service.Create(f.ctx, principal, scope, CreateInput{Name: "child.sql", ParentID: &parentFile.ID})), "file parent")
 
-	sharedParent, err := f.service.Create(f.ctx, scope, CreateInput{Name: "private-folder", ObjectType: database.FileObjectTypeFolder})
+	sharedParent, err := f.service.Create(f.ctx, principal, scope, CreateInput{Name: "private-folder", ObjectType: database.FileObjectTypeFolder})
 	if err != nil {
 		t.Fatal(err)
 	}
 	f.enforcer.allowed[access.PermWsFileCreate] = true
-	if _, err := f.service.Create(f.ctx, f.sharedScope(f.member), CreateInput{Name: "wrong-tree.sql", ParentID: &sharedParent.ID}); !errors.Is(err, ErrNotFound) {
-		t.Fatalf("wrong visibility parent error = %v, want %v", err, ErrNotFound)
-	}
+	accesstest.AssertNotFound(t, accesstest.Err(f.service.Create(f.ctx, f.as(f.member), f.sharedTree(), CreateInput{Name: "wrong-tree.sql", ParentID: &sharedParent.ID})), "wrong visibility parent")
 }
 
 func TestDuplicateCopiesCurrentContentIntoIndependentFile(t *testing.T) {
@@ -263,16 +246,16 @@ func TestDuplicateCopiesCurrentContentIntoIndependentFile(t *testing.T) {
 				policy = RevisionPolicyVersioned
 			}
 			f := newServiceFixture(t, Config{StorageMode: storageMode, RevisionPolicy: policy})
-			scope := f.privateScope(f.member)
-			folder, err := f.service.Create(f.ctx, scope, CreateInput{Name: "reports", ObjectType: database.FileObjectTypeFolder})
+			principal, scope := f.as(f.member), f.privateTree()
+			folder, err := f.service.Create(f.ctx, principal, scope, CreateInput{Name: "reports", ObjectType: database.FileObjectTypeFolder})
 			if err != nil {
 				t.Fatal(err)
 			}
-			source, err := f.service.Create(f.ctx, scope, CreateInput{Name: "source.sql", ParentID: &folder.ID, MediaType: "text/plain", FileKind: "query"})
+			source, err := f.service.Create(f.ctx, principal, scope, CreateInput{Name: "source.sql", ParentID: &folder.ID, MediaType: "text/plain", FileKind: "query"})
 			if err != nil {
 				t.Fatal(err)
 			}
-			first, err := f.service.WriteContent(f.ctx, scope, source.ID, "", strings.NewReader("select 1"))
+			first, err := f.service.WriteContent(f.ctx, principal, scope, source.ID, "", strings.NewReader("select 1"))
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -281,7 +264,7 @@ func TestDuplicateCopiesCurrentContentIntoIndependentFile(t *testing.T) {
 				t.Fatalf("source current content after write: found=%v err=%v file=%+v saved=%+v", found, err, reloaded, first)
 			}
 
-			duplicate, err := f.service.Duplicate(f.ctx, scope, source.ID, DuplicateInput{Name: "source copy.sql"})
+			duplicate, err := f.service.Duplicate(f.ctx, principal, scope, source.ID, DuplicateInput{Name: "source copy.sql"})
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -291,15 +274,15 @@ func TestDuplicateCopiesCurrentContentIntoIndependentFile(t *testing.T) {
 			if duplicate.MediaType != source.MediaType || duplicate.FileKind != source.FileKind || duplicate.ContentVersion != 1 {
 				t.Fatalf("duplicate metadata = %+v, source=%+v", duplicate, source)
 			}
-			copied := readServiceContent(t, f.service, f.ctx, scope, duplicate.ID)
+			copied := readServiceContent(t, f.service, f.ctx, principal, scope, duplicate.ID)
 			if copied != "select 1" {
 				t.Fatalf("duplicate content = %q, want select 1", copied)
 			}
 
-			if _, err := f.service.WriteContent(f.ctx, scope, source.ID, first.ContentHash, strings.NewReader("select 2")); err != nil {
+			if _, err := f.service.WriteContent(f.ctx, principal, scope, source.ID, first.ContentHash, strings.NewReader("select 2")); err != nil {
 				t.Fatal(err)
 			}
-			if got := readServiceContent(t, f.service, f.ctx, scope, duplicate.ID); got != "select 1" {
+			if got := readServiceContent(t, f.service, f.ctx, principal, scope, duplicate.ID); got != "select 1" {
 				t.Fatalf("duplicate changed with source: %q", got)
 			}
 
@@ -323,12 +306,12 @@ func TestDuplicateCopiesCurrentContentIntoIndependentFile(t *testing.T) {
 
 func TestDuplicateHandlesEmptyFilesAndRejectsInvalidSourcesOrNames(t *testing.T) {
 	f := newServiceFixture(t, Config{StorageMode: StorageModeObject, RevisionPolicy: RevisionPolicyDisabled})
-	scope := f.privateScope(f.member)
-	source, err := f.service.Create(f.ctx, scope, CreateInput{Name: "empty.sql"})
+	principal, scope := f.as(f.member), f.privateTree()
+	source, err := f.service.Create(f.ctx, principal, scope, CreateInput{Name: "empty.sql"})
 	if err != nil {
 		t.Fatal(err)
 	}
-	emptyCopy, err := f.service.Duplicate(f.ctx, scope, source.ID, DuplicateInput{Name: "empty copy.sql"})
+	emptyCopy, err := f.service.Duplicate(f.ctx, principal, scope, source.ID, DuplicateInput{Name: "empty copy.sql"})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -336,43 +319,37 @@ func TestDuplicateHandlesEmptyFilesAndRejectsInvalidSourcesOrNames(t *testing.T)
 		t.Fatalf("empty duplicate unexpectedly has content: %+v", emptyCopy)
 	}
 
-	folder, err := f.service.Create(f.ctx, scope, CreateInput{Name: "folder", ObjectType: database.FileObjectTypeFolder})
+	folder, err := f.service.Create(f.ctx, principal, scope, CreateInput{Name: "folder", ObjectType: database.FileObjectTypeFolder})
 	if err != nil {
 		t.Fatal(err)
 	}
-	if _, err := f.service.Duplicate(f.ctx, scope, folder.ID, DuplicateInput{Name: "folder copy"}); !errors.Is(err, ErrFolderDuplicate) {
+	if _, err := f.service.Duplicate(f.ctx, principal, scope, folder.ID, DuplicateInput{Name: "folder copy"}); !errors.Is(err, ErrFolderDuplicate) {
 		t.Fatalf("folder duplicate error = %v, want %v", err, ErrFolderDuplicate)
 	}
-	if _, err := f.service.Duplicate(f.ctx, scope, source.ID, DuplicateInput{Name: "bad/name.sql"}); !errors.Is(err, ErrInvalidName) {
+	if _, err := f.service.Duplicate(f.ctx, principal, scope, source.ID, DuplicateInput{Name: "bad/name.sql"}); !errors.Is(err, ErrInvalidName) {
 		t.Fatalf("invalid name error = %v, want %v", err, ErrInvalidName)
 	}
-	if _, err := f.service.Duplicate(f.ctx, scope, source.ID, DuplicateInput{Name: "empty.sql"}); err == nil {
+	if _, err := f.service.Duplicate(f.ctx, principal, scope, source.ID, DuplicateInput{Name: "empty.sql"}); err == nil {
 		t.Fatal("duplicate with sibling collision succeeded")
 	}
-	if _, err := f.service.Duplicate(f.ctx, f.privateScope(f.other), source.ID, DuplicateInput{Name: "stolen.sql"}); !errors.Is(err, ErrNotFound) {
-		t.Fatalf("other user's duplicate error = %v, want %v", err, ErrNotFound)
-	}
+	accesstest.AssertNotFound(t, accesstest.Err(f.service.Duplicate(f.ctx, f.as(f.other), f.privateTree(), source.ID, DuplicateInput{Name: "stolen.sql"})), "other user's duplicate")
 }
 
 func TestDuplicateRequiresReadAndCreatePermissions(t *testing.T) {
 	f := newServiceFixture(t, Config{StorageMode: StorageModeObject, RevisionPolicy: RevisionPolicyDisabled})
-	scope := f.sharedScope(f.member)
+	principal, scope := f.as(f.member), f.sharedTree()
 	f.enforcer.allowed[access.PermWsFileCreate] = true
 	f.enforcer.allowed[access.PermWsFileRead] = true
-	source, err := f.service.Create(f.ctx, scope, CreateInput{Name: "shared.sql"})
+	source, err := f.service.Create(f.ctx, principal, scope, CreateInput{Name: "shared.sql"})
 	if err != nil {
 		t.Fatal(err)
 	}
 
 	f.enforcer.allowed[access.PermWsFileCreate] = false
-	if _, err := f.service.Duplicate(f.ctx, scope, source.ID, DuplicateInput{Name: "no-create.sql"}); !errors.Is(err, ErrForbidden) {
-		t.Fatalf("duplicate without create permission = %v, want %v", err, ErrForbidden)
-	}
+	accesstest.AssertForbidden(t, accesstest.Err(f.service.Duplicate(f.ctx, principal, scope, source.ID, DuplicateInput{Name: "no-create.sql"})), "duplicate without create permission")
 	f.enforcer.allowed[access.PermWsFileCreate] = true
 	f.enforcer.allowed[access.PermWsFileRead] = false
-	if _, err := f.service.Duplicate(f.ctx, scope, source.ID, DuplicateInput{Name: "no-read.sql"}); !errors.Is(err, ErrForbidden) {
-		t.Fatalf("duplicate without read permission = %v, want %v", err, ErrForbidden)
-	}
+	accesstest.AssertForbidden(t, accesstest.Err(f.service.Duplicate(f.ctx, principal, scope, source.ID, DuplicateInput{Name: "no-read.sql"})), "duplicate without read permission")
 }
 
 func TestDuplicateReadsRecordedBackendWritesActiveBackendAndCleansUpFailure(t *testing.T) {
@@ -382,18 +359,18 @@ func TestDuplicateReadsRecordedBackendWritesActiveBackendAndCleansUpFailure(t *t
 		t.Fatal(err)
 	}
 	resolver := &mutableStoreResolver{active: "local", stores: map[string]filestore.Store{"local": f.store, "archive": archiveRoot}}
-	f.service = NewWithStoreResolver(f.db, resolver, f.enforcer, Config{StorageMode: StorageModeObject, ActiveStorageBackendID: "local", RevisionPolicy: RevisionPolicyDisabled}, &sync.Map{})
-	scope := f.privateScope(f.member)
-	source, err := f.service.Create(f.ctx, scope, CreateInput{Name: "source.sql"})
+	f.service = NewService(Deps{DB: f.db, Stores: resolver, Enforcer: f.enforcer, Requirer: f.requirer}, Config{StorageMode: StorageModeObject, ActiveStorageBackendID: "local", RevisionPolicy: RevisionPolicyDisabled}, &sync.Map{})
+	principal, scope := f.as(f.member), f.privateTree()
+	source, err := f.service.Create(f.ctx, principal, scope, CreateInput{Name: "source.sql"})
 	if err != nil {
 		t.Fatal(err)
 	}
-	if _, err := f.service.WriteContent(f.ctx, scope, source.ID, "", strings.NewReader("select archived")); err != nil {
+	if _, err := f.service.WriteContent(f.ctx, principal, scope, source.ID, "", strings.NewReader("select archived")); err != nil {
 		t.Fatal(err)
 	}
 
 	resolver.active = "archive"
-	copy, err := f.service.Duplicate(f.ctx, scope, source.ID, DuplicateInput{Name: "archive copy.sql"})
+	copy, err := f.service.Duplicate(f.ctx, principal, scope, source.ID, DuplicateInput{Name: "archive copy.sql"})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -408,10 +385,10 @@ func TestDuplicateReadsRecordedBackendWritesActiveBackendAndCleansUpFailure(t *t
 	putErr := errors.New("injected put failure")
 	resolver.active = "broken"
 	resolver.stores["broken"] = failingPutStore{Store: archiveRoot, err: putErr}
-	if _, err := f.service.Duplicate(f.ctx, scope, source.ID, DuplicateInput{Name: "failed copy.sql"}); !errors.Is(err, putErr) {
+	if _, err := f.service.Duplicate(f.ctx, principal, scope, source.ID, DuplicateInput{Name: "failed copy.sql"}); !errors.Is(err, putErr) {
 		t.Fatalf("failed duplicate error = %v, want %v", err, putErr)
 	}
-	files, err := f.service.List(f.ctx, scope, nil)
+	files, err := f.service.List(f.ctx, principal, scope, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -429,9 +406,9 @@ func TestDuplicateReadsRecordedBackendWritesActiveBackendAndCleansUpFailure(t *t
 	}
 }
 
-func readServiceContent(t *testing.T, service *Service, ctx context.Context, scope Scope, fileID int64) string {
+func readServiceContent(t *testing.T, service *Service, ctx context.Context, principal access.Principal, scope Scope, fileID int64) string {
 	t.Helper()
-	result, err := service.ReadContent(ctx, scope, fileID)
+	result, err := service.ReadContent(ctx, principal, scope, fileID)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -445,22 +422,22 @@ func readServiceContent(t *testing.T, service *Service, ctx context.Context, sco
 
 func TestBrowserReturnsRootBreadcrumbChildrenAndFileMetadata(t *testing.T) {
 	f := newServiceFixture(t, Config{StorageMode: StorageModeObject, RevisionPolicy: RevisionPolicyDisabled})
-	scope := f.privateScope(f.member)
+	principal, scope := f.as(f.member), f.privateTree()
 
-	folder, err := f.service.Create(f.ctx, scope, CreateInput{Name: "queries", ObjectType: database.FileObjectTypeFolder})
+	folder, err := f.service.Create(f.ctx, principal, scope, CreateInput{Name: "queries", ObjectType: database.FileObjectTypeFolder})
 	if err != nil {
 		t.Fatal(err)
 	}
-	file, err := f.service.Create(f.ctx, scope, CreateInput{Name: "scratch.sql", ParentID: &folder.ID, MediaType: "text/plain", FileKind: "query"})
+	file, err := f.service.Create(f.ctx, principal, scope, CreateInput{Name: "scratch.sql", ParentID: &folder.ID, MediaType: "text/plain", FileKind: "query"})
 	if err != nil {
 		t.Fatal(err)
 	}
-	content, err := f.service.WriteContent(f.ctx, scope, file.ID, "", strings.NewReader("select 1"))
+	content, err := f.service.WriteContent(f.ctx, principal, scope, file.ID, "", strings.NewReader("select 1"))
 	if err != nil {
 		t.Fatal(err)
 	}
 
-	root, err := f.service.Browser(f.ctx, scope, nil)
+	root, err := f.service.Browser(f.ctx, principal, scope, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -468,7 +445,7 @@ func TestBrowserReturnsRootBreadcrumbChildrenAndFileMetadata(t *testing.T) {
 		t.Fatalf("root browser result = %+v, want root with folder child", root)
 	}
 
-	folderView, err := f.service.Browser(f.ctx, scope, &folder.ID)
+	folderView, err := f.service.Browser(f.ctx, principal, scope, &folder.ID)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -479,7 +456,7 @@ func TestBrowserReturnsRootBreadcrumbChildrenAndFileMetadata(t *testing.T) {
 		t.Fatalf("folder children = %+v, want enriched file child", folderView.Children)
 	}
 
-	fileView, err := f.service.Browser(f.ctx, scope, &file.ID)
+	fileView, err := f.service.Browser(f.ctx, principal, scope, &file.ID)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -496,28 +473,28 @@ func TestBrowserReturnsRootBreadcrumbChildrenAndFileMetadata(t *testing.T) {
 
 func TestRecentReturnsOnlyAuthorizedOpenableFiles(t *testing.T) {
 	f := newServiceFixture(t, Config{StorageMode: StorageModeObject, RevisionPolicy: RevisionPolicyDisabled})
-	scope := f.privateScope(f.member)
+	principal, scope := f.as(f.member), f.privateTree()
 
-	if _, err := f.service.Create(f.ctx, scope, CreateInput{Name: "folder", ObjectType: database.FileObjectTypeFolder}); err != nil {
+	if _, err := f.service.Create(f.ctx, principal, scope, CreateInput{Name: "folder", ObjectType: database.FileObjectTypeFolder}); err != nil {
 		t.Fatal(err)
 	}
-	oldFile, err := f.service.Create(f.ctx, scope, CreateInput{Name: "old.sql"})
+	oldFile, err := f.service.Create(f.ctx, principal, scope, CreateInput{Name: "old.sql"})
 	if err != nil {
 		t.Fatal(err)
 	}
-	oldContent, err := f.service.WriteContent(f.ctx, scope, oldFile.ID, "", strings.NewReader("select old"))
+	oldContent, err := f.service.WriteContent(f.ctx, principal, scope, oldFile.ID, "", strings.NewReader("select old"))
 	if err != nil {
 		t.Fatal(err)
 	}
-	newFile, err := f.service.Create(f.ctx, scope, CreateInput{Name: "new.sql"})
+	newFile, err := f.service.Create(f.ctx, principal, scope, CreateInput{Name: "new.sql"})
 	if err != nil {
 		t.Fatal(err)
 	}
-	if _, err := f.service.WriteContent(f.ctx, scope, newFile.ID, "", strings.NewReader("select new")); err != nil {
+	if _, err := f.service.WriteContent(f.ctx, principal, scope, newFile.ID, "", strings.NewReader("select new")); err != nil {
 		t.Fatal(err)
 	}
 
-	recent, err := f.service.Recent(f.ctx, scope, 10)
+	recent, err := f.service.Recent(f.ctx, principal, scope, 10)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -528,7 +505,7 @@ func TestRecentReturnsOnlyAuthorizedOpenableFiles(t *testing.T) {
 		t.Fatalf("recent file content metadata = %+v", recent[1])
 	}
 
-	otherRecent, err := f.service.Recent(f.ctx, f.privateScope(f.owner), 10)
+	otherRecent, err := f.service.Recent(f.ctx, f.as(f.owner), f.privateTree(), 10)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -539,13 +516,13 @@ func TestRecentReturnsOnlyAuthorizedOpenableFiles(t *testing.T) {
 
 func TestObjectStoreVersionsTextFilesAndKeepsKeysStableOnRename(t *testing.T) {
 	f := newServiceFixture(t, Config{StorageMode: StorageModeObject, RevisionPolicy: RevisionPolicyVersioned, RevisionKeepLatest: 10})
-	scope := f.privateScope(f.member)
+	principal, scope := f.as(f.member), f.privateTree()
 
-	file, err := f.service.Create(f.ctx, scope, CreateInput{Name: "scratch.sql", MediaType: "text/plain", FileKind: "query"})
+	file, err := f.service.Create(f.ctx, principal, scope, CreateInput{Name: "scratch.sql", MediaType: "text/plain", FileKind: "query"})
 	if err != nil {
 		t.Fatal(err)
 	}
-	first, err := f.service.WriteContent(f.ctx, scope, file.ID, "", strings.NewReader("select 1"))
+	first, err := f.service.WriteContent(f.ctx, principal, scope, file.ID, "", strings.NewReader("select 1"))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -554,10 +531,10 @@ func TestObjectStoreVersionsTextFilesAndKeepsKeysStableOnRename(t *testing.T) {
 	}
 
 	renamed := "renamed.sql"
-	if _, err := f.service.Update(f.ctx, scope, file.ID, UpdateInput{Name: &renamed}); err != nil {
+	if _, err := f.service.Update(f.ctx, principal, scope, file.ID, UpdateInput{Name: &renamed}); err != nil {
 		t.Fatal(err)
 	}
-	second, err := f.service.WriteContent(f.ctx, scope, file.ID, first.ContentHash, strings.NewReader("select 2"))
+	second, err := f.service.WriteContent(f.ctx, principal, scope, file.ID, first.ContentHash, strings.NewReader("select 2"))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -568,7 +545,7 @@ func TestObjectStoreVersionsTextFilesAndKeepsKeysStableOnRename(t *testing.T) {
 		t.Fatalf("object-store key %q should be opaque and file-id based", second.StorageKey)
 	}
 
-	result, err := f.service.ReadContent(f.ctx, scope, file.ID)
+	result, err := f.service.ReadContent(f.ctx, principal, scope, file.ID)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -584,9 +561,9 @@ func TestObjectStoreVersionsTextFilesAndKeepsKeysStableOnRename(t *testing.T) {
 
 func TestObjectStoreRevisionRetentionPrunesOldMetadataAndObjects(t *testing.T) {
 	f := newServiceFixture(t, Config{StorageMode: StorageModeObject, RevisionPolicy: RevisionPolicyVersioned, RevisionKeepLatest: 2})
-	scope := f.privateScope(f.member)
+	principal, scope := f.as(f.member), f.privateTree()
 
-	file, err := f.service.Create(f.ctx, scope, CreateInput{Name: "scratch.sql", MediaType: "text/plain", FileKind: "query"})
+	file, err := f.service.Create(f.ctx, principal, scope, CreateInput{Name: "scratch.sql", MediaType: "text/plain", FileKind: "query"})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -594,7 +571,7 @@ func TestObjectStoreRevisionRetentionPrunesOldMetadataAndObjects(t *testing.T) {
 	var versions []database.WorkspaceFileContent
 	expectedHash := ""
 	for i := 1; i <= 5; i++ {
-		content, err := f.service.WriteContent(f.ctx, scope, file.ID, expectedHash, strings.NewReader("select "+strconv.Itoa(i)))
+		content, err := f.service.WriteContent(f.ctx, principal, scope, file.ID, expectedHash, strings.NewReader("select "+strconv.Itoa(i)))
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -658,18 +635,18 @@ func TestObjectStoreRevisionRetentionPrunesOldMetadataAndObjects(t *testing.T) {
 
 func TestObjectStoreRevisionRetentionKeepLatestZeroKeepsOnlyCurrent(t *testing.T) {
 	f := newServiceFixture(t, Config{StorageMode: StorageModeObject, RevisionPolicy: RevisionPolicyVersioned, RevisionKeepLatest: 0})
-	scope := f.privateScope(f.member)
+	principal, scope := f.as(f.member), f.privateTree()
 
-	file, err := f.service.Create(f.ctx, scope, CreateInput{Name: "scratch.sql", MediaType: "text/plain", FileKind: "query"})
+	file, err := f.service.Create(f.ctx, principal, scope, CreateInput{Name: "scratch.sql", MediaType: "text/plain", FileKind: "query"})
 	if err != nil {
 		t.Fatal(err)
 	}
 
-	first, err := f.service.WriteContent(f.ctx, scope, file.ID, "", strings.NewReader("select 1"))
+	first, err := f.service.WriteContent(f.ctx, principal, scope, file.ID, "", strings.NewReader("select 1"))
 	if err != nil {
 		t.Fatal(err)
 	}
-	second, err := f.service.WriteContent(f.ctx, scope, file.ID, first.ContentHash, strings.NewReader("select 2"))
+	second, err := f.service.WriteContent(f.ctx, principal, scope, file.ID, first.ContentHash, strings.NewReader("select 2"))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -713,14 +690,14 @@ func TestContentReadsUseSavedBackendAndWritesUseActiveBackend(t *testing.T) {
 			"archive": archive,
 		},
 	}
-	f.service = NewWithStoreResolver(f.db, resolver, f.enforcer, Config{StorageMode: StorageModeObject, ActiveStorageBackendID: "local", RevisionPolicy: RevisionPolicyVersioned, RevisionKeepLatest: 10}, &sync.Map{})
-	scope := f.privateScope(f.member)
+	f.service = NewService(Deps{DB: f.db, Stores: resolver, Enforcer: f.enforcer, Requirer: f.requirer}, Config{StorageMode: StorageModeObject, ActiveStorageBackendID: "local", RevisionPolicy: RevisionPolicyVersioned, RevisionKeepLatest: 10}, &sync.Map{})
+	principal, scope := f.as(f.member), f.privateTree()
 
-	file, err := f.service.Create(f.ctx, scope, CreateInput{Name: "scratch.sql"})
+	file, err := f.service.Create(f.ctx, principal, scope, CreateInput{Name: "scratch.sql"})
 	if err != nil {
 		t.Fatal(err)
 	}
-	first, err := f.service.WriteContent(f.ctx, scope, file.ID, "", strings.NewReader("local copy"))
+	first, err := f.service.WriteContent(f.ctx, principal, scope, file.ID, "", strings.NewReader("local copy"))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -729,7 +706,7 @@ func TestContentReadsUseSavedBackendAndWritesUseActiveBackend(t *testing.T) {
 	}
 
 	resolver.active = "archive"
-	readFirst, err := f.service.ReadContent(f.ctx, scope, file.ID)
+	readFirst, err := f.service.ReadContent(f.ctx, principal, scope, file.ID)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -742,7 +719,7 @@ func TestContentReadsUseSavedBackendAndWritesUseActiveBackend(t *testing.T) {
 		t.Fatalf("read after active backend switch = %q, want local copy", string(firstBody))
 	}
 
-	second, err := f.service.WriteContent(f.ctx, scope, file.ID, first.ContentHash, strings.NewReader("archive copy"))
+	second, err := f.service.WriteContent(f.ctx, principal, scope, file.ID, first.ContentHash, strings.NewReader("archive copy"))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -762,20 +739,20 @@ func TestContentReadsUseSavedBackendAndWritesUseActiveBackend(t *testing.T) {
 func TestReadContentFailsWhenSavedBackendIsUnavailable(t *testing.T) {
 	f := newServiceFixture(t, Config{StorageMode: StorageModeObject, ActiveStorageBackendID: "local", RevisionPolicy: RevisionPolicyDisabled})
 	resolver := &mutableStoreResolver{active: "local", stores: map[string]filestore.Store{"local": f.store}}
-	f.service = NewWithStoreResolver(f.db, resolver, f.enforcer, Config{StorageMode: StorageModeObject, ActiveStorageBackendID: "local", RevisionPolicy: RevisionPolicyDisabled}, &sync.Map{})
-	scope := f.privateScope(f.member)
+	f.service = NewService(Deps{DB: f.db, Stores: resolver, Enforcer: f.enforcer, Requirer: f.requirer}, Config{StorageMode: StorageModeObject, ActiveStorageBackendID: "local", RevisionPolicy: RevisionPolicyDisabled}, &sync.Map{})
+	principal, scope := f.as(f.member), f.privateTree()
 
-	file, err := f.service.Create(f.ctx, scope, CreateInput{Name: "scratch.sql"})
+	file, err := f.service.Create(f.ctx, principal, scope, CreateInput{Name: "scratch.sql"})
 	if err != nil {
 		t.Fatal(err)
 	}
-	content, err := f.service.WriteContent(f.ctx, scope, file.ID, "", strings.NewReader("content"))
+	content, err := f.service.WriteContent(f.ctx, principal, scope, file.ID, "", strings.NewReader("content"))
 	if err != nil {
 		t.Fatal(err)
 	}
 	delete(resolver.stores, content.StorageBackendID)
 
-	if _, err := f.service.ReadContent(f.ctx, scope, file.ID); !errors.Is(err, ErrStorageBackendUnavailable) {
+	if _, err := f.service.ReadContent(f.ctx, principal, scope, file.ID); !errors.Is(err, ErrStorageBackendUnavailable) {
 		t.Fatalf("read missing backend error = %v, want %v", err, ErrStorageBackendUnavailable)
 	}
 }
@@ -783,20 +760,20 @@ func TestReadContentFailsWhenSavedBackendIsUnavailable(t *testing.T) {
 func TestDeleteFailsBeforeTombstoneWhenSavedBackendIsUnavailable(t *testing.T) {
 	f := newServiceFixture(t, Config{StorageMode: StorageModeObject, ActiveStorageBackendID: "local", RevisionPolicy: RevisionPolicyDisabled})
 	resolver := &mutableStoreResolver{active: "local", stores: map[string]filestore.Store{"local": f.store}}
-	f.service = NewWithStoreResolver(f.db, resolver, f.enforcer, Config{StorageMode: StorageModeObject, ActiveStorageBackendID: "local", RevisionPolicy: RevisionPolicyDisabled}, &sync.Map{})
-	scope := f.privateScope(f.member)
+	f.service = NewService(Deps{DB: f.db, Stores: resolver, Enforcer: f.enforcer, Requirer: f.requirer}, Config{StorageMode: StorageModeObject, ActiveStorageBackendID: "local", RevisionPolicy: RevisionPolicyDisabled}, &sync.Map{})
+	principal, scope := f.as(f.member), f.privateTree()
 
-	file, err := f.service.Create(f.ctx, scope, CreateInput{Name: "scratch.sql"})
+	file, err := f.service.Create(f.ctx, principal, scope, CreateInput{Name: "scratch.sql"})
 	if err != nil {
 		t.Fatal(err)
 	}
-	content, err := f.service.WriteContent(f.ctx, scope, file.ID, "", strings.NewReader("content"))
+	content, err := f.service.WriteContent(f.ctx, principal, scope, file.ID, "", strings.NewReader("content"))
 	if err != nil {
 		t.Fatal(err)
 	}
 	delete(resolver.stores, content.StorageBackendID)
 
-	if err := f.service.Delete(f.ctx, scope, file.ID); !errors.Is(err, ErrStorageBackendUnavailable) {
+	if err := f.service.Delete(f.ctx, principal, scope, file.ID); !errors.Is(err, ErrStorageBackendUnavailable) {
 		t.Fatalf("delete missing backend error = %v, want %v", err, ErrStorageBackendUnavailable)
 	}
 	if _, found, err := f.db.GetWorkspaceFile(f.ctx, file.ID); err != nil || !found {
@@ -806,48 +783,48 @@ func TestDeleteFailsBeforeTombstoneWhenSavedBackendIsUnavailable(t *testing.T) {
 
 func TestWriteContentRequiresCurrentHashAndRejectsFolders(t *testing.T) {
 	f := newServiceFixture(t, Config{StorageMode: StorageModeObject, RevisionPolicy: RevisionPolicyDisabled})
-	scope := f.privateScope(f.member)
+	principal, scope := f.as(f.member), f.privateTree()
 
-	folder, err := f.service.Create(f.ctx, scope, CreateInput{Name: "folder", ObjectType: database.FileObjectTypeFolder})
+	folder, err := f.service.Create(f.ctx, principal, scope, CreateInput{Name: "folder", ObjectType: database.FileObjectTypeFolder})
 	if err != nil {
 		t.Fatal(err)
 	}
-	if _, err := f.service.WriteContent(f.ctx, scope, folder.ID, "", strings.NewReader("nope")); !errors.Is(err, ErrFolderContent) {
+	if _, err := f.service.WriteContent(f.ctx, principal, scope, folder.ID, "", strings.NewReader("nope")); !errors.Is(err, ErrFolderContent) {
 		t.Fatalf("folder write error = %v, want %v", err, ErrFolderContent)
 	}
 
-	file, err := f.service.Create(f.ctx, scope, CreateInput{Name: "scratch.sql"})
+	file, err := f.service.Create(f.ctx, principal, scope, CreateInput{Name: "scratch.sql"})
 	if err != nil {
 		t.Fatal(err)
 	}
-	first, err := f.service.WriteContent(f.ctx, scope, file.ID, "", strings.NewReader("select 1"))
+	first, err := f.service.WriteContent(f.ctx, principal, scope, file.ID, "", strings.NewReader("select 1"))
 	if err != nil {
 		t.Fatal(err)
 	}
-	if _, err := f.service.WriteContent(f.ctx, scope, file.ID, "", strings.NewReader("select 2")); !errors.Is(err, ErrPreconditionRequired) {
+	if _, err := f.service.WriteContent(f.ctx, principal, scope, file.ID, "", strings.NewReader("select 2")); !errors.Is(err, ErrPreconditionRequired) {
 		t.Fatalf("missing if-match error = %v, want %v", err, ErrPreconditionRequired)
 	}
-	if _, err := f.service.WriteContent(f.ctx, scope, file.ID, "wrong", strings.NewReader("select 2")); !errors.Is(err, ErrStaleContent) {
+	if _, err := f.service.WriteContent(f.ctx, principal, scope, file.ID, "wrong", strings.NewReader("select 2")); !errors.Is(err, ErrStaleContent) {
 		t.Fatalf("stale if-match error = %v, want %v", err, ErrStaleContent)
 	}
-	if _, err := f.service.WriteContent(f.ctx, scope, file.ID, first.ContentHash, strings.NewReader("select 2")); err != nil {
+	if _, err := f.service.WriteContent(f.ctx, principal, scope, file.ID, first.ContentHash, strings.NewReader("select 2")); err != nil {
 		t.Fatalf("matching if-match write: %v", err)
 	}
 }
 
 func TestWorkspaceDirectoryRelocatesContentAndPrunesOldPath(t *testing.T) {
 	f := newServiceFixture(t, Config{StorageMode: StorageModeFile, RevisionPolicy: RevisionPolicyDisabled})
-	scope := f.privateScope(f.member)
+	principal, scope := f.as(f.member), f.privateTree()
 
-	folder, err := f.service.Create(f.ctx, scope, CreateInput{Name: "reports", ObjectType: database.FileObjectTypeFolder})
+	folder, err := f.service.Create(f.ctx, principal, scope, CreateInput{Name: "reports", ObjectType: database.FileObjectTypeFolder})
 	if err != nil {
 		t.Fatal(err)
 	}
-	file, err := f.service.Create(f.ctx, scope, CreateInput{Name: "daily.sql", ParentID: &folder.ID})
+	file, err := f.service.Create(f.ctx, principal, scope, CreateInput{Name: "daily.sql", ParentID: &folder.ID})
 	if err != nil {
 		t.Fatal(err)
 	}
-	first, err := f.service.WriteContent(f.ctx, scope, file.ID, "", strings.NewReader("select count(*)"))
+	first, err := f.service.WriteContent(f.ctx, principal, scope, file.ID, "", strings.NewReader("select count(*)"))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -858,7 +835,7 @@ func TestWorkspaceDirectoryRelocatesContentAndPrunesOldPath(t *testing.T) {
 	}
 
 	renamedFolder := "renamed-reports"
-	if _, err := f.service.Update(f.ctx, scope, folder.ID, UpdateInput{Name: &renamedFolder}); err != nil {
+	if _, err := f.service.Update(f.ctx, principal, scope, folder.ID, UpdateInput{Name: &renamedFolder}); err != nil {
 		t.Fatal(err)
 	}
 	currentFile, found, err := f.db.GetWorkspaceFile(f.ctx, file.ID)
@@ -883,28 +860,28 @@ func TestWorkspaceDirectoryRelocatesContentAndPrunesOldPath(t *testing.T) {
 
 func TestWorkspaceDirectoryRejectsMoveCyclesAndStorageCollisions(t *testing.T) {
 	f := newServiceFixture(t, Config{StorageMode: StorageModeFile, RevisionPolicy: RevisionPolicyDisabled})
-	scope := f.privateScope(f.member)
+	principal, scope := f.as(f.member), f.privateTree()
 
-	parent, err := f.service.Create(f.ctx, scope, CreateInput{Name: "parent", ObjectType: database.FileObjectTypeFolder})
+	parent, err := f.service.Create(f.ctx, principal, scope, CreateInput{Name: "parent", ObjectType: database.FileObjectTypeFolder})
 	if err != nil {
 		t.Fatal(err)
 	}
-	child, err := f.service.Create(f.ctx, scope, CreateInput{Name: "child", ParentID: &parent.ID, ObjectType: database.FileObjectTypeFolder})
+	child, err := f.service.Create(f.ctx, principal, scope, CreateInput{Name: "child", ParentID: &parent.ID, ObjectType: database.FileObjectTypeFolder})
 	if err != nil {
 		t.Fatal(err)
 	}
-	if _, err := f.service.Update(f.ctx, scope, parent.ID, UpdateInput{ParentID: &child.ID, ParentIDSet: true}); !errors.Is(err, ErrMoveCycle) {
+	if _, err := f.service.Update(f.ctx, principal, scope, parent.ID, UpdateInput{ParentID: &child.ID, ParentIDSet: true}); !errors.Is(err, ErrMoveCycle) {
 		t.Fatalf("move cycle error = %v, want %v", err, ErrMoveCycle)
 	}
-	if _, err := f.service.Update(f.ctx, scope, parent.ID, UpdateInput{}); !errors.Is(err, ErrMissingUpdate) {
+	if _, err := f.service.Update(f.ctx, principal, scope, parent.ID, UpdateInput{}); !errors.Is(err, ErrMissingUpdate) {
 		t.Fatalf("missing update error = %v, want %v", err, ErrMissingUpdate)
 	}
 
-	file, err := f.service.Create(f.ctx, scope, CreateInput{Name: "collision.sql"})
+	file, err := f.service.Create(f.ctx, principal, scope, CreateInput{Name: "collision.sql"})
 	if err != nil {
 		t.Fatal(err)
 	}
-	content, err := f.service.WriteContent(f.ctx, scope, file.ID, "", strings.NewReader("select 1"))
+	content, err := f.service.WriteContent(f.ctx, principal, scope, file.ID, "", strings.NewReader("select 1"))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -913,34 +890,32 @@ func TestWorkspaceDirectoryRejectsMoveCyclesAndStorageCollisions(t *testing.T) {
 	if _, err := f.store.Put(f.ctx, collisionKey, strings.NewReader("untracked")); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := f.service.Update(f.ctx, scope, file.ID, UpdateInput{Name: &newName}); !errors.Is(err, ErrStorageDestinationExists) {
+	if _, err := f.service.Update(f.ctx, principal, scope, file.ID, UpdateInput{Name: &newName}); !errors.Is(err, ErrStorageDestinationExists) {
 		t.Fatalf("storage collision error = %v, want %v", err, ErrStorageDestinationExists)
 	}
 }
 
 func TestDeleteRemovesMetadataTreeAndStoredContent(t *testing.T) {
 	f := newServiceFixture(t, Config{StorageMode: StorageModeObject, RevisionPolicy: RevisionPolicyDisabled})
-	scope := f.privateScope(f.member)
+	principal, scope := f.as(f.member), f.privateTree()
 
-	folder, err := f.service.Create(f.ctx, scope, CreateInput{Name: "folder", ObjectType: database.FileObjectTypeFolder})
+	folder, err := f.service.Create(f.ctx, principal, scope, CreateInput{Name: "folder", ObjectType: database.FileObjectTypeFolder})
 	if err != nil {
 		t.Fatal(err)
 	}
-	file, err := f.service.Create(f.ctx, scope, CreateInput{Name: "query.sql", ParentID: &folder.ID})
+	file, err := f.service.Create(f.ctx, principal, scope, CreateInput{Name: "query.sql", ParentID: &folder.ID})
 	if err != nil {
 		t.Fatal(err)
 	}
-	content, err := f.service.WriteContent(f.ctx, scope, file.ID, "", strings.NewReader("select 1"))
+	content, err := f.service.WriteContent(f.ctx, principal, scope, file.ID, "", strings.NewReader("select 1"))
 	if err != nil {
 		t.Fatal(err)
 	}
 
-	if err := f.service.Delete(f.ctx, scope, folder.ID); err != nil {
+	if err := f.service.Delete(f.ctx, principal, scope, folder.ID); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := f.service.Get(f.ctx, scope, file.ID); !errors.Is(err, ErrNotFound) {
-		t.Fatalf("get deleted child error = %v, want %v", err, ErrNotFound)
-	}
+	accesstest.AssertNotFound(t, accesstest.Err(f.service.Get(f.ctx, principal, scope, file.ID)), "get deleted child")
 	if _, _, err := f.store.Get(f.ctx, content.StorageKey); !errors.Is(err, os.ErrNotExist) {
 		t.Fatalf("stored content get error = %v, want %v", err, os.ErrNotExist)
 	}

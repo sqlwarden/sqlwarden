@@ -22,11 +22,13 @@ import (
 	"github.com/sqlwarden/internal/database"
 	"github.com/sqlwarden/internal/encrypt"
 	"github.com/sqlwarden/internal/execution"
+	"github.com/sqlwarden/internal/exportjob"
 	"github.com/sqlwarden/internal/filestore"
 	"github.com/sqlwarden/internal/identity"
 	"github.com/sqlwarden/internal/jobs"
 	"github.com/sqlwarden/internal/orgs"
 	"github.com/sqlwarden/internal/platform/clientip"
+	queryapp "github.com/sqlwarden/internal/query"
 	schemaapp "github.com/sqlwarden/internal/schema"
 	"github.com/sqlwarden/internal/settings"
 	"github.com/sqlwarden/internal/smtp"
@@ -96,10 +98,14 @@ type application struct {
 	keyring               *encrypt.Keyring
 	enforcer              *access.Enforcer
 	policy                access.PolicyEvaluator
+	requirerOnce          sync.Once
+	accessRequirer        *access.Requirer
 	fileStores            FileStores
 	fileLocks             sync.Map
 	fileReaperCancel      context.CancelFunc
-	jobStore              *jobs.Store
+	jobStore              *jobs.DatabaseStore
+	jobServiceOnce        sync.Once
+	jobSvc                *jobs.Service
 	jobRegistry           *jobs.Registry
 	runtimeCancel         context.CancelFunc
 	runtimeStarted        atomic.Bool
@@ -114,6 +120,10 @@ type application struct {
 	authChain             identity.Chain
 	audit                 audit.Writer
 	catalogOnce           sync.Once
+	queryOnce             sync.Once
+	querySvc              *queryapp.Service
+	exportOnce            sync.Once
+	exportSvc             *exportjob.Service
 	catalog               *catalog.Service
 	credentialPorts       credentialPorts
 	edition               EditionCapabilities
@@ -291,7 +301,7 @@ func (app *application) defaultJobRegistry() *jobs.Registry {
 		Type:        jobs.TypeExportQueryCSV,
 		MaxAttempts: 1,
 		Handler: jobs.HandlerFunc(func(ctx context.Context, runtime jobs.Runtime) (any, error) {
-			return app.handleExportJob(ctx, runtime)
+			return app.exportService().RunJob(ctx, runtime)
 		}),
 	})
 	registry.Register(jobs.Definition{

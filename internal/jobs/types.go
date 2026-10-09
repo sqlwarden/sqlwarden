@@ -6,6 +6,7 @@ import (
 	"errors"
 	"time"
 
+	"github.com/sqlwarden/internal/access"
 	"github.com/uptrace/bun"
 )
 
@@ -35,7 +36,7 @@ const (
 
 var (
 	ErrUnknownType            = errors.New("unknown job type")
-	ErrNotFound               = errors.New("job not found")
+	ErrNotFound               = access.ErrNotFound
 	ErrNotRunnable            = errors.New("job is not runnable")
 	ErrNotOwned               = errors.New("job is not owned by account")
 	ErrInvalidScope           = errors.New("job scope is invalid")

@@ -23,6 +23,7 @@ func (app *application) catalogService() *catalog.Service {
 		deps := catalog.Deps{
 			Store:        app.db,
 			Policy:       app.policy,
+			Requirer:     app.requirer(),
 			Credentials:  app.credentialPorts.provider,
 			Writer:       app.credentialPorts.writer,
 			RevealPolicy: app.credentialPorts.reveal,

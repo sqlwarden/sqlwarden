@@ -7,68 +7,37 @@ import (
 
 	"github.com/go-chi/chi/v5"
 
-	"github.com/sqlwarden/internal/database"
+	"github.com/sqlwarden/internal/query"
 	"github.com/sqlwarden/internal/request"
 	"github.com/sqlwarden/internal/response"
-	"github.com/sqlwarden/internal/validator"
 )
 
-func isSupportedQueryHistoryStatus(status string) bool {
-	switch status {
-	case "ok", "error", "cancelled":
-		return true
-	default:
-		return false
-	}
-}
-
 func (app *application) createQueryHistoryEntry(w http.ResponseWriter, r *http.Request) {
-	conn := contextGetConnection(r)
-	ws := contextGetWorkspace(r)
-	account := contextGetAccount(r)
-
 	var input struct {
-		SQL          string              `json:"sql_text"`
-		Status       string              `json:"status"`
-		ErrorMessage *string             `json:"error_message"`
-		DurationMS   int64               `json:"duration_ms"`
-		RowsAffected int64               `json:"rows_affected"`
-		V            validator.Validator `json:"-"`
+		SQL          string  `json:"sql_text"`
+		Status       string  `json:"status"`
+		ErrorMessage *string `json:"error_message"`
+		DurationMS   int64   `json:"duration_ms"`
+		RowsAffected int64   `json:"rows_affected"`
 	}
 	if err := request.DecodeJSON(w, r, &input); err != nil {
 		app.badRequest(w, r, err)
 		return
 	}
-	input.V.CheckField(input.SQL != "", "sql_text", "SQL text is required.")
-	input.V.CheckField(isSupportedQueryHistoryStatus(input.Status), "status", "Status must be ok, error, or cancelled.")
-	if input.V.HasErrors() {
-		app.failedValidation(w, r, input.V)
+	principal, ok := app.requestPrincipal(w, r)
+	if !ok {
 		return
 	}
 
-	effective, err := app.runtimeSettingsService().effectiveForOrg(r.Context(), ws.OrgID)
-	if err != nil {
-		app.serverError(w, r, err)
-		return
-	}
-	input.V.Check(effective.QueryHistoryMode == "backend", "Query history is not enabled for this connection.")
-	if input.V.HasErrors() {
-		app.failedValidation(w, r, input.V)
-		return
-	}
-
-	entry := database.QueryHistoryEntry{
-		ConnectionID: conn.ID,
-		AccountID:    account.ID,
+	saved, err := app.queryService().RecordHistory(r.Context(), principal, connectionRef(r), query.HistoryInput{
 		SQL:          input.SQL,
 		Status:       input.Status,
 		ErrorMessage: input.ErrorMessage,
 		DurationMS:   input.DurationMS,
 		RowsAffected: input.RowsAffected,
-	}
-	saved, err := app.db.InsertQueryHistoryEntry(r.Context(), entry, effective.QueryHistoryRetentionCount)
+	})
 	if err != nil {
-		app.serverError(w, r, err)
+		app.queryError(w, r, err)
 		return
 	}
 
@@ -78,18 +47,19 @@ func (app *application) createQueryHistoryEntry(w http.ResponseWriter, r *http.R
 }
 
 func (app *application) listQueryHistory(w http.ResponseWriter, r *http.Request) {
-	conn := contextGetConnection(r)
-	account := contextGetAccount(r)
-
 	q, errs := readListQuery(r.URL.Query(), nil)
 	if len(errs) != 0 {
 		app.failedValidation(w, r, fieldErrors(errs))
 		return
 	}
+	principal, ok := app.requestPrincipal(w, r)
+	if !ok {
+		return
+	}
 
-	result, err := app.db.ListQueryHistory(r.Context(), conn.ID, account.ID, q.Search, q.Page, q.PageSize)
+	result, err := app.queryService().ListHistory(r.Context(), principal, connectionRef(r), query.ListQuery{Search: q.Search, Page: q.Page, PageSize: q.PageSize})
 	if err != nil {
-		app.serverError(w, r, err)
+		app.queryError(w, r, err)
 		return
 	}
 
@@ -99,9 +69,6 @@ func (app *application) listQueryHistory(w http.ResponseWriter, r *http.Request)
 }
 
 func (app *application) listWorkspaceQueryHistory(w http.ResponseWriter, r *http.Request) {
-	ws := contextGetWorkspace(r)
-	account := contextGetAccount(r)
-
 	q, errs := readListQuery(r.URL.Query(), nil)
 	if len(errs) != 0 {
 		app.failedValidation(w, r, fieldErrors(errs))
@@ -117,10 +84,14 @@ func (app *application) listWorkspaceQueryHistory(w http.ResponseWriter, r *http
 		}
 		connectionID = &id
 	}
+	principal, ok := app.requestPrincipal(w, r)
+	if !ok {
+		return
+	}
 
-	result, err := app.db.ListQueryHistoryForWorkspace(r.Context(), ws.ID, account.ID, connectionID, q.Search, q.Page, q.PageSize)
+	result, err := app.queryService().ListWorkspaceHistory(r.Context(), principal, contextGetOrg(r).ID, contextGetWorkspace(r).ID, connectionID, query.ListQuery{Search: q.Search, Page: q.Page, PageSize: q.PageSize})
 	if err != nil {
-		app.serverError(w, r, err)
+		app.queryError(w, r, err)
 		return
 	}
 
@@ -130,22 +101,18 @@ func (app *application) listWorkspaceQueryHistory(w http.ResponseWriter, r *http
 }
 
 func (app *application) deleteQueryHistoryEntry(w http.ResponseWriter, r *http.Request) {
-	conn := contextGetConnection(r)
-	account := contextGetAccount(r)
-
 	id, err := strconv.ParseInt(chi.URLParam(r, "history_id"), 10, 64)
 	if err != nil {
 		app.notFound(w, r)
 		return
 	}
-
-	found, err := app.db.DeleteQueryHistoryEntry(r.Context(), id, conn.ID, account.ID)
-	if err != nil {
-		app.serverError(w, r, err)
+	principal, ok := app.requestPrincipal(w, r)
+	if !ok {
 		return
 	}
-	if !found {
-		app.notFound(w, r)
+
+	if err := app.queryService().DeleteHistoryEntry(r.Context(), principal, connectionRef(r), id); err != nil {
+		app.queryError(w, r, err)
 		return
 	}
 
@@ -153,11 +120,13 @@ func (app *application) deleteQueryHistoryEntry(w http.ResponseWriter, r *http.R
 }
 
 func (app *application) clearQueryHistoryForConnection(w http.ResponseWriter, r *http.Request) {
-	conn := contextGetConnection(r)
-	account := contextGetAccount(r)
+	principal, ok := app.requestPrincipal(w, r)
+	if !ok {
+		return
+	}
 
-	if err := app.db.ClearQueryHistoryForConnection(r.Context(), conn.ID, account.ID); err != nil {
-		app.serverError(w, r, err)
+	if err := app.queryService().ClearHistory(r.Context(), principal, connectionRef(r)); err != nil {
+		app.queryError(w, r, err)
 		return
 	}
 
