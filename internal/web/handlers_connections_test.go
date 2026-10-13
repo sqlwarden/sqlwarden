@@ -195,7 +195,7 @@ func TestTestConnectionRequiresConnCreate(t *testing.T) {
 
 	owner, ownerTok, org := seedOrgOwner(t, app, "conn-test-owner@example.com", "Conn Test Owner", "Conn Test Org")
 	member, memberTok := seedAccountWithToken(t, app, "conn-test-member@example.com", "Conn Test Member")
-	if err := app.db.AddOrgMember(context.Background(), org.ID, member.ID); err != nil {
+	if err := testDB(app).AddOrgMember(context.Background(), org.ID, member.ID); err != nil {
 		t.Fatal(err)
 	}
 
@@ -475,7 +475,7 @@ func TestRevealConnectionSecret(t *testing.T) {
 	owner, ownerTok, org := seedOrgOwner(t, app, "conn-reveal-owner@example.com", "Conn Reveal Owner", "Conn Reveal Org")
 	setConnectionSecretRevealForTest(t, app, org.Slug, true)
 	member, memberTok := seedAccountWithToken(t, app, "conn-reveal-member@example.com", "Conn Reveal Member")
-	if err := app.db.AddOrgMember(context.Background(), org.ID, member.ID); err != nil {
+	if err := testDB(app).AddOrgMember(context.Background(), org.ID, member.ID); err != nil {
 		t.Fatal(err)
 	}
 	ws := seedWorkspaceForAccount(t, app, org, owner, "Conn Reveal WS", "")
@@ -741,7 +741,7 @@ func TestExecuteQueryCursorAndValidationBranches(t *testing.T) {
 
 	owner, ownerTok, org := seedOrgOwner(t, app, "query-owner@example.com", "Query Owner", "Query Org")
 	member, memberTok := seedAccountWithToken(t, app, "query-member@example.com", "Query Member")
-	if err := app.db.AddOrgMember(context.Background(), org.ID, member.ID); err != nil {
+	if err := testDB(app).AddOrgMember(context.Background(), org.ID, member.ID); err != nil {
 		t.Fatal(err)
 	}
 	ws := seedWorkspaceForAccount(t, app, org, owner, "Query WS", "")
@@ -1554,7 +1554,7 @@ func TestQueryCursorFetchRequiresRuntimePermission(t *testing.T) {
 
 	owner, ownerTok, org := seedOrgOwner(t, app, uniqueEmail(t, "query-cursor-perm-owner"), "Query Cursor Perm Owner", "Query Cursor Perm Org")
 	member, memberTok := seedAccountWithToken(t, app, uniqueEmail(t, "query-cursor-perm-member"), "Query Cursor Perm Member")
-	if err := app.db.AddOrgMember(context.Background(), org.ID, member.ID); err != nil {
+	if err := testDB(app).AddOrgMember(context.Background(), org.ID, member.ID); err != nil {
 		t.Fatal(err)
 	}
 	ws := seedWorkspaceForAccount(t, app, org, owner, "Query Cursor Perm WS", "")
@@ -1599,7 +1599,7 @@ func TestQueryCursorFetchRequiresRuntimePermission(t *testing.T) {
 	queryCursorID := startRes.BodyFields["query_cursor_id"].(string)
 
 	var bindingID int64
-	if err := app.db.NewSelect().
+	if err := testDB(app).NewSelect().
 		TableExpr("role_bindings").
 		ColumnExpr("id").
 		Where("org_id = ?", org.ID).
@@ -1696,7 +1696,7 @@ func TestConnectionRuntimePermissionClasses(t *testing.T) {
 
 	mkMember := func(email, name string, permissions ...string) (string, string) {
 		member, tok := seedAccountWithToken(t, app, email, name)
-		if err := app.db.AddOrgMember(context.Background(), org.ID, member.ID); err != nil {
+		if err := testDB(app).AddOrgMember(context.Background(), org.ID, member.ID); err != nil {
 			t.Fatal(err)
 		}
 		roleID := createRoleForTest(t, app, org.ID, nil, "connection", permissions...)
@@ -1889,7 +1889,7 @@ func TestListActiveSessions_OnlyCurrentAccount(t *testing.T) {
 	envID := defaultEnvironmentID(t, app, ws.ID)
 
 	_, memberTok := seedAccountWithToken(t, app, uniqueEmail(t, "sess-member"), "Sess Member")
-	if err := app.db.AddOrgMember(context.Background(), org.ID, 0); err != nil {
+	if err := testDB(app).AddOrgMember(context.Background(), org.ID, 0); err != nil {
 		// org.ID member add is a no-op here — we only need memberTok issued to confirm isolation.
 		_ = err
 	}
@@ -2035,7 +2035,7 @@ func TestRevokeWorkspaceDatabaseSession_AdminCanRevokeWorkspaceSession(t *testin
 	envID := defaultEnvironmentID(t, app, ws.ID)
 	conn := seedConnection(t, app, ws.ID, &envID, org.ID, "sqlite", "Revoke Other Session", "open")
 	member := seedAccount(t, app, uniqueEmail(t, "db-session-member"), "DB Session Member")
-	if err := app.db.AddOrgMember(context.Background(), org.ID, member.ID); err != nil {
+	if err := testDB(app).AddOrgMember(context.Background(), org.ID, member.ID); err != nil {
 		t.Fatal(err)
 	}
 
@@ -2127,9 +2127,11 @@ func (r failingOpenRuntime) Open(context.Context, execution.OpenRequest) (execut
 }
 
 func TestConnectRedactsResolvedSecretsFromError(t *testing.T) {
-	app, org, ws, tok := setupWorkspaceOwner(t)
-	envID := defaultEnvironmentID(t, app, ws.ID)
 	const password = "connect-handler-secret"
+	app, org, ws, tok := setupWorkspaceOwnerWith(t, testAppOptions{runtime: func(rt execution.Runtime) execution.Runtime {
+		return failingOpenRuntime{Runtime: rt, err: &execution.ConnectError{Err: errors.New("authentication failed for " + password)}}
+	}})
+	envID := defaultEnvironmentID(t, app, ws.ID)
 	create := send(t, newAuthRequest(t, http.MethodPost,
 		orgEnvConnectionsURL(org.Slug, ws.ID, envID), map[string]any{
 			"name": "Redacted connect", "driver": "postgres",
@@ -2138,7 +2140,6 @@ func TestConnectRedactsResolvedSecretsFromError(t *testing.T) {
 		}, tok), app.routes())
 	assert.Equal(t, create.StatusCode, http.StatusCreated)
 	connID := fmt.Sprintf("%v", create.BodyFields["id"])
-	app.runtime = failingOpenRuntime{Runtime: app.runtime, err: &execution.ConnectError{Err: errors.New("authentication failed for " + password)}}
 
 	res := send(t, newAuthRequest(t, http.MethodPost,
 		orgConnectionURL(org.Slug, ws.ID, envID, connID)+"/connect", nil, tok), app.routes())
@@ -2296,7 +2297,7 @@ func TestDisconnectFromDatabase_WrongAccountLeavesSessionAlive(t *testing.T) {
 	envID := defaultEnvironmentID(t, app, ws.ID)
 
 	member, memberTok := seedAccountWithToken(t, app, uniqueEmail(t, "dc-member"), "DC Member")
-	if err := app.db.AddOrgMember(context.Background(), org.ID, member.ID); err != nil {
+	if err := testDB(app).AddOrgMember(context.Background(), org.ID, member.ID); err != nil {
 		t.Fatal(err)
 	}
 
@@ -2501,7 +2502,7 @@ func TestConnectToDatabaseHidesCredentialResolutionFailure(t *testing.T) {
 	envID := defaultEnvironmentID(t, app, ws.ID)
 	conn := insertStructuredConnection(t, app, ws.ID, &envID, "Undecryptable", "postgres",
 		map[string]any{"host": "localhost", "port": "5432", "database": "test", "username": "test"})
-	if err := app.db.UpsertConnectionSecretValue(context.Background(), conn.ID, string(credentials.SecretPassword), string(credentials.SourceStored), "not-a-ciphertext-marker", "k"); err != nil {
+	if err := testDB(app).UpsertConnectionSecretValue(context.Background(), conn.ID, string(credentials.SecretPassword), string(credentials.SourceStored), "not-a-ciphertext-marker", "k"); err != nil {
 		t.Fatal(err)
 	}
 
@@ -2633,14 +2634,14 @@ func (d *cursorUnsupportedQueryDriver) Execute(ctx context.Context, sql string, 
 
 func setConnectionSecretRevealForTest(t *testing.T, app *application, orgSlug string, allowed bool) {
 	t.Helper()
-	org, found, err := app.db.GetOrgBySlug(context.Background(), orgSlug)
+	org, found, err := testDB(app).GetOrgBySlug(context.Background(), orgSlug)
 	if err != nil {
 		t.Fatal(err)
 	}
 	if !found {
 		t.Fatalf("organization %q not found", orgSlug)
 	}
-	if err := app.db.UpdateOrgSettings(context.Background(), org.ID, nil, nil, &allowed); err != nil {
+	if err := testDB(app).UpdateOrgSettings(context.Background(), org.ID, nil, nil, &allowed); err != nil {
 		t.Fatal(err)
 	}
 }

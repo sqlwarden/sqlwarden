@@ -42,7 +42,7 @@ func TestConnectionExportsUnavailableWithoutRegisteredClassifier(t *testing.T) {
 		assert.Equal(t, res.StatusCode, http.StatusNotImplemented)
 	}
 
-	count, err := app.db.NewSelect().Model((*jobs.Record)(nil)).Count(context.Background())
+	count, err := testDB(app).NewSelect().Model((*jobs.Record)(nil)).Count(context.Background())
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -136,10 +136,14 @@ func (l *lifecycleRuntime) Probe(ctx context.Context, scope execution.Scope, cre
 	return l.Runtime.Probe(ctx, scope, creds, limits, fn)
 }
 
-func installLifecycleRuntime(app *application) *lifecycleRuntime {
-	rt := &lifecycleRuntime{Runtime: app.runtime}
-	app.runtime = rt
-	return rt
+func newLifecycleApp(t *testing.T, opts testAppOptions) (*application, *lifecycleRuntime) {
+	t.Helper()
+	var rt *lifecycleRuntime
+	opts.runtime = func(base execution.Runtime) execution.Runtime {
+		rt = &lifecycleRuntime{Runtime: base}
+		return rt
+	}
+	return newTestAppWith(t, opts), rt
 }
 
 func seedExportJobInput(t *testing.T, app *application, sql string) (exportjob.JobInput, jobs.Runtime) {
@@ -185,8 +189,7 @@ func requireSingleClosedEphemeralSession(t *testing.T, rt *lifecycleRuntime, inp
 
 func TestHandleExportJobClosesEphemeralSessionOnSuccess(t *testing.T) {
 	t.Parallel()
-	app := newTestApp(t)
-	rt := installLifecycleRuntime(app)
+	app, rt := newLifecycleApp(t, testAppOptions{})
 	input, job := seedExportJobInput(t, app, "SELECT 1 AS id")
 
 	output, err := app.exportService().RunJob(context.Background(), job)
@@ -203,8 +206,7 @@ func TestHandleExportJobClosesEphemeralSessionOnSuccess(t *testing.T) {
 
 func TestHandleExportJobClosesEphemeralSessionOnStreamError(t *testing.T) {
 	t.Parallel()
-	app := newTestApp(t)
-	rt := installLifecycleRuntime(app)
+	app, rt := newLifecycleApp(t, testAppOptions{})
 	input, job := seedExportJobInput(t, app, "SELECT * FROM table_that_does_not_exist")
 
 	output, err := app.exportService().RunJob(context.Background(), job)
@@ -216,8 +218,7 @@ func TestHandleExportJobClosesEphemeralSessionOnStreamError(t *testing.T) {
 
 func TestHandleExportJobClosesEphemeralSessionOnCancel(t *testing.T) {
 	t.Parallel()
-	app := newTestApp(t)
-	rt := installLifecycleRuntime(app)
+	app, rt := newLifecycleApp(t, testAppOptions{})
 	input, job := seedExportJobInput(t, app, "SELECT 1 AS id")
 
 	ctx, cancel := context.WithCancel(context.Background())
@@ -235,8 +236,7 @@ func TestHandleExportJobClosesEphemeralSessionOnCancel(t *testing.T) {
 
 func TestHandleExportJobBlockedTargetOpensNoSession(t *testing.T) {
 	t.Parallel()
-	app := newTestApp(t)
-	rt := installLifecycleRuntime(app)
+	app, rt := newLifecycleApp(t, testAppOptions{})
 	_, job := seedExportJobInput(t, app, "SELECT 1 AS id")
 	updateInstanceSettingsForTest(t, app, func(s *database.InstanceSettings) {
 		s.SQLiteLocalTargetsEnabled = false
@@ -254,8 +254,7 @@ func TestHandleExportJobBlockedTargetOpensNoSession(t *testing.T) {
 
 func TestTestConnectionProbesWithCallerCredentials(t *testing.T) {
 	t.Parallel()
-	app := newTestApp(t)
-	rt := installLifecycleRuntime(app)
+	app, rt := newLifecycleApp(t, testAppOptions{})
 
 	_, tok, slug := registerAndLogin(t, app, "conn-test-probe@example.com", "Conn Test Probe", "securepass99")
 	wsRes := send(t, newAuthRequest(t, http.MethodPost, "/api/v1/orgs/"+slug+"/workspaces",
@@ -298,9 +297,9 @@ func (failingPutStore) Put(_ context.Context, _ string, content io.Reader) (file
 
 func TestHandleExportJobAbandonedPipeStopsStreamAndClosesSession(t *testing.T) {
 	t.Parallel()
-	app := newTestApp(t)
-	rt := installLifecycleRuntime(app)
-	app.fileStores = failingPutStores{FileStores: app.fileStores}
+	app, rt := newLifecycleApp(t, testAppOptions{fileStores: func(base FileStores) FileStores {
+		return failingPutStores{FileStores: base}
+	}})
 	input, job := seedExportJobInput(t, app, "SELECT 1 AS id")
 
 	streamDone := make(chan struct{})

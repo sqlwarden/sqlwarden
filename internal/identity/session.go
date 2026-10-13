@@ -18,6 +18,13 @@ type SessionStore interface {
 	TouchAuthSession(ctx context.Context, id string) error
 }
 
+// AuthStore is the metadata request authentication reads: sessions for the
+// bearer token and the instance admin flag for the principal.
+type AuthStore interface {
+	SessionStore
+	InstanceAdminLookup
+}
+
 // RevocationSetting reports whether auth sessions are checked on each request.
 type RevocationSetting func(ctx context.Context) bool
 

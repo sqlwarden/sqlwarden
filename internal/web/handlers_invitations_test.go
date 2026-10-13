@@ -23,13 +23,14 @@ func TestOrganizationInvitationExistingAccountLifecycle(t *testing.T) {
 	created := createInvitationForTest(t, app, slug, invitee.Email, ownerToken)
 	assert.Equal(t, created.StatusCode, http.StatusCreated)
 	assert.Equal(t, created.BodyFields["delivery_status"], database.InvitationDeliverySent)
-	if len(app.mailer.SentMessages) != 1 || !strings.Contains(app.mailer.SentMessages[0], invitee.Email) {
+	sent := app.services.Mailer.Current().SentMessages
+	if len(sent) != 1 || !strings.Contains(sent[0], invitee.Email) {
 		t.Fatal("expected invitation email to be sent to the invitee")
 	}
 
 	plain := invitationTokenFromResponse(t, created)
 	var stored database.OrganizationInvitation
-	if err := app.db.NewSelect().Model(&stored).Where("normalized_email = ?", database.NormalizeInvitationEmail(invitee.Email)).Scan(context.Background()); err != nil {
+	if err := testDB(app).NewSelect().Model(&stored).Where("normalized_email = ?", database.NormalizeInvitationEmail(invitee.Email)).Scan(context.Background()); err != nil {
 		t.Fatal(err)
 	}
 	assert.Equal(t, stored.TokenHash, token.Hash(plain))
@@ -44,11 +45,11 @@ func TestOrganizationInvitationExistingAccountLifecycle(t *testing.T) {
 
 	accepted := send(t, newAuthRequest(t, http.MethodPost, "/api/v1/invitations/"+plain+"/accept", map[string]any{}, inviteeToken), app.routes())
 	assert.Equal(t, accepted.StatusCode, http.StatusOK)
-	org, found, err := app.db.GetOrgBySlug(context.Background(), slug)
+	org, found, err := testDB(app).GetOrgBySlug(context.Background(), slug)
 	if err != nil || !found {
 		t.Fatalf("get org: found=%v err=%v", found, err)
 	}
-	member, err := app.db.IsOrgMember(context.Background(), org.ID, invitee.ID)
+	member, err := testDB(app).IsOrgMember(context.Background(), org.ID, invitee.ID)
 	if err != nil || !member {
 		t.Fatalf("accepted invitee should be a member: member=%v err=%v", member, err)
 	}
@@ -71,12 +72,12 @@ func TestOrganizationInvitationCreatesAccountAndSession(t *testing.T) {
 	if !ok || accessToken == "" {
 		t.Fatal("expected new-account acceptance to issue an access token")
 	}
-	account, found, err := app.db.GetAccountByEmail(context.Background(), email)
+	account, found, err := testDB(app).GetAccountByEmail(context.Background(), email)
 	if err != nil || !found {
 		t.Fatalf("get accepted account: found=%v err=%v", found, err)
 	}
-	org, _, _ := app.db.GetOrgBySlug(context.Background(), slug)
-	member, err := app.db.IsOrgMember(context.Background(), org.ID, account.ID)
+	org, _, _ := testDB(app).GetOrgBySlug(context.Background(), slug)
+	member, err := testDB(app).IsOrgMember(context.Background(), org.ID, account.ID)
 	if err != nil || !member {
 		t.Fatalf("new account should be an org member: member=%v err=%v", member, err)
 	}
@@ -112,7 +113,7 @@ func TestOrganizationInvitationListResendAndRevoke(t *testing.T) {
 func TestOrganizationInvitationDeliveryDisabledAndExpiration(t *testing.T) {
 	t.Parallel()
 	app := newTestApp(t)
-	app.mailer = smtp.NewDisabledMailer("")
+	app.services.Mailer.Set(smtp.NewDisabledMailer(""))
 	_, ownerToken, slug := registerAndLogin(t, app, uniqueEmail(t, "invite-disabled-owner"), "Invite Owner", "securepass99")
 	created := createInvitationForTest(t, app, slug, uniqueEmail(t, "invite-disabled"), ownerToken)
 	assert.Equal(t, created.BodyFields["delivery_status"], database.InvitationDeliveryDisabled)
@@ -120,7 +121,7 @@ func TestOrganizationInvitationDeliveryDisabledAndExpiration(t *testing.T) {
 		t.Fatal("expected a copyable invitation URL when SMTP is disabled")
 	}
 	plain := invitationTokenFromResponse(t, created)
-	if _, err := app.db.NewUpdate().Model((*database.OrganizationInvitation)(nil)).Set("expires_at = ?", time.Now().Add(-time.Minute)).Where("token_hash = ?", token.Hash(plain)).Exec(context.Background()); err != nil {
+	if _, err := testDB(app).NewUpdate().Model((*database.OrganizationInvitation)(nil)).Set("expires_at = ?", time.Now().Add(-time.Minute)).Where("token_hash = ?", token.Hash(plain)).Exec(context.Background()); err != nil {
 		t.Fatal(err)
 	}
 	resolved := send(t, newTestRequest(t, http.MethodGet, "/api/v1/invitations/"+plain, nil), app.routes())
@@ -133,7 +134,7 @@ func TestOrganizationInvitationDeliveryDisabledAndExpiration(t *testing.T) {
 func TestOrganizationInvitationDeliveryFailureKeepsCopyableLink(t *testing.T) {
 	t.Parallel()
 	app := newTestApp(t)
-	app.mailer = smtp.NewMockMailer("")
+	app.services.Mailer.Set(smtp.NewMockMailer(""))
 	_, ownerToken, slug := registerAndLogin(t, app, uniqueEmail(t, "invite-failed-owner"), "Invite Owner", "securepass99")
 	created := createInvitationForTest(t, app, slug, uniqueEmail(t, "invite-failed"), ownerToken)
 	assert.Equal(t, created.StatusCode, http.StatusCreated)

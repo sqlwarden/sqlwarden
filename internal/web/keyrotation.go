@@ -2,36 +2,26 @@ package web
 
 import (
 	"context"
-	"fmt"
-	"io"
-	"log/slog"
 	"net/http"
-	"strings"
 
-	"github.com/sqlwarden/internal/credentials"
-	"github.com/sqlwarden/internal/engine"
+	"github.com/sqlwarden/internal/keyrotation"
 	"github.com/sqlwarden/internal/response"
 )
 
 // EncryptionRotationReport summarizes a key-rotation pass over all
 // application-encrypted data.
-type EncryptionRotationReport struct {
-	ConnectionsSplit         int `json:"connections_split"`
-	ConnectionSecretsRotated int `json:"connection_secrets_rotated"`
-	ConnectionSecretsSkipped int `json:"connection_secrets_skipped"`
-	FileContentsScanned      int `json:"file_contents_scanned"`
-	FileContentsRotated      int `json:"file_contents_rotated"`
-	SMTPPasswordsScanned     int `json:"smtp_passwords_scanned"`
-	SMTPPasswordsRotated     int `json:"smtp_passwords_rotated"`
-}
+type EncryptionRotationReport = keyrotation.Report
 
 // rotateEncryptionKeysHandler re-encrypts all application-encrypted data with
-// the current primary key. It is an instance-admin-only operation and returns a
-// summary of what was scanned and rotated.
+// the current primary key and returns a summary of what was rotated.
 func (app *application) rotateEncryptionKeysHandler(w http.ResponseWriter, r *http.Request) {
-	report, err := app.RotateEncryptionKeys(r.Context())
+	principal, ok := app.requestPrincipal(w, r)
+	if !ok {
+		return
+	}
+	report, err := app.services.KeyRotation.Rotate(r.Context(), principal, keyrotation.Options{})
 	if err != nil {
-		app.serverError(w, r, err)
+		app.serviceError(w, r, err)
 		return
 	}
 	if err := response.JSON(w, http.StatusOK, report); err != nil {
@@ -39,129 +29,7 @@ func (app *application) rotateEncryptionKeysHandler(w http.ResponseWriter, r *ht
 	}
 }
 
-// RotateEncryptionKeys re-encrypts every piece of application-encrypted data
-// that is not already sealed with the keyring's primary key. It decrypts each
-// value through the keyring (which still holds retired keys) and re-encrypts it
-// with the current primary key.
-//
-// Rotation is idempotent: values already sealed with the primary key are left
-// untouched, so it is safe to run repeatedly. Each item is committed
-// independently per connection, file, or settings row, so a mid-run failure
-// leaves already-rotated items rotated.
+// RotateEncryptionKeys runs key rotation for the rotate-keys command.
 func (app *application) RotateEncryptionKeys(ctx context.Context) (EncryptionRotationReport, error) {
-	var report EncryptionRotationReport
-
-	app.logger.InfoContext(ctx, "encryption key rotation started")
-	if err := app.rotateConnectionCredentials(ctx, &report); err != nil {
-		return report, err
-	}
-	if err := app.rotateFileContents(ctx, &report); err != nil {
-		return report, err
-	}
-	if err := app.rotateSMTPPassword(ctx, &report); err != nil {
-		return report, err
-	}
-	app.logger.InfoContext(ctx, "encryption key rotation complete",
-		slog.Int("connections_split", report.ConnectionsSplit),
-		slog.Int("connection_secrets_rotated", report.ConnectionSecretsRotated),
-		slog.Int("connection_secrets_skipped", report.ConnectionSecretsSkipped),
-		slog.Int("file_contents_scanned", report.FileContentsScanned),
-		slog.Int("file_contents_rotated", report.FileContentsRotated),
-	)
-	return report, nil
-}
-
-func (app *application) rotateSMTPPassword(ctx context.Context, report *EncryptionRotationReport) error {
-	settings, err := app.instanceSettings(ctx)
-	if err != nil {
-		return fmt.Errorf("rotate SMTP password: get settings: %w", err)
-	}
-	if settings.SMTPPasswordEncrypted == "" {
-		return nil
-	}
-	report.SMTPPasswordsScanned++
-	if !app.keyring.NeedsRotation(settings.SMTPPasswordEncrypted) {
-		return nil
-	}
-	plaintext, err := app.keyring.Decrypt(settings.SMTPPasswordEncrypted)
-	if err != nil {
-		return fmt.Errorf("rotate SMTP password: decrypt: %w", err)
-	}
-	settings.SMTPPasswordEncrypted, err = app.keyring.Encrypt(plaintext)
-	if err != nil {
-		return fmt.Errorf("rotate SMTP password: encrypt: %w", err)
-	}
-	settings, err = app.db.UpsertInstanceSettings(ctx, settings)
-	if err != nil {
-		return fmt.Errorf("rotate SMTP password: update: %w", err)
-	}
-	report.SMTPPasswordsRotated++
-	app.queueRuntimeOperations(settings)
-	return nil
-}
-
-// rotateConnectionCredentials converts legacy connection rows and re-seals
-// stored connection secrets with the primary key.
-func (app *application) rotateConnectionCredentials(ctx context.Context, report *EncryptionRotationReport) error {
-	rotator := credentials.NewRotator(app.db, app.keyring, engine.ConnectionSpecFor)
-	rotated, err := rotator.Run(ctx)
-	report.ConnectionsSplit = rotated.Split
-	report.ConnectionSecretsRotated = rotated.Reencrypted
-	report.ConnectionSecretsSkipped = rotated.Skipped
-	if err != nil {
-		return fmt.Errorf("rotate connection credentials: %w", err)
-	}
-	return nil
-}
-
-// rotateFileContents re-encrypts application-encrypted file content bytes in
-// place, rewriting them to the same storage key under the primary key.
-func (app *application) rotateFileContents(ctx context.Context, report *EncryptionRotationReport) error {
-	contents, err := app.db.ListApplicationEncryptedFileContents(ctx)
-	if err != nil {
-		return fmt.Errorf("rotate files: list contents: %w", err)
-	}
-	for _, content := range contents {
-		report.FileContentsScanned++
-
-		store, err := app.fileStores.Store(ctx, content.StorageBackendID)
-		if err != nil {
-			return fmt.Errorf("rotate files: resolve backend for content %d: %w", content.ID, err)
-		}
-		reader, _, err := store.Get(ctx, content.StorageKey)
-		if err != nil {
-			return fmt.Errorf("rotate files: read content %d: %w", content.ID, err)
-		}
-		raw, err := io.ReadAll(reader)
-		reader.Close()
-		if err != nil {
-			return fmt.Errorf("rotate files: read content %d: %w", content.ID, err)
-		}
-
-		ciphertext := string(raw)
-		if !app.keyring.NeedsRotation(ciphertext) {
-			continue
-		}
-		plaintext, err := app.keyring.Decrypt(ciphertext)
-		if err != nil {
-			return fmt.Errorf("rotate files: decrypt content %d: %w", content.ID, err)
-		}
-		reencrypted, err := app.keyring.Encrypt(plaintext)
-		if err != nil {
-			return fmt.Errorf("rotate files: encrypt content %d: %w", content.ID, err)
-		}
-		object, err := store.Put(ctx, content.StorageKey, strings.NewReader(reencrypted))
-		if err != nil {
-			return fmt.Errorf("rotate files: write content %d: %w", content.ID, err)
-		}
-		if err := app.db.UpdateWorkspaceFileContentEncryption(ctx, content.ID, object.ContentHash, app.keyring.PrimaryKeyID()); err != nil {
-			return fmt.Errorf("rotate files: update content %d: %w", content.ID, err)
-		}
-		report.FileContentsRotated++
-	}
-	app.logger.InfoContext(ctx, "file content encryption rotation pass complete",
-		slog.Int("file_contents_scanned", report.FileContentsScanned),
-		slog.Int("file_contents_rotated", report.FileContentsRotated),
-	)
-	return nil
+	return app.services.KeyRotation.Rotate(ctx, keyrotation.OperatorPrincipal(), keyrotation.Options{})
 }

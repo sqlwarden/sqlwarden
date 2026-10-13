@@ -10,7 +10,6 @@ import (
 
 	"github.com/go-chi/chi/v5"
 	"github.com/sqlwarden/internal/access"
-	"github.com/sqlwarden/internal/database"
 	"github.com/sqlwarden/internal/files"
 	"github.com/sqlwarden/internal/request"
 	"github.com/sqlwarden/internal/response"
@@ -18,23 +17,23 @@ import (
 )
 
 type workspaceFilesResponse struct {
-	Files []database.WorkspaceFile `json:"files"`
+	Files []files.File `json:"files"`
 }
 
 func (app *application) listPrivateWorkspaceFiles(w http.ResponseWriter, r *http.Request) {
-	app.listWorkspaceFiles(w, r, database.FileVisibilityPrivate)
+	app.listWorkspaceFiles(w, r, files.VisibilityPrivate)
 }
 
 func (app *application) listSharedWorkspaceFiles(w http.ResponseWriter, r *http.Request) {
-	app.listWorkspaceFiles(w, r, database.FileVisibilityShared)
+	app.listWorkspaceFiles(w, r, files.VisibilityShared)
 }
 
 func (app *application) browsePrivateWorkspaceFiles(w http.ResponseWriter, r *http.Request) {
-	app.browseWorkspaceFiles(w, r, database.FileVisibilityPrivate)
+	app.browseWorkspaceFiles(w, r, files.VisibilityPrivate)
 }
 
 func (app *application) browseSharedWorkspaceFiles(w http.ResponseWriter, r *http.Request) {
-	app.browseWorkspaceFiles(w, r, database.FileVisibilityShared)
+	app.browseWorkspaceFiles(w, r, files.VisibilityShared)
 }
 
 // browseWorkspaceFiles returns the editor browser snapshot for root, folder, or file.
@@ -58,11 +57,11 @@ func (app *application) browseWorkspaceFiles(w http.ResponseWriter, r *http.Requ
 }
 
 func (app *application) listRecentPrivateWorkspaceFiles(w http.ResponseWriter, r *http.Request) {
-	app.listRecentWorkspaceFiles(w, r, database.FileVisibilityPrivate)
+	app.listRecentWorkspaceFiles(w, r, files.VisibilityPrivate)
 }
 
 func (app *application) listRecentSharedWorkspaceFiles(w http.ResponseWriter, r *http.Request) {
-	app.listRecentWorkspaceFiles(w, r, database.FileVisibilityShared)
+	app.listRecentWorkspaceFiles(w, r, files.VisibilityShared)
 }
 
 // listRecentWorkspaceFiles returns recently changed openable files for the route-selected tree.
@@ -86,11 +85,11 @@ func (app *application) listRecentWorkspaceFiles(w http.ResponseWriter, r *http.
 }
 
 func (app *application) searchPrivateWorkspaceFiles(w http.ResponseWriter, r *http.Request) {
-	app.searchWorkspaceFiles(w, r, database.FileVisibilityPrivate)
+	app.searchWorkspaceFiles(w, r, files.VisibilityPrivate)
 }
 
 func (app *application) searchSharedWorkspaceFiles(w http.ResponseWriter, r *http.Request) {
-	app.searchWorkspaceFiles(w, r, database.FileVisibilityShared)
+	app.searchWorkspaceFiles(w, r, files.VisibilityShared)
 }
 
 // searchWorkspaceFiles scans the route-selected file tree for a content match.
@@ -131,11 +130,11 @@ func (app *application) listWorkspaceFiles(w http.ResponseWriter, r *http.Reques
 }
 
 func (app *application) createPrivateWorkspaceFile(w http.ResponseWriter, r *http.Request) {
-	app.createWorkspaceFile(w, r, database.FileVisibilityPrivate)
+	app.createWorkspaceFile(w, r, files.VisibilityPrivate)
 }
 
 func (app *application) createSharedWorkspaceFile(w http.ResponseWriter, r *http.Request) {
-	app.createWorkspaceFile(w, r, database.FileVisibilityShared)
+	app.createWorkspaceFile(w, r, files.VisibilityShared)
 }
 
 // createWorkspaceFile creates a file/folder in the route-selected file tree.
@@ -178,11 +177,11 @@ func (app *application) createWorkspaceFile(w http.ResponseWriter, r *http.Reque
 }
 
 func (app *application) getPrivateWorkspaceFile(w http.ResponseWriter, r *http.Request) {
-	app.getWorkspaceFile(w, r, database.FileVisibilityPrivate)
+	app.getWorkspaceFile(w, r, files.VisibilityPrivate)
 }
 
 func (app *application) getSharedWorkspaceFile(w http.ResponseWriter, r *http.Request) {
-	app.getWorkspaceFile(w, r, database.FileVisibilityShared)
+	app.getWorkspaceFile(w, r, files.VisibilityShared)
 }
 
 // getWorkspaceFile returns one file/folder's metadata from the selected tree.
@@ -206,11 +205,11 @@ func (app *application) getWorkspaceFile(w http.ResponseWriter, r *http.Request,
 }
 
 func (app *application) updatePrivateWorkspaceFile(w http.ResponseWriter, r *http.Request) {
-	app.updateWorkspaceFile(w, r, database.FileVisibilityPrivate)
+	app.updateWorkspaceFile(w, r, files.VisibilityPrivate)
 }
 
 func (app *application) updateSharedWorkspaceFile(w http.ResponseWriter, r *http.Request) {
-	app.updateWorkspaceFile(w, r, database.FileVisibilityShared)
+	app.updateWorkspaceFile(w, r, files.VisibilityShared)
 }
 
 func (app *application) duplicatePrivateWorkspaceFile(w http.ResponseWriter, r *http.Request) {
@@ -225,13 +224,13 @@ func (app *application) duplicatePrivateWorkspaceFile(w http.ResponseWriter, r *
 		app.badRequest(w, r, err)
 		return
 	}
-	principal, scope, ok := app.workspaceFileRequest(w, r, database.FileVisibilityPrivate)
+	principal, scope, ok := app.workspaceFileRequest(w, r, files.VisibilityPrivate)
 	if !ok {
 		return
 	}
-	service, err := app.workspaceFileServiceForRequest(r)
+	service, err := app.workspaceFileServiceForRequest(r, principal, scope)
 	if err != nil {
-		app.serverError(w, r, err)
+		app.workspaceFileError(w, r, err)
 		return
 	}
 	file, err := service.Duplicate(
@@ -298,11 +297,11 @@ func (app *application) updateWorkspaceFile(w http.ResponseWriter, r *http.Reque
 }
 
 func (app *application) deletePrivateWorkspaceFile(w http.ResponseWriter, r *http.Request) {
-	app.deleteWorkspaceFile(w, r, database.FileVisibilityPrivate)
+	app.deleteWorkspaceFile(w, r, files.VisibilityPrivate)
 }
 
 func (app *application) deleteSharedWorkspaceFile(w http.ResponseWriter, r *http.Request) {
-	app.deleteWorkspaceFile(w, r, database.FileVisibilityShared)
+	app.deleteWorkspaceFile(w, r, files.VisibilityShared)
 }
 
 // deleteWorkspaceFile recursively tombstones a file/folder subtree.
@@ -324,11 +323,11 @@ func (app *application) deleteWorkspaceFile(w http.ResponseWriter, r *http.Reque
 }
 
 func (app *application) getPrivateWorkspaceFileContent(w http.ResponseWriter, r *http.Request) {
-	app.getWorkspaceFileContent(w, r, database.FileVisibilityPrivate)
+	app.getWorkspaceFileContent(w, r, files.VisibilityPrivate)
 }
 
 func (app *application) getSharedWorkspaceFileContent(w http.ResponseWriter, r *http.Request) {
-	app.getWorkspaceFileContent(w, r, database.FileVisibilityShared)
+	app.getWorkspaceFileContent(w, r, files.VisibilityShared)
 }
 
 // getWorkspaceFileContent streams the current bytes for a file.
@@ -365,11 +364,11 @@ func (app *application) getWorkspaceFileContent(w http.ResponseWriter, r *http.R
 }
 
 func (app *application) updatePrivateWorkspaceFileContent(w http.ResponseWriter, r *http.Request) {
-	app.updateWorkspaceFileContent(w, r, database.FileVisibilityPrivate)
+	app.updateWorkspaceFileContent(w, r, files.VisibilityPrivate)
 }
 
 func (app *application) updateSharedWorkspaceFileContent(w http.ResponseWriter, r *http.Request) {
-	app.updateWorkspaceFileContent(w, r, database.FileVisibilityShared)
+	app.updateWorkspaceFileContent(w, r, files.VisibilityShared)
 }
 
 // updateWorkspaceFileContent stores new bytes for a file.
@@ -382,9 +381,9 @@ func (app *application) updateWorkspaceFileContent(w http.ResponseWriter, r *htt
 	if !ok {
 		return
 	}
-	service, err := app.workspaceFileServiceForRequest(r)
+	service, err := app.workspaceFileServiceForRequest(r, principal, scope)
 	if err != nil {
-		app.serverError(w, r, err)
+		app.workspaceFileError(w, r, err)
 		return
 	}
 	saved, err := service.WriteContent(
@@ -411,38 +410,8 @@ func (app *application) updateWorkspaceFileContent(w http.ResponseWriter, r *htt
 	}
 }
 
-// workspaceFileService builds the file domain service from current app state.
-func (app *application) workspaceFileService() *files.Service {
-	settings := effectiveSettingsFromInstance(database.DefaultInstanceSettings())
-	return app.workspaceFileServiceWithSettings(settings)
-}
-
-func (app *application) workspaceFileServiceWithSettings(settings effectiveRuntimeSettings) *files.Service {
-	revisionPolicy := files.RevisionPolicyDisabled
-	if settings.FileRevisionsEnabled {
-		revisionPolicy = files.RevisionPolicyVersioned
-	}
-	return files.NewService(files.Deps{
-		DB:       app.db,
-		Stores:   app.fileStores,
-		Enforcer: app.policy,
-		Requirer: app.requirer(),
-		Audit:    app.audit,
-		Logger:   app.logger,
-	}, files.Config{
-		StorageMode:            app.config.Files.StorageMode,
-		ActiveStorageBackendID: app.config.Files.ActiveStorageBackend,
-		RevisionPolicy:         revisionPolicy,
-		RevisionKeepLatest:     settings.FileRevisionsKeepLatest,
-	}, &app.fileLocks)
-}
-
-func (app *application) workspaceFileServiceForRequest(r *http.Request) (*files.Service, error) {
-	settings, err := app.effectiveRuntimeSettingsForWorkspace(r.Context(), contextGetWorkspace(r))
-	if err != nil {
-		return nil, err
-	}
-	return app.workspaceFileServiceWithSettings(settings), nil
+func (app *application) workspaceFileServiceForRequest(r *http.Request, p access.Principal, scope files.Scope) (*files.Service, error) {
+	return app.services.FilesForPrincipal(r.Context(), p, scope.OrgID, scope.WorkspaceID)
 }
 
 // workspaceFileRequest returns the request principal and the routed file scope.
@@ -452,8 +421,8 @@ func (app *application) workspaceFileRequest(w http.ResponseWriter, r *http.Requ
 		return access.Principal{}, files.Scope{}, false
 	}
 	return principal, files.Scope{
-		OrgID:       contextGetOrg(r).ID,
-		WorkspaceID: contextGetWorkspace(r).ID,
+		OrgID:       contextGetPathIDs(r).OrgID,
+		WorkspaceID: contextGetPathIDs(r).WorkspaceID,
 		Visibility:  visibility,
 	}, true
 }
@@ -484,9 +453,9 @@ func (app *application) workspaceFileError(w http.ResponseWriter, r *http.Reques
 		app.failedValidation(w, r, fieldErrors(map[string]string{"object_type": "Object type must be file or folder."}))
 	case errors.Is(err, files.ErrInvalidSearchQuery):
 		app.failedValidation(w, r, fieldErrors(map[string]string{"q": "Search query must be at least 2 characters."}))
-	case errors.Is(err, files.ErrInvalidParent), errors.Is(err, database.ErrInvalidWorkspaceFileParent):
+	case files.IsInvalidParent(err):
 		app.failedValidation(w, r, fieldErrors(map[string]string{"parent_id": "Parent folder is invalid."}))
-	case errors.Is(err, files.ErrMoveCycle), errors.Is(err, database.ErrWorkspaceFileMoveCycle):
+	case files.IsMoveCycle(err):
 		app.failedValidation(w, r, fieldErrors(map[string]string{"parent_id": "A folder cannot be moved inside its descendant."}))
 	case errors.Is(err, files.ErrMissingUpdate):
 		app.failedValidation(w, r, fieldErrors(map[string]string{"file": "Name or parent ID must be provided."}))

@@ -7,313 +7,146 @@ import (
 	"net/url"
 	"strconv"
 	"strings"
-	"time"
 
 	"github.com/go-chi/chi/v5"
-	"github.com/sqlwarden/internal/access"
-	"github.com/sqlwarden/internal/audit"
-	"github.com/sqlwarden/internal/database"
 	"github.com/sqlwarden/internal/identity"
-	"github.com/sqlwarden/internal/password"
 	"github.com/sqlwarden/internal/request"
 	"github.com/sqlwarden/internal/response"
-	"github.com/sqlwarden/internal/token"
 	"github.com/sqlwarden/internal/validator"
 )
 
+// identityError translates identity service failures to the standard error
+// envelope.
+func (app *application) identityError(w http.ResponseWriter, r *http.Request, err error) {
+	var validation *identity.ValidationError
+	var credErr *identity.CredentialError
+	switch {
+	case errors.As(err, &validation):
+		app.failedValidation(w, r, fieldErrors(validation.Fields))
+	case errors.As(err, &credErr):
+		app.rejectCredential(w, r, credErr.Reason)
+	case errors.Is(err, identity.ErrSetupIncomplete):
+		app.errorMessage(w, r, http.StatusForbidden, "Instance setup is not complete.", nil)
+	case errors.Is(err, identity.ErrSignInUnavailable):
+		app.notFound(w, r)
+	case errors.Is(err, identity.ErrAlreadyConfigured):
+		app.errorMessage(w, r, http.StatusConflict, "Instance is already configured.", nil)
+	case errors.Is(err, identity.ErrLastInstanceAdmin):
+		v := validator.Validator{}
+		v.AddError("Cannot remove the last instance admin.")
+		app.failedValidation(w, r, v)
+	case errors.Is(err, identity.ErrInvalidRefreshToken):
+		app.invalidAuthenticationToken(w, r)
+	default:
+		app.serviceError(w, r, err)
+	}
+}
+
+func (app *application) setRefreshCookie(w http.ResponseWriter, r *http.Request, issued identity.Issued) {
+	// Local HTTP is supported; refreshTokenCookie enforces Secure for HTTPS and built-in TLS.
+	http.SetCookie(w, app.refreshTokenCookie(r, issued.RefreshToken, int(issued.RefreshTTL.Seconds())))
+}
+
 func (app *application) registerAccount(w http.ResponseWriter, r *http.Request) {
 	var input struct {
-		Email    string              `json:"email"`
-		Name     string              `json:"name"`
-		Password string              `json:"password"`
-		V        validator.Validator `json:"-"`
+		Email    string `json:"email"`
+		Name     string `json:"name"`
+		Password string `json:"password"`
 	}
-
-	err := request.DecodeJSON(w, r, &input)
-	if err != nil {
+	if err := request.DecodeJSON(w, r, &input); err != nil {
 		app.badRequest(w, r, err)
 		return
 	}
 
-	input.V.CheckField(input.Email != "", "email", "Email is required.")
-	input.V.CheckField(validator.IsEmail(input.Email), "email", "Enter a valid email address.")
-	input.V.CheckField(input.Name != "", "name", "Name is required.")
-	input.V.CheckField(len(input.Password) >= 8, "password", "Password must be at least 8 characters.")
-
-	if input.V.HasErrors() {
-		app.failedValidation(w, r, input.V)
-		return
-	}
-
-	configured, err := app.db.HasAnyInstanceAdmin(r.Context())
+	account, err := app.services.Identity.Register(r.Context(), identity.RegisterInput{
+		Email: input.Email, Name: input.Name, Password: input.Password,
+	})
 	if err != nil {
-		app.serverError(w, r, err)
-		return
-	}
-	if !configured {
-		app.errorMessage(w, r, http.StatusForbidden, "Instance setup is not complete.", nil)
-		return
-	}
-
-	_, exists, err := app.db.GetAccountByEmail(r.Context(), input.Email)
-	if err != nil {
-		app.serverError(w, r, err)
-		return
-	}
-	if exists {
-		input.V.AddFieldError("email", "An account with this email already exists.")
-		app.failedValidation(w, r, input.V)
-		return
-	}
-
-	hashedPW, err := password.Hash(input.Password)
-	if err != nil {
-		app.serverError(w, r, err)
-		return
-	}
-
-	account, err := app.db.InsertAccount(r.Context(), input.Email, input.Name, &hashedPW)
-	if err != nil {
-		if isUniqueViolation(err) {
-			input.V.AddFieldError("email", "An account with this email already exists.")
-			app.failedValidation(w, r, input.V)
-			return
-		}
-		app.serverError(w, r, err)
+		app.identityError(w, r, err)
 		return
 	}
 
 	app.logInfo(r, "account registered", slog.Int64("account_id", account.ID))
-	err = response.JSON(w, http.StatusCreated, account)
-	if err != nil {
+	if err := response.JSON(w, http.StatusCreated, account); err != nil {
 		app.serverError(w, r, err)
 	}
 }
 
 func (app *application) loginAccount(w http.ResponseWriter, r *http.Request) {
-	if !app.signIn.Enabled() {
+	if !app.services.Identity.SignInEnabled() {
 		app.notFound(w, r)
 		return
 	}
 
 	var input struct {
-		Email    string              `json:"email"`
-		Password string              `json:"password"`
-		V        validator.Validator `json:"-"`
+		Email    string `json:"email"`
+		Password string `json:"password"`
 	}
-
-	err := request.DecodeJSON(w, r, &input)
-	if err != nil {
+	if err := request.DecodeJSON(w, r, &input); err != nil {
 		app.badRequest(w, r, err)
 		return
 	}
 
-	input.V.CheckField(input.Email != "", "email", "Email is required.")
-	input.V.CheckField(input.Password != "", "password", "Password is required.")
-
-	if input.V.HasErrors() {
-		app.failedValidation(w, r, input.V)
-		return
-	}
-
-	attrs := app.requestAttributes(r)
-	method := app.signIn.Method()
-	subject, err := method.Begin(r.Context(), identity.Credentials{Email: input.Email, Password: input.Password})
-	var credErr *identity.CredentialError
-	if errors.As(err, &credErr) {
-		app.auditSignInFailure(r, method.Name(), credErr.Reason)
-		app.rejectCredential(w, r, credErr.Reason)
-		return
-	}
+	issued, err := app.services.Identity.Login(r.Context(), identity.LoginInput{
+		Email: input.Email, Password: input.Password,
+	}, app.requestAttributes(r))
 	if err != nil {
-		app.serverError(w, r, err)
-		return
-	}
-	if factors := app.signIn.Factors().Required(r.Context(), subject, attrs); len(factors) > 0 {
-		app.auditSignInFailure(r, method.Name(), "factor_required")
-		app.rejectCredential(w, r, "factor_required")
-		return
-	}
-	decision, err := app.signIn.Policy().Evaluate(r.Context(), subject, attrs)
-	if err != nil {
-		app.serverError(w, r, err)
-		return
-	}
-	if decision.Effect != access.EffectAllow {
-		reason := decision.Reason
-		if reason == "" {
-			reason = "sign_in_policy_denied"
-		}
-		app.auditSignInFailure(r, method.Name(), reason)
-		app.rejectCredential(w, r, reason)
-		return
-	}
-	credential, err := method.Complete(r.Context(), subject)
-	if err != nil {
-		app.serverError(w, r, err)
+		app.identityError(w, r, err)
 		return
 	}
 
-	accessToken, authSessionID, err := app.issueAccountSession(w, r, subject.Account, database.SessionAuth{Method: credential.Method, Assurance: string(credential.Assurance)})
-	if err != nil {
-		app.serverError(w, r, err)
-		return
-	}
-	credential.ID = authSessionID
-	app.auditSignInSuccess(r, subject.Account.ID, credential)
-	app.logInfo(r, "account logged in", slog.Int64("account_id", subject.Account.ID), slog.String("auth_session_id", authSessionID))
-
-	err = response.JSON(w, http.StatusOK, map[string]string{"access_token": accessToken})
-	if err != nil {
+	app.setRefreshCookie(w, r, issued)
+	app.logInfo(r, "account logged in", slog.Int64("account_id", issued.AccountID), slog.String("auth_session_id", issued.AuthSessionID))
+	if err := response.JSON(w, http.StatusOK, map[string]string{"access_token": issued.AccessToken}); err != nil {
 		app.serverError(w, r, err)
 	}
-}
-
-func (app *application) auditSignInFailure(r *http.Request, method, reason string) {
-	app.emitAudit(r, audit.Event{Actor: audit.AnonymousActor(method), Action: audit.ActionSignIn, Outcome: audit.OutcomeFailure, DecisionReason: reason})
-}
-
-func (app *application) auditSignInSuccess(r *http.Request, accountID int64, credential access.CredentialInfo) {
-	principal := access.Principal{Subject: access.SubjectRef{Kind: access.SubjectAccount, ID: accountID}, Credential: credential}
-	app.emitAudit(r, audit.Event{Actor: audit.ActorFromPrincipal(principal), Action: audit.ActionSignIn, Outcome: audit.OutcomeSuccess})
-}
-
-func (app *application) issueAccountSession(w http.ResponseWriter, r *http.Request, account database.Account, auth database.SessionAuth) (string, string, error) {
-	const refreshTTL = 7 * 24 * time.Hour
-	family := database.NewID()
-	authSession, _, err := app.db.CreateAuthSessionWithRefreshToken(
-		r.Context(), account.ID, time.Now().Add(refreshTTL), r.Header.Get("User-Agent"),
-		app.clientIP(r), token.Hash(family), family, auth,
-	)
-	if err != nil {
-		return "", "", err
-	}
-	settings, err := app.runtimeSettingsService().effectiveForOrg(r.Context(), nil)
-	if err != nil {
-		return "", "", err
-	}
-	accessToken, _, err := token.IssueWithSessionTTL(
-		strconv.FormatInt(account.ID, 10), authSession.ID, account.Email, account.Name,
-		app.config.JWT.SecretKey, settings.JWTAccessTokenTTL,
-	)
-	if err != nil {
-		return "", "", err
-	}
-	// Local HTTP is supported; refreshTokenCookie enforces Secure for HTTPS and built-in TLS.
-	http.SetCookie(w, app.refreshTokenCookie(r, family, int(refreshTTL.Seconds())))
-	return accessToken, authSession.ID, nil
 }
 
 func (app *application) refreshToken(w http.ResponseWriter, r *http.Request) {
-	cookie, err := r.Cookie("refresh_token")
+	var raw string
+	if cookie, err := r.Cookie("refresh_token"); err == nil {
+		raw = cookie.Value
+	}
+
+	issued, err := app.services.Identity.Refresh(r.Context(), identity.RefreshInput{RefreshToken: raw}, app.requestAttributes(r))
+	var rejection *identity.RefreshRejection
+	if errors.As(err, &rejection) {
+		app.logRefreshRejection(r, rejection)
+	}
 	if err != nil {
-		app.invalidAuthenticationToken(w, r)
+		app.identityError(w, r, err)
 		return
 	}
 
-	rt, found, err := app.db.GetRefreshTokenByHash(r.Context(), token.Hash(cookie.Value))
-	if err != nil {
-		app.serverError(w, r, err)
-		return
-	}
-	if !found || rt.RevokedAt != nil || time.Now().After(rt.ExpiresAt) {
-		if found && rt.RevokedAt == nil {
-			_ = app.db.RevokeFamilyTokens(r.Context(), rt.Family)
-		}
-		if found {
-			reason := "refresh_token_revoked"
-			if rt.RevokedAt == nil && time.Now().After(rt.ExpiresAt) {
-				reason = "refresh_token_expired"
-			}
-			app.logWarn(r, "refresh token rejected", slog.Int64("account_id", rt.AccountID), slog.String("auth_session_id", rt.AuthSessionID), slog.String("reason", reason))
-		}
-		app.invalidAuthenticationToken(w, r)
-		return
-	}
-	if rt.AuthSessionID == "" {
-		app.invalidAuthenticationToken(w, r)
-		return
-	}
-
-	account, found, err := app.db.GetAccount(r.Context(), rt.AccountID)
-	if err != nil {
-		app.serverError(w, r, err)
-		return
-	}
-	if !found {
-		app.invalidAuthenticationToken(w, r)
-		return
-	}
-	if !account.IsActive {
-		app.invalidAuthenticationToken(w, r)
-		return
-	}
-
-	authSession, found, err := app.db.GetAuthSession(r.Context(), rt.AuthSessionID, account.ID)
-	if err != nil {
-		app.serverError(w, r, err)
-		return
-	}
-	if !found || authSession.RevokedAt != nil || time.Now().After(authSession.ExpiresAt) {
-		reason := "auth_session_not_found"
-		if found && authSession.RevokedAt != nil {
-			reason = "auth_session_revoked"
-		} else if found && time.Now().After(authSession.ExpiresAt) {
-			reason = "auth_session_expired"
-		}
-		app.logWarn(r, "refresh auth session rejected", slog.Int64("account_id", account.ID), slog.String("auth_session_id", rt.AuthSessionID), slog.String("reason", reason))
-		app.invalidAuthenticationToken(w, r)
-		return
-	}
-
-	accountIDStr := strconv.FormatInt(account.ID, 10)
-	settings, err := app.runtimeSettingsService().effectiveForOrg(r.Context(), nil)
-	if err != nil {
-		app.serverError(w, r, err)
-		return
-	}
-	accessToken, _, err := token.IssueWithSessionTTL(accountIDStr, authSession.ID, account.Email, account.Name, app.config.JWT.SecretKey, settings.JWTAccessTokenTTL)
-	if err != nil {
-		app.serverError(w, r, err)
-		return
-	}
-
-	family := database.NewID()
-	_, err = app.db.RotateRefreshToken(r.Context(),
-		rt.ID,
-		rt.AccountID,
-		authSession.ID,
-		token.Hash(family),
-		rt.Family,
-		time.Now().Add(7*24*time.Hour),
-		r.Header.Get("User-Agent"),
-		app.clientIP(r),
-	)
-	if err != nil {
-		app.serverError(w, r, err)
-		return
-	}
-
-	app.logInfo(r, "access token refreshed", slog.Int64("account_id", account.ID), slog.String("auth_session_id", authSession.ID))
-	// Local HTTP is supported; refreshTokenCookie enforces Secure for HTTPS and built-in TLS.
-	http.SetCookie(w, app.refreshTokenCookie(r, family, 7*24*3600))
-
-	err = response.JSON(w, http.StatusOK, map[string]string{"access_token": accessToken})
-	if err != nil {
+	app.logInfo(r, "access token refreshed", slog.Int64("account_id", issued.AccountID), slog.String("auth_session_id", issued.AuthSessionID))
+	app.setRefreshCookie(w, r, issued)
+	if err := response.JSON(w, http.StatusOK, map[string]string{"access_token": issued.AccessToken}); err != nil {
 		app.serverError(w, r, err)
 	}
 }
 
+func (app *application) logRefreshRejection(r *http.Request, rejection *identity.RefreshRejection) {
+	var msg string
+	switch {
+	case strings.HasPrefix(rejection.Reason, "refresh_token_"):
+		msg = "refresh token rejected"
+	case strings.HasPrefix(rejection.Reason, "auth_session_"):
+		msg = "refresh auth session rejected"
+	default:
+		return
+	}
+	app.logWarn(r, msg, slog.Int64("account_id", rejection.AccountID), slog.String("auth_session_id", rejection.AuthSessionID), slog.String("reason", rejection.Reason))
+}
+
 func (app *application) logoutAccount(w http.ResponseWriter, r *http.Request) {
-	cookie, err := r.Cookie("refresh_token")
-	if err == nil {
-		rt, found, err := app.db.GetRefreshTokenByHash(r.Context(), token.Hash(cookie.Value))
-		if err == nil && found {
-			_ = app.db.RevokeRefreshToken(r.Context(), rt.ID)
-			if rt.AuthSessionID != "" {
-				_ = app.db.RevokeAuthSession(r.Context(), rt.AuthSessionID, &rt.AccountID, "logout")
-				app.logInfo(r, "account logged out", slog.Int64("account_id", rt.AccountID), slog.String("auth_session_id", rt.AuthSessionID))
-			}
+	if cookie, err := r.Cookie("refresh_token"); err == nil {
+		// Logout always clears the cookie; a failed revocation is logged, not
+		// surfaced, so the client is never left holding the token.
+		out, err := app.services.Identity.Logout(r.Context(), identity.LogoutInput{RefreshToken: cookie.Value})
+		if err != nil {
+			app.logWarn(r, "logout revocation failed", slog.Any("error", err))
+		} else if out.AuthSessionID != "" {
+			app.logInfo(r, "account logged out", slog.Int64("account_id", out.AccountID), slog.String("auth_session_id", out.AuthSessionID))
 		}
 	}
 	// Local HTTP is supported; refreshTokenCookie enforces Secure for HTTPS and built-in TLS.
@@ -337,7 +170,7 @@ func (app *application) secureCookies(r *http.Request) bool {
 	if app.config.TLS.Enabled || r.TLS != nil || strings.EqualFold(r.Header.Get("X-Forwarded-Proto"), "https") {
 		return true
 	}
-	settings, err := app.instanceSettings(r.Context())
+	settings, err := app.services.Settings.Instance(r.Context())
 	if err != nil {
 		// Authentication settings are database-owned. If they are unavailable,
 		// prefer a secure cookie over falling back to stale node-local configuration.
@@ -347,144 +180,119 @@ func (app *application) secureCookies(r *http.Request) bool {
 	return err == nil && strings.EqualFold(baseURL.Scheme, "https")
 }
 
-func (app *application) listAccountSessions(w http.ResponseWriter, r *http.Request) {
-	account := contextGetAccount(r)
+// readSessionPage reads the page of a session list query.
+func (app *application) readSessionPage(w http.ResponseWriter, r *http.Request) (identity.Page, bool) {
 	q, errs := readListQuery(r.URL.Query(), map[string]string{
 		"created_at": "created_at",
 	})
 	if len(errs) != 0 {
 		app.failedValidation(w, r, fieldErrors(errs))
-		return
+		return identity.Page{}, false
 	}
+	return identity.Page{Page: q.Page, PageSize: q.PageSize}, true
+}
 
-	sessions, err := app.db.ListAuthSessionsPage(r.Context(), database.ListAuthSessionsParams{
-		AccountID: account.ID,
-		Page:      q.Page,
-		PageSize:  q.PageSize,
-	})
-	if err != nil {
-		app.serverError(w, r, err)
+func (app *application) listAccountSessions(w http.ResponseWriter, r *http.Request) {
+	principal, ok := app.requestPrincipal(w, r)
+	if !ok {
 		return
 	}
-	err = response.JSON(w, http.StatusOK, sessions)
+	page, ok := app.readSessionPage(w, r)
+	if !ok {
+		return
+	}
+	sessions, err := app.services.Identity.ListOwnSessions(r.Context(), principal, page)
 	if err != nil {
+		app.identityError(w, r, err)
+		return
+	}
+	if err := response.JSON(w, http.StatusOK, sessions); err != nil {
 		app.serverError(w, r, err)
 	}
 }
 
 func (app *application) revokeAccountSession(w http.ResponseWriter, r *http.Request) {
-	account := contextGetAccount(r)
+	principal, ok := app.requestPrincipal(w, r)
+	if !ok {
+		return
+	}
 	sessionID := strings.TrimSpace(chi.URLParam(r, "session_id"))
-	if sessionID == "" {
-		app.notFound(w, r)
+	if err := app.services.Identity.RevokeOwnSession(r.Context(), principal, sessionID); err != nil {
+		app.identityError(w, r, err)
 		return
 	}
-
-	session, found, err := app.db.GetAuthSession(r.Context(), sessionID, account.ID)
-	if err != nil {
-		app.serverError(w, r, err)
-		return
-	}
-	if !found {
-		app.notFound(w, r)
-		return
-	}
-	if err = app.db.RevokeAuthSession(r.Context(), session.ID, &account.ID, "user_revoked"); err != nil {
-		app.serverError(w, r, err)
-		return
-	}
-	app.logInfo(r, "auth session revoked", slog.Int64("target_account_id", account.ID), slog.String("auth_session_id", session.ID), slog.String("reason", "user_revoked"))
+	app.logInfo(r, "auth session revoked", slog.Int64("target_account_id", principal.Subject.ID), slog.String("auth_session_id", sessionID), slog.String("reason", "user_revoked"))
 	w.WriteHeader(http.StatusNoContent)
 }
 
 func (app *application) revokeAccountSessions(w http.ResponseWriter, r *http.Request) {
-	account := contextGetAccount(r)
-	if err := app.db.RevokeAuthSessionsForAccount(r.Context(), account.ID, &account.ID, "user_revoked_all"); err != nil {
-		app.serverError(w, r, err)
+	principal, ok := app.requestPrincipal(w, r)
+	if !ok {
 		return
 	}
-	app.logInfo(r, "auth sessions revoked", slog.Int64("target_account_id", account.ID), slog.String("reason", "user_revoked_all"))
+	if err := app.services.Identity.RevokeOwnSessions(r.Context(), principal); err != nil {
+		app.identityError(w, r, err)
+		return
+	}
+	app.logInfo(r, "auth sessions revoked", slog.Int64("target_account_id", principal.Subject.ID), slog.String("reason", "user_revoked_all"))
 	w.WriteHeader(http.StatusNoContent)
 }
 
 func (app *application) listInstanceAccountSessions(w http.ResponseWriter, r *http.Request) {
+	principal, ok := app.requestPrincipal(w, r)
+	if !ok {
+		return
+	}
 	accountID, err := strconv.ParseInt(chi.URLParam(r, "account_id"), 10, 64)
 	if err != nil {
 		app.notFound(w, r)
 		return
 	}
-	q, errs := readListQuery(r.URL.Query(), map[string]string{
-		"created_at": "created_at",
-	})
-	if len(errs) != 0 {
-		app.failedValidation(w, r, fieldErrors(errs))
+	page, ok := app.readSessionPage(w, r)
+	if !ok {
 		return
 	}
-
-	if _, found, err := app.db.GetAccount(r.Context(), accountID); err != nil {
-		app.serverError(w, r, err)
-		return
-	} else if !found {
-		app.notFound(w, r)
-		return
-	}
-
-	sessions, err := app.db.ListAuthSessionsPage(r.Context(), database.ListAuthSessionsParams{
-		AccountID: accountID,
-		Page:      q.Page,
-		PageSize:  q.PageSize,
-	})
+	sessions, err := app.services.Identity.ListInstanceSessions(r.Context(), principal, accountID, page)
 	if err != nil {
-		app.serverError(w, r, err)
+		app.identityError(w, r, err)
 		return
 	}
-	err = response.JSON(w, http.StatusOK, sessions)
-	if err != nil {
+	if err := response.JSON(w, http.StatusOK, sessions); err != nil {
 		app.serverError(w, r, err)
 	}
 }
 
 func (app *application) revokeInstanceAccountSession(w http.ResponseWriter, r *http.Request) {
-	admin := contextGetAccount(r)
+	principal, ok := app.requestPrincipal(w, r)
+	if !ok {
+		return
+	}
 	accountID, err := strconv.ParseInt(chi.URLParam(r, "account_id"), 10, 64)
 	if err != nil {
 		app.notFound(w, r)
 		return
 	}
 	sessionID := strings.TrimSpace(chi.URLParam(r, "session_id"))
-	session, found, err := app.db.GetAuthSession(r.Context(), sessionID, accountID)
-	if err != nil {
-		app.serverError(w, r, err)
+	if err := app.services.Identity.RevokeInstanceSession(r.Context(), principal, accountID, sessionID); err != nil {
+		app.identityError(w, r, err)
 		return
 	}
-	if !found {
-		app.notFound(w, r)
-		return
-	}
-	if err = app.db.RevokeAuthSession(r.Context(), session.ID, &admin.ID, "instance_admin_revoked"); err != nil {
-		app.serverError(w, r, err)
-		return
-	}
-	app.logInfo(r, "auth session revoked", slog.Int64("target_account_id", accountID), slog.String("auth_session_id", session.ID), slog.String("reason", "instance_admin_revoked"))
+	app.logInfo(r, "auth session revoked", slog.Int64("target_account_id", accountID), slog.String("auth_session_id", sessionID), slog.String("reason", "instance_admin_revoked"))
 	w.WriteHeader(http.StatusNoContent)
 }
 
 func (app *application) revokeInstanceAccountSessions(w http.ResponseWriter, r *http.Request) {
-	admin := contextGetAccount(r)
+	principal, ok := app.requestPrincipal(w, r)
+	if !ok {
+		return
+	}
 	accountID, err := strconv.ParseInt(chi.URLParam(r, "account_id"), 10, 64)
 	if err != nil {
 		app.notFound(w, r)
 		return
 	}
-	if _, found, err := app.db.GetAccount(r.Context(), accountID); err != nil {
-		app.serverError(w, r, err)
-		return
-	} else if !found {
-		app.notFound(w, r)
-		return
-	}
-	if err = app.db.RevokeAuthSessionsForAccount(r.Context(), accountID, &admin.ID, "instance_admin_revoked_all"); err != nil {
-		app.serverError(w, r, err)
+	if err := app.services.Identity.RevokeInstanceSessions(r.Context(), principal, accountID); err != nil {
+		app.identityError(w, r, err)
 		return
 	}
 	app.logInfo(r, "auth sessions revoked", slog.Int64("target_account_id", accountID), slog.String("reason", "instance_admin_revoked_all"))
@@ -492,162 +300,115 @@ func (app *application) revokeInstanceAccountSessions(w http.ResponseWriter, r *
 }
 
 func (app *application) listOrgMemberAccessSessions(w http.ResponseWriter, r *http.Request) {
-	org := contextGetOrg(r)
+	principal, ok := app.requestPrincipal(w, r)
+	if !ok {
+		return
+	}
 	accountID, err := strconv.ParseInt(chi.URLParam(r, "account_id"), 10, 64)
 	if err != nil {
 		app.notFound(w, r)
 		return
 	}
-	q, errs := readListQuery(r.URL.Query(), map[string]string{
-		"created_at": "created_at",
-	})
-	if len(errs) != 0 {
-		app.failedValidation(w, r, fieldErrors(errs))
+	page, ok := app.readSessionPage(w, r)
+	if !ok {
 		return
 	}
-
-	if member, err := app.db.IsOrgMember(r.Context(), org.ID, accountID); err != nil {
-		app.serverError(w, r, err)
-		return
-	} else if !member {
-		app.notFound(w, r)
-		return
-	}
-
-	sessions, err := app.db.ListOrgAccessSessionsPage(r.Context(), org.ID, accountID, q.Page, q.PageSize)
+	sessions, err := app.services.Identity.ListOrgMemberAccessSessions(r.Context(), principal, contextGetPathIDs(r).OrgID, accountID, page)
 	if err != nil {
-		app.serverError(w, r, err)
+		app.identityError(w, r, err)
 		return
 	}
-	err = response.JSON(w, http.StatusOK, sessions)
-	if err != nil {
+	if err := response.JSON(w, http.StatusOK, sessions); err != nil {
 		app.serverError(w, r, err)
 	}
 }
 
 func (app *application) revokeOrgMemberAccessSession(w http.ResponseWriter, r *http.Request) {
-	admin := contextGetAccount(r)
-	org := contextGetOrg(r)
+	principal, ok := app.requestPrincipal(w, r)
+	if !ok {
+		return
+	}
 	accountID, err := strconv.ParseInt(chi.URLParam(r, "account_id"), 10, 64)
 	if err != nil {
 		app.notFound(w, r)
 		return
 	}
 	sessionID := strings.TrimSpace(chi.URLParam(r, "session_id"))
-	session, found, err := app.db.GetOrgAccessSessionByID(r.Context(), sessionID, org.ID, accountID)
-	if err != nil {
-		app.serverError(w, r, err)
+	if err := app.services.Identity.RevokeOrgMemberAccessSession(r.Context(), principal, contextGetPathIDs(r).OrgID, accountID, sessionID); err != nil {
+		app.identityError(w, r, err)
 		return
 	}
-	if !found {
-		app.notFound(w, r)
-		return
-	}
-	if err = app.db.RevokeOrgAccessSession(r.Context(), session.ID, org.ID, &admin.ID, "org_admin_revoked"); err != nil {
-		app.serverError(w, r, err)
-		return
-	}
-	app.logInfo(r, "org access session revoked", slog.Int64("target_account_id", accountID), slog.String("org_access_session_id", session.ID), slog.String("reason", "org_admin_revoked"))
+	app.logInfo(r, "org access session revoked", slog.Int64("target_account_id", accountID), slog.String("org_access_session_id", sessionID), slog.String("reason", "org_admin_revoked"))
 	w.WriteHeader(http.StatusNoContent)
 }
 
 func (app *application) getAccount(w http.ResponseWriter, r *http.Request) {
-	account := contextGetAccount(r)
-	err := response.JSON(w, http.StatusOK, account)
+	principal, ok := app.requestPrincipal(w, r)
+	if !ok {
+		return
+	}
+	account, err := app.services.Identity.GetAccount(r.Context(), principal)
 	if err != nil {
+		app.identityError(w, r, err)
+		return
+	}
+	if err := response.JSON(w, http.StatusOK, account); err != nil {
 		app.serverError(w, r, err)
 	}
 }
 
 func (app *application) updateAccount(w http.ResponseWriter, r *http.Request) {
 	var input struct {
-		Name string              `json:"name"`
-		V    validator.Validator `json:"-"`
+		Name string `json:"name"`
 	}
-
-	err := request.DecodeJSON(w, r, &input)
-	if err != nil {
+	if err := request.DecodeJSON(w, r, &input); err != nil {
 		app.badRequest(w, r, err)
 		return
 	}
-
-	input.Name = strings.TrimSpace(input.Name)
-	input.V.CheckField(input.Name != "", "name", "Name is required.")
-	if input.V.HasErrors() {
-		app.failedValidation(w, r, input.V)
+	principal, ok := app.requestPrincipal(w, r)
+	if !ok {
 		return
 	}
-
-	account := contextGetAccount(r)
-	updatedAccount, err := app.db.UpdateAccountName(r.Context(), account.ID, input.Name)
+	account, err := app.services.Identity.UpdateAccount(r.Context(), principal, identity.UpdateAccountInput{Name: input.Name})
 	if err != nil {
-		app.serverError(w, r, err)
+		app.identityError(w, r, err)
 		return
 	}
-
 	app.logInfo(r, "account updated", slog.Int64("account_id", account.ID))
-	err = response.JSON(w, http.StatusOK, updatedAccount)
-	if err != nil {
+	if err := response.JSON(w, http.StatusOK, account); err != nil {
 		app.serverError(w, r, err)
 	}
 }
 
 func (app *application) updateAccountPassword(w http.ResponseWriter, r *http.Request) {
 	var input struct {
-		CurrentPassword string              `json:"current_password"`
-		NewPassword     string              `json:"new_password"`
-		V               validator.Validator `json:"-"`
+		CurrentPassword string `json:"current_password"`
+		NewPassword     string `json:"new_password"`
 	}
-
-	err := request.DecodeJSON(w, r, &input)
-	if err != nil {
+	if err := request.DecodeJSON(w, r, &input); err != nil {
 		app.badRequest(w, r, err)
 		return
 	}
-
-	input.V.CheckField(input.CurrentPassword != "", "current_password", "Current password is required.")
-	input.V.CheckField(len(input.NewPassword) >= 8, "new_password", "New password must be at least 8 characters.")
-	if input.V.HasErrors() {
-		app.failedValidation(w, r, input.V)
+	principal, ok := app.requestPrincipal(w, r)
+	if !ok {
 		return
 	}
-
-	account := contextGetAccount(r)
-	if account.Password == nil {
-		input.V.AddFieldError("current_password", "Password changes are not available for this account.")
-		app.failedValidation(w, r, input.V)
-		return
-	}
-
-	match, err := password.Matches(input.CurrentPassword, *account.Password)
+	err := app.services.Identity.UpdatePassword(r.Context(), principal, identity.UpdatePasswordInput{
+		CurrentPassword: input.CurrentPassword, NewPassword: input.NewPassword,
+	})
 	if err != nil {
-		app.serverError(w, r, err)
+		app.identityError(w, r, err)
 		return
 	}
-	if !match {
-		input.V.AddFieldError("current_password", "Current password is incorrect.")
-		app.failedValidation(w, r, input.V)
-		return
-	}
-
-	hashedPassword, err := password.Hash(input.NewPassword)
-	if err != nil {
-		app.serverError(w, r, err)
-		return
-	}
-
-	err = app.db.UpdateAccountPassword(r.Context(), account.ID, hashedPassword)
-	if err != nil {
-		app.serverError(w, r, err)
-		return
-	}
-
-	app.logInfo(r, "account password changed", slog.Int64("account_id", account.ID))
+	app.logInfo(r, "account password changed", slog.Int64("account_id", principal.Subject.ID))
 	w.WriteHeader(http.StatusNoContent)
 }
 
 func (app *application) getAccountOrgs(w http.ResponseWriter, r *http.Request) {
-	account := contextGetAccount(r)
+	principal, ok := app.requestPrincipal(w, r)
+	if !ok {
+		return
+	}
 	q, errs := readListQuery(r.URL.Query(), map[string]string{
 		"name":       "name",
 		"slug":       "slug",
@@ -657,55 +418,40 @@ func (app *application) getAccountOrgs(w http.ResponseWriter, r *http.Request) {
 		app.failedValidation(w, r, fieldErrors(errs))
 		return
 	}
-
-	orgs, err := app.db.ListAccountOrgsPage(r.Context(), database.ListAccountOrgsParams{
-		AccountID: account.ID,
-		Search:    q.Search,
-		Sort:      q.Sort,
-		Order:     q.Order,
-		Page:      q.Page,
-		PageSize:  q.PageSize,
+	orgs, err := app.services.Identity.Orgs(r.Context(), principal, identity.ListOrgsInput{
+		Search: q.Search, Sort: q.Sort, Order: q.Order, Page: q.Page, PageSize: q.PageSize,
 	})
 	if err != nil {
-		app.serverError(w, r, err)
+		app.identityError(w, r, err)
 		return
 	}
-	err = response.JSON(w, http.StatusOK, orgs)
-	if err != nil {
+	if err := response.JSON(w, http.StatusOK, orgs); err != nil {
 		app.serverError(w, r, err)
 	}
 }
 
 type sessionResponse struct {
-	Account         database.Account        `json:"account"`
-	Organizations   []database.Organization `json:"organizations"`
+	Account         identity.Account        `json:"account"`
+	Organizations   []identity.Organization `json:"organizations"`
 	IsInstanceAdmin bool                    `json:"is_instance_admin"`
 	FeatureFlags    []string                `json:"feature_flags"`
 }
 
 // getSession returns the authenticated account plus UI bootstrap metadata.
 func (app *application) getSession(w http.ResponseWriter, r *http.Request) {
-	account := contextGetAccount(r)
-
-	orgs, err := app.db.GetAccountOrgs(r.Context(), account.ID)
-	if err != nil {
-		app.serverError(w, r, err)
+	principal, ok := app.requestPrincipal(w, r)
+	if !ok {
 		return
 	}
-
-	isAdmin, err := app.db.IsInstanceAdmin(r.Context(), account.ID)
+	current, err := app.services.Identity.CurrentSession(r.Context(), principal)
 	if err != nil {
-		app.serverError(w, r, err)
+		app.identityError(w, r, err)
 		return
 	}
-	if orgs == nil {
-		orgs = []database.Organization{}
-	}
-
 	err = response.JSON(w, http.StatusOK, sessionResponse{
-		Account:         account,
-		Organizations:   orgs,
-		IsInstanceAdmin: isAdmin,
+		Account:         current.Account,
+		Organizations:   current.Organizations,
+		IsInstanceAdmin: current.IsInstanceAdmin,
 		FeatureFlags:    []string{},
 	})
 	if err != nil {

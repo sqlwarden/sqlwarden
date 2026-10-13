@@ -9,6 +9,7 @@ import (
 	"strings"
 
 	"github.com/sqlwarden/internal/response"
+	"github.com/sqlwarden/internal/settings"
 	"github.com/sqlwarden/internal/smtp"
 	"github.com/sqlwarden/internal/validator"
 	"github.com/uptrace/bun/driver/pgdriver"
@@ -46,7 +47,7 @@ func (app *application) reportServerError(r *http.Request, err error) {
 
 	notificationEmail := ""
 	baseURL := ""
-	if settings, settingsErr := app.runtimeSettingsService().effectiveForOrg(r.Context(), nil); settingsErr == nil {
+	if settings, settingsErr := app.services.Settings.EffectiveForOrg(r.Context(), nil); settingsErr == nil {
 		notificationEmail = settings.ErrorNotificationEmail
 		baseURL = settings.BaseURL
 	} else {
@@ -59,7 +60,7 @@ func (app *application) reportServerError(r *http.Request, err error) {
 		data["RequestURL"] = path
 		data["Trace"] = trace
 
-		err := app.sendEmail(false, notificationEmail, data, "error-notification.tmpl")
+		err := app.services.Mailer.Send(notificationEmail, data, "error-notification.tmpl")
 		if errors.Is(err, smtp.ErrDisabled) {
 			return
 		}
@@ -90,7 +91,7 @@ func (app *application) apiError(w http.ResponseWriter, r *http.Request, status 
 
 func (app *application) serverError(w http.ResponseWriter, r *http.Request, err error) {
 	app.reportServerError(r, err)
-	if errors.Is(err, errRuntimeSettingsUnavailable) {
+	if errors.Is(err, settings.ErrUnavailable) {
 		app.apiError(w, r, http.StatusServiceUnavailable, apiErrorSettingsUnavailable, "Runtime settings are temporarily unavailable.", response.APIError{}, nil)
 		return
 	}
@@ -153,19 +154,6 @@ func isUniqueViolation(err error) bool {
 		return pgErr.Field('C') == "23505"
 	}
 	return strings.Contains(err.Error(), "UNIQUE constraint failed")
-}
-
-// isForeignKeyViolation returns true if err is a foreign-key constraint violation
-// from either the PostgreSQL (pgx) or SQLite driver.
-func isForeignKeyViolation(err error) bool {
-	if err == nil {
-		return false
-	}
-	var pgErr pgdriver.Error
-	if errors.As(err, &pgErr) {
-		return pgErr.Field('C') == "23503"
-	}
-	return strings.Contains(err.Error(), "FOREIGN KEY constraint failed")
 }
 
 func (app *application) authenticationRequired(w http.ResponseWriter, r *http.Request) {

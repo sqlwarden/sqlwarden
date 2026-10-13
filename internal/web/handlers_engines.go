@@ -6,92 +6,74 @@ import (
 	"net/http"
 
 	"github.com/go-chi/chi/v5"
-	completionapp "github.com/sqlwarden/internal/completion"
-	"github.com/sqlwarden/internal/engine"
-	"github.com/sqlwarden/internal/engine/ddl"
-	"github.com/sqlwarden/internal/engine/explain"
-	"github.com/sqlwarden/internal/engine/statement"
+	"github.com/sqlwarden/internal/access"
+	"github.com/sqlwarden/internal/catalog"
+	queryapp "github.com/sqlwarden/internal/query"
 	"github.com/sqlwarden/internal/response"
 )
 
-type engineView struct {
-	ID                    string                     `json:"id"`
-	DisplayName           string                     `json:"display_name"`
-	Dialect               string                     `json:"dialect"`
-	Capabilities          map[engine.Capability]bool `json:"capabilities"`
-	DDL                   *ddl.Spec                  `json:"schema_edit,omitempty"`
-	Statements            *statement.Spec            `json:"statements,omitempty"`
-	Explain               *explain.Spec              `json:"explain,omitempty"`
-	TLS                   *engine.TLSSpec            `json:"connection_tls,omitempty"`
-	SupportsSystemObjects bool                       `json:"supports_system_objects"`
-	ShowAllDatabases      bool                       `json:"show_all_databases"`
-}
-
-type enginesResponse struct {
-	Engines []engineView `json:"engines"`
-}
-
-func engineToView(set engine.CapabilitySet) engineView {
-	v := engineView{
-		ID:           string(set.Engine.ID),
-		DisplayName:  set.Engine.DisplayName,
-		Dialect:      string(set.Engine.Dialect),
-		Capabilities: set.Capabilities,
-		DDL:          set.DDL,
-		Statements:   set.Statements,
-		Explain:      set.Explain,
-		TLS:          set.TLS,
+// engineError maps engine catalog failures.
+func (app *application) engineError(w http.ResponseWriter, r *http.Request, err error) {
+	switch {
+	case errors.Is(err, catalog.ErrUnknownEngine), errors.Is(err, queryapp.ErrUnknownEngine):
+		app.errorMessage(w, r, http.StatusNotFound, "Unknown engine.", nil)
+	case errors.Is(err, queryapp.ErrVocabularyUnsupported):
+		app.errorMessage(w, r, http.StatusNotImplemented, "This engine does not provide a completion vocabulary.", nil)
+	case errors.Is(err, access.ErrForbidden):
+		app.notPermitted(w, r)
+	default:
+		app.serverError(w, r, err)
 	}
-	if set.Tree != nil {
-		v.SupportsSystemObjects = set.Tree.SystemObjects
-		v.ShowAllDatabases = set.Tree.DatabaseKind() != ""
-	}
-	return v
 }
 
 func (app *application) listEngines(w http.ResponseWriter, r *http.Request) {
-	engines := engine.Engines()
-	views := make([]engineView, 0, len(engines))
-	for _, set := range engines {
-		views = append(views, engineToView(set))
+	p, ok := app.requestPrincipal(w, r)
+	if !ok {
+		return
 	}
-	app.logDebug(r, "database engines listed", slog.Int("engine_count", len(views)))
-	if err := response.JSON(w, http.StatusOK, enginesResponse{Engines: views}); err != nil {
+	out, err := app.catalogService().Engines(r.Context(), p)
+	if err != nil {
+		app.engineError(w, r, err)
+		return
+	}
+	app.logDebug(r, "database engines listed", slog.Int("engine_count", len(out.Engines)))
+	if err := response.JSON(w, http.StatusOK, out); err != nil {
 		app.serverError(w, r, err)
 	}
 }
 
 func (app *application) getEngine(w http.ResponseWriter, r *http.Request) {
-	engineID := chi.URLParam(r, "engine_id")
-	set, ok := engine.Describe(engineID)
+	p, ok := app.requestPrincipal(w, r)
 	if !ok {
-		app.logWarn(r, "database engine lookup failed", slog.String("engine_id", engineID))
-		app.errorMessage(w, r, http.StatusNotFound, "Unknown engine.", nil)
+		return
+	}
+	engineID := chi.URLParam(r, "engine_id")
+	view, err := app.catalogService().Engine(r.Context(), p, engineID)
+	if err != nil {
+		if errors.Is(err, catalog.ErrUnknownEngine) {
+			app.logWarn(r, "database engine lookup failed", slog.String("engine_id", engineID))
+		}
+		app.engineError(w, r, err)
 		return
 	}
 	app.logDebug(r, "database engine described",
-		slog.String("engine_id", string(set.Engine.ID)),
-		slog.String("dialect", string(set.Engine.Dialect)),
-		slog.Int("capability_count", len(set.Capabilities)),
+		slog.String("engine_id", view.ID),
+		slog.String("dialect", view.Dialect),
+		slog.Int("capability_count", len(view.Capabilities)),
 	)
-	if err := response.JSON(w, http.StatusOK, engineToView(set)); err != nil {
+	if err := response.JSON(w, http.StatusOK, view); err != nil {
 		app.serverError(w, r, err)
 	}
 }
 
 func (app *application) getEngineCompletionVocabulary(w http.ResponseWriter, r *http.Request) {
-	engineID := chi.URLParam(r, "engine_id")
-	if _, ok := engine.Describe(engineID); !ok {
-		app.errorMessage(w, r, http.StatusNotFound, "Unknown engine.", nil)
+	p, ok := app.requestPrincipal(w, r)
+	if !ok {
 		return
 	}
-	vocabulary, err := app.completionService.Vocabulary(engineID)
-	if errors.Is(err, completionapp.ErrUnsupported) {
-		app.errorMessage(w, r, http.StatusNotImplemented, "This engine does not provide a completion vocabulary.", nil)
-		return
-	}
+	vocabulary, err := app.queryService().CompletionVocabulary(r.Context(), p, chi.URLParam(r, "engine_id"))
 	if err != nil {
-		app.serverError(w, r, err)
+		app.engineError(w, r, err)
 		return
 	}
 	if err := response.JSON(w, http.StatusOK, vocabulary); err != nil {
@@ -99,18 +81,17 @@ func (app *application) getEngineCompletionVocabulary(w http.ResponseWriter, r *
 	}
 }
 
-type connectionFieldsResponse struct {
-	Fields []engine.FieldSpec `json:"fields"`
-}
-
 func (app *application) getEngineConnectionFields(w http.ResponseWriter, r *http.Request) {
-	driver := chi.URLParam(r, "driver")
-	spec, ok := engine.ConnectionSpecFor(driver)
+	p, ok := app.requestPrincipal(w, r)
 	if !ok {
-		app.errorMessage(w, r, http.StatusNotFound, "Unknown engine.", nil)
 		return
 	}
-	if err := response.JSON(w, http.StatusOK, connectionFieldsResponse{Fields: spec.Fields()}); err != nil {
+	fields, err := app.catalogService().EngineConnectionFields(r.Context(), p, chi.URLParam(r, "driver"))
+	if err != nil {
+		app.engineError(w, r, err)
+		return
+	}
+	if err := response.JSON(w, http.StatusOK, fields); err != nil {
 		app.serverError(w, r, err)
 	}
 }

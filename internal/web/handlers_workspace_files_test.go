@@ -85,10 +85,10 @@ func decodeWorkspaceFileSearchResult(t *testing.T, res testResponse) files.Searc
 func addWorkspaceMemberForFiles(t *testing.T, app *application, org database.Organization, workspace database.Workspace, email string) (database.Account, string) {
 	t.Helper()
 	member, tok := seedAccountWithToken(t, app, email, email)
-	if err := app.db.AddOrgMember(context.Background(), org.ID, member.ID); err != nil {
+	if err := testDB(app).AddOrgMember(context.Background(), org.ID, member.ID); err != nil {
 		t.Fatal(err)
 	}
-	if err := app.db.AddWorkspaceMember(context.Background(), workspace.ID, member.ID, nil); err != nil {
+	if err := testDB(app).AddWorkspaceMember(context.Background(), workspace.ID, member.ID, nil); err != nil {
 		t.Fatal(err)
 	}
 	return member, tok
@@ -123,7 +123,7 @@ func TestWorkspacePrivateFilesAreOwnerOnlyAndRequireMembership(t *testing.T) {
 	adminRead := send(t, newAuthRequest(t, http.MethodGet, orgPrivateFilesURL(org.Slug, ws.ID)+"/"+strconv.FormatInt(file.ID, 10), nil, ownerTok), app.routes())
 	assert.Equal(t, adminRead.StatusCode, http.StatusNotFound)
 
-	if err := app.db.RemoveWorkspaceMember(context.Background(), ws.ID, member.ID); err != nil {
+	if err := testDB(app).RemoveWorkspaceMember(context.Background(), ws.ID, member.ID); err != nil {
 		t.Fatal(err)
 	}
 	revoked := send(t, newAuthRequest(t, http.MethodGet, orgPrivateFilesURL(org.Slug, ws.ID), nil, memberTok), app.routes())
@@ -267,10 +267,10 @@ func TestWorkspaceFileSearchEndpoints(t *testing.T) {
 func TestWorkspacePrivateFilesAllowTeamMembersAndRejectCrossWorkspaceRoute(t *testing.T) {
 	app, org, wsA, ownerTok := setupWorkspaceOwner(t)
 	var creatorID int64
-	if err := app.db.NewSelect().TableExpr("workspace_members").ColumnExpr("account_id").Where("workspace_id = ?", wsA.ID).Limit(1).Scan(context.Background(), &creatorID); err != nil {
+	if err := testDB(app).NewSelect().TableExpr("workspace_members").ColumnExpr("account_id").Where("workspace_id = ?", wsA.ID).Limit(1).Scan(context.Background(), &creatorID); err != nil {
 		t.Fatal(err)
 	}
-	creator, found, err := app.db.GetAccount(context.Background(), creatorID)
+	creator, found, err := testDB(app).GetAccount(context.Background(), creatorID)
 	if err != nil || !found {
 		t.Fatalf("get workspace creator: found=%v err=%v", found, err)
 	}
@@ -279,17 +279,17 @@ func TestWorkspacePrivateFilesAllowTeamMembersAndRejectCrossWorkspaceRoute(t *te
 	wsOtherOrg := seedWorkspaceForAccount(t, app, otherOrg, creator, "Other Organization Workspace", "")
 
 	member, memberTok := seedAccountWithToken(t, app, uniqueEmail(t, "team-private-member"), "Team Member")
-	if err := app.db.AddOrgMember(context.Background(), org.ID, member.ID); err != nil {
+	if err := testDB(app).AddOrgMember(context.Background(), org.ID, member.ID); err != nil {
 		t.Fatal(err)
 	}
-	team, err := app.db.InsertTeam(context.Background(), org.ID, "file-team", "File Team")
+	team, err := testDB(app).InsertTeam(context.Background(), org.ID, "file-team", "File Team")
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err := app.db.AddTeamMember(context.Background(), team.ID, member.ID); err != nil {
+	if err := testDB(app).AddTeamMember(context.Background(), team.ID, member.ID); err != nil {
 		t.Fatal(err)
 	}
-	if err := app.db.AddWorkspaceTeam(context.Background(), wsA.ID, team.ID, &creatorID); err != nil {
+	if err := testDB(app).AddWorkspaceTeam(context.Background(), wsA.ID, team.ID, &creatorID); err != nil {
 		t.Fatal(err)
 	}
 
@@ -316,11 +316,11 @@ func TestWorkspaceFileContentRejectsStaleExternalWrite(t *testing.T) {
 		t.Fatal("expected initial ETag")
 	}
 
-	file, found, err := app.db.GetWorkspaceFile(context.Background(), file.ID)
+	file, found, err := testDB(app).GetWorkspaceFile(context.Background(), file.ID)
 	if err != nil || !found {
 		t.Fatalf("refresh stored file: found=%v err=%v", found, err)
 	}
-	content, found, err := app.db.CurrentWorkspaceFileContent(context.Background(), file)
+	content, found, err := testDB(app).CurrentWorkspaceFileContent(context.Background(), file)
 	if err != nil || !found {
 		t.Fatalf("read stored content: found=%v err=%v", found, err)
 	}
@@ -342,15 +342,25 @@ func TestWorkspaceFileContentRejectsStaleExternalWrite(t *testing.T) {
 	assert.Equal(t, string(read.BodyBytes), "external edit")
 }
 
-func TestWorkspaceDirectoryWritesVisibleFilePath(t *testing.T) {
-	app, org, ws, tok := setupWorkspaceOwner(t)
-	root := t.TempDir()
+// setupFileModeWorkspaceOwner builds a workspace owner whose files live as
+// visible paths under root.
+func setupFileModeWorkspaceOwner(t *testing.T, root string) (*application, database.Organization, database.Workspace, string) {
+	t.Helper()
 	store, err := filestore.NewFilesystem(root)
 	if err != nil {
 		t.Fatal(err)
 	}
-	app.fileStores = &testFileStores{activeBackendID: database.DefaultFileStorageBackendID, stores: map[string]filestore.Store{database.DefaultFileStorageBackendID: store}}
-	app.config.Files.StorageMode = config.FilesStorageModeFile
+	return setupWorkspaceOwnerWith(t, testAppOptions{
+		fileStores: func(FileStores) FileStores {
+			return &testFileStores{activeBackendID: database.DefaultFileStorageBackendID, stores: map[string]filestore.Store{database.DefaultFileStorageBackendID: store}}
+		},
+		configure: func(cfg *config.Config) { cfg.Files.StorageMode = config.FilesStorageModeFile },
+	})
+}
+
+func TestWorkspaceDirectoryWritesVisibleFilePath(t *testing.T) {
+	root := t.TempDir()
+	app, org, ws, tok := setupFileModeWorkspaceOwner(t, root)
 
 	create := send(t, newAuthRequest(t, http.MethodPost, orgPrivateFilesURL(org.Slug, ws.ID), map[string]any{"name": "visible.sql"}, tok), app.routes())
 	file := decodeWorkspaceFile(t, create)
@@ -385,11 +395,11 @@ func TestObjectStoreVersionsTextFilesButReplacesBinaryFilesByDefault(t *testing.
 		assert.Equal(t, first.StatusCode, http.StatusOK)
 		second := send(t, newAuthContentRequest(t, http.MethodPut, contentURL, "second", tok, first.Header.Get("ETag")), app.routes())
 		assert.Equal(t, second.StatusCode, http.StatusOK)
-		file, found, err := app.db.GetWorkspaceFile(context.Background(), file.ID)
+		file, found, err := testDB(app).GetWorkspaceFile(context.Background(), file.ID)
 		if err != nil || !found {
 			t.Fatalf("get saved file: found=%v err=%v", found, err)
 		}
-		content, found, err := app.db.CurrentWorkspaceFileContent(context.Background(), file)
+		content, found, err := testDB(app).CurrentWorkspaceFileContent(context.Background(), file)
 		if err != nil || !found {
 			t.Fatalf("get saved content: found=%v err=%v", found, err)
 		}
@@ -499,14 +509,8 @@ func TestWorkspaceFileRenameRejectsSiblingNameConflict(t *testing.T) {
 }
 
 func TestWorkspaceDirectoryMovesTrackedDescendantsAndRejectsExternalDestination(t *testing.T) {
-	app, org, ws, tok := setupWorkspaceOwner(t)
 	root := t.TempDir()
-	store, err := filestore.NewFilesystem(root)
-	if err != nil {
-		t.Fatal(err)
-	}
-	app.fileStores = &testFileStores{activeBackendID: database.DefaultFileStorageBackendID, stores: map[string]filestore.Store{database.DefaultFileStorageBackendID: store}}
-	app.config.Files.StorageMode = config.FilesStorageModeFile
+	app, org, ws, tok := setupFileModeWorkspaceOwner(t, root)
 	filesURL := orgPrivateFilesURL(org.Slug, ws.ID)
 	folder := decodeWorkspaceFile(t, send(t, newAuthRequest(t, http.MethodPost, filesURL, map[string]any{
 		"name": "queries", "object_type": "folder",

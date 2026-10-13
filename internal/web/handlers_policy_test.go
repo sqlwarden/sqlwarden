@@ -182,7 +182,7 @@ func TestUpdateRoleDuplicateNameReturns422(t *testing.T) {
 
 func mustOrgID(t *testing.T, app *application, slug string) int64 {
 	t.Helper()
-	org, found, err := app.db.GetOrgBySlug(context.Background(), slug)
+	org, found, err := testDB(app).GetOrgBySlug(context.Background(), slug)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -364,7 +364,7 @@ func TestDeleteRoleWithBindingsReturnsConflict(t *testing.T) {
 	app := newTestApp(t)
 	_, tok, org := seedOrgOwner(t, app, uniqueEmail(t, "role-in-use-owner"), "Role In Use Owner", "Role In Use")
 	member := seedAccount(t, app, uniqueEmail(t, "role-in-use-member"), "Role In Use Member")
-	if err := app.db.AddOrgMember(context.Background(), org.ID, member.ID); err != nil {
+	if err := testDB(app).AddOrgMember(context.Background(), org.ID, member.ID); err != nil {
 		t.Fatal(err)
 	}
 	roleID := createRoleForTest(t, app, org.ID, nil, "org", access.PermOrgRead)
@@ -377,7 +377,7 @@ func TestDeleteRoleWithBindingsReturnsConflict(t *testing.T) {
 
 	// The binding remains; role deletion must not silently revoke policies.
 	var bindingCount int
-	if err := app.db.NewSelect().TableExpr("role_bindings").ColumnExpr("COUNT(*)").Where("role_id = ?", roleID).Scan(context.Background(), &bindingCount); err != nil {
+	if err := testDB(app).NewSelect().TableExpr("role_bindings").ColumnExpr("COUNT(*)").Where("role_id = ?", roleID).Scan(context.Background(), &bindingCount); err != nil {
 		t.Fatal(err)
 	}
 	assert.Equal(t, bindingCount, 1)
@@ -464,10 +464,10 @@ func TestListOrgPolicies_SupportsFiltersAndMetadata(t *testing.T) {
 
 	owner, tok, org := seedOrgOwner(t, app, uniqueEmail(t, "org-policy-owner"), "Org Policy Owner", "Org Policy Org")
 	member, _ := seedAccountWithToken(t, app, uniqueEmail(t, "org-policy-member"), "Policy Member")
-	if err := app.db.AddOrgMember(context.Background(), org.ID, member.ID); err != nil {
+	if err := testDB(app).AddOrgMember(context.Background(), org.ID, member.ID); err != nil {
 		t.Fatal(err)
 	}
-	team, err := app.db.InsertTeam(context.Background(), org.ID, "qa-team-"+fmt.Sprint(org.ID), "QA Team")
+	team, err := testDB(app).InsertTeam(context.Background(), org.ID, "qa-team-"+fmt.Sprint(org.ID), "QA Team")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -511,7 +511,7 @@ func TestGrantOrgPolicy_MissingRoleReturns404(t *testing.T) {
 
 	_, tok, org := seedOrgOwner(t, app, uniqueEmail(t, "org-policy-missing-role-owner"), "Org Policy Owner", "Org Policy Missing Role")
 	member, _ := seedAccountWithToken(t, app, uniqueEmail(t, "org-policy-missing-role-member"), "Policy Member")
-	if err := app.db.AddOrgMember(context.Background(), org.ID, member.ID); err != nil {
+	if err := testDB(app).AddOrgMember(context.Background(), org.ID, member.ID); err != nil {
 		t.Fatal(err)
 	}
 
@@ -531,7 +531,7 @@ func TestGrantOrgPolicy_MissingRoleIDReturns422(t *testing.T) {
 
 	_, tok, org := seedOrgOwner(t, app, uniqueEmail(t, "org-policy-missing-roleid-owner"), "Org Policy Owner", "Org Policy Missing Role ID")
 	member, _ := seedAccountWithToken(t, app, uniqueEmail(t, "org-policy-missing-roleid-member"), "Policy Member")
-	if err := app.db.AddOrgMember(context.Background(), org.ID, member.ID); err != nil {
+	if err := testDB(app).AddOrgMember(context.Background(), org.ID, member.ID); err != nil {
 		t.Fatal(err)
 	}
 
@@ -614,7 +614,7 @@ func TestGrantOrgPolicyRejectsCrossOrgTeamSubject(t *testing.T) {
 
 	_, tok, org := seedOrgOwner(t, app, uniqueEmail(t, "org-policy-team-owner-a"), "Org Policy Owner A", "Org Policy Team A")
 	_, _, otherOrg := seedOrgOwner(t, app, uniqueEmail(t, "org-policy-team-owner-b"), "Org Policy Owner B", "Org Policy Team B")
-	otherTeam, err := app.db.InsertTeam(context.Background(), otherOrg.ID, "other-team", "Other Team")
+	otherTeam, err := testDB(app).InsertTeam(context.Background(), otherOrg.ID, "other-team", "Other Team")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -636,11 +636,11 @@ func TestRevokeOrgPolicy(t *testing.T) {
 
 	_, tok, org := seedOrgOwner(t, app, uniqueEmail(t, "org-policy-revoke-owner"), "Org Policy Owner", "Org Policy Revoke")
 	member, _ := seedAccountWithToken(t, app, uniqueEmail(t, "org-policy-revoke-member"), "Policy Member")
-	if err := app.db.AddOrgMember(context.Background(), org.ID, member.ID); err != nil {
+	if err := testDB(app).AddOrgMember(context.Background(), org.ID, member.ID); err != nil {
 		t.Fatal(err)
 	}
 
-	roles, err := app.db.ListOrgRoles(context.Background(), org.ID)
+	roles, err := testDB(app).ListOrgRoles(context.Background(), org.ID)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -687,11 +687,11 @@ func TestGetOrgPolicy(t *testing.T) {
 
 	_, tok, org := seedOrgOwner(t, app, uniqueEmail(t, "org-policy-get-owner"), "Org Policy Owner", "Org Policy Get")
 	member, _ := seedAccountWithToken(t, app, uniqueEmail(t, "org-policy-get-member"), "Policy Member")
-	if err := app.db.AddOrgMember(context.Background(), org.ID, member.ID); err != nil {
+	if err := testDB(app).AddOrgMember(context.Background(), org.ID, member.ID); err != nil {
 		t.Fatal(err)
 	}
 
-	roles, err := app.db.ListOrgRoles(context.Background(), org.ID)
+	roles, err := testDB(app).ListOrgRoles(context.Background(), org.ID)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -766,13 +766,60 @@ func TestGrantOrgPolicy_AdminCannotBindOwnerOrProtectedOrgRoles(t *testing.T) {
 	assert.Equal(t, app.enforcer.Can(context.Background(), admin.ID, org.ID, "org", "org", org.ID, access.PermOrgTransferOwnership), false)
 }
 
+func TestUpdateRole_AdminCannotAddProtectedPermissionToBoundRole(t *testing.T) {
+	t.Parallel()
+	app := newTestApp(t)
+
+	_, ownerTok, admin, adminTok, org := seedOrgAdministratorForPolicyTest(t, app)
+
+	roleID := createRoleForTest(t, app, org.ID, nil, "org", access.PermOrgWrite)
+	grantRes := grantOrgPolicyRole(t, app, ownerTok, org.Slug, roleID, access.SubjectTypeAccount, admin.ID)
+	assert.Equal(t, grantRes.StatusCode, http.StatusNoContent)
+	rolePath := "/api/v1/orgs/" + org.Slug + "/roles/" + strconv.FormatInt(roleID, 10)
+
+	for _, permission := range []string{access.PermOrgDelete, access.PermOrgTransferOwnership} {
+		t.Run(permission, func(t *testing.T) {
+			res := send(t, newAuthRequest(t, http.MethodPatch, rolePath, map[string]any{
+				"name":        "escalate",
+				"permissions": []string{access.PermOrgWrite, permission},
+			}, adminTok), app.routes())
+			assert.Equal(t, res.StatusCode, http.StatusForbidden)
+			assert.Equal(t, app.enforcer.Can(context.Background(), admin.ID, org.ID, "org", "org", org.ID, permission), false)
+		})
+	}
+
+	getRes := send(t, newAuthRequest(t, http.MethodGet, rolePath, nil, ownerTok), app.routes())
+	assert.Equal(t, getRes.StatusCode, http.StatusOK)
+	assert.NotEqual(t, getRes.BodyFields["name"].(string), "escalate")
+	assert.Equal(t, len(getRes.BodyFields["permissions"].([]any)), 1)
+
+	ordinaryRes := send(t, newAuthRequest(t, http.MethodPatch, rolePath, map[string]any{
+		"name":        "writer",
+		"permissions": []string{access.PermOrgWrite, access.PermPolicyRead},
+	}, adminTok), app.routes())
+	assert.Equal(t, ordinaryRes.StatusCode, http.StatusOK)
+
+	deleterRoleID := createRoleForTest(t, app, org.ID, nil, "org", access.PermOrgDelete)
+	removeRes := send(t, newAuthRequest(t, http.MethodPatch, "/api/v1/orgs/"+org.Slug+"/roles/"+strconv.FormatInt(deleterRoleID, 10), map[string]any{
+		"name":        "deleter",
+		"permissions": []string{access.PermOrgWrite},
+	}, adminTok), app.routes())
+	assert.Equal(t, removeRes.StatusCode, http.StatusForbidden)
+
+	ownerRes := send(t, newAuthRequest(t, http.MethodPatch, rolePath, map[string]any{
+		"name":        "writer",
+		"permissions": []string{access.PermOrgWrite, access.PermOrgDelete},
+	}, ownerTok), app.routes())
+	assert.Equal(t, ownerRes.StatusCode, http.StatusOK)
+}
+
 func TestGrantOrgPolicy_OwnerCanBindProtectedOrgRoles(t *testing.T) {
 	t.Parallel()
 	app := newTestApp(t)
 
 	owner, ownerTok, org := seedOrgOwner(t, app, uniqueEmail(t, "org-policy-owner-protected"), "Owner Protected", "Owner Protected Org")
 	member, _ := seedAccountWithToken(t, app, uniqueEmail(t, "org-policy-owner-protected-member"), "Protected Member")
-	if err := app.db.AddOrgMember(context.Background(), org.ID, member.ID); err != nil {
+	if err := testDB(app).AddOrgMember(context.Background(), org.ID, member.ID); err != nil {
 		t.Fatal(err)
 	}
 
@@ -789,7 +836,7 @@ func TestRevokeOrgPolicy_AdminCannotRevokeOwnerPolicy(t *testing.T) {
 
 	owner, ownerTok, admin, adminTok, org := seedOrgAdministratorForPolicyTest(t, app)
 	member, _ := seedAccountWithToken(t, app, uniqueEmail(t, "org-policy-revoke-owner-member"), "Second Owner")
-	if err := app.db.AddOrgMember(context.Background(), org.ID, member.ID); err != nil {
+	if err := testDB(app).AddOrgMember(context.Background(), org.ID, member.ID); err != nil {
 		t.Fatal(err)
 	}
 
@@ -840,7 +887,7 @@ func TestRevokeOnlyOrgOwnerPolicyForbidden(t *testing.T) {
 		"/api/v1/orgs/"+org.Slug+"/policies/"+bindingID, nil, tok), app.routes())
 	assert.Equal(t, revokeRes.StatusCode, http.StatusUnprocessableEntity)
 
-	roles, err := app.db.ListOrgRoles(context.Background(), org.ID)
+	roles, err := testDB(app).ListOrgRoles(context.Background(), org.ID)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -854,7 +901,7 @@ func TestRevokeOnlyOrgOwnerPolicyForbidden(t *testing.T) {
 	if ownerRoleID == 0 {
 		t.Fatal("expected owner role to exist")
 	}
-	count, err := app.db.CountRoleBindings(context.Background(), org.ID, ownerRoleID, "org", org.ID)
+	count, err := testDB(app).CountRoleBindings(context.Background(), org.ID, ownerRoleID, "org", org.ID)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -867,11 +914,11 @@ func TestRevokeOrgOwnerPolicyAllowedWhenAnotherOwnerPolicyExists(t *testing.T) {
 
 	owner, tok, org := seedOrgOwner(t, app, uniqueEmail(t, "org-policy-extra-owner"), "Policy Owner", "Policy Extra Owner")
 	member, _ := seedAccountWithToken(t, app, uniqueEmail(t, "org-policy-extra-owner-member"), "Second Owner")
-	if err := app.db.AddOrgMember(context.Background(), org.ID, member.ID); err != nil {
+	if err := testDB(app).AddOrgMember(context.Background(), org.ID, member.ID); err != nil {
 		t.Fatal(err)
 	}
 
-	roles, err := app.db.ListOrgRoles(context.Background(), org.ID)
+	roles, err := testDB(app).ListOrgRoles(context.Background(), org.ID)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -900,7 +947,7 @@ func TestRevokeOrgOwnerPolicyAllowedWhenAnotherOwnerPolicyExists(t *testing.T) {
 		"/api/v1/orgs/"+org.Slug+"/policies/"+bindingID, nil, tok), app.routes())
 	assert.Equal(t, revokeRes.StatusCode, http.StatusNoContent)
 
-	count, err := app.db.CountRoleBindings(context.Background(), org.ID, ownerRoleID, "org", org.ID)
+	count, err := testDB(app).CountRoleBindings(context.Background(), org.ID, ownerRoleID, "org", org.ID)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -946,7 +993,7 @@ func seedOrgAdministratorForPolicyTest(t *testing.T, app *application) (database
 
 	owner, ownerTok, org := seedOrgOwner(t, app, uniqueEmail(t, "org-policy-admin-owner"), "Admin Owner", "Admin Org")
 	admin, adminTok := seedAccountWithToken(t, app, uniqueEmail(t, "org-policy-admin"), "Org Admin")
-	if err := app.db.AddOrgMember(context.Background(), org.ID, admin.ID); err != nil {
+	if err := testDB(app).AddOrgMember(context.Background(), org.ID, admin.ID); err != nil {
 		t.Fatal(err)
 	}
 	adminRoleID := orgBuiltinRoleID(t, app, org.ID, access.BuiltinOrgAdminRole)
@@ -958,7 +1005,7 @@ func seedOrgAdministratorForPolicyTest(t *testing.T, app *application) (database
 func orgBuiltinRoleID(t *testing.T, app *application, orgID int64, name string) int64 {
 	t.Helper()
 
-	roles, err := app.db.ListOrgRoles(context.Background(), orgID)
+	roles, err := testDB(app).ListOrgRoles(context.Background(), orgID)
 	if err != nil {
 		t.Fatal(err)
 	}

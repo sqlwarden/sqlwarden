@@ -43,6 +43,27 @@ var (
 	ErrInvalidSearchQuery        = errors.New("workspace file search query is invalid")
 )
 
+// File is a workspace file or folder.
+type File = database.WorkspaceFile
+
+// Visibility selects a workspace file tree.
+const (
+	VisibilityPrivate = database.FileVisibilityPrivate
+	VisibilityShared  = database.FileVisibilityShared
+)
+
+// IsInvalidParent reports whether err is a parent violation, whether the
+// service rejected it or the store detected it inside its write transaction.
+func IsInvalidParent(err error) bool {
+	return errors.Is(err, ErrInvalidParent) || errors.Is(err, database.ErrInvalidWorkspaceFileParent)
+}
+
+// IsMoveCycle reports whether err is a move into the moved folder's own
+// subtree, whether the service rejected it or the store detected it.
+func IsMoveCycle(err error) bool {
+	return errors.Is(err, ErrMoveCycle) || errors.Is(err, database.ErrWorkspaceFileMoveCycle)
+}
+
 // Enforcer is the permission check used for shared workspace-file operations.
 // access.PolicyEvaluator satisfies it so edition deny decorators apply.
 type Enforcer interface {
@@ -150,7 +171,7 @@ type BrowserResult struct {
 
 // Deps are the collaborators of a Service. Audit and Logger are optional.
 type Deps struct {
-	DB       *database.DB
+	DB       Store
 	Stores   StoreResolver
 	Enforcer Enforcer
 	Requirer *access.Requirer
@@ -161,7 +182,7 @@ type Deps struct {
 // Service owns workspace-file authorization, metadata mutations, storage-key
 // planning, and content IO orchestration.
 type Service struct {
-	db       *database.DB
+	db       Store
 	stores   StoreResolver
 	enforcer Enforcer
 	requirer *access.Requirer
@@ -174,7 +195,7 @@ type Service struct {
 // New creates a workspace-file service over a database, byte store, and RBAC
 // enforcer. locks may be shared across service instances for process-local
 // serialization.
-func New(db *database.DB, store filestore.Store, enforcer Enforcer, requirer *access.Requirer, config Config, locks *sync.Map) *Service {
+func New(db Store, store filestore.Store, enforcer Enforcer, requirer *access.Requirer, config Config, locks *sync.Map) *Service {
 	return NewService(Deps{
 		DB:       db,
 		Stores:   singleStoreResolver{backendID: config.ActiveStorageBackendID, store: store},

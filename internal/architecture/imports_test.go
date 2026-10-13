@@ -19,6 +19,7 @@ func TestForbiddenProductionImports(t *testing.T) {
 	applicationModules := map[string]bool{
 		"access": true, "audit": true, "completion": true, "config": true, "files": true,
 		"identity": true, "jobs": true, "schema": true, "platform": true, "database": true, "orgs": true, "profile": true,
+		"rbac": true,
 	}
 
 	err := walkProductionFiles(repositoryRoot, func(path string) error {
@@ -64,6 +65,22 @@ func TestForbiddenProductionImports(t *testing.T) {
 					}
 				}
 			}
+			if owner == "services" {
+				for _, forbidden := range []string{"internal/web", "internal/app", "internal/profile"} {
+					full := "github.com/sqlwarden/" + forbidden
+					if importPath == full || strings.HasPrefix(importPath, full+"/") {
+						t.Errorf("%s imports %q; the service graph is built below transports, the composition root, and profiles", rel, importPath)
+					}
+				}
+			}
+			if owner == "web" {
+				for _, forbidden := range webForbiddenImports {
+					full := "github.com/sqlwarden/" + forbidden
+					if importPath == full || strings.HasPrefix(importPath, full+"/") {
+						t.Errorf("%s imports %q; handlers reach metadata, secrets, and engines only through services", rel, importPath)
+					}
+				}
+			}
 			if (owner == "files" || owner == "jobs") && (importPath == "github.com/sqlwarden/internal/execution" || importPath == "github.com/sqlwarden/internal/connection") {
 				t.Errorf("%s imports %q; only query, exportjob, and execution reach live sessions", rel, importPath)
 			}
@@ -97,7 +114,19 @@ func TestForbiddenProductionImports(t *testing.T) {
 }
 
 // authzServicePackages own the authorization decisions for their resources.
-var authzServicePackages = map[string]bool{"query": true, "files": true, "exportjob": true, "jobs": true}
+var authzServicePackages = map[string]bool{"query": true, "catalog": true, "files": true, "exportjob": true, "jobs": true, "settings": true, "orgs": true, "rbac": true, "identity": true, "keyrotation": true}
+
+// webForbiddenImports are the packages production web code must not import,
+// each also banning its subpackages. Service packages own type aliases for
+// the metadata and engine types handlers encode, so handlers never need these.
+var webForbiddenImports = []string{
+	"internal/database",
+	"internal/encrypt",
+	"internal/connection",
+	"internal/engine",
+	"internal/schema",
+	"internal/completion",
+}
 
 func repoRoot(t *testing.T) string {
 	t.Helper()

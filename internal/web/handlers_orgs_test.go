@@ -44,76 +44,6 @@ func TestGetOrg(t *testing.T) {
 	assert.Equal(t, res2.StatusCode, http.StatusNotFound)
 }
 
-func TestCreateOwnedOrganization_RollsBackWhenOwnerMembershipFails(t *testing.T) {
-	t.Parallel()
-	app := newTestApp(t)
-
-	_, err := app.createOwnedOrganization(context.Background(), "rollback-org", "Rollback Org", 99999999)
-	if err == nil {
-		t.Fatal("expected owner membership failure")
-	}
-
-	_, found, err := app.db.GetOrgBySlug(context.Background(), "rollback-org")
-	if err != nil {
-		t.Fatal(err)
-	}
-	if found {
-		t.Fatal("expected organization insert to roll back")
-	}
-
-	var roles []database.Role
-	if err := app.db.NewSelect().Model(&roles).Where("name IN (?)", []string{access.BuiltinOrgOwnerRole, access.BuiltinOrgAdminRole, access.BuiltinOrgMemberRole}).Scan(context.Background()); err != nil {
-		t.Fatal(err)
-	}
-	if len(roles) != 0 {
-		t.Fatalf("expected seeded roles to roll back, got %d", len(roles))
-	}
-}
-
-func TestReplaceOrgMemberBuiltinRoleRollsBackWhenNewBindingFails(t *testing.T) {
-	t.Parallel()
-	app := newTestApp(t)
-	owner, _, org := seedOrgOwner(t, app, uniqueEmail(t, "role-replace-owner"), "Role Replace Owner", "Role Replace Org")
-	member := seedAccount(t, app, uniqueEmail(t, "role-replace-member"), "Role Replace Member")
-	if err := app.db.AddOrgMember(context.Background(), org.ID, member.ID); err != nil {
-		t.Fatal(err)
-	}
-
-	roles, err := app.db.ListOrgRoles(context.Background(), org.ID)
-	if err != nil {
-		t.Fatal(err)
-	}
-	var adminRoleID int64
-	var replacedRoleIDs []int64
-	for _, role := range roles {
-		if role.IsBuiltin && (role.Name == access.BuiltinOrgOwnerRole || role.Name == access.BuiltinOrgAdminRole) {
-			replacedRoleIDs = append(replacedRoleIDs, role.ID)
-		}
-		if role.Name == access.BuiltinOrgAdminRole && role.IsBuiltin {
-			adminRoleID = role.ID
-		}
-	}
-	if adminRoleID == 0 {
-		t.Fatal("expected builtin admin role")
-	}
-	if err := app.enforcer.BindRole(context.Background(), org.ID, adminRoleID, "account", member.ID, "org", org.ID, owner.ID); err != nil {
-		t.Fatal(err)
-	}
-
-	err = app.replaceOrgMemberBuiltinRole(context.Background(), org.ID, member.ID, 99999999, replacedRoleIDs, owner.ID)
-	if err == nil {
-		t.Fatal("expected invalid role binding failure")
-	}
-
-	hasAdmin, err := app.db.AccountHasRoleBinding(context.Background(), org.ID, adminRoleID, member.ID, "org", org.ID)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if !hasAdmin {
-		t.Fatal("expected previous admin binding to remain after rollback")
-	}
-}
-
 func TestListOrgMembers(t *testing.T) {
 	t.Parallel()
 	app := newTestApp(t)
@@ -322,7 +252,7 @@ func TestUpdateOrgMemberRoleReplacesPreviousBuiltinBinding(t *testing.T) {
 		map[string]any{"role": access.BuiltinOrgOwnerRole}, ownerTok), app.routes())
 	assert.Equal(t, promoteAgainRes.StatusCode, http.StatusNoContent)
 
-	org, found, err := app.db.GetOrgBySlug(context.Background(), slug)
+	org, found, err := testDB(app).GetOrgBySlug(context.Background(), slug)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -330,7 +260,7 @@ func TestUpdateOrgMemberRoleReplacesPreviousBuiltinBinding(t *testing.T) {
 		t.Fatal("expected org to exist")
 	}
 
-	count, err := app.db.NewSelect().
+	count, err := testDB(app).NewSelect().
 		TableExpr("role_bindings").
 		Where("org_id = ? AND subject_type = 'account' AND subject_id = ? AND resource_type = 'org' AND resource_id = ?",
 			org.ID, mustParseInt64(t, memberID), org.ID).
@@ -488,7 +418,7 @@ func TestUpdateOrganizationRequiresOrgWrite(t *testing.T) {
 	app := newTestApp(t)
 	_, _, org := seedOrgOwner(t, app, uniqueEmail(t, "org-update-forbidden-owner"), "Org Owner", "Org Update Forbidden")
 	member, memberTok := seedAccountWithToken(t, app, uniqueEmail(t, "org-update-forbidden-member"), "Org Member")
-	if err := app.db.AddOrgMember(context.Background(), org.ID, member.ID); err != nil {
+	if err := testDB(app).AddOrgMember(context.Background(), org.ID, member.ID); err != nil {
 		t.Fatal(err)
 	}
 
@@ -516,7 +446,7 @@ func TestDeleteOrganizationRequiresOrgDelete(t *testing.T) {
 	app := newTestApp(t)
 	_, _, org := seedOrgOwner(t, app, uniqueEmail(t, "org-delete-forbidden-owner"), "Org Owner", "Org Delete Forbidden")
 	member, memberTok := seedAccountWithToken(t, app, uniqueEmail(t, "org-delete-forbidden-member"), "Org Member")
-	if err := app.db.AddOrgMember(context.Background(), org.ID, member.ID); err != nil {
+	if err := testDB(app).AddOrgMember(context.Background(), org.ID, member.ID); err != nil {
 		t.Fatal(err)
 	}
 
@@ -532,10 +462,10 @@ func TestDeleteOrganizationIgnoresCrossOrgDeletePermission(t *testing.T) {
 	_, ownerATok, orgA := seedOrgOwner(t, app, uniqueEmail(t, "org-delete-cross-owner-a"), "Org A Owner", "Delete Cross A")
 	_, ownerBTok, orgB := seedOrgOwner(t, app, uniqueEmail(t, "org-delete-cross-owner-b"), "Org B Owner", "Delete Cross B")
 
-	if err := app.db.AddOrgMember(context.Background(), orgA.ID, account.ID); err != nil {
+	if err := testDB(app).AddOrgMember(context.Background(), orgA.ID, account.ID); err != nil {
 		t.Fatal(err)
 	}
-	if err := app.db.AddOrgMember(context.Background(), orgB.ID, account.ID); err != nil {
+	if err := testDB(app).AddOrgMember(context.Background(), orgB.ID, account.ID); err != nil {
 		t.Fatal(err)
 	}
 

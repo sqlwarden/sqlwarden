@@ -166,6 +166,48 @@ func (db *DB) RevokeAuthSessionsForAccount(ctx context.Context, accountID int64,
 	})
 }
 
+// ChangeAccountPassword stores a new password hash and revokes every other
+// auth session and refresh token of the account in the same transaction, so a
+// stolen session cannot outlive the password it was opened with. keepSessionID
+// may be empty to revoke all sessions.
+func (db *DB) ChangeAccountPassword(ctx context.Context, accountID int64, hashedPassword, keepSessionID, reason string) error {
+	ctx, cancel := context.WithTimeout(ctx, defaultTimeout)
+	defer cancel()
+
+	return db.RunInTx(ctx, nil, func(ctx context.Context, tx bun.Tx) error {
+		now := time.Now()
+		_, err := tx.NewUpdate().
+			Model((*Account)(nil)).
+			Set("password = ?", hashedPassword).
+			Set("updated_at = ?", now).
+			Where("id = ?", accountID).
+			Exec(ctx)
+		if err != nil {
+			return err
+		}
+
+		sessions := tx.NewUpdate().
+			Model((*AuthSession)(nil)).
+			Set("revoked_at = ?", now).
+			Set("revoked_by_account_id = ?", accountID).
+			Set("revocation_reason = ?", reason).
+			Where("account_id = ? AND revoked_at IS NULL", accountID)
+		tokens := tx.NewUpdate().
+			Model((*RefreshToken)(nil)).
+			Set("revoked_at = ?", now).
+			Where("account_id = ? AND revoked_at IS NULL", accountID)
+		if keepSessionID != "" {
+			sessions = sessions.Where("id <> ?", keepSessionID)
+			tokens = tokens.Where("(auth_session_id IS NULL OR auth_session_id <> ?)", keepSessionID)
+		}
+		if _, err := sessions.Exec(ctx); err != nil {
+			return err
+		}
+		_, err = tokens.Exec(ctx)
+		return err
+	})
+}
+
 func (db *DB) ListAuthSessionsPage(ctx context.Context, params ListAuthSessionsParams) (response.Paginated[AuthSession], error) {
 	ctx, cancel := context.WithTimeout(ctx, defaultTimeout)
 	defer cancel()

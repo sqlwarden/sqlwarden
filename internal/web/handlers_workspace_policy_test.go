@@ -12,47 +12,6 @@ import (
 	"github.com/sqlwarden/internal/assert"
 )
 
-func TestResourceBelongsToWorkspace(t *testing.T) {
-	t.Parallel()
-	app := newTestApp(t)
-	owner, _, org := seedOrgOwner(t, app, "resource-belongs@example.com", "Resource Belongs", "Resource Org")
-	ws1 := seedWorkspaceForAccount(t, app, org, owner, "WS1", "")
-	ws2 := seedWorkspaceForAccount(t, app, org, owner, "WS2", "")
-
-	env, err := app.db.InsertEnvironment(context.Background(), ws2.ID, "prod", "")
-	if err != nil {
-		t.Fatal(err)
-	}
-	conn, err := app.db.InsertConnection(context.Background(), ws2.ID, &env.ID, "db", "sqlite", ":memory:", "open")
-	if err != nil {
-		t.Fatal(err)
-	}
-
-	ok, err := app.resourceBelongsToWorkspace(newTestRequest(t, http.MethodGet, "/", nil), "workspace", ws1.ID, ws1.ID)
-	if err != nil {
-		t.Fatal(err)
-	}
-	assert.Equal(t, ok, true)
-
-	ok, err = app.resourceBelongsToWorkspace(newTestRequest(t, http.MethodGet, "/", nil), "environment", env.ID, ws1.ID)
-	if err != nil {
-		t.Fatal(err)
-	}
-	assert.Equal(t, ok, false)
-
-	ok, err = app.resourceBelongsToWorkspace(newTestRequest(t, http.MethodGet, "/", nil), "connection", conn.ID, ws1.ID)
-	if err != nil {
-		t.Fatal(err)
-	}
-	assert.Equal(t, ok, false)
-
-	ok, err = app.resourceBelongsToWorkspace(newTestRequest(t, http.MethodGet, "/", nil), "invalid", 123, ws1.ID)
-	if err != nil {
-		t.Fatal(err)
-	}
-	assert.Equal(t, ok, false)
-}
-
 func TestCreateWorkspacePolicy_WrongWorkspaceResourceReturns404(t *testing.T) {
 	t.Parallel()
 
@@ -135,7 +94,7 @@ func TestCreateWorkspacePolicyRejectsCrossOrgTeamSubject(t *testing.T) {
 	owner, token, org := seedOrgOwner(t, app, uniqueEmail(t, "policy-team-owner-a"), "Policy Owner A", "Policy Team A")
 	ws := seedWorkspaceForAccount(t, app, org, owner, "Workspace", "")
 	_, _, otherOrg := seedOrgOwner(t, app, uniqueEmail(t, "policy-team-owner-b"), "Policy Owner B", "Policy Team B")
-	otherTeam, err := app.db.InsertTeam(context.Background(), otherOrg.ID, "other-team", "Other Team")
+	otherTeam, err := testDB(app).InsertTeam(context.Background(), otherOrg.ID, "other-team", "Other Team")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -193,14 +152,14 @@ func wsSetup(t *testing.T, app *application, email, name string) (slug, wsID, to
 func wsJoinAs(t *testing.T, app *application, slug, wsID, roleName, email string, ownerTok string) string {
 	t.Helper()
 	member, memberTok := seedAccountWithToken(t, app, email, email)
-	org, found, err := app.db.GetOrgBySlug(context.Background(), slug)
+	org, found, err := testDB(app).GetOrgBySlug(context.Background(), slug)
 	if err != nil {
 		t.Fatal(err)
 	}
 	if !found {
 		t.Fatalf("wsJoinAs: org %q not found", slug)
 	}
-	if err := app.db.AddOrgMember(context.Background(), org.ID, member.ID); err != nil {
+	if err := testDB(app).AddOrgMember(context.Background(), org.ID, member.ID); err != nil {
 		t.Fatal(err)
 	}
 
@@ -627,7 +586,7 @@ func TestDeleteWorkspaceRoleWithBindingsReturnsConflict(t *testing.T) {
 	owner, tok, org := seedOrgOwner(t, app, uniqueEmail(t, "ws-role-in-use-owner"), "Workspace Role In Use Owner", "Workspace Role In Use")
 	ws := seedWorkspaceForAccount(t, app, org, owner, "Policy Workspace", "")
 	member := seedAccount(t, app, uniqueEmail(t, "ws-role-in-use-member"), "Workspace Role In Use Member")
-	if err := app.db.AddOrgMember(context.Background(), org.ID, member.ID); err != nil {
+	if err := testDB(app).AddOrgMember(context.Background(), org.ID, member.ID); err != nil {
 		t.Fatal(err)
 	}
 	roleID := createRoleForTest(t, app, org.ID, &ws.ID, "workspace", access.PermWsWrite)
@@ -640,7 +599,7 @@ func TestDeleteWorkspaceRoleWithBindingsReturnsConflict(t *testing.T) {
 	assert.Equal(t, apiErrorDetails(t, res)["binding_count"].(float64), float64(1))
 
 	var bindingCount int
-	if err := app.db.NewSelect().TableExpr("role_bindings").ColumnExpr("COUNT(*)").Where("role_id = ?", roleID).Scan(context.Background(), &bindingCount); err != nil {
+	if err := testDB(app).NewSelect().TableExpr("role_bindings").ColumnExpr("COUNT(*)").Where("role_id = ?", roleID).Scan(context.Background(), &bindingCount); err != nil {
 		t.Fatal(err)
 	}
 	assert.Equal(t, bindingCount, 1)
@@ -780,15 +739,15 @@ func TestListWorkspacePolicies_SupportsSubjectPermissionAndResourceFilters(t *te
 	conn := seedConnection(t, app, ws.ID, &env.ID, org.ID, "postgres", "Primary DB", "open")
 	roleID := createRoleForTest(t, app, org.ID, nil, "connection", "conn:execute")
 
-	team, err := app.db.InsertTeam(context.Background(), org.ID, "qa-team", "QA Team")
+	team, err := testDB(app).InsertTeam(context.Background(), org.ID, "qa-team", "QA Team")
 	if err != nil {
 		t.Fatal(err)
 	}
 	member, _ := seedAccountWithToken(t, app, uniqueEmail(t, "policy-list-member"), "Member User")
-	if err := app.db.AddOrgMember(context.Background(), org.ID, member.ID); err != nil {
+	if err := testDB(app).AddOrgMember(context.Background(), org.ID, member.ID); err != nil {
 		t.Fatal(err)
 	}
-	if err := app.db.AddTeamMember(context.Background(), team.ID, member.ID); err != nil {
+	if err := testDB(app).AddTeamMember(context.Background(), team.ID, member.ID); err != nil {
 		t.Fatal(err)
 	}
 
@@ -947,7 +906,7 @@ func TestListWorkspacePolicies_SupportsSubjectIDAndResourceIDFilters(t *testing.
 	connA := seedConnection(t, app, ws.ID, &env.ID, org.ID, "postgres", "Primary DB", "open")
 	connB := seedConnection(t, app, ws.ID, &env.ID, org.ID, "postgres", "Replica DB", "open")
 	member, _ := seedAccountWithToken(t, app, uniqueEmail(t, "policy-id-member"), "Member User")
-	if err := app.db.AddOrgMember(context.Background(), org.ID, member.ID); err != nil {
+	if err := testDB(app).AddOrgMember(context.Background(), org.ID, member.ID); err != nil {
 		t.Fatal(err)
 	}
 	roleExecA := createRoleForTest(t, app, org.ID, nil, "connection", "conn:execute")

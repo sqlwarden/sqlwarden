@@ -684,6 +684,11 @@ func TestRevokeSessionOwnership(t *testing.T) {
 	if _, err := h.svc.RevokeSession(ctx, principal(outsider), testOrg, testWorkspace, string(ownerSID)); !errors.Is(err, ErrForbidden) || h.runtime.calls != 0 {
 		t.Fatalf("err = %v, runtime calls = %d, want ErrForbidden before the runtime", err, h.runtime.calls)
 	}
+
+	h = newRuntimeHarness()
+	if _, err := h.svc.RevokeSession(ctx, principal(orgOnlyUser), testOrg, testWorkspace, "unknown"); !errors.Is(err, ErrForbidden) || h.runtime.calls != 0 {
+		t.Fatalf("err = %v, runtime calls = %d, want a non-member refused before the runtime lists sessions", err, h.runtime.calls)
+	}
 }
 
 func TestExecuteAuditsNonReadStatements(t *testing.T) {

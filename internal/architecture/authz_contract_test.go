@@ -5,13 +5,16 @@ import (
 	"go/parser"
 	"go/token"
 	"io/fs"
+	"maps"
 	"path/filepath"
+	"slices"
 	"strings"
 	"testing"
 )
 
-// authzExemptMethods lists exported Service methods that run without a caller.
-// Everything else on an authorization service must take (ctx, access.Principal).
+// authzExemptMethods lists exported Service methods that run without a caller,
+// each with the reason it is safe. Everything else on the Service type of every
+// package in authzServicePackages must take (ctx, access.Principal).
 var authzExemptMethods = map[string]map[string]string{
 	"files": {
 		"ReapContentDeletionsOnce": "background reaper with no caller",
@@ -20,11 +23,44 @@ var authzExemptMethods = map[string]map[string]string{
 	"exportjob": {
 		"RunJob": "job runner entry point; it derives the owner principal from the stored job input",
 	},
+	"settings": {
+		"Subscribe":             "wires runtime operation observers at startup; it reads no settings",
+		"Instance":              "instance settings consumed by middleware, startup, and runtime operations before any caller is known",
+		"EffectiveForOrg":       "callers outside the settings package pass a nil org and read instance-wide values only; org-scoped reads are made by settings methods that authorize the org first",
+		"EffectiveForWorkspace": "limits enforced on the caller's own requests; the owning service has already authorized the workspace",
+		"RotateSMTPPassword":    "stage of key rotation; keyrotation.Service authorizes the caller before invoking it",
+	},
+	"identity": {
+		"Register":      "public self-registration; it runs before the caller has an account",
+		"Login":         "public sign-in; the submitted credentials are what authenticate the caller",
+		"Refresh":       "public token refresh; the refresh token is the credential and there is no access token yet",
+		"Logout":        "public logout; the refresh token cookie is the credential, so it works after the access token expired",
+		"SignInEnabled": "profile capability checked before the sign-in request is decoded; it reads no account data",
+		"StartSession":  "issues a session for an account another service already verified, such as an accepted invitation",
+		"Setup":         "first-run bootstrap; it runs before any account exists and seals itself once an instance admin exists",
+		"SetupStatus":   "public setup state read before anyone can sign in; it reveals only whether setup is done",
+	},
+	"orgs": {
+		"OnSchemaCachePurged": "wires the schema navigator cache observer at startup; it reads no organization data",
+		"GetInvitation":       "public invitation lookup; the invitation token is the credential and the caller may be anonymous",
+		"AcceptInvitation":    "public invitation acceptance; the invitation token is the credential and the caller may be anonymous or not yet have an account",
+	},
 }
 
 func TestServiceMethodsTakeContextAndPrincipal(t *testing.T) {
 	root := repoRoot(t)
-	for _, pkg := range []string{"query", "files", "exportjob", "jobs"} {
+	for pkg, methods := range authzExemptMethods {
+		if !authzServicePackages[pkg] {
+			t.Errorf("authzExemptMethods lists %q, which is not an authorization service package", pkg)
+		}
+		for name, reason := range methods {
+			if strings.TrimSpace(reason) == "" {
+				t.Errorf("exempt method %s.Service.%s needs a reason", pkg, name)
+			}
+		}
+	}
+	pkgs := slices.Sorted(maps.Keys(authzServicePackages))
+	for _, pkg := range pkgs {
 		t.Run(pkg, func(t *testing.T) {
 			fset := token.NewFileSet()
 			dir := filepath.Join(root, "internal", pkg)

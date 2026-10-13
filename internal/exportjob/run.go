@@ -140,16 +140,29 @@ func (s *Service) RunJob(ctx context.Context, runtime jobs.Runtime) (any, error)
 		_ = reader.Close()
 		// The stream fails with a closed-pipe error only because the write
 		// side was abandoned; the write failure is the root cause.
-		if err := <-streamErr; err != nil && !errors.Is(err, io.ErrClosedPipe) {
-			return nil, streamError(err)
+		if err := <-streamErr; err != nil {
+			if !errors.Is(err, io.ErrClosedPipe) {
+				s.logStreamAbort(ctx, runtime.Job.ID, conn.ID, policy.BackgroundMaxBytes, err)
+				return nil, streamError(err)
+			}
+			s.deps.Logger.DebugContext(ctx, "export stream stopped after the file write ended early",
+				slog.String("job_id", runtime.Job.ID), slog.Int64("connection_id", conn.ID))
 		}
 		return nil, writeErr
 	}
 	if err := <-streamErr; err != nil {
+		s.logStreamAbort(ctx, runtime.Job.ID, conn.ID, policy.BackgroundMaxBytes, err)
 		return nil, streamError(err)
 	}
 	runtime.Events.Info(ctx, "export_succeeded", "Export completed.", map[string]any{"file_id": file.ID, "rows": streamResult.Rows, "bytes": streamResult.Bytes})
 	return JobOutput{FileID: file.ID, Filename: file.Name, Format: input.Format, RowCount: streamResult.Rows, ByteCount: streamResult.Bytes}, nil
+}
+
+func (s *Service) logStreamAbort(ctx context.Context, jobID string, connectionID, maxBytes int64, err error) {
+	if errors.Is(err, exports.ErrByteLimitExceeded) {
+		s.deps.Logger.DebugContext(ctx, "export job aborted at byte limit",
+			slog.String("job_id", jobID), slog.Int64("connection_id", connectionID), slog.Int64("max_bytes", maxBytes))
+	}
 }
 
 func (s *Service) createFile(ctx context.Context, service FileWriter, principal access.Principal, scope files.Scope, requested string) (database.WorkspaceFile, error) {

@@ -5,7 +5,8 @@ import (
 	"net/http"
 
 	"github.com/sqlwarden/internal/access"
-	"github.com/sqlwarden/internal/database"
+	"github.com/sqlwarden/internal/identity"
+	"github.com/sqlwarden/internal/settings"
 )
 
 type contextKey string
@@ -13,26 +14,23 @@ type contextKey string
 const (
 	authenticatedAccountKey contextKey = "authenticatedAccount"
 	authSessionKey          contextKey = "authSession"
-	orgKey                  contextKey = "org"
-	workspaceKey            contextKey = "workspace"
-	environmentKey          contextKey = "environment"
-	connectionKey           contextKey = "connection"
+	pathIDsKey              contextKey = "pathIDs"
 	requestLogContextKey    contextKey = "requestLogContext"
 	runtimeSettingsKey      contextKey = "runtimeSettings"
 	principalKey            contextKey = "principal"
 )
 
-func contextSetRuntimeSettings(r *http.Request, settings effectiveRuntimeSettings) *http.Request {
-	return r.WithContext(context.WithValue(r.Context(), runtimeSettingsKey, settings))
+func contextSetRuntimeSettings(r *http.Request, effective settings.Effective) *http.Request {
+	return r.WithContext(context.WithValue(r.Context(), runtimeSettingsKey, effective))
 }
 
-func contextGetRuntimeSettings(r *http.Request) (effectiveRuntimeSettings, bool) {
-	settings, ok := r.Context().Value(runtimeSettingsKey).(effectiveRuntimeSettings)
-	return settings, ok
+func contextGetRuntimeSettings(r *http.Request) (settings.Effective, bool) {
+	effective, ok := r.Context().Value(runtimeSettingsKey).(settings.Effective)
+	return effective, ok
 }
 
 // Account context helpers.
-func contextSetAccount(r *http.Request, account database.Account) *http.Request {
+func contextSetAccount(r *http.Request, account identity.Account) *http.Request {
 	if meta := contextGetRequestLogContext(r); meta != nil {
 		meta.AccountID = account.ID
 	}
@@ -40,8 +38,8 @@ func contextSetAccount(r *http.Request, account database.Account) *http.Request 
 	return r.WithContext(ctx)
 }
 
-func contextGetAccount(r *http.Request) database.Account {
-	account, _ := r.Context().Value(authenticatedAccountKey).(database.Account)
+func contextGetAccount(r *http.Request) identity.Account {
+	account, _ := r.Context().Value(authenticatedAccountKey).(identity.Account)
 	return account
 }
 
@@ -56,7 +54,7 @@ func contextGetPrincipal(r *http.Request) (access.Principal, bool) {
 }
 
 // Auth session context helpers.
-func contextSetAuthSession(r *http.Request, session database.AuthSession) *http.Request {
+func contextSetAuthSession(r *http.Request, session identity.AuthSession) *http.Request {
 	if meta := contextGetRequestLogContext(r); meta != nil {
 		meta.AuthSessionID = session.ID
 	}
@@ -64,66 +62,37 @@ func contextSetAuthSession(r *http.Request, session database.AuthSession) *http.
 	return r.WithContext(ctx)
 }
 
-func contextGetAuthSession(r *http.Request) database.AuthSession {
-	session, _ := r.Context().Value(authSessionKey).(database.AuthSession)
+func contextGetAuthSession(r *http.Request) identity.AuthSession {
+	session, _ := r.Context().Value(authSessionKey).(identity.AuthSession)
 	return session
 }
 
-// Org context helpers.
-func contextSetOrg(r *http.Request, org database.Organization) *http.Request {
+// pathIDs are the resource ids a route addresses. They are parsed from the
+// path and carry no authorization: services resolve and authorize each id,
+// including whether it belongs to its parent. A zero id is absent from the
+// route.
+type pathIDs struct {
+	OrgID         int64
+	OrgSlug       string
+	WorkspaceID   int64
+	EnvironmentID int64
+	ConnectionID  int64
+}
+
+func contextSetPathIDs(r *http.Request, ids pathIDs) *http.Request {
 	if meta := contextGetRequestLogContext(r); meta != nil {
-		meta.OrgID = org.ID
-		meta.OrgSlug = org.Slug
+		meta.OrgID = ids.OrgID
+		meta.OrgSlug = ids.OrgSlug
+		meta.WorkspaceID = ids.WorkspaceID
+		meta.EnvironmentID = ids.EnvironmentID
+		meta.ConnectionID = ids.ConnectionID
 	}
-	ctx := context.WithValue(r.Context(), orgKey, org)
-	return r.WithContext(ctx)
+	return r.WithContext(context.WithValue(r.Context(), pathIDsKey, ids))
 }
 
-func contextGetOrg(r *http.Request) database.Organization {
-	org, _ := r.Context().Value(orgKey).(database.Organization)
-	return org
-}
-
-// Workspace context helpers.
-func contextSetWorkspace(r *http.Request, ws database.Workspace) *http.Request {
-	if meta := contextGetRequestLogContext(r); meta != nil {
-		meta.WorkspaceID = ws.ID
-	}
-	ctx := context.WithValue(r.Context(), workspaceKey, ws)
-	return r.WithContext(ctx)
-}
-
-func contextGetWorkspace(r *http.Request) database.Workspace {
-	ws, _ := r.Context().Value(workspaceKey).(database.Workspace)
-	return ws
-}
-
-// Environment context helpers.
-func contextSetEnvironment(r *http.Request, env database.Environment) *http.Request {
-	if meta := contextGetRequestLogContext(r); meta != nil {
-		meta.EnvironmentID = env.ID
-	}
-	ctx := context.WithValue(r.Context(), environmentKey, env)
-	return r.WithContext(ctx)
-}
-
-func contextGetEnvironment(r *http.Request) database.Environment {
-	env, _ := r.Context().Value(environmentKey).(database.Environment)
-	return env
-}
-
-// Connection context helpers.
-func contextSetConnection(r *http.Request, conn database.Connection) *http.Request {
-	if meta := contextGetRequestLogContext(r); meta != nil {
-		meta.ConnectionID = conn.ID
-	}
-	ctx := context.WithValue(r.Context(), connectionKey, conn)
-	return r.WithContext(ctx)
-}
-
-func contextGetConnection(r *http.Request) database.Connection {
-	conn, _ := r.Context().Value(connectionKey).(database.Connection)
-	return conn
+func contextGetPathIDs(r *http.Request) pathIDs {
+	ids, _ := r.Context().Value(pathIDsKey).(pathIDs)
+	return ids
 }
 
 // Request log context helpers.

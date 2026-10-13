@@ -128,7 +128,7 @@ func TestRevealConnectionSecretWorkspaceAdminScope(t *testing.T) {
 	assert.False(t, strings.Contains(string(inB.BodyBytes), "secret-in-b"))
 
 	plain, plainTok := seedAccountWithToken(t, app, "conn-reveal-plain@example.com", "Plain Member")
-	if err := app.db.AddOrgMember(context.Background(), org.ID, plain.ID); err != nil {
+	if err := testDB(app).AddOrgMember(context.Background(), org.ID, plain.ID); err != nil {
 		t.Fatal(err)
 	}
 	plainRes := send(t, newAuthRequest(t, http.MethodPost, revealA, nil, plainTok), app.routes())
@@ -212,12 +212,11 @@ func newSSHKeyPEM(t *testing.T, passphrase string) string {
 
 func TestConnectionSecretsNeverLeak(t *testing.T) {
 	t.Parallel()
-	app := newTestApp(t)
 	var logs bytes.Buffer
-	app.logger = slog.New(slog.NewJSONHandler(&logs, &slog.HandlerOptions{Level: slog.LevelDebug}))
+	app := newTestAppWith(t, testAppOptions{logger: slog.New(slog.NewJSONHandler(&logs, &slog.HandlerOptions{Level: slog.LevelDebug}))})
 	owner, tok, org := seedOrgOwner(t, app, "conn-leak@example.com", "Leak Owner", "Leak Org")
 	member, memberTok := seedAccountWithToken(t, app, "conn-leak-member@example.com", "Leak Member")
-	if err := app.db.AddOrgMember(context.Background(), org.ID, member.ID); err != nil {
+	if err := testDB(app).AddOrgMember(context.Background(), org.ID, member.ID); err != nil {
 		t.Fatal(err)
 	}
 	ws := seedWorkspaceForAccount(t, app, org, owner, "Leak WS", "")
@@ -329,7 +328,7 @@ func TestConnectionSecretsNeverLeak(t *testing.T) {
 		}
 	}
 
-	events, err := audit.NewSQLStore(app.db.DB).Events(context.Background(), 200)
+	events, err := audit.NewSQLStore(testDB(app).DB).Events(context.Background(), 200)
 	if err != nil {
 		t.Fatal(err)
 	}

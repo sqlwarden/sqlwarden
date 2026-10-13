@@ -38,7 +38,7 @@ func TestReportServerError(t *testing.T) {
 		send(t, req, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			app.serverError(w, r, errors.New("this is a test error"))
 		}))
-		assert.Equal(t, len(app.mailer.SentMessages), 0)
+		assert.Equal(t, len(app.services.Mailer.Current().SentMessages), 0)
 	})
 
 	t.Run("Sends notification email when enabled", func(t *testing.T) {
@@ -50,11 +50,11 @@ func TestReportServerError(t *testing.T) {
 		send(t, req, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			app.serverError(w, r, errors.New("this is a test error"))
 		}))
-		assert.Equal(t, len(app.mailer.SentMessages), 1)
-		assert.True(t, strings.Contains(app.mailer.SentMessages[0], "To: <zoe@example.com>"))
-		assert.True(t, strings.Contains(app.mailer.SentMessages[0], "Error message: this is a test error"))
-		assert.True(t, strings.Contains(app.mailer.SentMessages[0], "Request method: GET"))
-		assert.True(t, strings.Contains(app.mailer.SentMessages[0], "Request URL: /test"))
+		assert.Equal(t, len(app.services.Mailer.Current().SentMessages), 1)
+		assert.True(t, strings.Contains(app.services.Mailer.Current().SentMessages[0], "To: <zoe@example.com>"))
+		assert.True(t, strings.Contains(app.services.Mailer.Current().SentMessages[0], "Error message: this is a test error"))
+		assert.True(t, strings.Contains(app.services.Mailer.Current().SentMessages[0], "Request method: GET"))
+		assert.True(t, strings.Contains(app.services.Mailer.Current().SentMessages[0], "Request URL: /test"))
 	})
 }
 
@@ -89,7 +89,7 @@ func TestServerError(t *testing.T) {
 		send(t, req, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			app.serverError(w, r, errors.New("this is a test error"))
 		}))
-		assert.Equal(t, len(app.mailer.SentMessages), 0)
+		assert.Equal(t, len(app.services.Mailer.Current().SentMessages), 0)
 	})
 
 	t.Run("Sends notification email when enabled", func(t *testing.T) {
@@ -101,11 +101,11 @@ func TestServerError(t *testing.T) {
 		send(t, req, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			app.serverError(w, r, errors.New("this is a test error"))
 		}))
-		assert.Equal(t, len(app.mailer.SentMessages), 1)
-		assert.True(t, strings.Contains(app.mailer.SentMessages[0], "To: <zoe@example.com>"))
-		assert.True(t, strings.Contains(app.mailer.SentMessages[0], "Error message: this is a test error"))
-		assert.True(t, strings.Contains(app.mailer.SentMessages[0], "Request method: GET"))
-		assert.True(t, strings.Contains(app.mailer.SentMessages[0], "Request URL: /test"))
+		assert.Equal(t, len(app.services.Mailer.Current().SentMessages), 1)
+		assert.True(t, strings.Contains(app.services.Mailer.Current().SentMessages[0], "To: <zoe@example.com>"))
+		assert.True(t, strings.Contains(app.services.Mailer.Current().SentMessages[0], "Error message: this is a test error"))
+		assert.True(t, strings.Contains(app.services.Mailer.Current().SentMessages[0], "Request method: GET"))
+		assert.True(t, strings.Contains(app.services.Mailer.Current().SentMessages[0], "Request URL: /test"))
 	})
 }
 

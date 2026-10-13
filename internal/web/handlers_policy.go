@@ -9,15 +9,34 @@ import (
 
 	"github.com/go-chi/chi/v5"
 	"github.com/sqlwarden/internal/access"
-	"github.com/sqlwarden/internal/database"
+	"github.com/sqlwarden/internal/rbac"
 	"github.com/sqlwarden/internal/request"
 	"github.com/sqlwarden/internal/response"
 	"github.com/sqlwarden/internal/validator"
 )
 
-func (app *application) listRoles(w http.ResponseWriter, r *http.Request) {
-	org := contextGetOrg(r)
+// rbacError translates rbac service failures to the standard error envelope.
+func (app *application) rbacError(w http.ResponseWriter, r *http.Request, err error) {
+	var validation *rbac.ValidationError
+	switch {
+	case errors.As(err, &validation):
+		app.failedValidation(w, r, fieldErrors(validation.Fields))
+	case errors.Is(err, rbac.ErrLastOwner):
+		v := validator.Validator{}
+		v.AddError("Cannot revoke the last owner policy of an organization.")
+		app.failedValidation(w, r, v)
+	case errors.Is(err, rbac.ErrPrivilegedPolicy):
+		app.errorMessage(w, r, http.StatusForbidden, "Only users who already have organization deletion or ownership transfer permission can manage policies that grant those permissions.", nil)
+	case errors.Is(err, rbac.ErrBuiltinRole):
+		app.notPermitted(w, r)
+	case errors.Is(err, rbac.ErrRoleInUse):
+		app.roleInUse(w, r, err)
+	default:
+		app.serviceError(w, r, err)
+	}
+}
 
+func (app *application) listRoles(w http.ResponseWriter, r *http.Request) {
 	q, errs := readListQuery(r.URL.Query(), map[string]string{
 		"name":       "name",
 		"created_at": "created_at",
@@ -32,236 +51,141 @@ func (app *application) listRoles(w http.ResponseWriter, r *http.Request) {
 		app.failedValidation(w, r, fieldErrors(errs))
 		return
 	}
-
-	var builtin *bool
-	if raw := strings.TrimSpace(r.URL.Query().Get("builtin")); raw != "" {
-		switch raw {
-		case "true":
-			v := true
-			builtin = &v
-		case "false":
-			v := false
-			builtin = &v
-		default:
-			app.failedValidation(w, r, fieldErrors(map[string]string{"builtin": "Built-in flag must be true or false."}))
-			return
-		}
-	}
-
-	scope := "all"
-	if raw := strings.TrimSpace(r.URL.Query().Get("scope")); raw != "" {
-		switch raw {
-		case "all", "org", "workspace":
-			scope = raw
-		default:
-			app.failedValidation(w, r, fieldErrors(map[string]string{"scope": "Scope must be all, org, or workspace."}))
-			return
-		}
-	}
-
-	roles, err := app.db.ListRolesPage(r.Context(), database.ListRolesParams{
-		OrgID:     org.ID,
-		Scope:     scope,
-		Search:    q.Search,
-		Name:      strings.TrimSpace(r.URL.Query().Get("name")),
-		IsBuiltin: builtin,
-		Sort:      q.Sort,
-		Order:     q.Order,
-		Page:      q.Page,
-		PageSize:  q.PageSize,
-	})
-	if err != nil {
-		app.serverError(w, r, err)
+	principal, ok := app.requestPrincipal(w, r)
+	if !ok {
 		return
 	}
-	err = response.JSON(w, http.StatusOK, roles)
+
+	roles, err := app.services.RBAC.ListRoles(r.Context(), principal, contextGetPathIDs(r).OrgID, rbac.ListRolesInput{
+		Scope:    r.URL.Query().Get("scope"),
+		Builtin:  r.URL.Query().Get("builtin"),
+		Name:     r.URL.Query().Get("name"),
+		Search:   q.Search,
+		Sort:     q.Sort,
+		Order:    q.Order,
+		Page:     q.Page,
+		PageSize: q.PageSize,
+	})
 	if err != nil {
+		app.rbacError(w, r, err)
+		return
+	}
+	if err := response.JSON(w, http.StatusOK, roles); err != nil {
 		app.serverError(w, r, err)
 	}
 }
 
 func (app *application) createRole(w http.ResponseWriter, r *http.Request) {
 	var input struct {
-		Name        string              `json:"name"`
-		Description string              `json:"description"`
-		ScopeType   string              `json:"scope_type"`
-		WorkspaceID *int64              `json:"workspace_id"`
-		Permissions []string            `json:"permissions"`
-		V           validator.Validator `json:"-"`
+		Name        string   `json:"name"`
+		Description string   `json:"description"`
+		ScopeType   string   `json:"scope_type"`
+		WorkspaceID *int64   `json:"workspace_id"`
+		Permissions []string `json:"permissions"`
 	}
-
-	err := request.DecodeJSON(w, r, &input)
-	if err != nil {
+	if err := request.DecodeJSON(w, r, &input); err != nil {
 		app.badRequest(w, r, err)
 		return
 	}
-
-	input.V.CheckField(input.Name != "", "name", "Name is required.")
-	if input.ScopeType == "" {
-		input.ScopeType = "org"
-	}
-	input.V.CheckField(input.ScopeType == "org", "scope_type", "Organization roles must have scope_type=org.")
-	if input.WorkspaceID != nil {
-		input.V.AddFieldError("workspace_id", "Organization roles cannot set workspace_id.")
-	}
-	for _, p := range input.Permissions {
-		input.V.CheckField(access.ValidForScope(p, input.ScopeType), "permissions", "Permission "+p+" is not valid for scope "+input.ScopeType+".")
-	}
-
-	if input.V.HasErrors() {
-		app.failedValidation(w, r, input.V)
+	principal, ok := app.requestPrincipal(w, r)
+	if !ok {
 		return
 	}
 
-	org := contextGetOrg(r)
-	roleID, err := app.enforcer.CreateRole(r.Context(), org.ID, input.WorkspaceID, input.Name, input.Description, input.ScopeType, input.Permissions)
+	role, err := app.services.RBAC.CreateRole(r.Context(), principal, contextGetPathIDs(r).OrgID, rbac.CreateRoleInput{
+		Name:        input.Name,
+		Description: input.Description,
+		ScopeType:   input.ScopeType,
+		WorkspaceID: input.WorkspaceID,
+		Permissions: input.Permissions,
+	})
 	if err != nil {
-		if errors.Is(err, access.ErrInvalidScopePermission) || errors.Is(err, access.ErrUnknownPermission) {
-			input.V.AddFieldError("permissions", "Permissions include a permission that is not valid for this scope.")
-			app.failedValidation(w, r, input.V)
-			return
-		}
-		app.serverError(w, r, err)
+		app.rbacError(w, r, err)
 		return
 	}
-
-	role, found, err := app.db.GetRole(r.Context(), roleID, org.ID)
-	if err != nil {
-		app.serverError(w, r, err)
-		return
-	}
-	if !found {
-		app.notFound(w, r)
-		return
-	}
-
 	app.logInfo(r, "organization role created", slog.Int64("role_id", role.ID), slog.String("scope_type", role.ScopeType), slog.Int("permission_count", len(input.Permissions)))
-	err = response.JSON(w, http.StatusCreated, role)
-	if err != nil {
+	if err := response.JSON(w, http.StatusCreated, role); err != nil {
 		app.serverError(w, r, err)
 	}
 }
 
 func (app *application) getRole(w http.ResponseWriter, r *http.Request) {
-	org := contextGetOrg(r)
-	roleIDStr := chi.URLParam(r, "role_id")
-	roleID, err := strconv.ParseInt(roleIDStr, 10, 64)
+	roleID, err := strconv.ParseInt(chi.URLParam(r, "role_id"), 10, 64)
 	if err != nil {
 		app.notFound(w, r)
 		return
 	}
-
-	role, found, err := app.db.GetRole(r.Context(), roleID, org.ID)
-	if err != nil {
-		app.serverError(w, r, err)
+	principal, ok := app.requestPrincipal(w, r)
+	if !ok {
 		return
 	}
-	if !found {
-		app.notFound(w, r)
+	role, err := app.services.RBAC.GetRole(r.Context(), principal, contextGetPathIDs(r).OrgID, roleID)
+	if err != nil {
+		app.rbacError(w, r, err)
 		return
 	}
-
-	err = response.JSON(w, http.StatusOK, role)
-	if err != nil {
+	if err := response.JSON(w, http.StatusOK, role); err != nil {
 		app.serverError(w, r, err)
 	}
 }
 
 func (app *application) updateRole(w http.ResponseWriter, r *http.Request) {
 	var input struct {
-		Name        string              `json:"name"`
-		Description string              `json:"description"`
-		Permissions []string            `json:"permissions"`
-		V           validator.Validator `json:"-"`
+		Name        string   `json:"name"`
+		Description string   `json:"description"`
+		Permissions []string `json:"permissions"`
 	}
-
-	err := request.DecodeJSON(w, r, &input)
-	if err != nil {
+	if err := request.DecodeJSON(w, r, &input); err != nil {
 		app.badRequest(w, r, err)
 		return
 	}
-
-	input.V.CheckField(input.Name != "", "name", "Name is required.")
-	if input.V.HasErrors() {
-		app.failedValidation(w, r, input.V)
-		return
-	}
-
-	org := contextGetOrg(r)
-	roleIDStr := chi.URLParam(r, "role_id")
-	roleID, err := strconv.ParseInt(roleIDStr, 10, 64)
+	roleID, err := strconv.ParseInt(chi.URLParam(r, "role_id"), 10, 64)
 	if err != nil {
+		if input.Name == "" {
+			app.failedValidation(w, r, fieldErrors(map[string]string{"name": "Name is required."}))
+			return
+		}
 		app.notFound(w, r)
 		return
 	}
+	principal, ok := app.requestPrincipal(w, r)
+	if !ok {
+		return
+	}
 
-	err = app.enforcer.UpdateRole(r.Context(), roleID, org.ID, input.Name, input.Description, input.Permissions)
+	role, err := app.services.RBAC.UpdateRole(r.Context(), principal, contextGetPathIDs(r).OrgID, roleID, rbac.UpdateRoleInput{
+		Name:        input.Name,
+		Description: input.Description,
+		Permissions: input.Permissions,
+	})
+	var refusal *rbac.RefusalError
+	if errors.As(err, &refusal) && errors.Is(err, rbac.ErrPrivilegedPolicy) {
+		app.logWarn(r, "protected organization role update blocked", slog.Int64("role_id", refusal.Role.ID), slog.String("role_name", refusal.Role.Name))
+	}
 	if err != nil {
-		if errors.Is(err, access.ErrBuiltinRole) {
-			app.notPermitted(w, r)
-			return
-		}
-		if errors.Is(err, access.ErrRoleNotFound) {
-			app.notFound(w, r)
-			return
-		}
-		if errors.Is(err, access.ErrInvalidScopePermission) || errors.Is(err, access.ErrUnknownPermission) {
-			input.V.AddFieldError("permissions", "Permissions include a permission that is not valid for this scope.")
-			app.failedValidation(w, r, input.V)
-			return
-		}
-		if isUniqueViolation(err) {
-			app.failedDuplicateField(w, r, "name", "A role with this name already exists in this organization.")
-			return
-		}
-		app.serverError(w, r, err)
+		app.rbacError(w, r, err)
 		return
 	}
-
-	role, found, err := app.db.GetRole(r.Context(), roleID, org.ID)
-	if err != nil {
-		app.serverError(w, r, err)
-		return
-	}
-	if !found {
-		app.notFound(w, r)
-		return
-	}
-
 	app.logInfo(r, "organization role updated", slog.Int64("role_id", role.ID), slog.Int("permission_count", len(input.Permissions)))
-	err = response.JSON(w, http.StatusOK, role)
-	if err != nil {
+	if err := response.JSON(w, http.StatusOK, role); err != nil {
 		app.serverError(w, r, err)
 	}
 }
 
 func (app *application) deleteRole(w http.ResponseWriter, r *http.Request) {
-	org := contextGetOrg(r)
-	roleIDStr := chi.URLParam(r, "role_id")
-	roleID, err := strconv.ParseInt(roleIDStr, 10, 64)
+	roleID, err := strconv.ParseInt(chi.URLParam(r, "role_id"), 10, 64)
 	if err != nil {
 		app.notFound(w, r)
 		return
 	}
-
-	err = app.enforcer.DeleteRole(r.Context(), roleID, org.ID)
-	if err != nil {
-		if errors.Is(err, access.ErrBuiltinRole) {
-			app.notPermitted(w, r)
-			return
-		}
-		if errors.Is(err, access.ErrRoleNotFound) {
-			app.notFound(w, r)
-			return
-		}
-		if errors.Is(err, access.ErrRoleInUse) {
-			app.roleInUse(w, r, err)
-			return
-		}
-		app.serverError(w, r, err)
+	principal, ok := app.requestPrincipal(w, r)
+	if !ok {
 		return
 	}
-
+	if err := app.services.RBAC.DeleteRole(r.Context(), principal, contextGetPathIDs(r).OrgID, roleID); err != nil {
+		app.rbacError(w, r, err)
+		return
+	}
 	app.logInfo(r, "organization role deleted", slog.Int64("role_id", roleID))
 	w.WriteHeader(http.StatusNoContent)
 }
@@ -278,8 +202,6 @@ func (app *application) roleInUse(w http.ResponseWriter, r *http.Request, err er
 }
 
 func (app *application) listOrgPolicies(w http.ResponseWriter, r *http.Request) {
-	org := contextGetOrg(r)
-
 	q, errs := readListQuery(r.URL.Query(), map[string]string{
 		"created_at":   "created_at",
 		"subject_name": "subject_name",
@@ -302,9 +224,12 @@ func (app *application) listOrgPolicies(w http.ResponseWriter, r *http.Request) 
 		app.failedValidation(w, r, fieldErrors(errs))
 		return
 	}
+	principal, ok := app.requestPrincipal(w, r)
+	if !ok {
+		return
+	}
 
-	result, err := app.db.ListOrgPoliciesPage(r.Context(), database.ListOrgPoliciesParams{
-		OrgID:       org.ID,
+	result, err := app.services.RBAC.ListPolicies(r.Context(), principal, contextGetPathIDs(r).OrgID, rbac.ListPoliciesParams{
 		Search:      q.Search,
 		SubjectID:   subjectID,
 		SubjectType: strings.TrimSpace(r.URL.Query().Get("subject_type")),
@@ -315,254 +240,107 @@ func (app *application) listOrgPolicies(w http.ResponseWriter, r *http.Request) 
 		PageSize:    q.PageSize,
 	})
 	if err != nil {
-		app.serverError(w, r, err)
+		app.rbacError(w, r, err)
 		return
 	}
-
-	err = response.JSON(w, http.StatusOK, result)
-	if err != nil {
+	if err := response.JSON(w, http.StatusOK, result); err != nil {
 		app.serverError(w, r, err)
 	}
 }
 
 func (app *application) getOrgPolicy(w http.ResponseWriter, r *http.Request) {
-	bindingIDStr := chi.URLParam(r, "binding_id")
-	bindingID, err := strconv.ParseInt(bindingIDStr, 10, 64)
+	bindingID, err := strconv.ParseInt(chi.URLParam(r, "binding_id"), 10, 64)
 	if err != nil {
 		app.notFound(w, r)
 		return
 	}
-
-	org := contextGetOrg(r)
-
-	rb, found, err := app.db.GetRoleBinding(r.Context(), bindingID, org.ID)
-	if err != nil {
-		app.serverError(w, r, err)
+	principal, ok := app.requestPrincipal(w, r)
+	if !ok {
 		return
 	}
-	if !found || rb.ResourceType != "org" || rb.ResourceID != org.ID {
-		app.notFound(w, r)
+	item, err := app.services.RBAC.GetPolicy(r.Context(), principal, contextGetPathIDs(r).OrgID, bindingID)
+	if err != nil {
+		app.rbacError(w, r, err)
 		return
 	}
-
-	item, err := app.db.GetPolicyBindingItem(r.Context(), org.ID, rb)
-	if err != nil {
-		app.serverError(w, r, err)
-		return
-	}
-
-	err = response.JSON(w, http.StatusOK, item)
-	if err != nil {
+	if err := response.JSON(w, http.StatusOK, item); err != nil {
 		app.serverError(w, r, err)
 	}
 }
 
 func (app *application) grantOrgPolicy(w http.ResponseWriter, r *http.Request) {
 	var input struct {
-		RoleID      int64               `json:"role_id"`
-		SubjectType string              `json:"subject_type"`
-		SubjectID   int64               `json:"subject_id"`
-		V           validator.Validator `json:"-"`
+		RoleID      int64  `json:"role_id"`
+		SubjectType string `json:"subject_type"`
+		SubjectID   int64  `json:"subject_id"`
 	}
-
-	err := request.DecodeJSON(w, r, &input)
-	if err != nil {
+	if err := request.DecodeJSON(w, r, &input); err != nil {
 		app.badRequest(w, r, err)
 		return
 	}
-
-	input.V.CheckField(input.RoleID > 0, "role_id", "Role is required.")
-	input.V.CheckField(validPolicySubjectType(input.SubjectType), "subject_type", "Subject type must be account, team, or org_members.")
-	input.V.CheckField(input.SubjectID > 0, "subject_id", "Subject is required.")
-	if input.V.HasErrors() {
-		app.failedValidation(w, r, input.V)
+	principal, ok := app.requestPrincipal(w, r)
+	if !ok {
 		return
 	}
+	ids := contextGetPathIDs(r)
 
-	org := contextGetOrg(r)
-	grantor := contextGetAccount(r)
-
-	if ok, err := app.policySubjectExists(r, org.ID, input.SubjectType, input.SubjectID); err != nil {
-		app.serverError(w, r, err)
-		return
-	} else if !ok {
-		app.notFound(w, r)
-		return
+	err := app.services.RBAC.GrantPolicy(r.Context(), principal, contextGetPathIDs(r).OrgID, rbac.GrantPolicyInput{
+		RoleID:      input.RoleID,
+		SubjectType: input.SubjectType,
+		SubjectID:   input.SubjectID,
+	})
+	var refusal *rbac.RefusalError
+	if errors.As(err, &refusal) && errors.Is(err, rbac.ErrPrivilegedPolicy) {
+		app.logWarn(r, "protected organization policy grant blocked", slog.Int64("role_id", refusal.Role.ID), slog.String("role_name", refusal.Role.Name), slog.String("subject_type", input.SubjectType), slog.Int64("subject_id", input.SubjectID))
 	}
-
-	role, found, err := app.db.GetRole(r.Context(), input.RoleID, org.ID)
 	if err != nil {
-		app.serverError(w, r, err)
+		app.rbacError(w, r, err)
 		return
 	}
-	if !found {
-		app.notFound(w, r)
-		return
-	}
-	if role.ScopeType != "org" || role.WorkspaceID != nil {
-		v := validator.Validator{}
-		v.AddFieldError("role_id", "Role scope must match resource type.")
-		app.failedValidation(w, r, v)
-		return
-	}
-	if !app.canManageProtectedOrgPolicy(r, org.ID, grantor.ID, role) {
-		app.logWarn(r, "protected organization policy grant blocked", slog.Int64("role_id", role.ID), slog.String("role_name", role.Name), slog.String("subject_type", input.SubjectType), slog.Int64("subject_id", input.SubjectID))
-		app.protectedOrgPolicyNotPermitted(w, r)
-		return
-	}
-	if err := app.enforcer.BindRole(r.Context(), org.ID, input.RoleID, input.SubjectType, input.SubjectID, "org", org.ID, grantor.ID); err != nil {
-		app.serverError(w, r, err)
-		return
-	}
-
-	app.logInfo(r, "organization policy granted", slog.Int64("role_id", input.RoleID), slog.String("subject_type", input.SubjectType), slog.Int64("subject_id", input.SubjectID), slog.String("resource_type", "org"), slog.Int64("resource_id", org.ID))
+	app.logInfo(r, "organization policy granted", slog.Int64("role_id", input.RoleID), slog.String("subject_type", input.SubjectType), slog.Int64("subject_id", input.SubjectID), slog.String("resource_type", "org"), slog.Int64("resource_id", ids.OrgID))
 	w.WriteHeader(http.StatusNoContent)
 }
 
 func (app *application) revokeOrgPolicy(w http.ResponseWriter, r *http.Request) {
-	bindingIDStr := chi.URLParam(r, "binding_id")
-	bindingID, err := strconv.ParseInt(bindingIDStr, 10, 64)
+	bindingID, err := strconv.ParseInt(chi.URLParam(r, "binding_id"), 10, 64)
 	if err != nil {
 		app.notFound(w, r)
 		return
 	}
+	principal, ok := app.requestPrincipal(w, r)
+	if !ok {
+		return
+	}
 
-	org := contextGetOrg(r)
-	grantor := contextGetAccount(r)
-
-	rb, found, err := app.db.GetRoleBinding(r.Context(), bindingID, org.ID)
+	rb, err := app.services.RBAC.RevokePolicy(r.Context(), principal, contextGetPathIDs(r).OrgID, bindingID)
+	var refusal *rbac.RefusalError
+	if errors.As(err, &refusal) {
+		b := refusal.Binding
+		if errors.Is(err, rbac.ErrLastOwner) {
+			app.logWarn(r, "last organization owner policy revoke blocked", slog.Int64("binding_id", bindingID), slog.Int64("role_id", refusal.Role.ID), slog.String("subject_type", b.SubjectType), slog.Int64("subject_id", b.SubjectID))
+		} else {
+			app.logWarn(r, "protected organization policy revoke blocked", slog.Int64("binding_id", bindingID), slog.Int64("role_id", refusal.Role.ID), slog.String("role_name", refusal.Role.Name), slog.String("subject_type", b.SubjectType), slog.Int64("subject_id", b.SubjectID))
+		}
+	}
 	if err != nil {
-		app.serverError(w, r, err)
+		app.rbacError(w, r, err)
 		return
 	}
-	if !found || rb.ResourceType != "org" || rb.ResourceID != org.ID {
-		app.notFound(w, r)
-		return
-	}
-	role, found, err := app.db.GetRole(r.Context(), rb.RoleID, org.ID)
-	if err != nil {
-		app.serverError(w, r, err)
-		return
-	}
-	if !found {
-		app.notFound(w, r)
-		return
-	}
-	if !app.canManageProtectedOrgPolicy(r, org.ID, grantor.ID, role) {
-		app.logWarn(r, "protected organization policy revoke blocked", slog.Int64("binding_id", bindingID), slog.Int64("role_id", role.ID), slog.String("role_name", role.Name), slog.String("subject_type", rb.SubjectType), slog.Int64("subject_id", rb.SubjectID))
-		app.protectedOrgPolicyNotPermitted(w, r)
-		return
-	}
-	if isLastOwnerPolicy, checkErr := app.isLastOrgOwnerPolicy(r, org.ID, rb, role); checkErr != nil {
-		app.serverError(w, r, checkErr)
-		return
-	} else if isLastOwnerPolicy {
-		app.logWarn(r, "last organization owner policy revoke blocked", slog.Int64("binding_id", bindingID), slog.Int64("role_id", role.ID), slog.String("subject_type", rb.SubjectType), slog.Int64("subject_id", rb.SubjectID))
-		v := validator.Validator{}
-		v.AddError("Cannot revoke the last owner policy of an organization.")
-		app.failedValidation(w, r, v)
-		return
-	}
-	if err = app.enforcer.UnbindRole(r.Context(), bindingID, org.ID); err != nil {
-		app.serverError(w, r, err)
-		return
-	}
-
 	app.logInfo(r, "organization policy revoked", slog.Int64("binding_id", bindingID), slog.Int64("role_id", rb.RoleID), slog.String("subject_type", rb.SubjectType), slog.Int64("subject_id", rb.SubjectID), slog.String("resource_type", rb.ResourceType), slog.Int64("resource_id", rb.ResourceID))
 	w.WriteHeader(http.StatusNoContent)
 }
 
 func (app *application) listPermissions(w http.ResponseWriter, r *http.Request) {
-	err := response.JSON(w, http.StatusOK, map[string]any{
-		"permissions":        access.AllPermissions(),
-		"permission_details": access.AllPermissionDefinitions(),
-		"scope_map":          access.ScopePermissions,
-		"scope_details":      access.ScopePermissionDefinitionMap(),
-		"resource_map":       access.ResourcePermissions,
-		"resource_details":   access.ResourcePermissionDefinitionMap(),
-	})
+	principal, ok := app.requestPrincipal(w, r)
+	if !ok {
+		return
+	}
+	catalog, err := app.services.RBAC.ListPermissions(r.Context(), principal, contextGetPathIDs(r).OrgID)
 	if err != nil {
+		app.rbacError(w, r, err)
+		return
+	}
+	if err := response.JSON(w, http.StatusOK, catalog); err != nil {
 		app.serverError(w, r, err)
-	}
-}
-
-func (app *application) canManageProtectedOrgPolicy(r *http.Request, orgID, grantorID int64, role database.Role) bool {
-	for _, permission := range protectedOrgPolicyPermissions(role) {
-		if !app.policy.Can(r.Context(), grantorID, orgID, "org", "org", orgID, permission) {
-			return false
-		}
-	}
-	return true
-}
-
-func (app *application) protectedOrgPolicyNotPermitted(w http.ResponseWriter, r *http.Request) {
-	app.errorMessage(w, r, http.StatusForbidden, "Only users who already have organization deletion or ownership transfer permission can manage policies that grant those permissions.", nil)
-}
-
-func protectedOrgPolicyPermissions(role database.Role) []string {
-	protected := make([]string, 0, 2)
-	seen := map[string]bool{}
-	add := func(permission string) {
-		if !seen[permission] {
-			protected = append(protected, permission)
-			seen[permission] = true
-		}
-	}
-	for _, permission := range role.Permissions {
-		switch permission {
-		case access.PermOrgDelete, access.PermOrgTransferOwnership:
-			add(permission)
-		}
-	}
-	if role.IsBuiltin && role.Name == access.BuiltinOrgOwnerRole && role.ScopeType == "org" && role.WorkspaceID == nil {
-		add(access.PermOrgDelete)
-		add(access.PermOrgTransferOwnership)
-	}
-	return protected
-}
-
-func (app *application) isLastOrgOwnerPolicy(r *http.Request, orgID int64, binding database.RoleBinding, role database.Role) (bool, error) {
-	if binding.ResourceType != "org" || binding.ResourceID != orgID {
-		return false, nil
-	}
-
-	if !role.IsBuiltin || role.Name != access.BuiltinOrgOwnerRole || role.ScopeType != "org" || role.WorkspaceID != nil {
-		return false, nil
-	}
-
-	count, err := app.db.CountRoleBindings(r.Context(), orgID, binding.RoleID, "org", orgID)
-	if err != nil {
-		return false, err
-	}
-	return count <= 1, nil
-}
-
-func (app *application) policySubjectExists(r *http.Request, orgID int64, subjectType string, subjectID int64) (bool, error) {
-	switch subjectType {
-	case access.SubjectTypeAccount:
-		_, found, err := app.db.GetAccount(r.Context(), subjectID)
-		if err != nil || !found {
-			return found, err
-		}
-		return app.db.IsOrgMember(r.Context(), orgID, subjectID)
-	case access.SubjectTypeTeam:
-		team, found, err := app.db.GetTeamByID(r.Context(), subjectID)
-		if err != nil || !found {
-			return found, err
-		}
-		return team.OrgID == orgID, nil
-	case access.SubjectTypeOrgMembers:
-		return subjectID == orgID, nil
-	default:
-		return false, nil
-	}
-}
-
-func validPolicySubjectType(subjectType string) bool {
-	switch subjectType {
-	case access.SubjectTypeAccount, access.SubjectTypeTeam, access.SubjectTypeOrgMembers:
-		return true
-	default:
-		return false
 	}
 }

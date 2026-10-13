@@ -17,6 +17,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/sqlwarden/internal/access"
 	"github.com/sqlwarden/internal/audit"
 	"github.com/sqlwarden/internal/config"
 	"github.com/sqlwarden/internal/connection"
@@ -29,6 +30,7 @@ import (
 	"github.com/sqlwarden/internal/orgs"
 	"github.com/sqlwarden/internal/platform/clientip"
 	"github.com/sqlwarden/internal/profile/server"
+	"github.com/sqlwarden/internal/services"
 	"github.com/sqlwarden/internal/settings"
 	"github.com/sqlwarden/internal/smtp"
 	"github.com/sqlwarden/internal/token"
@@ -59,10 +61,28 @@ func newTestClaims() jwt.Claims {
 	return c
 }
 
+// testAppOptions replaces collaborators before the service graph is built, so
+// the services observe the same overrides as the handlers.
+type testAppOptions struct {
+	policy     access.PolicyEvaluator
+	runtime    func(execution.Runtime) execution.Runtime
+	revoker    execution.Revoker
+	audit      audit.Writer
+	logger     *slog.Logger
+	fileStores func(FileStores) FileStores
+	configure  func(*config.Config)
+	signIn     identity.SignInStrategy
+	// setup defaults to identity.FormSetup.
+	setup identity.SetupStrategy
+}
+
 func newTestApplication(t *testing.T) *application {
+	return newTestApplicationWith(t, testAppOptions{})
+}
+
+func newTestApplicationWith(t *testing.T, opts testAppOptions) *application {
 	app := new(application)
 	app.config = config.Default()
-	app.setupStrategy = identity.FormSetup
 	app.invitationPolicy = orgs.InvitationsEnabled
 
 	app.config.JWT.SecretKey = "k7mp29rf4qxhwn8vbtaj6pgucmve53y9"
@@ -76,42 +96,106 @@ func newTestApplication(t *testing.T) *application {
 		},
 	}
 	app.logger = slog.New(slog.NewTextHandler(io.Discard, nil))
-	app.db = newTestDB(t)
-	app.signIn = identity.PasswordSignIn(app.db)
-	app.audit = audit.NewCoreWriter(audit.NewSQLStore(app.db.DB), time.Now)
+	state := &testAppState{db: newTestDB(t)}
+	testApps.Store(app, state)
+	t.Cleanup(func() { testApps.Delete(app) })
+	app.audit = audit.NewCoreWriter(audit.NewSQLStore(testDB(app).DB), time.Now)
 	app.clientIPs = clientip.New(nil)
-	app.authChain = app.newAuthChain()
-	settings, found, err := app.db.GetInstanceSettings(context.Background())
+	instance, found, err := testDB(app).GetInstanceSettings(context.Background())
 	if err != nil || !found {
 		t.Fatalf("get instance settings: found=%v err=%v", found, err)
 	}
-	settings.BaseURL = app.config.BootstrapBaseURL
-	settings.FileRevisionsEnabled = false
-	settings.SQLiteInMemoryTargetsEnabled = true
-	settings, err = app.db.UpsertInstanceSettings(context.Background(), settings)
+	instance.BaseURL = app.config.BootstrapBaseURL
+	instance.FileRevisionsEnabled = false
+	instance.SQLiteInMemoryTargetsEnabled = true
+	instance, err = testDB(app).UpsertInstanceSettings(context.Background(), instance)
 	if err != nil {
 		t.Fatal(err)
 	}
-	app.initialSettings = settings
-	app.mailer = smtp.NewMockMailer("test@example.com")
+	app.initialSettings = settings.Instance(instance)
 	keyring, err := encrypt.NewKeyring("test-encryption-key-32bytes!!!!!")
 	if err != nil {
 		t.Fatal(err)
 	}
-	app.keyring = keyring
+	state.keyring = keyring
 	app.fileStores, err = newTestFileStores(app.config)
 	if err != nil {
 		t.Fatal(err)
 	}
 	installTestRuntime(t, app)
-	app.credentialPorts = newTestCredentialPorts(app)
+	enforcer, err := access.New(testDB(app).DB)
+	if err != nil {
+		t.Fatal(err)
+	}
+	app.enforcer = enforcer
+	app.policy = enforcer
+
+	if opts.configure != nil {
+		opts.configure(&app.config)
+	}
+	if opts.policy != nil {
+		app.policy = opts.policy
+	}
+	if opts.runtime != nil {
+		app.runtime = opts.runtime(app.runtime)
+		app.revoker = app.runtime
+	}
+	if opts.revoker != nil {
+		app.revoker = opts.revoker
+	}
+	if opts.audit != nil {
+		app.audit = opts.audit
+	}
+	if opts.logger != nil {
+		app.logger = opts.logger
+	}
+	if opts.fileStores != nil {
+		app.fileStores = opts.fileStores(app.fileStores)
+	}
+	signIn := identity.PasswordSignIn(testDB(app))
+	if opts.signIn != nil {
+		signIn = opts.signIn
+	}
+	setup := identity.FormSetup
+	if opts.setup != nil {
+		setup = opts.setup
+	}
+	buildTestServices(t, app, signIn, setup)
+	app.authChain = app.newAuthChain()
+	app.services.Mailer.Set(smtp.NewMockMailer("test@example.com"))
 
 	return app
 }
 
-func newTestCredentialPorts(app *application) credentialPorts {
-	core := credentials.NewEncryptedColumnProvider(app.db, credentials.NewKeyringSealer(app.keyring), engine.ConnectionSpecFor)
-	return credentialPorts{provider: core, writer: core, reveal: server.New(app.db).RevealPolicy()}
+func buildTestServices(t *testing.T, app *application, signIn identity.SignInStrategy, setup identity.SetupStrategy) {
+	t.Helper()
+	core := credentials.NewEncryptedColumnProvider(testDB(app), credentials.NewKeyringSealer(testKeyring(app)), engine.ConnectionSpecFor)
+	svc, err := services.Build(services.Deps{
+		Config:           app.config,
+		DB:               testDB(app),
+		Enforcer:         app.enforcer,
+		Policy:           app.policy,
+		Runtime:          app.runtime,
+		Revoker:          app.revoker,
+		Audit:            app.audit,
+		Logger:           app.logger,
+		FileStores:       app.fileStores,
+		Credentials:      core,
+		CredentialWriter: core,
+		RevealPolicy:     server.New(testDB(app)).RevealPolicy(),
+		SecretSealer:     testKeyring(app),
+		Keyring:          testKeyring(app),
+		Invitations:      app.invitationPolicy,
+		SignIn:           signIn,
+		Setup:            setup,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	svc.Settings.Subscribe(app.queueRuntimeOperations)
+	app.services = svc
+	app.jobStore = svc.JobStore
+	app.credentials = core
 }
 
 // insertStructuredConnection stores a connection in structured form, the only
@@ -119,7 +203,7 @@ func newTestCredentialPorts(app *application) credentialPorts {
 func insertStructuredConnection(t *testing.T, app *application, workspaceID int64, environmentID *int64, name, driver string, params map[string]any) database.Connection {
 	t.Helper()
 
-	conn, err := app.db.InsertConnection(context.Background(), workspaceID, environmentID, name, driver, "", "open")
+	conn, err := testDB(app).InsertConnection(context.Background(), workspaceID, environmentID, name, driver, "", "open")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -127,11 +211,40 @@ func insertStructuredConnection(t *testing.T, app *application, workspaceID int6
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err := app.db.UpdateConnectionStructured(context.Background(), conn.ID, encoded, nil, nil); err != nil {
+	if err := testDB(app).UpdateConnectionStructured(context.Background(), conn.ID, encoded, nil, nil); err != nil {
 		t.Fatal(err)
 	}
 	conn.Params = encoded
 	return conn
+}
+
+// testAppState holds the metadata database and keyring a test application was
+// built on. The application itself never holds them: handlers reach metadata
+// and secrets only through services, so fixtures keep them on the side.
+type testAppState struct {
+	db      *database.DB
+	keyring *encrypt.Keyring
+}
+
+var testApps sync.Map
+
+func testState(app *application) *testAppState {
+	state, ok := testApps.Load(app)
+	if !ok {
+		panic("test application was not built by newTestApplicationWith")
+	}
+	return state.(*testAppState)
+}
+
+// testDB returns the metadata database fixtures seed and inspect directly.
+func testDB(app *application) *database.DB {
+	return testState(app).db
+}
+
+// testKeyring returns the keyring the application's services were built with,
+// or the one a key rotation test switched to.
+func testKeyring(app *application) *encrypt.Keyring {
+	return testState(app).keyring
 }
 
 type testRuntimeBackends struct {
@@ -149,9 +262,9 @@ func installTestRuntime(t *testing.T, app *application) {
 		manager: connection.New(30 * time.Minute),
 		cursors: connection.NewQueryCursorManager(30 * time.Minute),
 	}
-	policy := settings.NewTargetPolicy(app.db)
+	policy := settings.NewTargetPolicy(testDB(app))
 	runtime := execution.NewLocal(execution.LocalConfig{
-		Credentials: credentials.NewEncryptedColumnProvider(app.db, credentials.NewKeyringSealer(app.keyring), engine.ConnectionSpecFor),
+		Credentials: credentials.NewEncryptedColumnProvider(testDB(app), credentials.NewKeyringSealer(testKeyring(app)), engine.ConnectionSpecFor),
 		Policy:      policy,
 		Logger:      app.logger,
 		Manager:     backends.manager,
@@ -159,7 +272,6 @@ func installTestRuntime(t *testing.T, app *application) {
 	})
 	app.runtime = runtime
 	app.revoker = runtime
-	app.targetPolicy = policy
 	testRuntimes.Store(app, backends)
 	t.Cleanup(func() {
 		runtime.Shutdown()
@@ -188,12 +300,12 @@ func testQueryCursorManager(t *testing.T, app *application) *connection.QueryCur
 
 func updateInstanceSettingsForTest(t *testing.T, app *application, mutate func(*database.InstanceSettings)) {
 	t.Helper()
-	settings, found, err := app.db.GetInstanceSettings(context.Background())
+	settings, found, err := testDB(app).GetInstanceSettings(context.Background())
 	if err != nil || !found {
 		t.Fatalf("get instance settings: found=%v err=%v", found, err)
 	}
 	mutate(&settings)
-	if _, err := app.db.UpsertInstanceSettings(context.Background(), settings); err != nil {
+	if _, err := testDB(app).UpsertInstanceSettings(context.Background(), settings); err != nil {
 		t.Fatal(err)
 	}
 }
@@ -216,15 +328,15 @@ func inviteAndAcceptExistingAccount(t *testing.T, app *application, orgSlug, ema
 
 func addOrgMemberDirect(t *testing.T, app *application, orgSlug, email string) {
 	t.Helper()
-	org, found, err := app.db.GetOrgBySlug(context.Background(), orgSlug)
+	org, found, err := testDB(app).GetOrgBySlug(context.Background(), orgSlug)
 	if err != nil || !found {
 		t.Fatalf("get organization %q: found=%v err=%v", orgSlug, found, err)
 	}
-	account, found, err := app.db.GetAccountByEmail(context.Background(), email)
+	account, found, err := testDB(app).GetAccountByEmail(context.Background(), email)
 	if err != nil || !found {
 		t.Fatalf("get account %q: found=%v err=%v", email, found, err)
 	}
-	if err := app.db.AddOrgMember(context.Background(), org.ID, account.ID); err != nil {
+	if err := testDB(app).AddOrgMember(context.Background(), org.ID, account.ID); err != nil {
 		t.Fatal(err)
 	}
 	if app.enforcer != nil {
@@ -235,7 +347,7 @@ func addOrgMemberDirect(t *testing.T, app *application, orgSlug, email string) {
 func seedAccount(t *testing.T, app *application, email, name string) database.Account {
 	t.Helper()
 
-	account, err := app.db.InsertAccount(context.Background(), email, name, nil)
+	account, err := testDB(app).InsertAccount(context.Background(), email, name, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -246,7 +358,7 @@ func seedAccountWithToken(t *testing.T, app *application, email, name string) (d
 	t.Helper()
 
 	account := seedAccount(t, app, email, name)
-	authSession, err := app.db.InsertAuthSession(context.Background(), account.ID, time.Now().Add(7*24*time.Hour), "test-agent", "127.0.0.1", database.SessionAuth{Method: "password", Assurance: "aal1"})
+	authSession, err := testDB(app).InsertAuthSession(context.Background(), account.ID, time.Now().Add(7*24*time.Hour), "test-agent", "127.0.0.1", database.SessionAuth{Method: "password", Assurance: "aal1"})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -272,7 +384,7 @@ func seedInstanceAdminAccount(t *testing.T, app *application, email, name string
 	t.Helper()
 
 	account, tok := seedAccountWithToken(t, app, email, name)
-	if err := app.db.InsertInstanceAdmin(context.Background(), account.ID); err != nil {
+	if err := testDB(app).InsertInstanceAdmin(context.Background(), account.ID); err != nil {
 		t.Fatal(err)
 	}
 	return account, tok
@@ -281,11 +393,11 @@ func seedInstanceAdminAccount(t *testing.T, app *application, email, name string
 func seedOrganizationForAccount(t *testing.T, app *application, account database.Account, orgName string) database.Organization {
 	t.Helper()
 
-	org, err := app.db.InsertOrg(context.Background(), orgs.Slugify(orgName), orgName)
+	org, err := testDB(app).InsertOrg(context.Background(), orgs.Slugify(orgName), orgName)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err := app.db.AddOrgMember(context.Background(), org.ID, account.ID); err != nil {
+	if err := testDB(app).AddOrgMember(context.Background(), org.ID, account.ID); err != nil {
 		t.Fatal(err)
 	}
 	if err := app.enforcer.SeedOrg(context.Background(), org.ID, account.ID); err != nil {
@@ -297,7 +409,7 @@ func seedOrganizationForAccount(t *testing.T, app *application, account database
 func seedWorkspaceForAccount(t *testing.T, app *application, org database.Organization, account database.Account, name, description string) database.Workspace {
 	t.Helper()
 
-	ws, err := app.db.InsertWorkspace(context.Background(), &org.ID, "org", org.ID, name, description)
+	ws, err := testDB(app).InsertWorkspace(context.Background(), &org.ID, "org", org.ID, name, description)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -573,7 +685,13 @@ func apiErrorDetails(t *testing.T, res testResponse) map[string]any {
 func setupWorkspaceOwner(t *testing.T) (*application, database.Organization, database.Workspace, string) {
 	t.Helper()
 
-	app := newTestApp(t)
+	return setupWorkspaceOwnerWith(t, testAppOptions{})
+}
+
+func setupWorkspaceOwnerWith(t *testing.T, opts testAppOptions) (*application, database.Organization, database.Workspace, string) {
+	t.Helper()
+
+	app := newTestAppWith(t, opts)
 	owner, token, org := seedOrgOwner(t, app, uniqueEmail(t, "workspace-owner"), "Workspace Owner", "Acme")
 	ws := seedWorkspaceForAccount(t, app, org, owner, "Primary Workspace", "")
 	return app, org, ws, token
@@ -582,7 +700,7 @@ func setupWorkspaceOwner(t *testing.T) (*application, database.Organization, dat
 func seedEnvironment(t *testing.T, app *application, workspaceID int64, orgID int64, name string) database.Environment {
 	t.Helper()
 
-	env, err := app.db.InsertEnvironment(context.Background(), workspaceID, name, "")
+	env, err := testDB(app).InsertEnvironment(context.Background(), workspaceID, name, "")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -592,7 +710,7 @@ func seedEnvironment(t *testing.T, app *application, workspaceID int64, orgID in
 func seedConnection(t *testing.T, app *application, workspaceID int64, environmentID *int64, orgID int64, driver, name, accessMode string) database.Connection {
 	t.Helper()
 
-	conn, err := app.db.InsertConnection(context.Background(), workspaceID, environmentID, name, driver, "dsn", accessMode)
+	conn, err := testDB(app).InsertConnection(context.Background(), workspaceID, environmentID, name, driver, "dsn", accessMode)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -607,7 +725,7 @@ func seedConnection(t *testing.T, app *application, workspaceID int64, environme
 			default:
 				continue
 			}
-			if err := app.db.UpdateConnectionStructured(context.Background(), conn.ID, json.RawMessage(params), nil, nil); err != nil {
+			if err := testDB(app).UpdateConnectionStructured(context.Background(), conn.ID, json.RawMessage(params), nil, nil); err != nil {
 				t.Fatal(err)
 			}
 			conn.Params = json.RawMessage(params)
@@ -620,7 +738,7 @@ func seedConnection(t *testing.T, app *application, workspaceID int64, environme
 func defaultEnvironmentID(t *testing.T, app *application, workspaceID int64) int64 {
 	t.Helper()
 
-	envID, err := app.db.DefaultEnvironmentID(context.Background(), workspaceID)
+	envID, err := testDB(app).DefaultEnvironmentID(context.Background(), workspaceID)
 	if err != nil {
 		t.Fatal(err)
 	}

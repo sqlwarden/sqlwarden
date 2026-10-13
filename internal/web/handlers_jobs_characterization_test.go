@@ -90,9 +90,10 @@ func TestJobRoutesCharacterization(t *testing.T) {
 	}
 }
 
-// List query strings are validated before the service authorizes, so a caller
-// without workspace access sees 422 for a bad query and 403 for a valid one.
-func TestJobListQueryValidationPrecedesAuthorization(t *testing.T) {
+// The service authorizes before it validates paging, so a caller without
+// workspace access sees 403 whether or not the query is valid, and a caller
+// with access sees 422 for a bad one.
+func TestJobListQueryAuthorizationPrecedesValidation(t *testing.T) {
 	fixture := newJobsCharacterizationFixture(t)
 	baseURL := "/api/v1/orgs/" + fixture.org.Slug + "/workspaces/" + strconv.FormatInt(fixture.workspace.ID, 10) + "/jobs"
 	paths := map[string]string{
@@ -101,7 +102,11 @@ func TestJobListQueryValidationPrecedesAuthorization(t *testing.T) {
 	}
 	for name, path := range paths {
 		t.Run(name, func(t *testing.T) {
-			invalid := send(t, newAuthRequest(t, http.MethodGet, path+"?page_size=0", nil, fixture.memberToken), fixture.app.routes())
+			denied := send(t, newAuthRequest(t, http.MethodGet, path+"?page_size=0", nil, fixture.memberToken), fixture.app.routes())
+			if denied.StatusCode != http.StatusForbidden {
+				t.Fatalf("invalid query without access: status = %d, want 403", denied.StatusCode)
+			}
+			invalid := send(t, newAuthRequest(t, http.MethodGet, path+"?page_size=0", nil, fixture.ownerToken), fixture.app.routes())
 			if invalid.StatusCode != http.StatusUnprocessableEntity || invalid.ErrorCode() != "validation_failed" {
 				t.Fatalf("invalid query: status = %d, code = %q, want 422 validation_failed", invalid.StatusCode, invalid.ErrorCode())
 			}
@@ -118,21 +123,21 @@ func newJobsCharacterizationFixture(t *testing.T) jobsCharacterizationFixture {
 	app := newTestApp(t)
 	owner, ownerToken, org := seedOrgOwner(t, app, uniqueEmail(t, "jobs-char-owner"), "Jobs Characterization Owner", "Jobs Characterization")
 	member, memberToken := seedAccountWithToken(t, app, uniqueEmail(t, "jobs-char-member"), "Jobs Characterization Member")
-	if err := app.db.AddOrgMember(context.Background(), org.ID, member.ID); err != nil {
+	if err := testDB(app).AddOrgMember(context.Background(), org.ID, member.ID); err != nil {
 		t.Fatal(err)
 	}
 	other, _ := seedAccountWithToken(t, app, uniqueEmail(t, "jobs-char-other"), "Jobs Characterization Other")
-	if err := app.db.AddOrgMember(context.Background(), org.ID, other.ID); err != nil {
+	if err := testDB(app).AddOrgMember(context.Background(), org.ID, other.ID); err != nil {
 		t.Fatal(err)
 	}
 	_, nonMemberToken := seedAccountWithToken(t, app, uniqueEmail(t, "jobs-char-non-member"), "Jobs Characterization Non-member")
 	workspace := seedWorkspaceForAccount(t, app, org, owner, "Jobs Characterization Workspace", "")
 	foreignWorkspace := seedWorkspaceForAccount(t, app, org, owner, "Foreign Jobs Characterization Workspace", "")
-	if err := app.db.AddWorkspaceMember(context.Background(), workspace.ID, other.ID, nil); err != nil {
+	if err := testDB(app).AddWorkspaceMember(context.Background(), workspace.ID, other.ID, nil); err != nil {
 		t.Fatal(err)
 	}
 
-	store := jobs.NewStore(app.db)
+	store := jobs.NewStore(testDB(app))
 	ownerJob, err := store.Enqueue(context.Background(), jobs.EnqueueInput{
 		Type: "noop", Visibility: jobs.VisibilityUser, OrgID: &org.ID, WorkspaceID: &workspace.ID,
 		OwnerAccountID: &owner.ID, RunAt: time.Now().Add(time.Hour),

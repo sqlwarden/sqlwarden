@@ -7,6 +7,8 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"log/slog"
+	"strings"
 	"sync"
 	"testing"
 	"time"
@@ -723,5 +725,72 @@ func TestClassifierLookupByDriver(t *testing.T) {
 				t.Fatalf("classify = %v, want %v", got, tt.want)
 			}
 		})
+	}
+}
+
+func debugLogs(f *fixture) *bytes.Buffer {
+	var buf bytes.Buffer
+	f.svc.deps.Logger = slog.New(slog.NewTextHandler(&buf, &slog.HandlerOptions{Level: slog.LevelDebug}))
+	return &buf
+}
+
+func TestDownloadByteLimitAbortIsLogged(t *testing.T) {
+	t.Parallel()
+	f := newFixture(t)
+	logs := debugLogs(f)
+	f.runtime.streamF = func(context.Context, io.Writer) (exports.StreamResult, error) {
+		return exports.StreamResult{Rows: 3, Bytes: 100}, exports.ErrByteLimitExceeded
+	}
+
+	_, err := f.svc.Download(context.Background(), principal(testAccount), ref(testWorkspace, testConn), "session", readInput("SELECT secret_column FROM t"), io.Discard, nil)
+	if !errors.Is(err, exports.ErrByteLimitExceeded) {
+		t.Fatalf("err = %v", err)
+	}
+	out := logs.String()
+	if !strings.Contains(out, "export download aborted at byte limit") || !strings.Contains(out, "level=DEBUG") {
+		t.Fatalf("logs = %q, want a debug entry for the byte-limit abort", out)
+	}
+	if strings.Contains(out, "secret_column") {
+		t.Fatalf("logs = %q, must not include SQL text", out)
+	}
+}
+
+func TestRunJobLogsEarlyPipeClose(t *testing.T) {
+	t.Parallel()
+	f := newFixture(t)
+	logs := debugLogs(f)
+	f.files.writeF = func(r io.Reader) error {
+		_, _ = r.Read(make([]byte, 1))
+		return errors.New("disk full")
+	}
+	f.runtime.streamF = func(_ context.Context, w io.Writer) (exports.StreamResult, error) {
+		chunk := make([]byte, 4096)
+		for {
+			if _, err := w.Write(chunk); err != nil {
+				return exports.StreamResult{}, err
+			}
+		}
+	}
+
+	if _, err := f.svc.RunJob(context.Background(), runtimeFor(validJob())); err == nil {
+		t.Fatal("want the write failure")
+	}
+	if out := logs.String(); !strings.Contains(out, "export stream stopped after the file write ended early") {
+		t.Fatalf("logs = %q, want a debug entry for the early pipe close", out)
+	}
+}
+
+func TestRunJobLogsByteLimitAbort(t *testing.T) {
+	t.Parallel()
+	f := newFixture(t)
+	logs := debugLogs(f)
+	f.runtime.streamF = func(context.Context, io.Writer) (exports.StreamResult, error) {
+		return exports.StreamResult{}, exports.ErrByteLimitExceeded
+	}
+
+	_, err := f.svc.RunJob(context.Background(), runtimeFor(validJob()))
+	requireCoded(t, err, "export_too_large", false)
+	if out := logs.String(); !strings.Contains(out, "export job aborted at byte limit") {
+		t.Fatalf("logs = %q, want a debug entry for the byte-limit abort", out)
 	}
 }

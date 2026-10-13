@@ -76,11 +76,11 @@ func newExportsCharacterizationFixture(t *testing.T) exportsCharacterizationFixt
 	app := newTestApp(t)
 	owner, ownerToken, org := seedOrgOwner(t, app, uniqueEmail(t, "exports-char-owner"), "Exports Characterization Owner", "Exports Characterization")
 	member, memberToken := seedAccountWithToken(t, app, uniqueEmail(t, "exports-char-member"), "Exports Characterization Member")
-	if err := app.db.AddOrgMember(context.Background(), org.ID, member.ID); err != nil {
+	if err := testDB(app).AddOrgMember(context.Background(), org.ID, member.ID); err != nil {
 		t.Fatal(err)
 	}
 	different, differentToken := seedAccountWithToken(t, app, uniqueEmail(t, "exports-char-different"), "Exports Characterization Different")
-	if err := app.db.AddOrgMember(context.Background(), org.ID, different.ID); err != nil {
+	if err := testDB(app).AddOrgMember(context.Background(), org.ID, different.ID); err != nil {
 		t.Fatal(err)
 	}
 	_, nonMemberToken := seedAccountWithToken(t, app, uniqueEmail(t, "exports-char-non-member"), "Exports Characterization Non-member")

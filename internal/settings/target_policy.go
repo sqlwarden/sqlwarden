@@ -1,4 +1,6 @@
-// Package settings holds policies derived from the stored instance settings.
+// Package settings owns the stored instance settings, organization runtime
+// overrides, the effective settings derived from them, and the policies that
+// read them.
 package settings
 
 import (

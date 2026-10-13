@@ -165,15 +165,15 @@ func newFilesCharacterizationFixture(t *testing.T) filesCharacterizationFixture 
 	app := newTestApp(t)
 	owner, ownerToken, org := seedOrgOwner(t, app, uniqueEmail(t, "files-char-owner"), "Files Characterization Owner", "Files Characterization")
 	member, memberToken := seedAccountWithToken(t, app, uniqueEmail(t, "files-char-member"), "Files Characterization Member")
-	if err := app.db.AddOrgMember(context.Background(), org.ID, member.ID); err != nil {
+	if err := testDB(app).AddOrgMember(context.Background(), org.ID, member.ID); err != nil {
 		t.Fatal(err)
 	}
 	workspaceMember, workspaceMemberToken := seedAccountWithToken(t, app, uniqueEmail(t, "files-char-workspace-member"), "Files Characterization Workspace Member")
-	if err := app.db.AddOrgMember(context.Background(), org.ID, workspaceMember.ID); err != nil {
+	if err := testDB(app).AddOrgMember(context.Background(), org.ID, workspaceMember.ID); err != nil {
 		t.Fatal(err)
 	}
 	workspace := seedWorkspaceForAccount(t, app, org, owner, "Files Characterization Workspace", "")
-	if err := app.db.AddWorkspaceMember(context.Background(), workspace.ID, workspaceMember.ID, nil); err != nil {
+	if err := testDB(app).AddWorkspaceMember(context.Background(), workspace.ID, workspaceMember.ID, nil); err != nil {
 		t.Fatal(err)
 	}
 	_, nonMemberToken := seedAccountWithToken(t, app, uniqueEmail(t, "files-char-non-member"), "Files Characterization Non-member")

@@ -1,5 +1,7 @@
-package web
+package services
 
+// Every built-in engine registers itself on import, so composing the services
+// is what makes the engines available to the catalog and runtime.
 import (
 	_ "github.com/sqlwarden/internal/engine/engines/cockroachdb"
 	_ "github.com/sqlwarden/internal/engine/engines/mariadb"
