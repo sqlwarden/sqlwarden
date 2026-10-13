@@ -20,17 +20,19 @@ SQLWarden is a Go API plus embedded React SPA.
 - `cmd/sqlwarden` is a thin server entrypoint with `serve`, `migrate`, and `rotate-keys` subcommands.
 - `internal/app` is the composition root. It builds the database, migrations, keyring, enforcer, and stores, and runs the selected process kinds (`all`, `api`, `jobs`). Only `cmd/*` imports it.
 - `internal/config` loads and validates configuration.
-- `internal/web` owns routes, middleware, handlers, and static frontend serving. Query, file, export, job, history, and favorite handlers only decode, call services, map errors, and encode; their services authorize each method.
+- `internal/web` is transport only: routes, authentication and path-id middleware (`authenticateV1`, `requireAccount`, `orgScope`, `workspacePath`/`environmentPath`/`connectionPath`), handlers, and static frontend serving. Handlers decode, call services, map errors, and encode; every service method authorizes. Production web code never imports `internal/database`, `internal/encrypt`, `internal/connection`, `internal/engine`, `internal/schema`, or `internal/completion`; direct `.db` use in web is ratcheted at 0. Both are enforced by `internal/architecture`.
+- `internal/services` composes the service graph (`services.Build(services.Deps)`); `internal/app` supplies the deps.
+- `internal/settings`, `internal/orgs`, `internal/rbac`, `internal/identity`, `internal/keyrotation`, `internal/catalog`, `internal/query`, `internal/files`, `internal/exportjob`, and `internal/jobs` are authorization services. Exported `Service` methods take `context.Context` and `access.Principal`, with reasoned exemptions in `internal/architecture/authz_contract_test.go`. The auth chain sets `Principal.InstanceAdmin` per request. `rotate-keys` authorizes through `keyrotation.OperatorPrincipal()`.
 - `internal/database` stores SQLWarden metadata through Bun against SQLite/PostgreSQL.
 - `internal/access` owns the RBAC enforcer and `Requirer` (`Org`, `Workspace`, `WorkspaceMember`, `Connection`, `ConnectionMember`, `ResolveConnection`, and the resolve-free `Can`), shared `ErrForbidden`/`ErrNotFound`, and the `CredentialJob` principal kind.
 - `internal/execution` owns live target database sessions behind the `Runtime` interfaces; handlers never touch `internal/connection`, which is internal to execution (and `internal/credentials`).
 - `internal/credentials` owns connection secret values behind the `Provider`, `Writer`, `Sealer`, and `RevealPolicy` ports; `EncryptedColumnProvider` is the only built-in provider and `credentialstest` is its contract suite. Nothing else reads secret values; editions wrap the provider through `edition.CredentialDecorator`.
-- `internal/catalog` is the connection service: it authorizes, validates against the engine `ConnectionSpec`, writes secrets, and owns secret reveal.
-- `internal/query` owns authorized connect/disconnect, classified execution and per-class permissions, cursors, transactions, session list/revoke, history, and favorites.
+- `internal/catalog` owns connections (validation against the engine `ConnectionSpec`, secret writes, reveal), workspaces, environments, and workspace members and teams.
+- `internal/query` owns authorized connect/disconnect, classified execution and per-class permissions, cursors, transactions, session list/revoke, schema navigation, DDL, statements, completion, history, and favorites.
 - `internal/exportjob` owns export requests, bounded downloads, and background export jobs; `internal/jobs.Service` owns user job list/get/events/cancel routes.
 - `internal/engine` contains external data-system integrations and capabilities; current engines support PostgreSQL, MySQL, and SQLite.
 - `internal/files` takes an `access.Principal` and authorizes workspace file operations; `internal/filestore` implements content storage.
-- `internal/architecture` enforces context-plus-Principal service contracts and ratchets direct `app.db` use in `internal/web` at 187.
+- `internal/architecture` enforces context-plus-Principal service contracts, the `internal/web` import deny-list, and a ratchet of 0 on any `.db` use in production `internal/web` code.
 - `frontend/` is the React app using TanStack Router, TanStack Query, Tailwind CSS, shadcn/ui, Base UI, CodeMirror, Zustand, IndexedDB, Y.js, and BroadcastChannel.
 
 Future Wails desktop work should reuse `internal/web`; do not put reusable web logic in `cmd/sqlwarden`.
@@ -103,11 +105,8 @@ Configuration uses spf13/viper through `internal/config`.
 
 - Keep `cmd/sqlwarden` thin.
 - Put reusable HTTP behavior in `internal/web`.
-- Prefer concrete resource permission middleware:
-  - `requireOrgPermission`
-  - `requireWorkspacePermission`
-  - `requireEnvironmentPermission`
-  - `requireConnectionPermission`
+- Authorize in the service method (via `access.Requirer` and the policy evaluator), never in route middleware or handlers. Route middleware only authenticates, enters the org (`orgScope`), and parses path ids.
+- Handlers must not read the metadata database, keyring, or engines; add a service method and, if handlers encode its types, a type alias in the service package.
 - Use `internal/request` for JSON decoding and `internal/response` for JSON responses.
 - Errors must use the standard envelope:
 
@@ -139,7 +138,7 @@ Configuration uses spf13/viper through `internal/config`.
 - Org owner-level policy grants such as `org:delete` and `org:transfer_ownership` require the actor to already hold the privileged permission.
 - Discovery queries must defensively ignore invalid role/resource scope combinations.
 - Role bindings with an `expires_at` at or before the current time grant nothing. Expiry is evaluated at check time, not when the policy is cached.
-- Handlers authorize through the composed `access.PolicyEvaluator` (`app.policy`). Edition policy decorators may deny but never grant.
+- Services authorize through the composed `access.PolicyEvaluator`. Edition policy decorators may deny but never grant.
 
 ## Editions
 
