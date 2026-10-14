@@ -56,7 +56,7 @@ func workspaceRoleCount(t *testing.T, deps Deps, orgID int64, workspaceID *int64
 
 func TestCatalogCreateWorkspaceWritesHierarchyAndSeedsRoles(t *testing.T) {
 	deps := newTestDeps(t)
-	svc, err := Build(deps)
+	svc, infra, err := Build(deps)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -72,7 +72,7 @@ func TestCatalogCreateWorkspaceWritesHierarchyAndSeedsRoles(t *testing.T) {
 	if workspaceRoleCount(t, deps, org.ID, &ws.ID) == 0 {
 		t.Fatal("workspace builtin roles were not seeded")
 	}
-	if !svc.Policy.Can(ctx, owner.ID, org.ID, "org", "workspace", ws.ID, "ws:delete") {
+	if !infra.Policy.Can(ctx, owner.ID, org.ID, "org", "workspace", ws.ID, "ws:delete") {
 		t.Fatal("creator was not bound as workspace administrator")
 	}
 
@@ -90,7 +90,7 @@ func TestCatalogCreateWorkspaceWritesHierarchyAndSeedsRoles(t *testing.T) {
 
 func TestWorkspaceStoreCreateOwnedWorkspaceRollsBackOnSeedFailure(t *testing.T) {
 	deps := newTestDeps(t)
-	svc, err := Build(deps)
+	svc, _, err := Build(deps)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -112,7 +112,7 @@ func TestWorkspaceStoreCreateOwnedWorkspaceRollsBackOnSeedFailure(t *testing.T) 
 
 func TestCatalogListWorkspacesExcludesUnreadableWorkspaces(t *testing.T) {
 	deps := newTestDeps(t)
-	svc, err := Build(deps)
+	svc, _, err := Build(deps)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -154,7 +154,7 @@ func TestCatalogWorkspaceMembershipRequiresOrgMemberAndRevokesOnRemoval(t *testi
 	deps := newTestDeps(t)
 	revoker := &workspaceRevoker{Revoker: deps.Runtime}
 	deps.Revoker = revoker
-	svc, err := Build(deps)
+	svc, _, err := Build(deps)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -190,7 +190,7 @@ func TestCatalogWorkspaceMembershipRequiresOrgMemberAndRevokesOnRemoval(t *testi
 
 func TestFilesForPrincipalDeniesOutsidersAndForeignWorkspaces(t *testing.T) {
 	deps := newTestDeps(t)
-	svc, err := Build(deps)
+	svc, _, err := Build(deps)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -220,7 +220,7 @@ func TestFilesForPrincipalDeniesOutsidersAndForeignWorkspaces(t *testing.T) {
 func TestCatalogWorkspaceMemberRemovalQueuesRetryWhenRevocationFails(t *testing.T) {
 	deps := newTestDeps(t)
 	deps.Revoker = &workspaceRevoker{Revoker: deps.Runtime, err: errors.New("runtime unavailable")}
-	svc, err := Build(deps)
+	svc, _, err := Build(deps)
 	if err != nil {
 		t.Fatal(err)
 	}

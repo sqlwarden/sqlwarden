@@ -17,6 +17,7 @@ import (
 	"github.com/sqlwarden/internal/engine"
 	"github.com/sqlwarden/internal/execution"
 	"github.com/sqlwarden/internal/settings"
+	"github.com/sqlwarden/internal/smtp"
 )
 
 type denyReveal struct{}
@@ -81,10 +82,39 @@ func newTestDeps(t *testing.T) Deps {
 	}
 }
 
+func TestInfraSettingsAppliersInstallTheMailerServicesSendThrough(t *testing.T) {
+	deps := newTestDeps(t)
+	ctx := context.Background()
+	if err := settings.InitializeInstanceBaseURL(ctx, deps.DB, "https://sqlwarden.example.com"); err != nil {
+		t.Fatal(err)
+	}
+	svc, infra, err := Build(deps)
+	if err != nil {
+		t.Fatal(err)
+	}
+	in, err := svc.Settings.Instance(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	in.SMTPEnabled = false
+	if infra.Mailer.Current() != nil {
+		t.Fatal("a mailer was installed before any settings were applied")
+	}
+	for _, apply := range infra.SettingsAppliers() {
+		if err := apply(ctx, in); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if infra.Mailer.Current() == nil {
+		t.Fatal("settings appliers did not install a mailer")
+	}
+	assert.ErrorIs(t, svc.Mailer.Send("someone@example.com", nil, "error-notification.tmpl"), smtp.ErrDisabled)
+}
+
 func TestBuildRequiresSecretSealer(t *testing.T) {
 	deps := newTestDeps(t)
 	deps.SecretSealer = nil
-	if _, err := Build(deps); err == nil {
+	if _, _, err := Build(deps); err == nil {
 		t.Fatal("Build without a secret sealer returned no error")
 	}
 }
@@ -92,14 +122,14 @@ func TestBuildRequiresSecretSealer(t *testing.T) {
 func TestBuildRequiresKeyring(t *testing.T) {
 	deps := newTestDeps(t)
 	deps.Keyring = nil
-	if _, err := Build(deps); err == nil {
+	if _, _, err := Build(deps); err == nil {
 		t.Fatal("Build without a keyring returned no error")
 	}
 }
 
 func TestBuildProjectsEffectiveSettingsOntoServicePolicies(t *testing.T) {
 	deps := newTestDeps(t)
-	svc, err := Build(deps)
+	svc, _, err := Build(deps)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -143,14 +173,14 @@ func accountPrincipal(id int64) access.Principal {
 func TestBuildRequiresDatabase(t *testing.T) {
 	deps := newTestDeps(t)
 	deps.DB = nil
-	if _, err := Build(deps); err == nil {
+	if _, _, err := Build(deps); err == nil {
 		t.Fatal("Build without a database returned no error")
 	}
 }
 
 func TestBuildWiresRequirerOverDatabaseDirectory(t *testing.T) {
 	deps := newTestDeps(t)
-	svc, err := Build(deps)
+	_, infra, err := Build(deps)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -171,11 +201,11 @@ func TestBuildWiresRequirerOverDatabaseDirectory(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	got, err := svc.Requirer.Org(ctx, accountPrincipal(member.ID), org.ID)
+	got, err := infra.Requirer.Org(ctx, accountPrincipal(member.ID), org.ID)
 	assert.Nil(t, err)
 	assert.Equal(t, got.Slug, "acme")
 
-	_, err = svc.Requirer.Org(ctx, accountPrincipal(outsider.ID), org.ID)
+	_, err = infra.Requirer.Org(ctx, accountPrincipal(outsider.ID), org.ID)
 	assert.ErrorIs(t, err, access.ErrForbidden)
 }
 
@@ -183,7 +213,7 @@ func TestBuildPassesPolicyToRequirer(t *testing.T) {
 	deps := newTestDeps(t)
 	policy := &recordingPolicy{}
 	deps.Policy = policy
-	svc, err := Build(deps)
+	_, infra, err := Build(deps)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -204,11 +234,11 @@ func TestBuildPassesPolicyToRequirer(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	_, err = svc.Requirer.Workspace(ctx, accountPrincipal(account.ID), org.ID, ws.ID, "workspace:read")
+	_, err = infra.Requirer.Workspace(ctx, accountPrincipal(account.ID), org.ID, ws.ID, "workspace:read")
 	assert.ErrorIs(t, err, access.ErrForbidden)
 	assert.Equal(t, len(policy.calls), 1)
 	assert.Equal(t, policy.calls[0], "workspace:read")
-	assert.Equal(t, svc.Policy, access.PolicyEvaluator(policy))
+	assert.Equal(t, infra.Policy, access.PolicyEvaluator(policy))
 }
 
 type recordingDirectoryStore struct {

@@ -33,7 +33,7 @@ func useRotationKeyring(app *application, kr *encrypt.Keyring) {
 	app.services.KeyRotation = keyrotation.New(keyrotation.Deps{
 		Connections: credentials.NewRotator(testDB(app), kr, engine.ConnectionSpecFor),
 		SMTP:        smtpRotation{settings: app.services.Settings, keys: kr},
-		Files:       files.NewContentRotator(testDB(app), app.fileStores, kr),
+		Files:       files.NewContentRotator(testDB(app), testStores(app), kr),
 		Logger:      app.logger,
 	})
 }
@@ -61,8 +61,8 @@ func seedEncryptedFileContent(t *testing.T, app *application, ws database.Worksp
 		t.Fatal(err)
 	}
 
-	backendID := app.fileStores.ActiveBackendID()
-	store, err := app.fileStores.Store(ctx, backendID)
+	backendID := testStores(app).ActiveBackendID()
+	store, err := testStores(app).Store(ctx, backendID)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -198,7 +198,7 @@ func TestRotateEncryptionKeys(t *testing.T) {
 
 	// File content re-keyed: bytes decrypt with the primary key and the row's
 	// key id reflects the new primary.
-	store, err := app.fileStores.Store(ctx, fileContent.StorageBackendID)
+	store, err := testStores(app).Store(ctx, fileContent.StorageBackendID)
 	if err != nil {
 		t.Fatal(err)
 	}

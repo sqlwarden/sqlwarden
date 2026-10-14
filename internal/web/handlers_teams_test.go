@@ -158,7 +158,7 @@ func TestReadTeamsRequiresOrgRead(t *testing.T) {
 		Scan(context.Background(), &defaultMemberBinding); err != nil {
 		t.Fatal(err)
 	}
-	if err := app.enforcer.UnbindRole(context.Background(), defaultMemberBinding.ID, org.ID); err != nil {
+	if err := testEnforcer(app).UnbindRole(context.Background(), defaultMemberBinding.ID, org.ID); err != nil {
 		t.Fatal(err)
 	}
 

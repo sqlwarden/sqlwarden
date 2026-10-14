@@ -26,6 +26,7 @@ import (
 	"github.com/sqlwarden/internal/encrypt"
 	"github.com/sqlwarden/internal/engine"
 	"github.com/sqlwarden/internal/execution"
+	"github.com/sqlwarden/internal/files"
 	"github.com/sqlwarden/internal/identity"
 	"github.com/sqlwarden/internal/orgs"
 	"github.com/sqlwarden/internal/platform/clientip"
@@ -69,7 +70,7 @@ type testAppOptions struct {
 	revoker    execution.Revoker
 	audit      audit.Writer
 	logger     *slog.Logger
-	fileStores func(FileStores) FileStores
+	fileStores func(files.StoreResolver) files.StoreResolver
 	configure  func(*config.Config)
 	signIn     identity.SignInStrategy
 	// setup defaults to identity.FormSetup.
@@ -99,7 +100,7 @@ func newTestApplicationWith(t *testing.T, opts testAppOptions) *application {
 	state := &testAppState{db: newTestDB(t)}
 	testApps.Store(app, state)
 	t.Cleanup(func() { testApps.Delete(app) })
-	app.audit = audit.NewCoreWriter(audit.NewSQLStore(testDB(app).DB), time.Now)
+	auditWriter := audit.Writer(audit.NewCoreWriter(audit.NewSQLStore(testDB(app).DB), time.Now))
 	app.clientIPs = clientip.New(nil)
 	instance, found, err := testDB(app).GetInstanceSettings(context.Background())
 	if err != nil || !found {
@@ -118,39 +119,41 @@ func newTestApplicationWith(t *testing.T, opts testAppOptions) *application {
 		t.Fatal(err)
 	}
 	state.keyring = keyring
-	app.fileStores, err = newTestFileStores(app.config)
+	stores, err := newTestFileStores(app.config)
 	if err != nil {
 		t.Fatal(err)
 	}
-	installTestRuntime(t, app)
+	state.fileStores = stores
+	runtime := installTestRuntime(t, app)
+	var revoker execution.Revoker = runtime
 	enforcer, err := access.New(testDB(app).DB)
 	if err != nil {
 		t.Fatal(err)
 	}
-	app.enforcer = enforcer
-	app.policy = enforcer
+	state.enforcer = enforcer
+	policy := access.PolicyEvaluator(enforcer)
 
 	if opts.configure != nil {
 		opts.configure(&app.config)
 	}
 	if opts.policy != nil {
-		app.policy = opts.policy
+		policy = opts.policy
 	}
 	if opts.runtime != nil {
-		app.runtime = opts.runtime(app.runtime)
-		app.revoker = app.runtime
+		runtime = opts.runtime(runtime)
+		revoker = runtime
 	}
 	if opts.revoker != nil {
-		app.revoker = opts.revoker
+		revoker = opts.revoker
 	}
 	if opts.audit != nil {
-		app.audit = opts.audit
+		auditWriter = opts.audit
 	}
 	if opts.logger != nil {
 		app.logger = opts.logger
 	}
 	if opts.fileStores != nil {
-		app.fileStores = opts.fileStores(app.fileStores)
+		state.fileStores = opts.fileStores(state.fileStores)
 	}
 	signIn := identity.PasswordSignIn(testDB(app))
 	if opts.signIn != nil {
@@ -160,26 +163,17 @@ func newTestApplicationWith(t *testing.T, opts testAppOptions) *application {
 	if opts.setup != nil {
 		setup = opts.setup
 	}
-	buildTestServices(t, app, signIn, setup)
-	app.authChain = app.newAuthChain()
-	app.services.Mailer.Set(smtp.NewMockMailer("test@example.com"))
-
-	return app
-}
-
-func buildTestServices(t *testing.T, app *application, signIn identity.SignInStrategy, setup identity.SetupStrategy) {
-	t.Helper()
 	core := credentials.NewEncryptedColumnProvider(testDB(app), credentials.NewKeyringSealer(testKeyring(app)), engine.ConnectionSpecFor)
-	svc, err := services.Build(services.Deps{
+	svc, infra, err := services.Build(services.Deps{
 		Config:           app.config,
 		DB:               testDB(app),
-		Enforcer:         app.enforcer,
-		Policy:           app.policy,
-		Runtime:          app.runtime,
-		Revoker:          app.revoker,
-		Audit:            app.audit,
+		Enforcer:         enforcer,
+		Policy:           policy,
+		Runtime:          runtime,
+		Revoker:          revoker,
+		Audit:            auditWriter,
 		Logger:           app.logger,
-		FileStores:       app.fileStores,
+		FileStores:       state.fileStores,
 		Credentials:      core,
 		CredentialWriter: core,
 		RevealPolicy:     server.New(testDB(app)).RevealPolicy(),
@@ -192,10 +186,13 @@ func buildTestServices(t *testing.T, app *application, signIn identity.SignInStr
 	if err != nil {
 		t.Fatal(err)
 	}
-	svc.Settings.Subscribe(app.queueRuntimeOperations)
 	app.services = svc
-	app.jobStore = svc.JobStore
-	app.credentials = core
+	app.settingsAppliers = infra.SettingsAppliers()
+	state.infra = infra
+	app.authChain = app.newAuthChain()
+	infra.Mailer.Set(smtp.NewMockMailer("test@example.com"))
+
+	return app
 }
 
 // insertStructuredConnection stores a connection in structured form, the only
@@ -218,12 +215,15 @@ func insertStructuredConnection(t *testing.T, app *application, workspaceID int6
 	return conn
 }
 
-// testAppState holds the metadata database and keyring a test application was
-// built on. The application itself never holds them: handlers reach metadata
-// and secrets only through services, so fixtures keep them on the side.
+// testAppState holds the infrastructure a test application was built on. The
+// application itself never holds it: handlers reach metadata, secrets,
+// policy, and sessions only through services, so fixtures keep it on the side.
 type testAppState struct {
-	db      *database.DB
-	keyring *encrypt.Keyring
+	db         *database.DB
+	keyring    *encrypt.Keyring
+	enforcer   *access.Enforcer
+	fileStores files.StoreResolver
+	infra      *services.Infra
 }
 
 var testApps sync.Map
@@ -247,6 +247,23 @@ func testKeyring(app *application) *encrypt.Keyring {
 	return testState(app).keyring
 }
 
+// testEnforcer returns the enforcer fixtures seed roles and policies through.
+func testEnforcer(app *application) *access.Enforcer {
+	return testState(app).enforcer
+}
+
+// testStores returns the file stores the application's services were built
+// with.
+func testStores(app *application) files.StoreResolver {
+	return testState(app).fileStores
+}
+
+// testInfra returns the infrastructure half of the application's service
+// graph, such as the live mailer and the job store.
+func testInfra(app *application) *services.Infra {
+	return testState(app).infra
+}
+
 type testRuntimeBackends struct {
 	manager *connection.Manager
 	cursors *connection.QueryCursorManager
@@ -256,7 +273,7 @@ type testRuntimeBackends struct {
 // its runtime runs on, so tests can seed sessions over fake drivers.
 var testRuntimes sync.Map
 
-func installTestRuntime(t *testing.T, app *application) {
+func installTestRuntime(t *testing.T, app *application) execution.Runtime {
 	t.Helper()
 	backends := testRuntimeBackends{
 		manager: connection.New(30 * time.Minute),
@@ -270,13 +287,12 @@ func installTestRuntime(t *testing.T, app *application) {
 		Manager:     backends.manager,
 		Cursors:     backends.cursors,
 	})
-	app.runtime = runtime
-	app.revoker = runtime
 	testRuntimes.Store(app, backends)
 	t.Cleanup(func() {
 		runtime.Shutdown()
 		testRuntimes.Delete(app)
 	})
+	return runtime
 }
 
 func testBackends(t *testing.T, app *application) testRuntimeBackends {
@@ -339,8 +355,8 @@ func addOrgMemberDirect(t *testing.T, app *application, orgSlug, email string) {
 	if err := testDB(app).AddOrgMember(context.Background(), org.ID, account.ID); err != nil {
 		t.Fatal(err)
 	}
-	if app.enforcer != nil {
-		app.enforcer.InvalidatePrincipals(org.ID, account.ID)
+	if testEnforcer(app) != nil {
+		testEnforcer(app).InvalidatePrincipals(org.ID, account.ID)
 	}
 }
 
@@ -373,7 +389,7 @@ func createRoleForTest(t *testing.T, app *application, orgID int64, workspaceID 
 	t.Helper()
 
 	name := fmt.Sprintf("test-role-%s-%d", strings.ReplaceAll(scopeType, ":", "-"), atomic.AddUint64(&pgTestDBCounter, 1))
-	roleID, err := app.enforcer.CreateRole(context.Background(), orgID, workspaceID, name, name+" description", scopeType, permissions)
+	roleID, err := testEnforcer(app).CreateRole(context.Background(), orgID, workspaceID, name, name+" description", scopeType, permissions)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -400,7 +416,7 @@ func seedOrganizationForAccount(t *testing.T, app *application, account database
 	if err := testDB(app).AddOrgMember(context.Background(), org.ID, account.ID); err != nil {
 		t.Fatal(err)
 	}
-	if err := app.enforcer.SeedOrg(context.Background(), org.ID, account.ID); err != nil {
+	if err := testEnforcer(app).SeedOrg(context.Background(), org.ID, account.ID); err != nil {
 		t.Fatal(err)
 	}
 	return org
@@ -413,7 +429,7 @@ func seedWorkspaceForAccount(t *testing.T, app *application, org database.Organi
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err := app.enforcer.SeedWorkspace(context.Background(), org.ID, ws.ID, account.ID); err != nil {
+	if err := testEnforcer(app).SeedWorkspace(context.Background(), org.ID, ws.ID, account.ID); err != nil {
 		t.Fatal(err)
 	}
 	return ws

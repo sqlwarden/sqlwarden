@@ -13,6 +13,7 @@ import (
 	"github.com/sqlwarden/internal/audit"
 	"github.com/sqlwarden/internal/database"
 	"github.com/sqlwarden/internal/password"
+	"github.com/sqlwarden/internal/platform/invalidate"
 	"github.com/sqlwarden/internal/token"
 	"github.com/sqlwarden/internal/validator"
 	"github.com/uptrace/bun/driver/pgdriver"
@@ -76,6 +77,9 @@ type Deps struct {
 	Audit  audit.Writer
 	Logger *slog.Logger
 	Now    func() time.Time
+	// Invalidator, when set, is told after each credential or session
+	// revocation commits. Nil disables publishing.
+	Invalidator invalidate.Invalidator
 }
 
 // Service owns accounts, sign-in, authentication sessions, instance
@@ -95,6 +99,7 @@ type Service struct {
 	audit    audit.Writer
 	logger   *slog.Logger
 	now      func() time.Time
+	inval    invalidate.Invalidator
 }
 
 func New(deps Deps) *Service {
@@ -125,6 +130,7 @@ func New(deps Deps) *Service {
 		audit:    deps.Audit,
 		logger:   deps.Logger,
 		now:      deps.Now,
+		inval:    deps.Invalidator,
 	}
 }
 
@@ -390,7 +396,27 @@ func (s *Service) Logout(ctx context.Context, in LogoutInput) (LoggedOut, error)
 	if err := s.store.RevokeAuthSession(ctx, rt.AuthSessionID, &rt.AccountID, "logout"); err != nil {
 		return LoggedOut{}, err
 	}
+	s.publishSessionRevoked(ctx, rt.AuthSessionID)
 	return LoggedOut{AccountID: rt.AccountID, AuthSessionID: rt.AuthSessionID}, nil
+}
+
+// publishCredentials announces a committed revocation. Delivery is
+// best-effort: a failure is logged and never changes the operation's result.
+func (s *Service) publishCredentials(ctx context.Context, key string) {
+	if s.inval == nil {
+		return
+	}
+	if err := s.inval.Publish(context.WithoutCancel(ctx), invalidate.TopicCredentials, key); err != nil {
+		s.logger.WarnContext(ctx, "credential invalidation publish failed", slog.Any("error", err))
+	}
+}
+
+func (s *Service) publishSessionRevoked(ctx context.Context, sessionID string) {
+	s.publishCredentials(ctx, "session:"+sessionID)
+}
+
+func (s *Service) publishAccountRevoked(ctx context.Context, accountID int64) {
+	s.publishCredentials(ctx, "account:"+strconv.FormatInt(accountID, 10))
 }
 
 // emitSignIn records a sign-in event on a best-effort basis; an audit outage

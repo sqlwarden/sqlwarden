@@ -762,8 +762,8 @@ func TestGrantOrgPolicy_AdminCannotBindOwnerOrProtectedOrgRoles(t *testing.T) {
 	ordinaryRes := grantOrgPolicyRole(t, app, adminTok, org.Slug, ordinaryRoleID, access.SubjectTypeAccount, admin.ID)
 	assert.Equal(t, ordinaryRes.StatusCode, http.StatusNoContent)
 
-	assert.Equal(t, app.enforcer.Can(context.Background(), admin.ID, org.ID, "org", "org", org.ID, access.PermOrgDelete), false)
-	assert.Equal(t, app.enforcer.Can(context.Background(), admin.ID, org.ID, "org", "org", org.ID, access.PermOrgTransferOwnership), false)
+	assert.Equal(t, testEnforcer(app).Can(context.Background(), admin.ID, org.ID, "org", "org", org.ID, access.PermOrgDelete), false)
+	assert.Equal(t, testEnforcer(app).Can(context.Background(), admin.ID, org.ID, "org", "org", org.ID, access.PermOrgTransferOwnership), false)
 }
 
 func TestUpdateRole_AdminCannotAddProtectedPermissionToBoundRole(t *testing.T) {
@@ -784,7 +784,7 @@ func TestUpdateRole_AdminCannotAddProtectedPermissionToBoundRole(t *testing.T) {
 				"permissions": []string{access.PermOrgWrite, permission},
 			}, adminTok), app.routes())
 			assert.Equal(t, res.StatusCode, http.StatusForbidden)
-			assert.Equal(t, app.enforcer.Can(context.Background(), admin.ID, org.ID, "org", "org", org.ID, permission), false)
+			assert.Equal(t, testEnforcer(app).Can(context.Background(), admin.ID, org.ID, "org", "org", org.ID, permission), false)
 		})
 	}
 
@@ -826,8 +826,8 @@ func TestGrantOrgPolicy_OwnerCanBindProtectedOrgRoles(t *testing.T) {
 	ownerRoleID := orgBuiltinRoleID(t, app, org.ID, access.BuiltinOrgOwnerRole)
 	res := grantOrgPolicyRole(t, app, ownerTok, org.Slug, ownerRoleID, access.SubjectTypeAccount, member.ID)
 	assert.Equal(t, res.StatusCode, http.StatusNoContent)
-	assert.Equal(t, app.enforcer.Can(context.Background(), member.ID, org.ID, "org", "org", org.ID, access.PermOrgTransferOwnership), true)
-	assert.Equal(t, app.enforcer.Can(context.Background(), owner.ID, org.ID, "org", "org", org.ID, access.PermOrgTransferOwnership), true)
+	assert.Equal(t, testEnforcer(app).Can(context.Background(), member.ID, org.ID, "org", "org", org.ID, access.PermOrgTransferOwnership), true)
+	assert.Equal(t, testEnforcer(app).Can(context.Background(), owner.ID, org.ID, "org", "org", org.ID, access.PermOrgTransferOwnership), true)
 }
 
 func TestRevokeOrgPolicy_AdminCannotRevokeOwnerPolicy(t *testing.T) {
@@ -867,8 +867,8 @@ func TestRevokeOrgPolicy_AdminCannotRevokeOwnerPolicy(t *testing.T) {
 		"/api/v1/orgs/"+org.Slug+"/policies/"+ordinaryBindingID, nil, adminTok), app.routes())
 	assert.Equal(t, ordinaryRevokeRes.StatusCode, http.StatusNoContent)
 
-	assert.Equal(t, app.enforcer.Can(context.Background(), member.ID, org.ID, "org", "org", org.ID, access.PermOrgTransferOwnership), true)
-	assert.Equal(t, app.enforcer.Can(context.Background(), admin.ID, org.ID, "org", "org", org.ID, access.PermOrgTransferOwnership), false)
+	assert.Equal(t, testEnforcer(app).Can(context.Background(), member.ID, org.ID, "org", "org", org.ID, access.PermOrgTransferOwnership), true)
+	assert.Equal(t, testEnforcer(app).Can(context.Background(), admin.ID, org.ID, "org", "org", org.ID, access.PermOrgTransferOwnership), false)
 
 	ownerBindingID := orgPolicyBindingID(t, app, ownerTok, org.Slug, owner.ID, access.BuiltinOrgOwnerRole)
 	ownerRevokeRes := send(t, newAuthRequest(t, http.MethodDelete,

@@ -1,0 +1,3 @@
+{{- if eq .Values.mode "all" }}
+{{ include "sqlwarden.deployment" (dict "root" . "kind" "all" "name" (include "sqlwarden.all.fullname" .) "cfg" .Values.all) }}
+{{- end }}

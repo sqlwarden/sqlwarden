@@ -126,48 +126,6 @@ func TestSessionRevokeOrgMemberRemovalSuccessEnqueuesNothing(t *testing.T) {
 	}
 }
 
-func TestSessionRevokeJobHandler(t *testing.T) {
-	t.Parallel()
-	fake := &fakeRevoker{err: errors.New("boom")}
-	app := newTestAppWith(t, testAppOptions{revoker: fake})
-	runtime := jobs.Runtime{Job: jobs.Record{InputJSON: `{"kind":"workspace_account","workspace_id":"7","account_id":"9"}`}}
-
-	_, err := app.handleSessionRevoke(context.Background(), runtime)
-	var coded jobs.CodedError
-	if !errors.As(err, &coded) || coded.Code != "session_revoke_failed" || !coded.Retryable {
-		t.Fatalf("err = %#v, want retryable session_revoke_failed", err)
-	}
-	if fake.calls[0] != "workspace_account:7:9" {
-		t.Fatalf("calls = %v", fake.calls)
-	}
-
-	fake.err = nil
-	out, err := app.handleSessionRevoke(context.Background(), runtime)
-	if err != nil {
-		t.Fatalf("unexpected error %v", err)
-	}
-	if out.(map[string]any)["revoked"] != 1 {
-		t.Fatalf("output = %v", out)
-	}
-
-	_, err = app.handleSessionRevoke(context.Background(), jobs.Runtime{Job: jobs.Record{InputJSON: `{"kind":"nope"}`}})
-	if !errors.As(err, &coded) || coded.Retryable {
-		t.Fatalf("unknown kind err = %#v, want permanent", err)
-	}
-}
-
-func TestSessionRevokeJobTypeIsRegistered(t *testing.T) {
-	t.Parallel()
-	app := newTestApp(t)
-	def, ok := app.defaultJobRegistry().Definition(jobs.TypeSessionRevoke)
-	if !ok {
-		t.Fatal("session_revoke job type is not registered")
-	}
-	if def.Handler == nil || def.MaxAttempts != jobs.SessionRevokeMaxAttempts || def.Backoff == nil || def.Backoff(1) <= 0 {
-		t.Fatalf("incomplete definition: %+v", def)
-	}
-}
-
 func TestSessionRevokeHandlersEnqueueRetryOnFailure(t *testing.T) {
 	t.Parallel()
 

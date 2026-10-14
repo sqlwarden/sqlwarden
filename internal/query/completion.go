@@ -25,11 +25,6 @@ import (
 const (
 	maxCompletionSQLBytes    = 1 << 20
 	maxCompletionSuggestions = 200
-
-	// MaxCompletionRequestBytes bounds an encoded completion request. JSON
-	// escaping can expand a valid SQL string up to six bytes per input byte,
-	// so the transport limit sits above the logical 1 MiB SQL limit.
-	MaxCompletionRequestBytes = 6*maxCompletionSQLBytes + 4096
 )
 
 var (

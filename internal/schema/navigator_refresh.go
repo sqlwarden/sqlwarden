@@ -59,6 +59,9 @@ func (n *Navigator) Refresh(ctx context.Context, conn Connection, tree metadata.
 		refreshed = append(refreshed, listings...)
 	}
 
+	// Published even when a later step fails, since the cache may already
+	// have been partly rewritten.
+	defer n.publishInvalidation(conn.ID)
 	for _, path := range removed {
 		if err := n.forgetWithin(ctx, conn, path); err != nil {
 			return nil, err
@@ -99,9 +102,9 @@ func (n *Navigator) cachedWithin(ctx context.Context, conn Connection, root meta
 	}
 	n.mu.Lock()
 	defer n.mu.Unlock()
-	for key, listing := range n.memoryFor(conn.ID).listings {
-		if key.parent.Within(root) {
-			out[key] = listing.Items
+	for key, entry := range n.memoryFor(conn.ID).listings {
+		if key.parent.Within(root) && n.fresh(entry.at) {
+			out[key] = entry.value.Items
 		}
 	}
 	return out, nil
@@ -141,7 +144,7 @@ func (n *Navigator) containingListing(ctx context.Context, conn Connection, tree
 
 func (n *Navigator) cachedListingItems(ctx context.Context, conn Connection, key listingKey) ([]metadata.Child, error) {
 	n.mu.Lock()
-	listing, ok := n.memoryFor(conn.ID).listings[key]
+	listing, ok := n.cachedListing(conn.ID, key)
 	n.mu.Unlock()
 	if ok {
 		return listing.Items, nil

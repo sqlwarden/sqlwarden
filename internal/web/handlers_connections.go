@@ -398,15 +398,18 @@ func (app *application) connectToDatabase(w http.ResponseWriter, r *http.Request
 			connectErr *execution.ConnectError
 		)
 		if errors.As(err, &tunnelErr) || errors.As(err, &connectErr) {
-			app.logWarn(r, "database session open failed", slog.Int64("connection_id", ids.ConnectionID), slog.String("error_category", connectionTestErrorCategory(err)))
+			driver := ""
+			if tunnelErr != nil {
+				driver = tunnelErr.Driver
+			} else {
+				driver = connectErr.Driver
+			}
+			app.logWarn(r, "database session open failed", slog.Int64("connection_id", ids.ConnectionID), slog.String("driver", driver), slog.String("error_category", connectionTestErrorCategory(err)))
 			message := "Connection failed."
-			resolved, resolveErr := app.credentials.Resolve(r.Context(), credentials.ConnectionRef{
-				OrgID:        strconv.FormatInt(ids.OrgID, 10),
-				WorkspaceID:  strconv.FormatInt(ids.WorkspaceID, 10),
-				ConnectionID: strconv.FormatInt(ids.ConnectionID, 10),
-			})
-			if resolveErr == nil {
-				message = catalog.RedactConnectionError(err.Error(), resolved)
+			if redacted, redactErr := app.services.ConnectErrors.RedactConnectError(r.Context(), ids.OrgID, ids.WorkspaceID, ids.ConnectionID, err.Error()); redactErr == nil {
+				message = redacted
+			} else {
+				app.logWarn(r, "connect error redaction unavailable", slog.Int64("connection_id", ids.ConnectionID), slog.String("error_category", connectionTestErrorCategory(redactErr)))
 			}
 			app.errorMessage(w, r, http.StatusUnprocessableEntity, message, nil)
 			return

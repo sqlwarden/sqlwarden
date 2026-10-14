@@ -1,0 +1,212 @@
+# Default values for the experimental SQLWarden chart.
+#
+# mode "all" runs one Deployment whose process serves everything (process kind
+# "all"). mode "split" runs an "api" Deployment and a "jobs" Deployment from the
+# same image; split requires PostgreSQL. Schema migrations never run on a
+# serving replica: a pre-install and pre-upgrade Job applies them under the
+# migration lock instead.
+
+nameOverride: ""
+fullnameOverride: ""
+
+# mode is "all" or "split".
+mode: all
+
+image:
+  repository: ghcr.io/sqlwarden/sqlwarden
+  # tag defaults to the chart appVersion.
+  tag: ""
+  pullPolicy: IfNotPresent
+
+imagePullSecrets: []
+
+config:
+  # baseURL seeds the instance base URL on first start only; afterwards the
+  # value stored in the database is authoritative.
+  baseURL: http://localhost:6020
+  logFormat: json
+  # trustedProxies lists CIDRs or IPs whose X-Forwarded-For hops are trusted.
+  trustedProxies: []
+  # shutdownTimeout bounds graceful shutdown after SIGTERM.
+  shutdownTimeout: 30s
+  # terminationGracePeriodSeconds must exceed shutdownTimeout so a draining
+  # replica finishes before the kubelet sends SIGKILL.
+  terminationGracePeriodSeconds: 40
+  # extraEnv is appended to every SQLWarden container, including the migration
+  # Job. Use it for configuration keys this chart does not model. Never put
+  # secret values here; reference a Secret with valueFrom.
+  extraEnv: []
+
+database:
+  # postgres or sqlite. sqlite requires mode "all", a single replica, and
+  # migration.enabled=false (the process migrates itself on start).
+  driver: postgres
+  # dsn is stored in a Secret, never a ConfigMap. Leave it empty and set
+  # existingSecret to keep the DSN out of values. For sqlite it is a file path
+  # on the storage volume, for example /var/lib/sqlwarden/sqlwarden.db.
+  dsn: ""
+  existingSecret: ""
+  dsnKey: db_dsn
+  # migrationTimeout bounds the wait for the migration lock. A migration that
+  # holds the lock runs to completion.
+  migrationTimeout: 5m
+
+secrets:
+  # create renders a Secret from the values below. Set it to false and point
+  # existingSecret at a Secret you manage to keep secrets out of values.
+  # The Secret needs the keys cookie_secret_key, jwt_secret_key, and
+  # encryption_key.
+  create: true
+  existingSecret: ""
+  cookieSecretKey: ""
+  jwtSecretKey: ""
+  encryptionKey: ""
+
+serviceAccount:
+  create: true
+  annotations: {}
+
+storage:
+  # Workspace file content is stored under mountPath/files, and a sqlite
+  # database may live under mountPath. With no existingClaim the chart mounts an
+  # emptyDir, which does not survive a restart and is single-pod only. Split
+  # mode and more than one api replica require a ReadWriteMany claim.
+  existingClaim: ""
+  mountPath: /var/lib/sqlwarden
+
+# all configures the single Deployment used when mode is "all".
+all:
+  replicaCount: 1
+  httpPort: 6020
+  service:
+    type: ClusterIP
+    port: 6020
+    annotations: {}
+  resources:
+    requests:
+      cpu: 250m
+      memory: 512Mi
+    limits:
+      cpu: "1"
+      memory: 1Gi
+  probes:
+    startup:
+      periodSeconds: 5
+      failureThreshold: 30
+    liveness:
+      periodSeconds: 10
+      timeoutSeconds: 3
+      failureThreshold: 3
+    readiness:
+      periodSeconds: 5
+      timeoutSeconds: 3
+      failureThreshold: 3
+  podAnnotations: {}
+  podLabels: {}
+  nodeSelector: {}
+  tolerations: []
+  affinity: {}
+  extraEnv: []
+
+# api configures the Deployment used when mode is "split".
+api:
+  replicaCount: 1
+  httpPort: 6020
+  service:
+    type: ClusterIP
+    port: 6020
+    annotations: {}
+  resources:
+    requests:
+      cpu: 250m
+      memory: 512Mi
+    limits:
+      cpu: "1"
+      memory: 1Gi
+  probes:
+    startup:
+      periodSeconds: 5
+      failureThreshold: 30
+    liveness:
+      periodSeconds: 10
+      timeoutSeconds: 3
+      failureThreshold: 3
+    readiness:
+      periodSeconds: 5
+      timeoutSeconds: 3
+      failureThreshold: 3
+  podAnnotations: {}
+  podLabels: {}
+  nodeSelector: {}
+  tolerations: []
+  affinity: {}
+  extraEnv: []
+
+# jobs configures the Deployment used when mode is "split". A jobs pod runs the
+# job runner, scheduler, and settings watcher, and serves only /livez and
+# /readyz on httpPort.
+jobs:
+  replicaCount: 1
+  httpPort: 6020
+  resources:
+    requests:
+      cpu: 250m
+      memory: 512Mi
+    limits:
+      cpu: "1"
+      memory: 1Gi
+  probes:
+    startup:
+      periodSeconds: 5
+      failureThreshold: 30
+    liveness:
+      periodSeconds: 10
+      timeoutSeconds: 3
+      failureThreshold: 3
+    readiness:
+      periodSeconds: 5
+      timeoutSeconds: 3
+      failureThreshold: 3
+  podAnnotations: {}
+  podLabels: {}
+  nodeSelector: {}
+  tolerations: []
+  affinity: {}
+  extraEnv: []
+
+migration:
+  # enabled renders the pre-install and pre-upgrade migration Job. Disable it
+  # only when migrations are applied by a process outside this release; in mode
+  # "all" the process then migrates itself on start.
+  enabled: true
+  backoffLimit: 1
+  # activeDeadlineSeconds should exceed the time a migration needs so the
+  # process reports its own failure instead of being killed mid-run.
+  activeDeadlineSeconds: 600
+  ttlSecondsAfterFinished: 600
+  resources:
+    requests:
+      cpu: 100m
+      memory: 256Mi
+    limits:
+      cpu: "1"
+      memory: 512Mi
+  podAnnotations: {}
+  nodeSelector: {}
+  tolerations: []
+  affinity: {}
+
+podSecurityContext:
+  runAsNonRoot: true
+  runAsUser: 1000
+  runAsGroup: 1000
+  fsGroup: 1000
+  seccompProfile:
+    type: RuntimeDefault
+
+securityContext:
+  allowPrivilegeEscalation: false
+  readOnlyRootFilesystem: true
+  capabilities:
+    drop:
+      - ALL

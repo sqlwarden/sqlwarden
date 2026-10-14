@@ -148,7 +148,7 @@ func (s *Service) GetInstance(ctx context.Context, p access.Principal) (Instance
 }
 
 // UpdateInstance validates and stores an instance admin's changes, then
-// notifies subscribers with the stored row.
+// publishes the change on the instance settings topic.
 func (s *Service) UpdateInstance(ctx context.Context, p access.Principal, in UpdateInstanceInput) (Instance, error) {
 	if err := requireInstanceAdmin(p); err != nil {
 		return Instance{}, err
@@ -194,7 +194,7 @@ func (s *Service) UpdateInstance(ctx context.Context, p access.Principal, in Upd
 	if err != nil {
 		return Instance{}, err
 	}
-	s.publish(Instance(stored))
+	s.publishInstanceChange(ctx)
 	return Instance(stored), nil
 }
 

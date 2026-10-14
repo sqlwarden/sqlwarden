@@ -10,6 +10,7 @@ import (
 	"github.com/sqlwarden/internal/access/accesstest"
 	"github.com/sqlwarden/internal/config"
 	"github.com/sqlwarden/internal/database"
+	"github.com/sqlwarden/internal/platform/invalidate"
 	"github.com/sqlwarden/internal/settings"
 )
 
@@ -379,12 +380,37 @@ func TestValidate(t *testing.T) {
 	}
 }
 
-func TestUpdateInstanceSealsPasswordAndNotifies(t *testing.T) {
+type publication struct {
+	topic invalidate.Topic
+	key   string
+}
+
+type recordingInvalidator struct {
+	published []publication
+	err       error
+}
+
+func (r *recordingInvalidator) Publish(_ context.Context, topic invalidate.Topic, key string) error {
+	r.published = append(r.published, publication{topic: topic, key: key})
+	return r.err
+}
+
+func (r *recordingInvalidator) Subscribe(invalidate.Topic, func(string)) func() { return func() {} }
+
+func newPublishingService(store *fakeStore, inv invalidate.Invalidator) *settings.Service {
+	return settings.New(settings.Deps{
+		Store:       store,
+		Requirer:    access.NewRequirer(fakeDirectory{}, fakePolicy{}),
+		Sealer:      fakeSealer{},
+		Invalidator: inv,
+	})
+}
+
+func TestUpdateInstanceSealsPasswordAndPublishes(t *testing.T) {
 	ctx := context.Background()
 	store := newFakeStore()
-	svc := newService(store)
-	var published []settings.Instance
-	svc.Subscribe(func(in settings.Instance) { published = append(published, in) })
+	inv := &recordingInvalidator{}
+	svc := newPublishingService(store, inv)
 
 	out, err := svc.UpdateInstance(ctx, instanceAdmin(adminID), settings.UpdateInstanceInput{
 		InstanceName: ptr("  Renamed  "),
@@ -396,8 +422,9 @@ func TestUpdateInstanceSealsPasswordAndNotifies(t *testing.T) {
 	if out.InstanceName != "Renamed" || out.SMTPPasswordEncrypted != "sealed:secret" {
 		t.Fatalf("stored = %q/%q", out.InstanceName, out.SMTPPasswordEncrypted)
 	}
-	if len(published) != 1 || published[0].InstanceName != "Renamed" {
-		t.Fatalf("published = %+v", published)
+	want := publication{topic: invalidate.TopicInstanceSettings, key: settings.InstanceKey}
+	if len(inv.published) != 1 || inv.published[0] != want {
+		t.Fatalf("published = %+v, want [%+v]", inv.published, want)
 	}
 
 	out, err = svc.UpdateInstance(ctx, instanceAdmin(adminID), settings.UpdateInstanceInput{SMTPPassword: settings.Patch[string]{Set: true}})
@@ -406,6 +433,32 @@ func TestUpdateInstanceSealsPasswordAndNotifies(t *testing.T) {
 	}
 	if out.SMTPPasswordEncrypted != "" {
 		t.Fatal("null password did not clear the stored password")
+	}
+	if len(inv.published) != 2 {
+		t.Fatalf("published %d times after two updates", len(inv.published))
+	}
+}
+
+func TestUpdateInstancePublishesOnlyStoredChanges(t *testing.T) {
+	ctx := context.Background()
+	inv := &recordingInvalidator{}
+	svc := newPublishingService(newFakeStore(), inv)
+	if _, err := svc.UpdateInstance(ctx, account(writerID), settings.UpdateInstanceInput{InstanceName: ptr("x")}); err == nil {
+		t.Fatal("non-admin update succeeded")
+	}
+	if _, err := svc.UpdateInstance(ctx, instanceAdmin(adminID), settings.UpdateInstanceInput{QueryMaxResultRows: ptr(0)}); err == nil {
+		t.Fatal("invalid update succeeded")
+	}
+	if len(inv.published) != 0 {
+		t.Fatalf("rejected updates published %+v", inv.published)
+	}
+}
+
+func TestUpdateInstanceSucceedsWhenPublishFails(t *testing.T) {
+	inv := &recordingInvalidator{err: errors.New("bus down")}
+	svc := newPublishingService(newFakeStore(), inv)
+	if _, err := svc.UpdateInstance(context.Background(), instanceAdmin(adminID), settings.UpdateInstanceInput{InstanceName: ptr("x")}); err != nil {
+		t.Fatalf("update failed on publish error: %v", err)
 	}
 }
 
@@ -504,9 +557,8 @@ func TestPurgeOrgClearsOnlyThatOrg(t *testing.T) {
 func TestRotateSMTPPassword(t *testing.T) {
 	ctx := context.Background()
 	store := newFakeStore()
-	svc := newService(store)
-	var notified int
-	svc.Subscribe(func(settings.Instance) { notified++ })
+	inv := &recordingInvalidator{}
+	svc := newPublishingService(store, inv)
 
 	scanned, rotated, err := svc.RotateSMTPPassword(ctx, fakeRotator{stale: true})
 	if err != nil || scanned || rotated {
@@ -523,8 +575,9 @@ func TestRotateSMTPPassword(t *testing.T) {
 	if err != nil || !scanned || !rotated {
 		t.Fatalf("stale key: scanned=%v rotated=%v err=%v", scanned, rotated, err)
 	}
-	if store.instance.SMTPPasswordEncrypted != "sealed:secret" || notified != 1 {
-		t.Fatalf("stored = %q, notified = %d", store.instance.SMTPPasswordEncrypted, notified)
+	want := publication{topic: invalidate.TopicInstanceSettings, key: settings.InstanceKey}
+	if store.instance.SMTPPasswordEncrypted != "sealed:secret" || len(inv.published) != 1 || inv.published[0] != want {
+		t.Fatalf("stored = %q, published = %+v", store.instance.SMTPPasswordEncrypted, inv.published)
 	}
 }
 

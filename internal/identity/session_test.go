@@ -85,6 +85,31 @@ func requireCredentialReason(t *testing.T, err error, want string) {
 	}
 }
 
+type fakeAuthStore struct {
+	*fakeSessionStore
+	*adminLookup
+}
+
+func TestAuthenticationUsesTheStoreForSessionsAndInstanceAdmins(t *testing.T) {
+	now := time.Now()
+	sessions := newFakeSessionStore(now)
+	admins := &adminLookup{admins: map[int64]bool{42: true}}
+	auth := NewAuthentication(fakeAuthStore{sessions, admins})
+
+	got, ok, err := auth.SessionAuthenticator(sessionTestSecret, func(context.Context) bool { return true }, func() time.Time { return now }).
+		Authenticate(context.Background(), Presented{Authorization: issueSessionBearer(t, 42, "session-1")})
+	if err != nil || !ok || got.Principal.Subject.ID != 42 {
+		t.Fatalf("authenticated %+v ok=%v err=%v", got, ok, err)
+	}
+	if sessions.sessionCalls != 1 {
+		t.Fatalf("session lookups = %d, want 1", sessions.sessionCalls)
+	}
+	admin, err := auth.IsInstanceAdmin(context.Background(), 42)
+	if err != nil || !admin || admins.calls != 1 {
+		t.Fatalf("instance admin = %v err=%v calls=%d", admin, err, admins.calls)
+	}
+}
+
 func TestSessionAuthenticatorEmptyHeaderIsUnclaimed(t *testing.T) {
 	store := newFakeSessionStore(time.Now())
 	_, ok, err := authenticateSession(store, true, time.Now(), "")

@@ -168,10 +168,11 @@ func TestFileContentReaperEnqueueUsesSingletonJob(t *testing.T) {
 	app := newTestApp(t)
 	ctx := context.Background()
 
-	if err := app.enqueueFileContentReapJob(ctx); err != nil {
+	schedule := testInfra(app).FileReapSchedule()
+	if err := schedule.Enqueue(ctx); err != nil {
 		t.Fatal(err)
 	}
-	if err := app.enqueueFileContentReapJob(ctx); err != nil {
+	if err := schedule.Enqueue(ctx); err != nil {
 		t.Fatal(err)
 	}
 

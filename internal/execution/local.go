@@ -93,7 +93,8 @@ var (
 // TunnelError reports that the SSH tunnel to the target could not be opened,
 // as distinct from the target itself refusing the connection.
 type TunnelError struct {
-	Err error
+	Err    error
+	Driver string
 }
 
 func (e *TunnelError) Error() string { return "ssh tunnel: " + e.Err.Error() }
@@ -212,7 +213,7 @@ func (r *LocalRuntime) connect(ctx context.Context, creds credentials.Credential
 	if creds.SSH != nil {
 		t, err := connection.OpenTunnel(ctx, *creds.SSH)
 		if err != nil {
-			return nil, nil, nil, &TunnelError{Err: err}
+			return nil, nil, nil, &TunnelError{Err: err, Driver: creds.Driver}
 		}
 		tunnel = t
 		teardown = func() { _ = t.Close() }
@@ -221,7 +222,7 @@ func (r *LocalRuntime) connect(ctx context.Context, creds credentials.Credential
 	d, err := engine.New(creds.Driver)
 	if err != nil {
 		teardown()
-		return nil, nil, nil, &ConnectError{Err: err}
+		return nil, nil, nil, &ConnectError{Err: err, Driver: creds.Driver}
 	}
 	cc := engine.ConnectionConfig{
 		DSN:            creds.DSN,
@@ -236,7 +237,7 @@ func (r *LocalRuntime) connect(ctx context.Context, creds credentials.Credential
 	}
 	if err := d.Connect(ctx, cc); err != nil {
 		teardown()
-		return nil, nil, nil, &ConnectError{Err: err}
+		return nil, nil, nil, &ConnectError{Err: err, Driver: creds.Driver}
 	}
 	return d, tunnel, teardown, nil
 }
@@ -343,7 +344,7 @@ func (r *LocalRuntime) Probe(ctx context.Context, scope Scope, creds credentials
 	defer teardown()
 	defer func() { _ = d.Close() }()
 	if err := d.Ping(ctx); err != nil {
-		return &ConnectError{Err: err}
+		return &ConnectError{Err: err, Driver: creds.Driver}
 	}
 
 	inspector, ok := d.(metadata.SchemaInspector)

@@ -4,11 +4,12 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"sync"
+	"log/slog"
 	"time"
 
 	"github.com/sqlwarden/internal/access"
 	"github.com/sqlwarden/internal/database"
+	"github.com/sqlwarden/internal/platform/invalidate"
 )
 
 // ErrUnavailable is wrapped when the stored instance settings cannot be read
@@ -59,9 +60,9 @@ type Sealer interface {
 	Encrypt(plaintext string) (string, error)
 }
 
-// Subscriber observes every instance settings row the service stores.
-// Subscribers run synchronously and must not block.
-type Subscriber func(Instance)
+// InstanceKey is the key published on invalidate.TopicInstanceSettings. The
+// instance settings are a singleton row, so every change uses the same key.
+const InstanceKey = "instance"
 
 type Deps struct {
 	Store    Store
@@ -70,6 +71,11 @@ type Deps struct {
 	// FileStorageMode is the configured workspace file storage mode. File
 	// revisions cannot be enabled in file mode.
 	FileStorageMode string
+	// Invalidator, when set, is told after every stored instance settings
+	// change so settings watchers in every process apply it without waiting
+	// for their poll.
+	Invalidator invalidate.Invalidator
+	Logger      *slog.Logger
 }
 
 // Service reads and updates instance and organization runtime settings.
@@ -78,33 +84,34 @@ type Service struct {
 	requirer        *access.Requirer
 	sealer          Sealer
 	fileStorageMode string
-
-	mu          sync.RWMutex
-	subscribers []Subscriber
+	inval           invalidate.Invalidator
+	logger          *slog.Logger
 }
 
 func New(deps Deps) *Service {
+	logger := deps.Logger
+	if logger == nil {
+		logger = slog.New(slog.DiscardHandler)
+	}
 	return &Service{
 		store:           deps.Store,
 		requirer:        deps.Requirer,
 		sealer:          deps.Sealer,
 		fileStorageMode: deps.FileStorageMode,
+		inval:           deps.Invalidator,
+		logger:          logger,
 	}
 }
 
-// Subscribe registers fn to observe stored instance settings changes.
-func (s *Service) Subscribe(fn Subscriber) {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-	s.subscribers = append(s.subscribers, fn)
-}
-
-func (s *Service) publish(in Instance) {
-	s.mu.RLock()
-	subscribers := append([]Subscriber(nil), s.subscribers...)
-	s.mu.RUnlock()
-	for _, fn := range subscribers {
-		fn(in)
+// publishInstanceChange announces a stored instance settings change. A
+// failed publish never fails the update: watchers still pick the change up
+// on their next poll.
+func (s *Service) publishInstanceChange(ctx context.Context) {
+	if s.inval == nil {
+		return
+	}
+	if err := s.inval.Publish(ctx, invalidate.TopicInstanceSettings, InstanceKey); err != nil {
+		s.logger.WarnContext(ctx, "instance settings invalidation publish failed", "error", err)
 	}
 }
 

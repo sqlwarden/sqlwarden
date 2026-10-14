@@ -10,6 +10,7 @@ import (
 	"github.com/sqlwarden/internal/audit"
 	"github.com/sqlwarden/internal/database"
 	"github.com/sqlwarden/internal/orgs"
+	"github.com/sqlwarden/internal/platform/invalidate"
 	"github.com/sqlwarden/internal/response"
 )
 
@@ -251,6 +252,7 @@ type harness struct {
 	teams   *fakeTeamStore
 	cache   *fakeCache
 	revoker *fakeRevoker
+	inval   *invalidate.Memory
 	invites *fakeInvitationStore
 	mailer  *fakeMailer
 	events  []audit.Event
@@ -263,7 +265,7 @@ func newHarness(t *testing.T) *harness {
 func newHarnessWith(t *testing.T, invitations orgs.InvitationPolicy) *harness {
 	t.Helper()
 	h := &harness{
-		store: newFakeStore(), teams: newFakeTeamStore(), cache: &fakeCache{}, revoker: &fakeRevoker{},
+		store: newFakeStore(), teams: newFakeTeamStore(), cache: &fakeCache{}, revoker: &fakeRevoker{}, inval: invalidate.NewMemory(nil),
 		invites: newFakeInvitationStore(), mailer: &fakeMailer{},
 	}
 	h.svc = orgs.New(orgs.Deps{
@@ -272,6 +274,7 @@ func newHarnessWith(t *testing.T, invitations orgs.InvitationPolicy) *harness {
 		Requirer:         access.NewRequirer(fakeDirectory{store: h.store}, fakePolicy{}),
 		Cache:            h.cache,
 		Revoker:          h.revoker,
+		Invalidator:      h.inval,
 		Invitations:      h.invites,
 		InvitationPolicy: invitations,
 		Mailer:           h.mailer,

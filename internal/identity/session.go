@@ -25,6 +25,29 @@ type AuthStore interface {
 	InstanceAdminLookup
 }
 
+// Authentication builds the store-backed parts of a request authentication
+// Chain: the bearer session authenticator and the instance admin lookup. It
+// lets a transport assemble the chain without holding the AuthStore.
+type Authentication interface {
+	InstanceAdminLookup
+	SessionAuthenticator(secret string, revocation RevocationSetting, now func() time.Time) Authenticator
+}
+
+// NewAuthentication returns the Authentication backed by store.
+func NewAuthentication(store AuthStore) Authentication {
+	return authentication{store: store}
+}
+
+type authentication struct{ store AuthStore }
+
+func (a authentication) IsInstanceAdmin(ctx context.Context, accountID int64) (bool, error) {
+	return a.store.IsInstanceAdmin(ctx, accountID)
+}
+
+func (a authentication) SessionAuthenticator(secret string, revocation RevocationSetting, now func() time.Time) Authenticator {
+	return NewSessionAuthenticator(a.store, secret, revocation, now)
+}
+
 // RevocationSetting reports whether auth sessions are checked on each request.
 type RevocationSetting func(ctx context.Context) bool
 

@@ -10,6 +10,7 @@ import (
 	"github.com/sqlwarden/internal/access/accesstest"
 	"github.com/sqlwarden/internal/database"
 	"github.com/sqlwarden/internal/orgs"
+	"github.com/sqlwarden/internal/platform/invalidate"
 )
 
 func TestRemoveMemberProtectsLastOwner(t *testing.T) {
@@ -45,6 +46,30 @@ func TestRemoveMemberRevokesSessionsAndAudits(t *testing.T) {
 	}
 	if got := h.actions(); len(got) != 1 || got[0] != orgs.ActionMemberRemoved || h.events[0].ResourceID != "8" {
 		t.Fatalf("audit = %+v", h.events)
+	}
+}
+
+func TestRemoveMemberPublishesCredentialRevocation(t *testing.T) {
+	h := newHarness(t)
+	var keys []string
+	h.inval.Subscribe(invalidate.TopicCredentials, func(key string) { keys = append(keys, key) })
+	if err := h.svc.RemoveMember(context.Background(), account(writerID), testOrg, readerID); err != nil {
+		t.Fatal(err)
+	}
+	if !slices.Equal(keys, []string{"account:8"}) {
+		t.Fatalf("published keys = %v", keys)
+	}
+}
+
+func TestRemoveMemberPublishesNothingWhenStoreFails(t *testing.T) {
+	h := newHarness(t)
+	var keys []string
+	h.inval.Subscribe(invalidate.TopicCredentials, func(key string) { keys = append(keys, key) })
+	if err := h.svc.RemoveMember(context.Background(), account(ownerID), testOrg, ownerID); err == nil {
+		t.Fatal("expected last owner error")
+	}
+	if len(keys) != 0 {
+		t.Fatalf("published keys = %v", keys)
 	}
 }
 

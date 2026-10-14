@@ -80,10 +80,10 @@ func (app *application) schemaDomainError(w http.ResponseWriter, r *http.Request
 	var failure *execution.Failure
 	switch {
 	case errors.Is(err, queryapp.ErrSchemaSessionExpired):
-		app.logInfo(r, "schema read with expired session", connID)
+		app.logWarn(r, "schema session unavailable", connID)
 		app.errorMessage(w, r, http.StatusGone, "Session has expired or does not exist.", nil)
 	case errors.Is(err, queryapp.ErrSchemaSessionRequired):
-		app.logInfo(r, "schema read requires session", connID)
+		app.logWarn(r, "schema session missing", connID)
 		app.apiError(w, r, http.StatusConflict, "session_required", "Connect to this database to load schema objects.", response.APIError{}, nil)
 	case errors.Is(err, queryapp.ErrSchemaNavigatorUnsupported):
 		app.logWarn(r, "schema navigator unsupported", connID)

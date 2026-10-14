@@ -331,7 +331,7 @@ func TestSchemaNodesLiveThenMemoryThenStore(t *testing.T) {
 	memory := f.nodes(t, "", "", "databases")
 	assert.Equal(t, memory.BodyFields["source"], "memory")
 
-	f.app.services.Navigator.ForgetConnection(f.conn.ID)
+	testInfra(f.app).Navigator.ForgetConnection(f.conn.ID)
 	stored := f.nodes(t, "", "", "databases")
 	assert.Equal(t, stored.BodyFields["source"], "store")
 	assert.Equal(t, len(itemNamesOf(t, stored)), 2)
@@ -473,7 +473,7 @@ func TestSchemaObjectsServeCacheWithoutSessionAndGateMisses(t *testing.T) {
 	assert.Equal(t, live.StatusCode, http.StatusOK)
 	assert.Equal(t, len(live.BodyFields["objects"].([]any)), 1)
 
-	f.app.services.Navigator.ForgetConnection(f.conn.ID)
+	testInfra(f.app).Navigator.ForgetConnection(f.conn.ID)
 	stored := f.do(t, "", http.MethodPost, "/schema/objects", body)
 	assert.Equal(t, stored.StatusCode, http.StatusOK)
 	_, hasPending := stored.BodyFields["pending_connection"]

@@ -5,9 +5,11 @@ import (
 	"database/sql"
 	"errors"
 	"fmt"
+	"log/slog"
 	"sort"
 	"time"
 
+	"github.com/sqlwarden/internal/platform/invalidate"
 	"github.com/uptrace/bun"
 )
 
@@ -25,12 +27,38 @@ type PolicyEvaluator interface {
 	EffectivePermissions(context.Context, int64, int64, string, string, int64) ([]string, error)
 }
 
+// Option configures an Enforcer built by New.
+type Option func(*options)
+
+type options struct {
+	invalidator invalidate.Invalidator
+	logger      *slog.Logger
+}
+
+// WithInvalidator connects the authorization cache to inv on
+// invalidate.TopicAuthz: local invalidations are published and published
+// invalidations are applied. Without it the cache is process-local.
+func WithInvalidator(inv invalidate.Invalidator) Option {
+	return func(o *options) { o.invalidator = inv }
+}
+
+// WithLogger sets the logger for cache invalidation failures. It defaults to
+// slog.Default.
+func WithLogger(logger *slog.Logger) Option {
+	return func(o *options) { o.logger = logger }
+}
+
 // New creates an Enforcer backed by the given database.
-func New(db *bun.DB) (*Enforcer, error) {
+func New(db *bun.DB, opts ...Option) (*Enforcer, error) {
 	if db == nil {
 		return nil, errors.New("access: database is required")
 	}
-	return &Enforcer{db: db, cache: NewMemoryAuthorizationCache(), now: time.Now}, nil
+	var o options
+	for _, opt := range opts {
+		opt(&o)
+	}
+	cache := newMemoryAuthorizationCache(o.invalidator, o.logger, time.Now)
+	return &Enforcer{db: db, cache: cache, now: time.Now}, nil
 }
 
 // Can returns true if accountID holds permission on the given resource within orgID.

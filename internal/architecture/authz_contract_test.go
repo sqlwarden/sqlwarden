@@ -24,7 +24,6 @@ var authzExemptMethods = map[string]map[string]string{
 		"RunJob": "job runner entry point; it derives the owner principal from the stored job input",
 	},
 	"settings": {
-		"Subscribe":             "wires runtime operation observers at startup; it reads no settings",
 		"Instance":              "instance settings consumed by middleware, startup, and runtime operations before any caller is known",
 		"EffectiveForOrg":       "callers outside the settings package pass a nil org and read instance-wide values only; org-scoped reads are made by settings methods that authorize the org first",
 		"EffectiveForWorkspace": "limits enforced on the caller's own requests; the owning service has already authorized the workspace",

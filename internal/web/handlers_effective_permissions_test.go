@@ -190,7 +190,7 @@ func TestEffectivePermissionsIncludesTeamBindings(t *testing.T) {
 	if err = testDB(app).AddTeamMember(context.Background(), team.ID, member.ID); err != nil {
 		t.Fatal(err)
 	}
-	app.enforcer.InvalidatePrincipals(org.ID, member.ID)
+	testEnforcer(app).InvalidatePrincipals(org.ID, member.ID)
 	roleID := createRoleForTest(t, app, org.ID, &ws.ID, "workspace", "env:create")
 
 	assert.Equal(t, grantWorkspacePolicyRole(t, app, ownerTok, org.Slug, strconv.FormatInt(ws.ID, 10), roleID, "team", team.ID, "workspace", 0).StatusCode, http.StatusNoContent)

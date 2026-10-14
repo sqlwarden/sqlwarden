@@ -20,6 +20,7 @@ import (
 	"github.com/sqlwarden/internal/execution"
 	"github.com/sqlwarden/internal/exportjob"
 	"github.com/sqlwarden/internal/exports"
+	"github.com/sqlwarden/internal/files"
 	"github.com/sqlwarden/internal/filestore"
 	"github.com/sqlwarden/internal/jobs"
 )
@@ -153,7 +154,7 @@ func seedExportJobInput(t *testing.T, app *application, sql string) (exportjob.J
 	envID := defaultEnvironmentID(t, app, ws.ID)
 	conn := insertStructuredConnection(t, app, ws.ID, &envID, "Export Lifecycle Conn", "sqlite",
 		map[string]any{"path": filepath.Join(t.TempDir(), "export.db")})
-	app.enforcer.InvalidateAncestry("connection", conn.ID)
+	testEnforcer(app).InvalidateAncestry("connection", conn.ID)
 	input := exportjob.JobInput{
 		AccountID: account.ID, OrgID: org.ID, WorkspaceID: ws.ID, ConnectionID: conn.ID,
 		SQL: sql, Format: "csv", Filename: "lifecycle",
@@ -276,10 +277,10 @@ func TestTestConnectionProbesWithCallerCredentials(t *testing.T) {
 	assert.Equal(t, len(rt.opens), 0)
 }
 
-type failingPutStores struct{ FileStores }
+type failingPutStores struct{ files.StoreResolver }
 
 func (f failingPutStores) Store(ctx context.Context, backendID string) (filestore.Store, error) {
-	store, err := f.FileStores.Store(ctx, backendID)
+	store, err := f.StoreResolver.Store(ctx, backendID)
 	if err != nil {
 		return nil, err
 	}
@@ -297,8 +298,8 @@ func (failingPutStore) Put(_ context.Context, _ string, content io.Reader) (file
 
 func TestHandleExportJobAbandonedPipeStopsStreamAndClosesSession(t *testing.T) {
 	t.Parallel()
-	app, rt := newLifecycleApp(t, testAppOptions{fileStores: func(base FileStores) FileStores {
-		return failingPutStores{FileStores: base}
+	app, rt := newLifecycleApp(t, testAppOptions{fileStores: func(base files.StoreResolver) files.StoreResolver {
+		return failingPutStores{StoreResolver: base}
 	}})
 	input, job := seedExportJobInput(t, app, "SELECT 1 AS id")
 

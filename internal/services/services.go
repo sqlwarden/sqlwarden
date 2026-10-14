@@ -23,11 +23,11 @@ import (
 	"github.com/sqlwarden/internal/jobs"
 	"github.com/sqlwarden/internal/keyrotation"
 	"github.com/sqlwarden/internal/orgs"
+	"github.com/sqlwarden/internal/platform/invalidate"
 	"github.com/sqlwarden/internal/query"
 	"github.com/sqlwarden/internal/rbac"
 	"github.com/sqlwarden/internal/schema"
 	"github.com/sqlwarden/internal/settings"
-	"github.com/sqlwarden/internal/smtp"
 )
 
 // Deps are the stores and ports the service graph is built from. The caller
@@ -71,6 +71,9 @@ type Deps struct {
 	// Setup is the profile's first-run setup strategy. It defaults to
 	// identity.FormSetup.
 	Setup identity.SetupStrategy
+	// Invalidator is the process-wide cache-invalidation bus shared with the
+	// enforcer. It defaults to a private in-process bus.
+	Invalidator invalidate.Invalidator
 }
 
 // KeyRing is the application keyring surface key rotation needs.
@@ -78,17 +81,21 @@ type KeyRing interface {
 	credentials.RotationKeyring
 }
 
-// Services is the built service graph.
+// Services is the half of the service graph handed to transports: service
+// types whose methods authorize the caller, plus narrow ports that cannot
+// bypass authorization (send mail, build the authentication chain, redact a
+// connect failure). Infra is the other half: the raw handles (requirer,
+// policy, runtime, navigator, job store, invalidation bus, live mailer) that
+// only the composition root keeps for background process kinds. Build returns
+// both; transports never receive Infra. internal/architecture pins the
+// exported fields of Services.
 type Services struct {
-	Requirer *access.Requirer
 	Settings *settings.Service
 	Identity *identity.Service
 	Catalog  *catalog.Service
 	Orgs     *orgs.Service
 	RBAC     *rbac.Service
 	Query    *query.Service
-	// Navigator is the schema metadata cache the query service reads through.
-	Navigator *schema.Navigator
 	// Files applies the default instance file revision policy. Writes that
 	// must honor a workspace's effective policy use FilesForWorkspace.
 	Files   *files.Service
@@ -96,41 +103,61 @@ type Services struct {
 	Jobs    *jobs.Service
 	// KeyRotation backs the rotate-keys endpoint and command.
 	KeyRotation *keyrotation.Service
-	JobStore    *jobs.DatabaseStore
-	Policy      access.PolicyEvaluator
-	Runtime     execution.Runtime
 	// Mailer sends email through the mailer the current SMTP settings
-	// describe. The owner of runtime settings swaps it on change.
-	Mailer *settings.LiveMailer
-	// AuthStore backs the request authentication chain.
-	AuthStore identity.AuthStore
+	// describe.
+	Mailer settings.Sender
+	// Authentication builds the store-backed parts of the request
+	// authentication chain.
+	Authentication identity.Authentication
+	// ConnectErrors redacts resolved connection secrets from connect
+	// failures.
+	ConnectErrors catalog.ConnectErrorRedactor
 
 	deps      Deps
+	requirer  *access.Requirer
 	fileLocks *sync.Map
 }
 
+// Infra is the infrastructure half of the service graph. See Services.
+type Infra struct {
+	Requirer *access.Requirer
+	Policy   access.PolicyEvaluator
+	Runtime  execution.Runtime
+	// Navigator is the schema metadata cache the query service reads through.
+	Navigator *schema.Navigator
+	JobStore  *jobs.DatabaseStore
+	// Invalidator is the cache-invalidation bus the services publish on. The
+	// settings watcher subscribes to it for instance settings changes.
+	Invalidator invalidate.Invalidator
+	// Mailer is the live mailer behind Services.Mailer. SettingsAppliers
+	// swaps it when the SMTP settings change.
+	Mailer *settings.LiveMailer
+
+	services *Services
+}
+
 // Build wires the service graph from deps.
-func Build(deps Deps) (*Services, error) {
+func Build(deps Deps) (*Services, *Infra, error) {
 	if deps.DB == nil {
-		return nil, errors.New("services: database is required")
+		return nil, nil, errors.New("services: database is required")
 	}
 	if deps.Runtime == nil {
-		return nil, errors.New("services: execution runtime is required")
+		return nil, nil, errors.New("services: execution runtime is required")
 	}
 	if deps.Credentials == nil || deps.CredentialWriter == nil || deps.RevealPolicy == nil {
-		return nil, errors.New("services: credential provider, credential writer, and reveal policy are required")
+		return nil, nil, errors.New("services: credential provider, credential writer, and reveal policy are required")
 	}
 	if deps.SecretSealer == nil {
-		return nil, errors.New("services: secret sealer is required")
+		return nil, nil, errors.New("services: secret sealer is required")
 	}
 	if deps.Keyring == nil {
-		return nil, errors.New("services: keyring is required")
+		return nil, nil, errors.New("services: keyring is required")
 	}
 	if deps.Policy == nil && deps.Enforcer != nil {
 		deps.Policy = deps.Enforcer
 	}
 	if deps.Policy == nil {
-		return nil, errors.New("services: policy evaluator is required")
+		return nil, nil, errors.New("services: policy evaluator is required")
 	}
 	if deps.Revoker == nil {
 		deps.Revoker = deps.Runtime
@@ -147,58 +174,75 @@ func Build(deps Deps) (*Services, error) {
 	if deps.Invitations == nil {
 		deps.Invitations = orgs.InvitationsDisabled
 	}
-
-	s := &Services{
-		Policy:    deps.Policy,
-		Runtime:   deps.Runtime,
-		Mailer:    settings.NewLiveMailer(),
-		AuthStore: deps.DB,
-		deps:      deps,
-		fileLocks: &sync.Map{},
+	if deps.Invalidator == nil {
+		deps.Invalidator = invalidate.NewMemory(deps.Logger)
 	}
-	s.Requirer = access.NewRequirer(directoryAdapter{store: deps.DB}, deps.Policy)
+
+	mailer := settings.NewLiveMailer()
+	jobStore := jobs.NewStore(deps.DB)
+	requirer := access.NewRequirer(directoryAdapter{store: deps.DB}, deps.Policy)
+	s := &Services{
+		Mailer:         mailer,
+		Authentication: identity.NewAuthentication(deps.DB),
+		ConnectErrors:  catalog.NewConnectErrorRedactor(deps.Credentials),
+		deps:           deps,
+		requirer:       requirer,
+		fileLocks:      &sync.Map{},
+	}
+	infra := &Infra{
+		Requirer:    requirer,
+		Policy:      deps.Policy,
+		Runtime:     deps.Runtime,
+		JobStore:    jobStore,
+		Invalidator: deps.Invalidator,
+		Mailer:      mailer,
+		services:    s,
+	}
 	s.Settings = settings.New(settings.Deps{
 		Store:           deps.DB,
-		Requirer:        s.Requirer,
+		Requirer:        requirer,
 		Sealer:          deps.SecretSealer,
 		FileStorageMode: deps.Config.Files.StorageMode,
+		Invalidator:     deps.Invalidator,
+		Logger:          deps.Logger,
 	})
 	identityDeps := identity.Deps{
 		Store:    deps.DB,
 		SignIn:   deps.SignIn,
 		Setup:    deps.Setup,
 		FirstRun: firstRunStore{db: deps.DB, enforcer: deps.Enforcer},
-		Requirer: s.Requirer,
+		Requirer: requirer,
 		Tokens:   accessTokenPolicy{settings: s.Settings},
 		Secret:   deps.Config.JWT.SecretKey,
 		Audit:    deps.Audit,
 		Logger:   deps.Logger,
+
+		Invalidator: deps.Invalidator,
 	}
 	if deps.Enforcer != nil {
 		identityDeps.Cache = deps.Enforcer
 	}
 	s.Identity = identity.New(identityDeps)
-	s.JobStore = jobs.NewStore(deps.DB)
-	s.Jobs = jobs.NewService(s.JobStore, s.Requirer)
+	s.Jobs = jobs.NewService(jobStore, requirer)
 
 	defaults := database.DefaultInstanceSettings()
 	s.Files = s.newFiles(defaults.FileRevisionsEnabled, defaults.FileRevisionsKeepLatest)
 
-	s.Navigator = schema.NewNavigator(deps.DB, deps.Logger)
+	infra.Navigator = schema.NewNavigator(deps.DB, deps.Logger, schema.WithInvalidator(deps.Invalidator))
 	s.Query = query.New(query.Deps{
 		Store:       deps.DB,
 		Settings:    queryPolicies{settings: s.Settings},
-		Requirer:    s.Requirer,
+		Requirer:    requirer,
 		Runtime:     deps.Runtime,
 		SchemaStore: deps.DB,
-		Navigator:   s.Navigator,
+		Navigator:   infra.Navigator,
 		Audit:       deps.Audit,
 		Logger:      deps.Logger,
 	})
 
 	s.Exports = exportjob.New(exportjob.Deps{
-		Requirer: s.Requirer,
-		Queue:    s.JobStore,
+		Requirer: requirer,
+		Queue:    jobStore,
 		Runtime:  deps.Runtime,
 		Settings: exportPolicies{settings: s.Settings},
 		Files:    exportFiles{services: s},
@@ -210,7 +254,7 @@ func Build(deps Deps) (*Services, error) {
 		Store:        deps.DB,
 		Workspaces:   workspaceStore{DB: deps.DB, enforcer: deps.Enforcer},
 		Policy:       deps.Policy,
-		Requirer:     s.Requirer,
+		Requirer:     requirer,
 		Credentials:  deps.Credentials,
 		Writer:       deps.CredentialWriter,
 		RevealPolicy: deps.RevealPolicy,
@@ -218,7 +262,7 @@ func Build(deps Deps) (*Services, error) {
 		Logger:       deps.Logger,
 		TargetPolicy: deps.TargetPolicy,
 		Prober:       deps.Runtime,
-		Revoker:      queuedRevoker{revoker: deps.Revoker, queue: s.JobStore, logger: deps.Logger},
+		Revoker:      queuedRevoker{revoker: deps.Revoker, queue: jobStore, logger: deps.Logger},
 	}
 	// A nil *Enforcer stored in the interface would not compare equal to nil.
 	if deps.Enforcer != nil {
@@ -231,11 +275,12 @@ func Build(deps Deps) (*Services, error) {
 	orgDeps := orgs.Deps{
 		Store:            store,
 		Teams:            deps.DB,
-		Requirer:         s.Requirer,
-		Revoker:          queuedRevoker{revoker: deps.Revoker, queue: s.JobStore, logger: deps.Logger},
+		Requirer:         requirer,
+		Revoker:          queuedRevoker{revoker: deps.Revoker, queue: jobStore, logger: deps.Logger},
+		Invalidator:      deps.Invalidator,
 		Invitations:      store,
 		InvitationPolicy: deps.Invitations,
-		Mailer:           invitationMailer{live: s.Mailer},
+		Mailer:           invitationMailer{live: mailer},
 		BaseURL:          instanceBaseURL{settings: s.Settings},
 		Audit:            deps.Audit,
 		Logger:           deps.Logger,
@@ -244,11 +289,11 @@ func Build(deps Deps) (*Services, error) {
 		orgDeps.Cache = deps.Enforcer
 	}
 	s.Orgs = orgs.New(orgDeps)
-	s.forgetSchemaOnPurge()
+	forgetSchemaOnPurge(s.Orgs, infra.Navigator, deps.Runtime)
 
 	s.RBAC = rbac.New(rbac.Deps{
 		Store:    rbacStore{DB: deps.DB, enforcer: deps.Enforcer},
-		Requirer: s.Requirer,
+		Requirer: requirer,
 		Policy:   deps.Policy,
 		Audit:    deps.Audit,
 		Logger:   deps.Logger,
@@ -259,7 +304,7 @@ func Build(deps Deps) (*Services, error) {
 		Files:       files.NewContentRotator(deps.DB, deps.FileStores, deps.Keyring),
 		Logger:      deps.Logger,
 	})
-	return s, nil
+	return s, infra, nil
 }
 
 // connectionEmptyNotifier is implemented by runtimes that can report when the
@@ -271,17 +316,39 @@ type connectionEmptyNotifier interface {
 // forgetSchemaOnPurge drops a connection's in-memory schema cache when its
 // persisted snapshots are purged or its last live session closes, so the next
 // read reloads from the store or a new session.
-func (s *Services) forgetSchemaOnPurge() {
-	s.Orgs.OnSchemaCachePurged(s.Navigator.ForgetConnection)
-	notifier, ok := s.Runtime.(connectionEmptyNotifier)
+func forgetSchemaOnPurge(o *orgs.Service, navigator *schema.Navigator, runtime execution.Runtime) {
+	o.OnSchemaCachePurged(navigator.PurgeConnection)
+	notifier, ok := runtime.(connectionEmptyNotifier)
 	if !ok {
 		return
 	}
 	notifier.OnConnectionEmpty(func(connectionID string) {
 		if id, err := strconv.ParseInt(connectionID, 10, 64); err == nil {
-			s.Navigator.ForgetConnection(id)
+			navigator.ForgetConnection(id)
 		}
 	})
+}
+
+// SettingsAppliers returns the appliers that put instance settings into
+// effect below the transports: the live mailer, then metadata query tracing.
+// The mailer comes first, so SMTP settings that cannot be built reject the
+// change before anything else is applied.
+func (i *Infra) SettingsAppliers() []settings.Applier {
+	return []settings.Applier{i.applyMailer, i.applyQueryTracing}
+}
+
+func (i *Infra) applyMailer(_ context.Context, in settings.Instance) error {
+	mailer, err := settings.NewMailer(in, i.services.deps.Keyring)
+	if err != nil {
+		return err
+	}
+	i.Mailer.Set(mailer)
+	return nil
+}
+
+func (i *Infra) applyQueryTracing(_ context.Context, in settings.Instance) error {
+	i.services.deps.DB.SetQueryTracing(in.DatabaseQueryTracingEnabled)
+	return nil
 }
 
 // smtpRotation binds the keyring to the settings service's SMTP rotation.
@@ -304,24 +371,12 @@ func (s *Services) FilesForWorkspace(ctx context.Context, ws access.Workspace) (
 	return s.newFiles(effective.FileRevisionsEnabled, effective.FileRevisionsKeepLatest), nil
 }
 
-// NewMailer builds the mailer the instance SMTP settings describe, opening
-// the stored SMTP password with the keyring. The caller installs it on Mailer.
-func (s *Services) NewMailer(in settings.Instance) (*smtp.Mailer, error) {
-	return settings.NewMailer(in, s.deps.Keyring)
-}
-
-// SetQueryTracing switches tracing of metadata database queries, which the
-// runtime settings control.
-func (s *Services) SetQueryTracing(enabled bool) {
-	s.deps.DB.SetQueryTracing(enabled)
-}
-
 // FilesForPrincipal returns the file service for an organization workspace
 // the principal can reach. A non-member is access.ErrForbidden and a
 // workspace outside the organization is access.ErrNotFound; the returned
 // service still authorizes each file operation.
 func (s *Services) FilesForPrincipal(ctx context.Context, p access.Principal, orgID, workspaceID int64) (*files.Service, error) {
-	ws, err := s.Requirer.Workspace(ctx, p, orgID, workspaceID, "")
+	ws, err := s.requirer.Workspace(ctx, p, orgID, workspaceID, "")
 	if err != nil {
 		return nil, err
 	}
@@ -339,7 +394,7 @@ func (s *Services) newFiles(revisionsEnabled bool, keepLatest int) *files.Servic
 		DB:       s.deps.DB,
 		Stores:   s.deps.FileStores,
 		Enforcer: s.deps.Policy,
-		Requirer: s.Requirer,
+		Requirer: s.requirer,
 		Audit:    s.deps.Audit,
 		Logger:   s.deps.Logger,
 	}, files.Config{
