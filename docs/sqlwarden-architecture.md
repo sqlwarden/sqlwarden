@@ -51,7 +51,7 @@ Explicitly future or incomplete:
 - Background query runs and query-run observability.
 - Full audit log product surface and SIEM forwarding.
 - Deny rules.
-- Distributed RBAC cache invalidation.
+- Cross-process cache invalidation transports (PostgreSQL LISTEN/NOTIFY, Redis; SQLW-164).
 - Shared-file collaborative editing through WebSockets.
 - File uploads, revision browsing UX, S3-compatible file storage, and storage migration tooling.
 - PWA service worker setup.
@@ -66,6 +66,8 @@ sqlwarden/
 │   └── static/                       # embedded frontend build output
 ├── cmd/
 │   └── sqlwarden/                    # thin server entrypoint
+├── deploy/
+│   └── experimental/helm/            # experimental Helm chart (not published, no CI)
 ├── docs/
 │   └── sqlwarden-architecture.md     # canonical committed architecture doc
 ├── frontend/
@@ -81,6 +83,7 @@ sqlwarden/
 │       └── lib/
 ├── internal/
 │   ├── access/                       # custom RBAC enforcer and permissions catalog
+│   ├── app/                          # composition root and process kinds (only cmd/* imports it)
 │   ├── catalog/                      # connection, workspace, environment, and workspace member services
 │   ├── connection/                   # live target DB sessions (internal to execution)
 │   ├── credentials/                  # connection secret ports and the encrypted-column provider
@@ -92,10 +95,11 @@ sqlwarden/
 │   ├── files/                        # workspace file service
 │   ├── filestore/                    # filesystem object storage
 │   ├── identity/                     # identity chain, principals, auth/session, setup, instance administration
-│   ├── jobs/                         # background job runtime and user-facing job service
+│   ├── jobs/                         # job runner, supervisor, scheduler, and user-facing job service
 │   ├── keyrotation/                  # key rotation service shared by the endpoint and the rotate-keys command
 │   ├── orgs/                         # organizations, members, teams, invitations
 │   ├── password/                     # bcrypt hashing
+│   ├── platform/                     # cross-cutting infrastructure (invalidate, clientip, observability)
 │   ├── query/                        # authorized query, session, schema, DDL, statements, completion, history, favorites
 │   ├── rbac/                         # roles, policy bindings, permission catalog
 │   ├── request/                      # JSON decoding helpers
@@ -115,6 +119,29 @@ sqlwarden/
 
 `internal/app` is the composition root. Only `cmd/*` imports it.
 
+## Process Kinds And Runtime
+
+`process_kinds` (`PROCESS_KINDS`) selects the runtime responsibilities of a process: `all` (default), `api`, `jobs`, or a combination. `internal/app` builds one `ProcessKind` per responsibility; each has `Start`, `Ready`, and `Close`. A serving process runs these kinds:
+
+- `jobs` (processes that select `all` or `jobs`): starts a `jobs.Supervisor` with the worker configuration derived from instance settings, then a `jobs.Scheduler`.
+- `settings` (every serving process): runs the `settings.Watcher`, which applies instance setting changes to the process (mailer, query tracing, log level, access logs, and the supervisor configuration when the process runs jobs).
+- `http`: the listener. A `jobs`-only process serves only the health endpoints (`/livez`, `/readyz`); the API routes return 404.
+
+Start order is jobs, settings, http, so the initial worker configuration is applied before the watcher can apply a later change. Close runs in reverse: HTTP drains, the watcher stops (cancelling the context of any supervisor restart waiting on a job), the scheduler stops, the supervisor stops and cancels in-flight jobs, and only then do the web app, execution runtime, and database close. Constructors start nothing.
+
+`jobs.Supervisor` owns the job runner and restarts it when the job worker settings change. Its worker id is unique per process (`<hostname>-<pid>-<random>`), so claim leases from replicas never collide. `jobs.Scheduler` runs recurring enqueues; its one schedule is the file content reap, which enqueues the existing singleton job immediately and then every 15 minutes, so replicas race safely on the database-enforced `singleton_key`. The job registry is built by `Infra.JobRegistry` (core definitions plus edition definitions; a duplicate type fails startup for every kind selection). The `session_revoke` handler lives in `internal/jobs` behind the `SessionRevoker` port.
+
+In a split deployment (`api` and `jobs` processes), `session_revoke` retry jobs run in the jobs process, which holds no live target sessions. A retry there succeeds without revoking anything while the API process keeps the session until remote execution exists (SQLW-164).
+
+## Services And Infrastructure
+
+`services.Build(services.Deps)` returns `(*Services, *Infra, error)`:
+
+- `Services` is the bundle handed to `internal/web`: the authorization services (`Settings`, `Identity`, `Catalog`, `Orgs`, `RBAC`, `Query`, `Files`, `Exports`, `Jobs`, `KeyRotation`) and three narrow ports: `settings.Sender` (send mail only), `identity.Authentication` (builds the session authenticator and instance-admin lookup without exposing the auth store), and `catalog.ConnectErrorRedactor` (removes resolved secrets from connect failures).
+- `Infra` holds everything else: `Requirer`, `Policy`, `Runtime`, `Navigator`, `JobStore`, `Invalidator`, the live mailer, plus `JobRegistry`, `FileReapSchedule`, and `SettingsAppliers`. Only `internal/app` holds it; web never references it. `web.Dependencies` carries opaque `settings.Applier` closures instead.
+
+`internal/architecture/bundle_test.go` pins this shape (see Testing).
+
 ## Configuration
 
 Configuration is loaded by `internal/config` using spf13/viper. Supported sources are config file, environment variables, and CLI flags. Defaults are intended to support local development with minimal setup.
@@ -133,7 +160,7 @@ Configuration ownership is split deliberately:
 - Bootstrap configuration is deployment-managed and must be available before the application database opens. It covers listeners, profile, trusted proxies, application database connectivity, secrets, TLS, storage topology, desktop topology, and log format.
 - Runtime instance settings are typed columns in the singleton `instance_settings` row. They cover product policy, limits, log level, database query tracing, job-runner tuning, and SMTP delivery without restarting.
 - Organizations store typed nullable overrides for the small set of policies they may tighten. Effective settings are the instance values plus valid organization overrides.
-The current consistency model intentionally performs a database read when an operation resolves policy settings. Live operational adapters additionally reconcile the singleton row every two seconds so all replicas converge after an update. A request uses one immutable resolved value set; background jobs capture policy settings when execution begins. Running jobs finish or cancel through the normal runner shutdown path when worker tuning changes.
+The current consistency model intentionally performs a database read when an operation resolves policy settings. The `settings.Watcher` in every serving process re-applies instance settings when the `instance_settings` invalidation topic fires and reconciles the singleton row every two seconds, so all replicas converge after an update even if a message is lost. A request uses one immutable resolved value set; background jobs capture policy settings when execution begins. Running jobs finish or cancel through the normal runner shutdown path when worker tuning changes.
 
 If settings reads become measurable load at larger horizontal scale, the settings service is the replacement boundary for a versioned in-process cache. Such a cache must use database notifications or an external pub/sub mechanism for cross-replica invalidation and retain a bounded fallback check. No cache or Redis dependency is part of the current implementation.
 
@@ -158,7 +185,7 @@ HTTP request
   -> response.JSON / centralized API error helpers
 ```
 
-`internal/web` is transport only. Route middleware does authentication, `orgScope` org entry, and path id parsing into the request's `pathIDs`; a malformed or non-positive path id is 404. No middleware reads a store or checks a permission. Every service method authorizes its `access.Principal` before validation, storage, or runtime work, so the service is the only authorization boundary. The service graph is built once by `services.Build(services.Deps)` in `internal/services` and held on `application.services`.
+`internal/web` is transport only. Route middleware does authentication, `orgScope` org entry, and path id parsing into the request's `pathIDs`; a malformed or non-positive path id is 404. No middleware reads a store or checks a permission. Every service method authorizes its `access.Principal` before validation, storage, or runtime work, so the service is the only authorization boundary. The service graph is built once by `services.Build(services.Deps)` in `internal/services`; web receives only the `Services` bundle (see Services And Infrastructure).
 
 `internal/web` never imports `internal/database`, `internal/encrypt`, `internal/connection`, `internal/engine` (and subpackages), `internal/schema`, or `internal/completion`; `internal/architecture` enforces this (see Testing). Service packages expose type aliases for the types handlers encode.
 
@@ -574,7 +601,7 @@ The discovery queries intentionally check only permissions that make sense for t
 
 ### Caching
 
-RBAC caches are process-local and TTL-based. They improve hot-path request performance but are not distributed cache invalidation.
+RBAC caches are process-local and TTL-based. They improve hot-path request performance. Cross-process invalidation goes through the invalidation port described below.
 
 Cache categories:
 
@@ -582,7 +609,23 @@ Cache categories:
 - Principal cache keyed by org ID/account ID.
 - Ancestry cache keyed by resource type/resource ID.
 
-Policy changes invalidate org policy cache. Team membership changes invalidate principal cache. Resource deletion invalidates ancestry cache when relevant. A future multi-node deployment needs distributed invalidation or a shorter-lived/shared cache strategy.
+Policy changes invalidate org policy cache. Team membership changes invalidate principal cache. Resource deletion invalidates ancestry cache when relevant. Each invalidation deletes locally first and then publishes on the `authz` topic.
+
+### Cache Invalidation
+
+`internal/platform/invalidate` defines the `Invalidator` port (`Publish(ctx, topic, key)`, `Subscribe(topic, fn)`) and an in-process `Memory` bus. `internal/app` builds one bus per process and passes it to the enforcer and `services.Deps`. Messages carry only a topic and a key. Delivery is best-effort: a publish error is logged at Warn and never fails the operation, and every cache keeps a TTL ceiling that heals a lost message.
+
+| Topic | Publishers | Subscribers | TTL ceiling |
+| --- | --- | --- | --- |
+| `authz` | `access.MemoryAuthorizationCache` (key `org:<id>`, `principals:<org>:<account>`, `ancestry:<type>:<id>`) | the same cache, in every process | 15 min |
+| `schema`, `completion` | `schema.Navigator` on `Refresh`, `Invalidate`, and `PurgeConnection` (key `<connectionID>/<originID>`) | `schema.Navigator`; `schema` drops a connection's listings, objects, and relationships, `completion` drops its session scopes and decode memo | 15 min navigator memory and decode memo; 30 s session scopes |
+| `instance_settings` | `settings.Service` on `UpdateInstance` and a re-sealing `RotateSMTPPassword` | `settings.Watcher` | 2 s poll |
+| `credentials` | `identity` on logout, session revocation, and password change; `orgs` on member removal (key `session:<id>` or `account:<id>`) | none | n/a |
+| `policy` | none | none | n/a |
+
+Navigator messages carry a random per-instance origin id, and a navigator ignores its own origin so a self-delivered message does not wipe freshly loaded memory. An unparseable key clears the whole cache for that topic. `credentials` and `policy` are declared so a future cache (for example a caching authenticator) can subscribe without changing publishers; today authentication and policy evaluation read the database per request.
+
+PostgreSQL LISTEN/NOTIFY and Redis implementations of `Invalidator` are future work (SQLW-164). Until then a multi-process deployment relies on the TTL ceilings above for cross-process convergence of `authz`, `schema`, and `completion`.
 
 ### Privileged Org Policy Grants
 
@@ -708,7 +751,7 @@ the database. If revocation fails, the outcome is unchanged and a
 `EnqueueSingleton` (keyed by the revoke kind and ids) and up to 5 attempts.
 Retries only help when the jobs worker shares the API process, because sessions
 are process-local; a split API/jobs deployment needs a cross-process runtime
-(SQLW-164).
+(SQLW-164). See Process Kinds And Runtime.
 
 Live sessions are implemented by `internal/connection`, which works as follows:
 
@@ -872,12 +915,12 @@ Background jobs:
 
 - Jobs are persisted in the application database with user/internal visibility and lifecycle state.
 - `internal/jobs.Service` owns the user job routes: list, get, event retrieval, and cancellation. Each method requires workspace membership and scopes `jobs.DatabaseStore` access to the principal's account.
-- The API process runs in-process workers using database claim leases, cooperative cancellation, retry policy, priority-aware best-effort claiming, stale-claim recovery, and completed-job retention pruning.
-- Singleton internal jobs use a database-enforced active `singleton_key` so multiple API pods can safely race to schedule maintenance work without creating duplicate queued/running jobs.
+- Processes that run the `jobs` kind (see Process Kinds And Runtime) run workers using database claim leases, cooperative cancellation, retry policy, priority-aware best-effort claiming, stale-claim recovery, and completed-job retention pruning.
+- Singleton internal jobs use a database-enforced active `singleton_key` so multiple processes can safely race to schedule maintenance work without creating duplicate queued/running jobs.
 - User-visible job APIs are scoped under organization workspace routes and currently expose only the authenticated user's jobs in that workspace.
 - User-facing job events are append-only progress records for user-visible jobs. They are fetched incrementally with an `after_id` marker and are retained with the parent job.
 - Job events are progress UX, not server logs or audit logs. They must not contain SQL text, DSNs, bind values, row values, credentials, or secrets.
-- File content deletion cleanup is registered as a low-priority internal job.
+- File content deletion cleanup is registered as a low-priority internal job and enqueued by the `jobs.Scheduler`.
 
 Current default storage path is `~/.sqlwarden/files`.
 
@@ -924,7 +967,8 @@ The capability is reported as `schema.navigator`.
   node kind, folder, and database. Children that vanished have their cached
   subtrees, objects, and relationships deleted.
 - Memory for a connection is dropped when its last live session closes
-  (`ForgetConnection`) and when its persisted cache is purged.
+  (`ForgetConnection`, local to the process) and when its persisted cache is
+  purged (`PurgeConnection`, which also publishes to other instances).
 
 ### Persistence
 
@@ -1011,7 +1055,9 @@ Backend tests are substantial and should be extended with every behavior change:
 - `internal/database/*_test.go`: query helpers and persistence behavior.
 - `internal/files/*_test.go` and `internal/filestore/*_test.go`: file service/storage behavior.
 - `internal/architecture/authz_contract_test.go`: exported methods on the `Service` type of every authorization service package (query, files, exportjob, jobs, settings, orgs, catalog, rbac, identity, keyrotation; the list is `authzServicePackages`) must take `context.Context` and `access.Principal`. Principal-free exemptions each carry a reason and are checked for continued existence.
-- `internal/architecture/imports_test.go`: production `internal/web` code imports none of `internal/database`, `internal/encrypt`, `internal/connection`, `internal/engine` (and subpackages), `internal/schema`, or `internal/completion`. Service packages own type aliases for the metadata and engine types handlers encode (for example `identity.Account`, `orgs.ListMembersParams`, `files.File`, `catalog.ScopePath`, `query.Tree`), and the instance mailer is built through `services.Services.NewMailer`, so the web layer never holds the keyring. Web tests are exempt and reach the metadata database and keyring through the `testDB`/`testKeyring` fixture accessors.
+- `internal/architecture/imports_test.go`: production `internal/web` code imports none of `internal/database`, `internal/encrypt`, `internal/connection`, `internal/engine` (and subpackages), `internal/schema`, or `internal/completion`. Service packages own type aliases for the metadata and engine types handlers encode (for example `identity.Account`, `orgs.ListMembersParams`, `files.File`, `catalog.ScopePath`, `query.Tree`), and the live mailer is installed through `Infra.SettingsAppliers`, so the web layer never holds the keyring. Web tests are exempt and reach the metadata database and keyring through the `testDB`/`testKeyring` fixture accessors.
+- `internal/architecture/bundle_test.go` (`TestWebImportsAreAllowListed`): production `internal/web` code may import only the packages in `webAllowedImports`, each with a reason. The test is strict in both directions: an unlisted import fails, a stale entry fails, and an entry that is on the deny-list fails.
+- `internal/architecture/bundle_test.go`: `services.Services` exports only `*X.Service` fields for packages in `authzServicePackages` plus the ports in `webBundlePorts` (`settings.Sender`, `identity.Authentication`, `catalog.ConnectErrorRedactor`); `web.Dependencies` fields are an exact name-and-type allow-list with a reason each; production web never names `services.Infra`.
 - `internal/architecture/webdb_test.go`: any `.db` selector, on any receiver, in production `internal/web` code is ratcheted at an exact ceiling of 0: handlers reach metadata only through services.
 
 Database tests use testcontainers where needed; Docker must be available locally.
@@ -1034,6 +1080,10 @@ make frontend/install
 make frontend/build
 make frontend/dev
 ```
+
+### Helm Chart
+
+`deploy/experimental/helm` contains an experimental Helm chart. It is not published and has no CI; its Go test only checks the config keys it sets against `internal/config` statically, and no Helm engine has rendered or schema-validated it. `mode` is `all` (one Deployment running every process kind) or `split` (separate `api` and `jobs` Deployments). Split mode requires PostgreSQL and a shared (ReadWriteMany) `storage.existingClaim`; SQLite requires `all` with one replica. Secrets reach pods only through a Secret. The `session_revoke` limit under Process Kinds And Runtime applies to split mode.
 
 When upgrading Go:
 
@@ -1067,7 +1117,7 @@ Important open gaps:
 - Audit trail for data access events and for changes not yet audited (for example role updates, environment changes, and workspace membership changes).
 - SSO/SCIM identity lifecycle.
 - SSRF-safe cloud deployment model.
-- Distributed cache invalidation.
+- Cross-process cache invalidation transport (SQLW-164).
 - Service accounts/API tokens.
 
 SQLWarden is primarily self-hosted. Any future hosted/cloud offering needs stronger controls around SSRF, target network egress, tenant isolation, audit integrity, and managed identity lifecycle before it is safe.
@@ -1131,7 +1181,12 @@ Authorization moved from route middleware into services. Valid requests behave a
 
 ### Known Open Items
 
-- The `internal/web` import ban is a deny-list, not an allow-list; a new risky import is not caught until it is added to `webForbiddenImports`.
+- SQLW-216 remains open for its hygiene items 3-12, 14, and 22, and item 24 (an extra navigator connection read), plus completion log request correlation (the service logs with the context only).
+- The settings watcher retries a persistently failing applier on every 2 s poll, which logs each time.
+- `Supervisor.Stop` and `jobsKind.Close` wait for in-flight jobs without a bound and ignore the close deadline.
+- Applying settings is not atomic across appliers: a later applier failing leaves an earlier one applied until the next retry.
+- `session_revoke` retries cannot reach live sessions in a split deployment (SQLW-164).
+- Cross-process invalidation transports (PostgreSQL LISTEN/NOTIFY, Redis) are not implemented (SQLW-164).
 
 ## Implementation Invariants
 
@@ -1154,4 +1209,4 @@ Do not violate these without intentionally changing the architecture:
 - Backend permission catalog remains the source of truth for scope/resource permission metadata.
 - Deleting resources must invalidate ancestry cache when relevant.
 - Removing memberships should revoke affected live DB sessions where implemented.
-- RBAC cache is process-local; multi-node deployments require an explicit invalidation strategy.
+- RBAC cache is process-local; cross-process invalidation goes through `internal/platform/invalidate`, bounded by the 15 minute TTL until a remote transport exists.
