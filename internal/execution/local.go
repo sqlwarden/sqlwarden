@@ -17,7 +17,7 @@ const connectTimeout = 10 * time.Second
 
 // LocalConfig wires a LocalRuntime to its collaborators.
 type LocalConfig struct {
-	Credentials credentials.Provider
+	Credentials credentials.Resolver
 	Policy      TargetPolicy
 	IdleTimeout time.Duration
 	Logger      *slog.Logger
@@ -32,7 +32,7 @@ type LocalConfig struct {
 
 // LocalRuntime is the in-process execution runtime over connection.Manager.
 type LocalRuntime struct {
-	creds   credentials.Provider
+	creds   credentials.Resolver
 	policy  TargetPolicy
 	manager *connection.Manager
 	cursors *connection.QueryCursorManager

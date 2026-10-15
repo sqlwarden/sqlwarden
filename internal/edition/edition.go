@@ -13,6 +13,7 @@ import (
 
 	"github.com/sqlwarden/internal/access"
 	"github.com/sqlwarden/internal/audit"
+	"github.com/sqlwarden/internal/credentials"
 	"github.com/sqlwarden/internal/database"
 	"github.com/sqlwarden/internal/identity"
 	"github.com/sqlwarden/internal/jobs"
@@ -152,7 +153,7 @@ type Dependencies struct {
 type AuditDecorator func(audit.Writer) audit.Writer
 type PolicyDecorator func(access.PolicyEvaluator) access.PolicyEvaluator
 type AuthenticatorDecorator func(identity.Authenticator) identity.Authenticator
-type CredentialDecorator func(access.CredentialInfo) access.CredentialInfo
+type CredentialDecorator func(credentials.Provider) credentials.Provider
 
 type Route struct {
 	Module  string
@@ -397,6 +398,14 @@ func (c *Composition) Policy(core access.PolicyEvaluator) access.PolicyEvaluator
 	return restrictivePolicy{baseline: baseline, extension: core}
 }
 
+// Credentials applies credential decorators in module registration order.
+func (c *Composition) Credentials(core credentials.Provider) credentials.Provider {
+	for _, decorator := range c.registrar.credentialDecorators {
+		core = decorator(core)
+	}
+	return core
+}
+
 // Authenticator applies identity decorators in module registration order.
 func (c *Composition) Authenticator(core identity.Authenticator) identity.Authenticator {
 	for _, decorator := range c.registrar.authenticatorDecorators {
@@ -412,13 +421,12 @@ func (c *Composition) Unwired() []string {
 	r := c.registrar
 	var kinds []string
 	for kind, count := range map[string]int{
-		"credential decorators": len(r.credentialDecorators),
-		"settings":              len(r.settings),
-		"methods":               len(r.methods),
-		"factors":               len(r.factors),
-		"factor policies":       len(r.factorPolicies),
-		"sign-in policies":      len(r.signInPolicies),
-		"conditions":            len(r.conditions),
+		"settings":         len(r.settings),
+		"methods":          len(r.methods),
+		"factors":          len(r.factors),
+		"factor policies":  len(r.factorPolicies),
+		"sign-in policies": len(r.signInPolicies),
+		"conditions":       len(r.conditions),
 	} {
 		if count > 0 {
 			kinds = append(kinds, kind)

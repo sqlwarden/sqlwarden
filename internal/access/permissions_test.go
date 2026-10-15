@@ -13,6 +13,9 @@ func TestValidPermission(t *testing.T) {
 	if access.ValidPermission("bogus:action") {
 		t.Fatal("expected bogus:action to be invalid")
 	}
+	if !access.ValidPermission(access.PermConnRevealSecret) {
+		t.Fatal("expected conn:reveal_secret to be valid")
+	}
 }
 
 func TestValidForScope(t *testing.T) {
@@ -25,6 +28,11 @@ func TestValidForScope(t *testing.T) {
 	if access.ValidForScope(access.PermWsDelete, "workspace") {
 		t.Fatal("expected ws:delete invalid for workspace role scope")
 	}
+	for _, scope := range []string{"org", "workspace", "environment", "connection"} {
+		if !access.ValidForScope(access.PermConnRevealSecret, scope) {
+			t.Fatalf("expected conn:reveal_secret valid for %s scope", scope)
+		}
+	}
 }
 
 func TestValidForResource(t *testing.T) {
@@ -34,6 +42,24 @@ func TestValidForResource(t *testing.T) {
 		resourceType string
 		want         bool
 	}{
+		{
+			name:         "connection secret reveal is applicable to connection resources",
+			permission:   access.PermConnRevealSecret,
+			resourceType: "connection",
+			want:         true,
+		},
+		{
+			name:         "connection secret reveal is applicable through workspace resources",
+			permission:   access.PermConnRevealSecret,
+			resourceType: "workspace",
+			want:         true,
+		},
+		{
+			name:         "connection secret reveal is applicable through environment resources",
+			permission:   access.PermConnRevealSecret,
+			resourceType: "environment",
+			want:         true,
+		},
 		{
 			name:         "workspace delete is applicable to workspace resources",
 			permission:   access.PermWsDelete,
@@ -101,8 +127,10 @@ func TestOrgBuiltinRoles(t *testing.T) {
 	if !found {
 		t.Fatal("owner must have org:transfer_ownership")
 	}
+	assertPermissionPresent(t, ownerPerms, access.PermConnRevealSecret, "owner")
 
 	adminPerms := access.OrgBuiltinRoles[access.BuiltinOrgAdminRole]
+	assertPermissionPresent(t, adminPerms, access.PermConnRevealSecret, "administrator")
 	for _, p := range adminPerms {
 		if p == "org:delete" {
 			t.Fatal("admin must not have org:delete")
@@ -118,6 +146,16 @@ func TestOrgBuiltinRoles(t *testing.T) {
 	}
 }
 
+func assertPermissionPresent(t *testing.T, permissions []string, want, role string) {
+	t.Helper()
+	for _, permission := range permissions {
+		if permission == want {
+			return
+		}
+	}
+	t.Fatalf("%s must have %s", role, want)
+}
+
 func TestWorkspaceBuiltinRoles(t *testing.T) {
 	adminPerms := access.WorkspaceBuiltinRoles[access.BuiltinWorkspaceAdminRole]
 	if len(adminPerms) == 0 {
@@ -125,6 +163,9 @@ func TestWorkspaceBuiltinRoles(t *testing.T) {
 	}
 	for _, p := range adminPerms {
 		if p == "ws:create" || p == "ws:delete" {
+			t.Fatalf("%s must not have %s", access.BuiltinWorkspaceAdminRole, p)
+		}
+		if p == access.PermConnRevealSecret {
 			t.Fatalf("%s must not have %s", access.BuiltinWorkspaceAdminRole, p)
 		}
 	}

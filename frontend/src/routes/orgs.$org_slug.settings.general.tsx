@@ -25,6 +25,7 @@ import { Button } from '#/components/ui/button'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '#/components/ui/card'
 import { Checkbox } from '#/components/ui/checkbox'
 import { Input } from '#/components/ui/input'
+import { Switch } from '#/components/ui/switch'
 import { FieldDescription, FormField as Field } from '#/components/ui/field'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '#/components/ui/tabs'
 import { RoutePending } from '#/components/RoutePending'
@@ -63,7 +64,7 @@ function OrganizationGeneralSettingsPage() {
   const effectivePermissions = useQuery(orgEffectivePermissionsQueryOptions(orgSlug, 'org'))
   const [name, setName] = useState('')
   const [schemaSnapshotsEnabled, setSchemaSnapshotsEnabled] = useState(true)
-  const [maskConnectionCredentialsOnEdit, setMaskConnectionCredentialsOnEdit] = useState(false)
+  const [allowSecretReveal, setAllowSecretReveal] = useState(false)
   const [fieldErrors, setFieldErrors] = useState<OrgFieldErrors>({})
   const [deleteConfirmation, setDeleteConfirmation] = useState('')
   const [activeSection, setActiveSection] = useState<OrganizationSettingsTab>(
@@ -89,7 +90,7 @@ function OrganizationGeneralSettingsPage() {
     if (!org.data) return
     setName(org.data.name)
     setSchemaSnapshotsEnabled(org.data.schema_snapshots_enabled ?? true)
-    setMaskConnectionCredentialsOnEdit(org.data.mask_connection_credentials_on_edit ?? false)
+    setAllowSecretReveal(org.data.allow_connection_secret_reveal ?? false)
   }, [org.data])
 
   const updateOrg = useMutation({
@@ -97,7 +98,7 @@ function OrganizationGeneralSettingsPage() {
       api.patch<Organization>(`/api/v1/orgs/${orgSlug}`, {
         name: name.trim(),
         schema_snapshots_enabled: schemaSnapshotsEnabled,
-        mask_connection_credentials_on_edit: maskConnectionCredentialsOnEdit,
+        allow_connection_secret_reveal: allowSecretReveal,
       }),
     onSuccess: async (updated) => {
       setFieldErrors({})
@@ -152,7 +153,7 @@ function OrganizationGeneralSettingsPage() {
   const hasChanges =
     name.trim() !== org.data.name ||
     schemaSnapshotsEnabled !== (org.data.schema_snapshots_enabled ?? true) ||
-    maskConnectionCredentialsOnEdit !== (org.data.mask_connection_credentials_on_edit ?? false)
+    allowSecretReveal !== (org.data.allow_connection_secret_reveal ?? false)
   const deleteMatches = deleteConfirmation === org.data.slug
   const generalAction: OrganizationSettingsActionState = {
     disabled: !canWrite,
@@ -308,25 +309,24 @@ function OrganizationGeneralSettingsPage() {
               <CardHeader className="border-b border-border">
                 <CardTitle>Connection Security</CardTitle>
                 <CardDescription>
-                  Set the default credential handling behavior for connection forms.
+                  Control whether saved connection secrets can be revealed after they are stored.
                 </CardDescription>
               </CardHeader>
               <CardContent>
                 <label className="flex cursor-pointer items-start gap-3 py-2">
-                  <Checkbox
-                    checked={maskConnectionCredentialsOnEdit}
+                  <Switch
+                    checked={allowSecretReveal}
                     disabled={!canWrite || updateOrg.isPending}
-                    onCheckedChange={(checked) =>
-                      setMaskConnectionCredentialsOnEdit(checked === true)
-                    }
+                    onCheckedChange={setAllowSecretReveal}
                   />
                   <span className="flex flex-col gap-1">
                     <span className="font-medium text-foreground">
-                      Mask connection credentials on edit
+                      Allow revealing saved connection secrets
                     </span>
                     <span className="text-muted-foreground">
-                      Never pre-fill saved passwords when editing connections. Members must re-enter
-                      credentials to change them.
+                      Members who hold the {permission.connRevealSecret} permission can view a saved
+                      password, key, or passphrase while editing a connection. When off, saved
+                      secrets can only be replaced or removed.
                     </span>
                   </span>
                 </label>

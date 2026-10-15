@@ -46,10 +46,10 @@ func TestCreateConnectionAppliesShowAllDatabasesRule(t *testing.T) {
 		body map[string]any
 		want bool
 	}{
-		{"no default database forces on", map[string]any{"driver": navTestEngine, "dsn": "dsn", "show_all_databases": false}, true},
-		{"default database honours off", map[string]any{"driver": navTestEngine, "dsn": "dsn", "default_scope": reportsScope, "show_all_databases": false}, false},
-		{"default database honours on", map[string]any{"driver": navTestEngine, "dsn": "dsn", "default_scope": reportsScope, "show_all_databases": true}, true},
-		{"driver without a database level ignores it", map[string]any{"driver": navFlatEngine, "dsn": "dsn", "show_all_databases": true}, false},
+		{"no default database forces on", map[string]any{"driver": navTestEngine, "params": map[string]any{"dsn": "dsn"}, "show_all_databases": false}, true},
+		{"default database honours off", map[string]any{"driver": navTestEngine, "params": map[string]any{"dsn": "dsn"}, "default_scope": reportsScope, "show_all_databases": false}, false},
+		{"default database honours on", map[string]any{"driver": navTestEngine, "params": map[string]any{"dsn": "dsn"}, "default_scope": reportsScope, "show_all_databases": true}, true},
+		{"driver without a database level ignores it", map[string]any{"driver": navFlatEngine, "params": map[string]any{"dsn": "dsn"}, "show_all_databases": true}, false},
 	}
 	for _, tc := range cases {
 		tc.body["name"] = tc.name
@@ -63,7 +63,7 @@ func TestUpdateConnectionAppliesShowAllDatabasesRule(t *testing.T) {
 	t.Parallel()
 	c := newNavConnections(t)
 	created := c.send(t, http.MethodPost, c.create, map[string]any{
-		"name": "Nav", "driver": navTestEngine, "dsn": "dsn", "default_scope": reportsScope, "show_all_databases": true,
+		"name": "Nav", "driver": navTestEngine, "params": map[string]any{"dsn": "dsn"}, "default_scope": reportsScope, "show_all_databases": true,
 	})
 	assert.Equal(t, created.StatusCode, http.StatusCreated)
 	target := c.one(created.BodyFields["id"])
@@ -82,7 +82,7 @@ func TestUpdateConnectionAppliesShowAllDatabasesRule(t *testing.T) {
 func TestTestConnectionDiscoversScopesFromGrammar(t *testing.T) {
 	t.Parallel()
 	c := newNavConnections(t)
-	res := c.send(t, http.MethodPost, c.create+"/test", map[string]any{"driver": navTestEngine, "dsn": "dsn"})
+	res := c.send(t, http.MethodPost, c.create+"/test", map[string]any{"driver": navTestEngine, "params": map[string]any{"dsn": "dsn"}})
 	assert.Equal(t, res.StatusCode, http.StatusOK)
 	discovery, ok := res.BodyFields["scope_discovery"].(map[string]any)
 	if !ok {
@@ -93,10 +93,4 @@ func TestTestConnectionDiscoversScopesFromGrammar(t *testing.T) {
 		map[string]any{"kind": "schema", "name": "public"},
 	})
 	assert.Equal(t, len(discovery["scopes"].([]any)), 3)
-}
-
-func TestDriverSupportsSystemSchemasReadsTheGrammar(t *testing.T) {
-	t.Parallel()
-	assert.Equal(t, driverSupportsSystemSchemas(navTestEngine), true)
-	assert.Equal(t, driverSupportsSystemSchemas("no-such-driver"), false)
 }

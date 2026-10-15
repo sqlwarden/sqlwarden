@@ -5,6 +5,7 @@ package profile
 
 import (
 	"github.com/sqlwarden/internal/config"
+	"github.com/sqlwarden/internal/credentials"
 	"github.com/sqlwarden/internal/identity"
 	"github.com/sqlwarden/internal/orgs"
 )
@@ -18,6 +19,7 @@ type Profile interface {
 	Validate(config.Config) error
 	Setup() identity.SetupStrategy
 	Invitations() orgs.InvitationPolicy
+	RevealPolicy() credentials.RevealPolicy
 	// SignIn takes the account lookup port because the password method needs
 	// storage and profiles hold no database.
 	SignIn(accounts identity.AccountLookup) identity.SignInStrategy

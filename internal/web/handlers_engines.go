@@ -98,3 +98,19 @@ func (app *application) getEngineCompletionVocabulary(w http.ResponseWriter, r *
 		app.serverError(w, r, err)
 	}
 }
+
+type connectionFieldsResponse struct {
+	Fields []engine.FieldSpec `json:"fields"`
+}
+
+func (app *application) getEngineConnectionFields(w http.ResponseWriter, r *http.Request) {
+	driver := chi.URLParam(r, "driver")
+	spec, ok := engine.ConnectionSpecFor(driver)
+	if !ok {
+		app.errorMessage(w, r, http.StatusNotFound, "Unknown engine.", nil)
+		return
+	}
+	if err := response.JSON(w, http.StatusOK, connectionFieldsResponse{Fields: spec.Fields()}); err != nil {
+		app.serverError(w, r, err)
+	}
+}

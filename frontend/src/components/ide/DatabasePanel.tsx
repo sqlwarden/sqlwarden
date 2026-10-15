@@ -1109,7 +1109,6 @@ export function ConnectionRow({
         orgSlug={orgSlug}
         workspaceId={connection.workspace_id}
         connection={connection}
-        canRevealDsn={canEditConnection}
       />
 
       <AlertDialog open={deleteOpen} onOpenChange={setDeleteOpen}>

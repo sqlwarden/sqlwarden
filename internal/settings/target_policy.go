@@ -43,10 +43,12 @@ func (p *TargetPolicy) Check(ctx context.Context, driver, dsn string) error {
 	driver = strings.TrimSpace(driver)
 	dsn = strings.TrimSpace(dsn)
 
-	if _, err := engine.New(driver); err != nil {
+	target, err := engine.New(driver)
+	if err != nil {
 		return fmt.Errorf("%w: %v", ErrUnsupportedDriver, err)
 	}
-	if driver != string(engine.DialectSQLite) {
+	classifier, ok := target.(engine.TargetClassifier)
+	if !ok {
 		return nil
 	}
 
@@ -60,7 +62,7 @@ func (p *TargetPolicy) Check(ctx context.Context, driver, dsn string) error {
 	if !found {
 		return fmt.Errorf("%w: instance settings row is missing", ErrTargetDenied)
 	}
-	if isInMemorySQLiteDSN(dsn) {
+	if classifier.TargetKind(dsn) == engine.TargetKindInMemory {
 		if !settings.SQLiteInMemoryTargetsEnabled {
 			return ErrSQLiteInMemoryTargetDisabled
 		}
@@ -70,8 +72,4 @@ func (p *TargetPolicy) Check(ctx context.Context, driver, dsn string) error {
 		return ErrSQLiteFileTargetDisabled
 	}
 	return nil
-}
-
-func isInMemorySQLiteDSN(dsn string) bool {
-	return dsn == ":memory:" || strings.HasPrefix(dsn, "file::memory:")
 }

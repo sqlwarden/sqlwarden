@@ -7,19 +7,16 @@ import {
   SelectValue,
 } from '#/components/ui/select'
 import { Textarea } from '#/components/ui/textarea'
-import { FormField, StoredSecretRow } from './ConnectionFormFields'
+import { FormField } from './ConnectionFormFields'
 import type { EngineTlsSpec, TlsMode } from './engines/types'
+import { SecretField } from './SecretField'
+import type { BindSecret } from './useSecretFields'
 
 export interface TlsFormState {
   mode: TlsMode
   serverName: string
   caPem: string
   clientCertPem: string
-  clientKeyPem: string
-  /** Edit mode: a client key is already stored server-side. */
-  clientKeySet: boolean
-  /** Edit mode: drop the stored client key on save. */
-  clearClientKey: boolean
 }
 
 export const emptyTlsState: TlsFormState = {
@@ -27,9 +24,6 @@ export const emptyTlsState: TlsFormState = {
   serverName: '',
   caPem: '',
   clientCertPem: '',
-  clientKeyPem: '',
-  clientKeySet: false,
-  clearClientKey: false,
 }
 
 function PemArea({
@@ -64,11 +58,13 @@ export function ConnectionTlsFields({
   spec,
   value,
   disabled,
+  bindSecret,
   onChange,
 }: {
   spec: EngineTlsSpec | undefined
   value: TlsFormState
   disabled: boolean
+  bindSecret: BindSecret
   onChange: (next: TlsFormState) => void
 }) {
   if (!spec) return null
@@ -132,30 +128,14 @@ export function ConnectionTlsFields({
             onChange={(v) => set({ clientCertPem: v })}
           />
           <FormField label="Client key (PEM)" disabled={fieldsDisabled}>
-            <Textarea
-              aria-label="Client key (PEM)"
-              className="min-h-24 font-mono text-xs"
-              spellCheck={false}
-              value={value.clientKeyPem}
-              placeholder={
-                value.clearClientKey
-                  ? 'Will be removed on save'
-                  : value.clientKeySet
-                    ? 'Stored — leave blank to keep the existing key'
-                    : '-----BEGIN PRIVATE KEY-----'
-              }
-              disabled={fieldsDisabled || value.clearClientKey}
-              onChange={(e) => set({ clientKeyPem: e.target.value })}
+            <SecretField
+              binding={bindSecret('tls_client_key')}
+              noun="client key"
+              label="Client key (PEM)"
+              multiline
+              placeholder="-----BEGIN PRIVATE KEY-----"
+              disabled={fieldsDisabled}
             />
-            {value.clientKeySet ? (
-              <StoredSecretRow
-                noun="client key"
-                cleared={value.clearClientKey}
-                disabled={fieldsDisabled}
-                onClear={() => set({ clearClientKey: true })}
-                onRestore={() => set({ clearClientKey: false })}
-              />
-            ) : null}
           </FormField>
         </>
       ) : null}

@@ -61,6 +61,9 @@ func TestForbiddenProductionImports(t *testing.T) {
 			if importPath == "github.com/sqlwarden/internal/connection" && owner != "execution" && owner != "credentials" && owner != "connection" {
 				t.Errorf("%s imports internal/connection; only internal/execution and internal/credentials may", rel)
 			}
+			if owner == "credentials" && importPath == "github.com/sqlwarden/internal/database" {
+				t.Errorf("%s imports internal/database; credentials must depend on metadata ports", rel)
+			}
 			if processKindLayer && (strings.HasPrefix(importPath, "k8s.io/") || strings.HasPrefix(importPath, "sigs.k8s.io/")) {
 				t.Errorf("%s imports Kubernetes API %q; process topology belongs in deployment manifests", rel, importPath)
 			}

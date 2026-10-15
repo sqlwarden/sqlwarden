@@ -32,6 +32,7 @@ export const permission = {
   connDql: 'conn:dql',
   connDml: 'conn:dml',
   connDdl: 'conn:ddl',
+  connRevealSecret: 'conn:reveal_secret',
 
   policyRead: 'policy:read',
   policyModify: 'policy:modify',

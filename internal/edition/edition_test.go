@@ -10,6 +10,7 @@ import (
 
 	"github.com/sqlwarden/internal/access"
 	"github.com/sqlwarden/internal/audit"
+	"github.com/sqlwarden/internal/credentials"
 	"github.com/sqlwarden/internal/database"
 	"github.com/sqlwarden/internal/jobs"
 )
@@ -161,6 +162,70 @@ func TestDecoratorOrderAndCapabilityCopies(t *testing.T) {
 	}
 }
 
+func TestCredentialDecoratorsComposeInRegistrationOrderAndAreWired(t *testing.T) {
+	var order []string
+	module := testModule{name: "audit", feature: Catalog[0].Key, register: func(r *Registrar) error {
+		for _, name := range []string{"first", "second"} {
+			name := name
+			if err := r.DecorateCredential(func(next credentials.Provider) credentials.Provider {
+				return recordingProvider{name: name, next: next, order: &order}
+			}); err != nil {
+				return err
+			}
+		}
+		return nil
+	}}
+	composition, err := Compose(context.Background(), testEdition{
+		name: editionNameForTest, licenser: licensed(Catalog[0].Key), modules: []Module{module},
+	}, Dependencies{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if unwired := composition.Unwired(); len(unwired) != 0 {
+		t.Fatalf("credential decorator reported as unwired: %v", unwired)
+	}
+
+	provider := composition.Credentials(recordingProvider{name: "core", order: &order})
+	if _, err := provider.Resolve(context.Background(), credentials.ConnectionRef{}); err != nil {
+		t.Fatal(err)
+	}
+	if want := []string{"second", "first", "core"}; !reflect.DeepEqual(order, want) {
+		t.Fatalf("order = %v, want %v", order, want)
+	}
+}
+
+func TestDecorateCredentialRejectsNil(t *testing.T) {
+	module := testModule{name: "audit", feature: Catalog[0].Key, register: func(r *Registrar) error {
+		return r.DecorateCredential(nil)
+	}}
+	_, err := Compose(context.Background(), testEdition{
+		name: editionNameForTest, licenser: licensed(Catalog[0].Key), modules: []Module{module},
+	}, Dependencies{})
+	if err == nil || err.Error() != "register edition module \"audit\": edition: nil credential decorator" {
+		t.Fatalf("error = %v, want nil credential decorator", err)
+	}
+}
+
+func TestCredentialDecoratorPassesThroughCoreNotFound(t *testing.T) {
+	module := testModule{name: "audit", feature: Catalog[0].Key, register: func(r *Registrar) error {
+		return r.DecorateCredential(func(next credentials.Provider) credentials.Provider {
+			return recordingProvider{next: next}
+		})
+	}}
+	composition, err := Compose(context.Background(), testEdition{
+		name: editionNameForTest, licenser: licensed(Catalog[0].Key), modules: []Module{module},
+	}, Dependencies{})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	provider := composition.Credentials(recordingProvider{resolveErr: credentials.ErrNotFound})
+	_, err = provider.Resolve(context.Background(), credentials.ConnectionRef{})
+	if !errors.Is(err, credentials.ErrNotFound) {
+		t.Fatalf("Resolve error = %v, want core ErrNotFound", err)
+	}
+}
+
 func TestPolicyDecoratorCannotBypassCoreAndMayRestrict(t *testing.T) {
 	module := testModule{name: "audit", feature: Catalog[0].Key, register: func(r *Registrar) error {
 		return r.DecoratePolicy(func(access.PolicyEvaluator) access.PolicyEvaluator {
@@ -244,6 +309,37 @@ func (m testMigration) Migrate(context.Context, *database.DB) error {
 type fixedPolicy struct {
 	allow       bool
 	permissions []string
+}
+
+type recordingProvider struct {
+	name       string
+	next       credentials.Provider
+	order      *[]string
+	resolveErr error
+}
+
+func (p recordingProvider) Resolve(ctx context.Context, ref credentials.ConnectionRef) (credentials.Credentials, error) {
+	if p.order != nil {
+		*p.order = append(*p.order, p.name)
+	}
+	if p.next != nil {
+		return p.next.Resolve(ctx, ref)
+	}
+	return credentials.Credentials{}, p.resolveErr
+}
+
+func (p recordingProvider) Reveal(ctx context.Context, ref credentials.ConnectionRef, name credentials.SecretName) (string, error) {
+	if p.next != nil {
+		return p.next.Reveal(ctx, ref, name)
+	}
+	return "", credentials.ErrNotRevealable
+}
+
+func (p recordingProvider) Describe(ctx context.Context, ref credentials.ConnectionRef) (map[credentials.SecretName]credentials.SecretState, error) {
+	if p.next != nil {
+		return p.next.Describe(ctx, ref)
+	}
+	return nil, p.resolveErr
 }
 
 func (p fixedPolicy) Can(context.Context, int64, int64, string, string, int64, string) bool {

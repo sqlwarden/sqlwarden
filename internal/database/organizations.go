@@ -16,13 +16,13 @@ import (
 type Organization struct {
 	bun.BaseModel `bun:"table:organizations"`
 
-	ID                              int64     `bun:",pk,autoincrement" json:"id"`
-	Slug                            string    `bun:",notnull,unique"   json:"slug"`
-	Name                            string    `bun:",notnull"          json:"name"`
-	SchemaSnapshotsEnabled          bool      `bun:",notnull,default:true" json:"schema_snapshots_enabled"`
-	MaskConnectionCredentialsOnEdit bool      `bun:",notnull,default:false" json:"mask_connection_credentials_on_edit"`
-	CreatedAt                       time.Time `bun:",notnull"          json:"created_at"`
-	UpdatedAt                       time.Time `bun:",notnull"          json:"updated_at"`
+	ID                          int64     `bun:",pk,autoincrement" json:"id"`
+	Slug                        string    `bun:",notnull,unique"   json:"slug"`
+	Name                        string    `bun:",notnull"          json:"name"`
+	SchemaSnapshotsEnabled      bool      `bun:",notnull,default:true" json:"schema_snapshots_enabled"`
+	AllowConnectionSecretReveal bool      `bun:",notnull,default:false" json:"allow_connection_secret_reveal"`
+	CreatedAt                   time.Time `bun:",notnull"          json:"created_at"`
+	UpdatedAt                   time.Time `bun:",notnull"          json:"updated_at"`
 }
 
 type OrganizationListItem struct {
@@ -172,7 +172,7 @@ func (db *DB) UpdateOrg(ctx context.Context, id int64, name string) error {
 	return err
 }
 
-func (db *DB) UpdateOrgSettings(ctx context.Context, id int64, name *string, snapshotsEnabled *bool, maskConnectionCredentialsOnEdit *bool) error {
+func (db *DB) UpdateOrgSettings(ctx context.Context, id int64, name *string, snapshotsEnabled *bool, allowConnectionSecretReveal *bool) error {
 	ctx, cancel := context.WithTimeout(ctx, defaultTimeout)
 	defer cancel()
 
@@ -183,8 +183,8 @@ func (db *DB) UpdateOrgSettings(ctx context.Context, id int64, name *string, sna
 	if snapshotsEnabled != nil {
 		q = q.Set("schema_snapshots_enabled = ?", *snapshotsEnabled)
 	}
-	if maskConnectionCredentialsOnEdit != nil {
-		q = q.Set("mask_connection_credentials_on_edit = ?", *maskConnectionCredentialsOnEdit)
+	if allowConnectionSecretReveal != nil {
+		q = q.Set("allow_connection_secret_reveal = ?", *allowConnectionSecretReveal)
 	}
 	_, err := q.Exec(ctx)
 	return err

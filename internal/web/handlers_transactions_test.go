@@ -25,7 +25,7 @@ func setUpTransactionTestConnection(t *testing.T, emailPrefix string) (app *appl
 
 	createRes := send(t, newAuthRequest(t, http.MethodPost,
 		orgEnvConnectionsURL(slug, wsIDInt, envID),
-		map[string]any{"name": "TxConn", "driver": "sqlite", "dsn": ":memory:"}, tok), app.routes())
+		map[string]any{"name": "TxConn", "driver": "sqlite", "params": map[string]any{"path": ":memory:"}}, tok), app.routes())
 	assert.Equal(t, createRes.StatusCode, http.StatusCreated)
 	connID := fmt.Sprintf("%v", createRes.BodyFields["id"])
 
@@ -189,13 +189,13 @@ func TestTransactionEndpoints_RejectSessionFromDifferentConnection(t *testing.T)
 
 	createOne := send(t, newAuthRequest(t, http.MethodPost,
 		orgEnvConnectionsURL(slug, wsIDInt, envID),
-		map[string]any{"name": "ConnOne", "driver": "sqlite", "dsn": ":memory:"}, tok), app.routes())
+		map[string]any{"name": "ConnOne", "driver": "sqlite", "params": map[string]any{"path": ":memory:"}}, tok), app.routes())
 	assert.Equal(t, createOne.StatusCode, http.StatusCreated)
 	connOneURL := orgConnectionURL(slug, wsIDInt, envID, fmt.Sprintf("%v", createOne.BodyFields["id"]))
 
 	createTwo := send(t, newAuthRequest(t, http.MethodPost,
 		orgEnvConnectionsURL(slug, wsIDInt, envID),
-		map[string]any{"name": "ConnTwo", "driver": "sqlite", "dsn": ":memory:"}, tok), app.routes())
+		map[string]any{"name": "ConnTwo", "driver": "sqlite", "params": map[string]any{"path": ":memory:"}}, tok), app.routes())
 	assert.Equal(t, createTwo.StatusCode, http.StatusCreated)
 	connTwoURL := orgConnectionURL(slug, wsIDInt, envID, fmt.Sprintf("%v", createTwo.BodyFields["id"]))
 

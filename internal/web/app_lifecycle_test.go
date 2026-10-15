@@ -3,6 +3,8 @@ package web
 import (
 	"context"
 	"fmt"
+	"github.com/sqlwarden/internal/engine"
+	"github.com/sqlwarden/internal/profile/server"
 	"io"
 	"log/slog"
 	"runtime"
@@ -47,8 +49,9 @@ func newTestDependencies(t *testing.T) Dependencies {
 		t.Fatal(err)
 	}
 	policy := settings.NewTargetPolicy(db)
+	core := credentials.NewEncryptedColumnProvider(db, credentials.NewKeyringSealer(keyring), engine.ConnectionSpecFor)
 	rt := execution.NewLocal(execution.LocalConfig{
-		Credentials: credentials.NewLegacyDSNProvider(db, keyring),
+		Credentials: core,
 		Policy:      policy,
 		IdleTimeout: 30 * time.Minute,
 	})
@@ -62,6 +65,10 @@ func newTestDependencies(t *testing.T) Dependencies {
 		FileStores:   stores,
 		Runtime:      rt,
 		TargetPolicy: policy,
+
+		Credentials:      core,
+		CredentialWriter: core,
+		RevealPolicy:     server.New(db).RevealPolicy(),
 
 		Setup:       identity.FormSetup,
 		Invitations: orgs.InvitationsEnabled,

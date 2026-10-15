@@ -4,6 +4,7 @@ import { http, HttpResponse } from 'msw'
 import userEvent from '@testing-library/user-event'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import type { Environment } from '#/lib/api/types'
+import { connectionFieldsHandler } from '#/test/handlers'
 import { createTestQueryClient } from '#/test/render'
 import { server } from '#/test/server'
 import { drivers } from './connection-drivers'
@@ -55,6 +56,7 @@ function stubEngine(overrides: Record<string, unknown> = {}) {
 describe('ConnectionDialog', () => {
   beforeEach(() => {
     stubEngine()
+    server.use(connectionFieldsHandler())
   })
 
   it('filters the build-time driver registry without a fallback option', async () => {
@@ -70,13 +72,13 @@ describe('ConnectionDialog', () => {
     expect(screen.getByText(/No databases match/)).toBeInTheDocument()
   })
 
-  it('renders registry-driven fields and can return to driver selection', () => {
+  it('renders fields from the fetched spec and can return to driver selection', async () => {
     renderDialog({ lockedEnvironmentId: 4 })
     fireEvent.click(screen.getByRole('button', { name: new RegExp(drivers[0].label) }))
 
     expect(screen.getByRole('heading', { name: 'New Connection' })).toBeInTheDocument()
     for (const field of drivers[0].fields) {
-      expect(screen.getByText(field.label)).toBeInTheDocument()
+      expect(await screen.findByText(field.label)).toBeInTheDocument()
     }
     expect(
       screen.getAllByRole('combobox').some((combobox) => combobox.hasAttribute('disabled')),
@@ -122,7 +124,7 @@ describe('ConnectionDialog', () => {
     renderDialog()
     await user.click(screen.getByRole('button', { name: /PostgreSQL/ }))
     await user.type(screen.getByPlaceholderText('My PostgreSQL'), 'Analytics')
-    await user.type(screen.getByPlaceholderText('localhost'), 'db.example.test')
+    await user.type(await screen.findByPlaceholderText('localhost'), 'db.example.test')
     await user.type(screen.getByPlaceholderText('postgres'), 'reader')
 
     await user.click(screen.getByRole('button', { name: 'Test Connection' }))
@@ -162,7 +164,12 @@ describe('ConnectionDialog', () => {
         ],
       }),
     )
-    expect(createBody?.dsn).toContain('/analytics')
+    expect(createBody?.params).toMatchObject({
+      host: 'db.example.test',
+      username: 'reader',
+      database: 'analytics',
+    })
+    expect(createBody).not.toHaveProperty('dsn')
   }, 10000)
 
   it('toggles password field visibility', async () => {
@@ -170,7 +177,7 @@ describe('ConnectionDialog', () => {
     renderDialog()
     await user.click(screen.getByRole('button', { name: /PostgreSQL/ }))
 
-    expect(document.querySelector('input[type="password"]')).not.toBeNull()
+    await waitFor(() => expect(document.querySelector('input[type="password"]')).not.toBeNull())
 
     await user.click(screen.getByRole('button', { name: 'Show password' }))
 
@@ -192,7 +199,7 @@ describe('ConnectionDialog', () => {
     expect(checkbox).toBeChecked()
     expect(checkbox).toHaveAttribute('aria-disabled', 'true')
 
-    await user.type(screen.getByPlaceholderText('Optional'), 'app')
+    await user.type(await screen.findByPlaceholderText('Optional'), 'app')
     expect(checkbox).not.toBeChecked()
     expect(checkbox).not.toHaveAttribute('aria-disabled', 'true')
     expect(screen.queryByRole('checkbox', { name: 'Show system schemas' })).not.toBeInTheDocument()

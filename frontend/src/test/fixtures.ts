@@ -1,5 +1,7 @@
 import type {
   Account,
+  ConnectionDetail,
+  ConnectionFieldSpec,
   InstanceConfiguration,
   InstanceSettings,
   Organization,
@@ -19,6 +21,36 @@ export function accountFixture(overrides: Partial<Account> = {}): Account {
     is_active: true,
     created_at: now,
     updated_at: now,
+    ...overrides,
+  }
+}
+
+export function connectionFieldSpecFixture(): ConnectionFieldSpec[] {
+  return [
+    { key: 'host', label: 'Host', type: 'string', required: true, secret: false },
+    { key: 'port', label: 'Port', type: 'int', required: true, default: '5432', secret: false },
+    { key: 'database', label: 'Database', type: 'string', required: false, secret: false },
+    { key: 'username', label: 'Username', type: 'string', required: true, secret: false },
+    { key: 'password', label: 'Password', type: 'string', required: false, secret: true },
+  ]
+}
+
+export function connectionDetailFixture(
+  overrides: Partial<ConnectionDetail> = {},
+): ConnectionDetail {
+  return {
+    id: 7,
+    workspace_id: 3,
+    environment_id: 4,
+    name: 'Analytics',
+    driver: 'postgres',
+    access_mode: 'open',
+    show_system_schemas: false,
+    show_all_databases: false,
+    created_at: now,
+    updated_at: now,
+    params: { host: 'db.example.test', port: '5432', database: 'analytics', username: 'reader' },
+    secrets: { password: { set: true, source: 'stored', revealable: true } },
     ...overrides,
   }
 }

@@ -17,7 +17,7 @@ func TestCompleteConnectionSQLKeywordOnlyWithoutEphemeralSession(t *testing.T) {
 	ws := seedWorkspaceForAccount(t, app, org, owner, "Completion WS", "")
 	envID := defaultEnvironmentID(t, app, ws.ID)
 	conn := seedConnection(t, app, ws.ID, &envID, org.ID, "postgres", "Completion DB", "open")
-	if err := app.db.UpdateConnectionWithPolicy(context.Background(), conn.ID, conn.Name, conn.DSNEncrypted, conn.AccessMode, database.SchemaSnapshotPolicyDisabled); err != nil {
+	if err := app.db.UpdateConnectionWithScopeAndPolicy(context.Background(), conn.ID, conn.Name, conn.AccessMode, database.SchemaSnapshotPolicyDisabled, conn.DefaultScope, conn.ShowSystemSchemas, conn.ShowAllDatabases); err != nil {
 		t.Fatal(err)
 	}
 

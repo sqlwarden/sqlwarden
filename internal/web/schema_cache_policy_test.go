@@ -35,9 +35,7 @@ func TestDisablingConnectionSnapshotsPurgesNodeCache(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err := f.app.db.UpdateConnectionDSN(context.Background(), f.conn.ID, encryptedDSN); err != nil {
-		t.Fatal(err)
-	}
+	setLegacyColumn(t, f.app, f.conn.ID, "dsn_encrypted", encryptedDSN)
 	seedCachedListing(t, f.app, f.conn.ID)
 
 	res := send(t, newAuthRequest(t, http.MethodPatch, f.base,
@@ -65,13 +63,11 @@ func TestRotatingConnectionDSNPurgesNodeCache(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err := f.app.db.UpdateConnectionDSN(context.Background(), f.conn.ID, encryptedDSN); err != nil {
-		t.Fatal(err)
-	}
+	setLegacyColumn(t, f.app, f.conn.ID, "dsn_encrypted", encryptedDSN)
 	seedCachedListing(t, f.app, f.conn.ID)
 
 	res := send(t, newAuthRequest(t, http.MethodPatch, f.base,
-		map[string]any{"dsn": "other-dsn"}, f.tok), f.app.routes())
+		map[string]any{"params": map[string]any{"dsn": "other-dsn"}}, f.tok), f.app.routes())
 	if res.StatusCode != http.StatusNoContent {
 		t.Fatalf("rotate dsn: status=%d body=%s", res.StatusCode, res.BodyBytes)
 	}

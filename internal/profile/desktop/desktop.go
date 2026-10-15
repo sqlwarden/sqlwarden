@@ -2,11 +2,14 @@
 package desktop
 
 import (
+	"context"
 	"errors"
 	"path/filepath"
 	"slices"
 
+	"github.com/sqlwarden/internal/access"
 	"github.com/sqlwarden/internal/config"
+	"github.com/sqlwarden/internal/credentials"
 	"github.com/sqlwarden/internal/identity"
 	"github.com/sqlwarden/internal/orgs"
 	"github.com/sqlwarden/internal/profile"
@@ -39,9 +42,16 @@ func (desktopProfile) Validate(cfg config.Config) error {
 	return nil
 }
 
-func (desktopProfile) Setup() identity.SetupStrategy      { return identity.LocalSetup }
-func (desktopProfile) Invitations() orgs.InvitationPolicy { return orgs.InvitationsDisabled }
+func (desktopProfile) Setup() identity.SetupStrategy          { return identity.LocalSetup }
+func (desktopProfile) Invitations() orgs.InvitationPolicy     { return orgs.InvitationsDisabled }
+func (desktopProfile) RevealPolicy() credentials.RevealPolicy { return desktopRevealPolicy{} }
 
 func (desktopProfile) SignIn(identity.AccountLookup) identity.SignInStrategy {
 	return identity.SignInUnavailable
+}
+
+type desktopRevealPolicy struct{}
+
+func (desktopRevealPolicy) Allowed(context.Context, credentials.OrgRef, access.Principal) (bool, error) {
+	return true, nil
 }

@@ -1,13 +1,30 @@
 import { render, screen } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import { describe, expect, it } from 'vitest'
 
+import type { ConnectionSecretViews } from '#/lib/api/types'
 import { ConnectionSshFields, emptySshState, type SshFormState } from './ConnectionSshFields'
+import { useSecretFields } from './useSecretFields'
 
-function Harness({ initial }: { initial?: Partial<SshFormState> } = {}) {
+const storedPassword: ConnectionSecretViews = {
+  ssh_password: { set: true, source: 'stored', revealable: false },
+}
+const storedKey: ConnectionSecretViews = {
+  ssh_private_key: { set: true, source: 'stored', revealable: false },
+}
+
+function Harness({
+  initial,
+  secrets,
+}: {
+  initial?: Partial<SshFormState>
+  secrets?: ConnectionSecretViews
+} = {}) {
   const [value, setValue] = useState<SshFormState>({ ...emptySshState, ...initial })
-  return <ConnectionSshFields value={value} onChange={setValue} />
+  const { bind, load } = useSecretFields()
+  useEffect(() => load(secrets), [load, secrets])
+  return <ConnectionSshFields value={value} bindSecret={bind} onChange={setValue} />
 }
 
 describe('ConnectionSshFields', () => {
@@ -55,19 +72,18 @@ describe('ConnectionSshFields', () => {
     expect(screen.getByLabelText(/known_hosts entry/i)).toBeInTheDocument()
   })
 
-  it('removes a stored password on request and lets it be restored', async () => {
-    render(<Harness initial={{ enabled: true, authMethod: 'password', passwordSet: true }} />)
-    await userEvent.click(screen.getByRole('button', { name: /remove stored password/i }))
+  it('removes a saved password on request and lets it be restored', async () => {
+    render(<Harness initial={{ enabled: true, authMethod: 'password' }} secrets={storedPassword} />)
+    await userEvent.click(screen.getByRole('button', { name: /remove saved password/i }))
     expect(screen.getByLabelText(/SSH password/i)).toBeDisabled()
-    expect(screen.getByText(/stored password will be removed on save/i)).toBeInTheDocument()
+    expect(screen.getByText(/saved password will be removed on save/i)).toBeInTheDocument()
     await userEvent.click(screen.getByRole('button', { name: /keep it/i }))
     expect(screen.getByLabelText(/SSH password/i)).toBeEnabled()
   })
 
-  it('disables the private key and passphrase when the stored key is removed', async () => {
-    render(<Harness initial={{ enabled: true, authMethod: 'private_key', privateKeySet: true }} />)
-    await userEvent.click(screen.getByRole('button', { name: /remove stored key/i }))
+  it('offers removal of a saved private key', async () => {
+    render(<Harness initial={{ enabled: true, authMethod: 'private_key' }} secrets={storedKey} />)
+    await userEvent.click(screen.getByRole('button', { name: /remove saved key/i }))
     expect(screen.getByLabelText(/private key/i)).toBeDisabled()
-    expect(screen.getByLabelText(/key passphrase/i)).toBeDisabled()
   })
 })

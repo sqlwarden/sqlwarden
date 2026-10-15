@@ -23,10 +23,12 @@ import (
 	"github.com/sqlwarden/internal/credentials"
 	"github.com/sqlwarden/internal/database"
 	"github.com/sqlwarden/internal/encrypt"
+	"github.com/sqlwarden/internal/engine"
 	"github.com/sqlwarden/internal/execution"
 	"github.com/sqlwarden/internal/identity"
 	"github.com/sqlwarden/internal/orgs"
 	"github.com/sqlwarden/internal/platform/clientip"
+	"github.com/sqlwarden/internal/profile/server"
 	"github.com/sqlwarden/internal/settings"
 	"github.com/sqlwarden/internal/smtp"
 	"github.com/sqlwarden/internal/token"
@@ -102,8 +104,34 @@ func newTestApplication(t *testing.T) *application {
 		t.Fatal(err)
 	}
 	installTestRuntime(t, app)
+	app.credentialPorts = newTestCredentialPorts(app)
 
 	return app
+}
+
+func newTestCredentialPorts(app *application) credentialPorts {
+	core := credentials.NewEncryptedColumnProvider(app.db, credentials.NewKeyringSealer(app.keyring), engine.ConnectionSpecFor)
+	return credentialPorts{provider: core, writer: core, reveal: server.New(app.db).RevealPolicy()}
+}
+
+// insertStructuredConnection stores a connection in structured form, the only
+// shape runtime sessions open from.
+func insertStructuredConnection(t *testing.T, app *application, workspaceID int64, environmentID *int64, name, driver string, params map[string]any) database.Connection {
+	t.Helper()
+
+	conn, err := app.db.InsertConnection(context.Background(), workspaceID, environmentID, name, driver, "", "open")
+	if err != nil {
+		t.Fatal(err)
+	}
+	encoded, err := json.Marshal(params)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := app.db.UpdateConnectionStructured(context.Background(), conn.ID, encoded, nil, nil); err != nil {
+		t.Fatal(err)
+	}
+	conn.Params = encoded
+	return conn
 }
 
 type testRuntimeBackends struct {
@@ -123,7 +151,7 @@ func installTestRuntime(t *testing.T, app *application) {
 	}
 	policy := settings.NewTargetPolicy(app.db)
 	runtime := execution.NewLocal(execution.LocalConfig{
-		Credentials: credentials.NewLegacyDSNProvider(app.db, app.keyring),
+		Credentials: credentials.NewEncryptedColumnProvider(app.db, credentials.NewKeyringSealer(app.keyring), engine.ConnectionSpecFor),
 		Policy:      policy,
 		Logger:      app.logger,
 		Manager:     backends.manager,
@@ -567,6 +595,24 @@ func seedConnection(t *testing.T, app *application, workspaceID int64, environme
 	conn, err := app.db.InsertConnection(context.Background(), workspaceID, environmentID, name, driver, "dsn", accessMode)
 	if err != nil {
 		t.Fatal(err)
+	}
+	if spec, ok := engine.ConnectionSpecFor(driver); ok {
+		for _, field := range spec.Fields() {
+			var params string
+			switch field.Key {
+			case "dsn":
+				params = `{"dsn":"dsn"}`
+			case "path":
+				params = `{"path":":memory:"}`
+			default:
+				continue
+			}
+			if err := app.db.UpdateConnectionStructured(context.Background(), conn.ID, json.RawMessage(params), nil, nil); err != nil {
+				t.Fatal(err)
+			}
+			conn.Params = json.RawMessage(params)
+			break
+		}
 	}
 	return conn
 }

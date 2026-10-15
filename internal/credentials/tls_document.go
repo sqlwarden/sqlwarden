@@ -17,11 +17,6 @@ type TLSDocument struct {
 	CAPEM         string `json:"ca_pem,omitempty"`
 	ClientCertPEM string `json:"client_cert_pem,omitempty"`
 	ClientKeyPEM  string `json:"client_key_pem,omitempty"`
-
-	// ClearClientKey is a request-only signal on update: drop the stored client
-	// key instead of inheriting it when client_key_pem is blank. It is zeroed
-	// before sealing, so it never reaches the encrypted document.
-	ClearClientKey bool `json:"clear_client_key,omitempty"`
 }
 
 // IsEmpty reports whether the document carries no TLS configuration at all.

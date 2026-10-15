@@ -60,6 +60,29 @@ func (navFlatDriver) Tree() metadata.Tree {
 // navPlainDriver has no navigator.
 type navPlainDriver struct{}
 
+func navConnectionFields() []engine.FieldSpec {
+	return []engine.FieldSpec{{Key: "dsn", Label: "DSN", Type: engine.FieldTypeString, Required: true}}
+}
+
+func navBuildDSN(params engine.Params) (string, error) {
+	if params["dsn"] == "" {
+		return "", errors.New("dsn is required")
+	}
+	return params["dsn"], nil
+}
+
+func navParseDSN(dsn string) (engine.Params, engine.Secrets, error) {
+	return engine.Params{"dsn": dsn}, engine.Secrets{}, nil
+}
+
+func (navPlainDriver) Fields() []engine.FieldSpec { return navConnectionFields() }
+func (navPlainDriver) BuildDSN(params engine.Params, _ engine.Secrets) (string, error) {
+	return navBuildDSN(params)
+}
+func (navPlainDriver) ParseDSN(dsn string) (engine.Params, engine.Secrets, error) {
+	return navParseDSN(dsn)
+}
+
 func (navPlainDriver) Connect(context.Context, engine.ConnectionConfig) error { return nil }
 func (navPlainDriver) Ping(context.Context) error                             { return nil }
 func (navPlainDriver) Close() error                                           { return nil }
@@ -125,6 +148,14 @@ func (*navTestDriver) Execute(context.Context, string, ...any) (*result.ResultSe
 	return &result.ResultSet{}, nil
 }
 func (*navTestDriver) Dialect() engine.Dialect { return engine.DialectSQLite }
+
+func (*navTestDriver) Fields() []engine.FieldSpec { return navConnectionFields() }
+func (*navTestDriver) BuildDSN(params engine.Params, _ engine.Secrets) (string, error) {
+	return navBuildDSN(params)
+}
+func (*navTestDriver) ParseDSN(dsn string) (engine.Params, engine.Secrets, error) {
+	return navParseDSN(dsn)
+}
 
 func (*navTestDriver) Tree() metadata.Tree {
 	return metadata.Tree{
@@ -331,7 +362,7 @@ func TestSchemaNodesAppliesShowAllDatabases(t *testing.T) {
 	t.Parallel()
 	f := newNavFixture(t, navTestEngine)
 	conn := f.conn
-	if err := f.app.db.UpdateConnectionWithScopeAndPolicy(context.Background(), conn.ID, conn.Name, conn.DSNEncrypted, conn.AccessMode, conn.SchemaSnapshotPolicy, navDB("reports"), conn.ShowSystemSchemas, false); err != nil {
+	if err := f.app.db.UpdateConnectionWithScopeAndPolicy(context.Background(), conn.ID, conn.Name, conn.AccessMode, conn.SchemaSnapshotPolicy, navDB("reports"), conn.ShowSystemSchemas, false); err != nil {
 		t.Fatal(err)
 	}
 	sessionID := f.attach(t, newNavTestDriver())

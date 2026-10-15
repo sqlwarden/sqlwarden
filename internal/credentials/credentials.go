@@ -5,6 +5,7 @@ import (
 	"errors"
 	"log/slog"
 
+	"github.com/sqlwarden/internal/access"
 	"github.com/sqlwarden/internal/connection"
 	"github.com/sqlwarden/internal/engine"
 )
@@ -63,7 +64,27 @@ func (c Credentials) GoString() string { return c.String() }
 // LogValue redacts secrets from structured logs.
 func (c Credentials) LogValue() slog.Value { return slog.StringValue(c.String()) }
 
-// Provider resolves the credentials for a connection.
-type Provider interface {
+// Resolver resolves the credentials for a connection. Runtimes need only this
+// narrower surface.
+type Resolver interface {
 	Resolve(ctx context.Context, ref ConnectionRef) (Credentials, error)
+}
+
+// Provider resolves credentials and exposes secret metadata and explicit
+// reveal operations.
+type Provider interface {
+	Resolver
+	Reveal(ctx context.Context, ref ConnectionRef, name SecretName) (string, error)
+	Describe(ctx context.Context, ref ConnectionRef) (map[SecretName]SecretState, error)
+}
+
+// OrgRef identifies an organization for a reveal policy decision.
+type OrgRef struct {
+	OrgID string
+}
+
+// RevealPolicy decides whether the product profile permits revealing stored
+// connection secrets. Authorization remains the caller's responsibility.
+type RevealPolicy interface {
+	Allowed(ctx context.Context, org OrgRef, principal access.Principal) (bool, error)
 }

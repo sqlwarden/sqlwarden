@@ -203,14 +203,8 @@ func seedExportJobInput(t *testing.T, app *application, sql string) (exportJobIn
 	account, _, org := seedOrgOwner(t, app, uniqueEmail(t, "export-lifecycle"), "Export Lifecycle", "Export Lifecycle Org")
 	ws := seedWorkspaceForAccount(t, app, org, account, "Export Lifecycle WS", "")
 	envID := defaultEnvironmentID(t, app, ws.ID)
-	encryptedDSN, err := app.keyring.Encrypt(filepath.Join(t.TempDir(), "export.db"))
-	if err != nil {
-		t.Fatal(err)
-	}
-	conn, err := app.db.InsertConnection(context.Background(), ws.ID, &envID, "Export Lifecycle Conn", "sqlite", encryptedDSN, "open")
-	if err != nil {
-		t.Fatal(err)
-	}
+	conn := insertStructuredConnection(t, app, ws.ID, &envID, "Export Lifecycle Conn", "sqlite",
+		map[string]any{"path": filepath.Join(t.TempDir(), "export.db")})
 	app.enforcer.InvalidateAncestry("connection", conn.ID)
 	input := exportJobInput{
 		AccountID: account.ID, OrgID: org.ID, WorkspaceID: ws.ID, ConnectionID: conn.ID,
@@ -327,13 +321,13 @@ func TestTestConnectionProbesWithCallerCredentials(t *testing.T) {
 	envID := defaultEnvironmentID(t, app, wsID)
 
 	res := send(t, newAuthRequest(t, http.MethodPost, orgEnvConnectionsURL(slug, wsID, envID)+"/test",
-		map[string]any{"driver": "sqlite", "dsn": ":memory:"}, tok), app.routes())
+		map[string]any{"driver": "sqlite", "params": map[string]any{"path": ":memory:"}}, tok), app.routes())
 	assert.Equal(t, res.StatusCode, http.StatusOK)
 	assert.Equal(t, res.BodyFields["ok"], true)
 
 	assert.Equal(t, len(rt.probes), 1)
 	assert.Equal(t, rt.probes[0].creds.Driver, "sqlite")
-	assert.Equal(t, rt.probes[0].creds.DSN, ":memory:")
+	assert.Equal(t, rt.probes[0].creds.DSN, "file::memory:")
 	assert.Equal(t, rt.probes[0].scope.ConnectionID, "")
 	assert.Equal(t, rt.probes[0].scope.WorkspaceID, strconv.FormatInt(wsID, 10))
 	assert.Equal(t, len(rt.opens), 0)
@@ -438,17 +432,13 @@ func TestTestConnectionFailureDoesNotEchoCallerSecrets(t *testing.T) {
 	envID := defaultEnvironmentID(t, app, wsID)
 
 	const secret = "s3cr3t-Passw0rd-xyz"
-	for name, dsn := range map[string]string{
-		"postgres keyword": "host=localhost port=19999 user=test password=" + secret + " dbname=test sslmode=disable connect_timeout=1",
-		"postgres url":     "postgres://test:" + secret + "@localhost:19999/test?sslmode=disable&connect_timeout=1",
-		"mysql":            "test:" + secret + "@tcp(localhost:19999)/test?timeout=1s",
-	} {
-		driver := "postgres"
-		if name == "mysql" {
-			driver = "mysql"
-		}
+	for name, driver := range map[string]string{"postgres": "postgres", "mysql": "mysql"} {
 		res := send(t, newAuthRequest(t, http.MethodPost, orgEnvConnectionsURL(slug, wsID, envID)+"/test",
-			map[string]any{"driver": driver, "dsn": dsn}, tok), app.routes())
+			map[string]any{
+				"driver":  driver,
+				"params":  map[string]any{"host": "localhost", "port": "19999", "database": "test", "username": "test"},
+				"secrets": map[string]any{"password": secret},
+			}, tok), app.routes())
 		if strings.Contains(string(res.BodyBytes), secret) {
 			t.Fatalf("%s: response echoes the caller password: %s", name, res.BodyBytes)
 		}

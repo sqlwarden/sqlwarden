@@ -1,5 +1,3 @@
-import { useState } from 'react'
-import { Icon } from '#/lib/icons'
 import { Checkbox } from '#/components/ui/checkbox'
 import { FormField } from '#/components/ui/field'
 import { Input } from '#/components/ui/input'
@@ -11,15 +9,15 @@ import {
   SelectTrigger,
   SelectValue,
 } from '#/components/ui/select'
-import type { ScopePath } from '#/lib/api/types'
+import { connectionSecretNames, type ConnectionSecretName, type ScopePath } from '#/lib/api/types'
 import { cn } from '#/lib/utils'
-import type { DriverDef, FieldDef } from './connection-drivers/index'
+import type { FieldLayout } from './connection-drivers/index'
+import type { ResolvedField } from './connection-drivers/resolveFields'
+import { SecretField } from './SecretField'
 import { scopeSegmentName, type ScopeDiscovery } from './useConnectionForm'
+import type { BindSecret } from './useSecretFields'
 
-// Fields, sections, and layout all come from the driver definition, so adding a
-// new database means writing one driver def — no form changes.
-
-const SPAN_CLASS: Record<NonNullable<FieldDef['span']>, string> = {
+const SPAN_CLASS: Record<NonNullable<FieldLayout['span']>, string> = {
   full: 'col-span-6',
   wide: 'col-span-4',
   half: 'col-span-3',
@@ -29,17 +27,19 @@ const SPAN_CLASS: Record<NonNullable<FieldDef['span']>, string> = {
 const NO_DEFAULT_SCOPE = '__sqlwarden_no_default_scope__'
 
 export function DriverFields({
-  driver,
+  fields,
   values,
   errors,
   disabled,
   onChange,
+  bindSecret,
   scopeDiscovery,
   defaultScope,
   onDatabaseChange,
   onSchemaChange,
 }: {
-  driver: DriverDef
+  fields: ResolvedField[]
+  bindSecret: BindSecret
   values: Record<string, string>
   errors: Record<string, string>
   disabled: boolean
@@ -52,7 +52,7 @@ export function DriverFields({
   const nodes: React.ReactNode[] = []
   let lastSection: string | undefined
 
-  for (const field of driver.fields) {
+  for (const field of fields) {
     if (field.section && field.section !== lastSection) {
       lastSection = field.section
       nodes.push(
@@ -80,16 +80,32 @@ export function DriverFields({
       )
       continue
     }
+    if (field.secret && !isSecretName(field.key)) {
+      throw new Error(
+        `Connection field "${field.key}" is marked secret but is not a known secret name; it cannot be saved.`,
+      )
+    }
     nodes.push(
       <div key={field.key} className={SPAN_CLASS[field.span ?? 'full']}>
         <FormField label={field.label} error={errors[field.key]}>
-          <DriverFieldControl
-            field={field}
-            value={values[field.key] ?? ''}
-            invalid={Boolean(errors[field.key])}
-            disabled={disabled}
-            onChange={onChange}
-          />
+          {field.secret && isSecretName(field.key) ? (
+            <SecretField
+              binding={bindSecret(field.key)}
+              noun={field.label.toLowerCase()}
+              label={field.label}
+              placeholder={field.placeholder}
+              disabled={disabled}
+              invalid={Boolean(errors[field.key])}
+            />
+          ) : (
+            <DriverFieldControl
+              field={field}
+              value={values[field.key] ?? ''}
+              invalid={Boolean(errors[field.key])}
+              disabled={disabled}
+              onChange={onChange}
+            />
+          )}
         </FormField>
       </div>,
     )
@@ -200,15 +216,13 @@ function DriverFieldControl({
   disabled,
   onChange,
 }: {
-  field: FieldDef
+  field: ResolvedField
   value: string
   invalid: boolean
   disabled: boolean
   onChange: (key: string, value: string) => void
 }) {
-  if (field.type === 'select') {
-    const selectedLabel =
-      field.options?.find((o) => o.value === (value || field.default))?.label ?? value
+  if (field.type === 'enum') {
     return (
       <Select
         value={value || field.default || ''}
@@ -218,32 +232,31 @@ function DriverFieldControl({
         disabled={disabled}
       >
         <SelectTrigger className="w-full">
-          <SelectValue>{selectedLabel}</SelectValue>
+          <SelectValue>{value || field.default}</SelectValue>
         </SelectTrigger>
         <SelectContent className="min-w-[120px]">
-          {(field.options ?? []).map((o) => (
-            <SelectItem key={o.value} value={o.value}>
-              {o.label}
+          {(field.options ?? []).map((option) => (
+            <SelectItem key={option} value={option}>
+              {option}
             </SelectItem>
           ))}
         </SelectContent>
       </Select>
     )
   }
-  if (field.type === 'password') {
+  if (field.type === 'bool') {
     return (
-      <PasswordFieldControl
-        field={field}
-        value={value}
-        invalid={invalid}
+      <Checkbox
+        aria-label={field.label}
+        checked={value === 'true'}
         disabled={disabled}
-        onChange={onChange}
+        onCheckedChange={(next) => onChange(field.key, next === true ? 'true' : 'false')}
       />
     )
   }
   return (
     <Input
-      type={field.type === 'number' ? 'number' : 'text'}
+      type={field.type === 'int' ? 'number' : 'text'}
       value={value}
       placeholder={field.placeholder}
       disabled={disabled}
@@ -253,116 +266,8 @@ function DriverFieldControl({
   )
 }
 
-function PasswordFieldControl({
-  field,
-  value,
-  invalid,
-  disabled,
-  onChange,
-}: {
-  field: FieldDef
-  value: string
-  invalid: boolean
-  disabled: boolean
-  onChange: (key: string, value: string) => void
-}) {
-  return (
-    <PasswordInput
-      value={value}
-      placeholder={field.placeholder}
-      invalid={invalid}
-      disabled={disabled}
-      onChange={(next) => onChange(field.key, next)}
-    />
-  )
-}
-
-export function PasswordInput({
-  value,
-  placeholder,
-  invalid,
-  disabled,
-  onChange,
-  'aria-label': ariaLabel,
-}: {
-  value: string
-  placeholder?: string
-  invalid?: boolean
-  disabled?: boolean
-  onChange: (value: string) => void
-  'aria-label'?: string
-}) {
-  const [visible, setVisible] = useState(false)
-
-  return (
-    <div className="relative">
-      <Input
-        type={visible ? 'text' : 'password'}
-        aria-label={ariaLabel}
-        value={value}
-        placeholder={placeholder}
-        disabled={disabled}
-        aria-invalid={invalid ? true : undefined}
-        className="pe-9"
-        onChange={(e) => onChange(e.target.value)}
-      />
-      <button
-        type="button"
-        aria-label={visible ? 'Hide password' : 'Show password'}
-        className="absolute end-3 top-1/2 inline-flex size-4 -translate-y-1/2 cursor-pointer items-center justify-center text-muted-foreground transition-colors hover:text-foreground"
-        onClick={() => setVisible((current) => !current)}
-      >
-        <Icon name={visible ? 'eye-off' : 'eye'} size={20} className="size-4" />
-      </button>
-    </div>
-  )
-}
-
-/** Edit-form control for a secret that is already stored server-side: the input
- *  stays visible so a replacement can be typed, and this row toggles an explicit
- *  "drop the stored value on save" request. */
-export function StoredSecretRow({
-  noun,
-  cleared,
-  disabled,
-  onClear,
-  onRestore,
-}: {
-  noun: string
-  cleared: boolean
-  disabled?: boolean
-  onClear: () => void
-  onRestore: () => void
-}) {
-  return (
-    <div className="flex flex-wrap items-center gap-x-2 gap-y-1 text-[11px] text-muted-foreground">
-      {cleared ? (
-        <>
-          <span className="text-destructive">Stored {noun} will be removed on save.</span>
-          <button
-            type="button"
-            className="font-medium underline underline-offset-2 hover:text-foreground disabled:opacity-50"
-            disabled={disabled}
-            onClick={onRestore}
-          >
-            Keep it
-          </button>
-        </>
-      ) : (
-        <>
-          <span>A {noun} is stored. Leave blank to keep it.</span>
-          <button
-            type="button"
-            className="font-medium text-destructive underline underline-offset-2 hover:opacity-80 disabled:opacity-50"
-            disabled={disabled}
-            onClick={onClear}
-          >
-            Remove stored {noun}
-          </button>
-        </>
-      )}
-    </div>
-  )
+function isSecretName(key: string): key is ConnectionSecretName {
+  return (connectionSecretNames as readonly string[]).includes(key)
 }
 
 export function ShowSystemSchemasField({

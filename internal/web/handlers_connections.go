@@ -12,6 +12,7 @@ import (
 
 	"github.com/go-chi/chi/v5"
 	"github.com/sqlwarden/internal/access"
+	"github.com/sqlwarden/internal/catalog"
 	"github.com/sqlwarden/internal/credentials"
 	"github.com/sqlwarden/internal/database"
 	"github.com/sqlwarden/internal/engine"
@@ -22,7 +23,6 @@ import (
 	"github.com/sqlwarden/internal/execution"
 	"github.com/sqlwarden/internal/request"
 	"github.com/sqlwarden/internal/response"
-	schemaapp "github.com/sqlwarden/internal/schema"
 	"github.com/sqlwarden/internal/validator"
 	"github.com/sqlwarden/pkg/result"
 )
@@ -247,27 +247,6 @@ func connectionSafetyChecker(driverName string) safety.Checker {
 	return safety.NewHeuristic()
 }
 
-func driverSupportsSystemSchemas(driverName string) bool {
-	set, ok := engine.Describe(driverName)
-	return ok && set.Tree != nil && set.Tree.SystemObjects
-}
-
-// resolveShowAllDatabases forces the setting on when the connection names no
-// default database, and drops it for drivers without a database level.
-func resolveShowAllDatabases(tree *metadata.Tree, defaultScope metadata.ScopePath, requested bool) bool {
-	if tree == nil {
-		return false
-	}
-	kind := tree.DatabaseKind()
-	if kind == "" {
-		return false
-	}
-	if defaultScope.Name(kind) == "" {
-		return true
-	}
-	return requested
-}
-
 // registeredConnectionExplainer resolves an Explainer implemented by the
 // registered engine, mirroring registeredConnectionClassifier. There is no
 // heuristic fallback: an engine either has a real EXPLAIN form or it doesn't.
@@ -280,591 +259,302 @@ func registeredConnectionExplainer(driverName string) (explain.Explainer, bool) 
 	return e, ok
 }
 
+type tlsConfigInput = catalog.TLSConfig
+type sshConfigInput = catalog.SSHConfig
+
+func connectionRef(r *http.Request) catalog.ConnRef {
+	ref := catalog.ConnRef{
+		OrgID:        contextGetOrg(r).ID,
+		WorkspaceID:  contextGetWorkspace(r).ID,
+		ConnectionID: contextGetConnection(r).ID,
+	}
+	if env := contextGetEnvironment(r); env.ID != 0 {
+		ref.EnvironmentID = &env.ID
+	}
+	return ref
+}
+
+func routeEnvironmentID(r *http.Request) *int64 {
+	if env := contextGetEnvironment(r); env.ID != 0 {
+		return &env.ID
+	}
+	return nil
+}
+
+func (app *application) requestPrincipal(w http.ResponseWriter, r *http.Request) (access.Principal, bool) {
+	principal, ok := contextGetPrincipal(r)
+	if !ok {
+		app.notPermitted(w, r)
+		return access.Principal{}, false
+	}
+	return principal, true
+}
+
+// catalogError translates catalog failures to the standard error envelope.
+// Messages never include request values.
+func (app *application) catalogError(w http.ResponseWriter, r *http.Request, err error) {
+	var validation *catalog.ValidationError
+	var reveal *catalog.ErrReveal
+	switch {
+	case errors.As(err, &validation):
+		v := validator.Validator{}
+		for field, message := range validation.Fields {
+			v.AddFieldError(field, message)
+		}
+		app.failedValidation(w, r, v)
+	case errors.Is(err, catalog.ErrNotFound):
+		app.notFound(w, r)
+	case errors.Is(err, catalog.ErrForbidden):
+		app.notPermitted(w, r)
+	case errors.Is(err, catalog.ErrActiveSessions):
+		app.errorMessage(w, r, http.StatusConflict, "Connection has active sessions. Retry with force=true to apply this change and drop them.", nil)
+	case errors.As(err, &reveal):
+		app.revealError(w, r, reveal)
+	case isTargetPolicyDenial(err):
+		if isSQLiteTargetDisabled(err) {
+			app.logWarn(r, "sqlite target connection blocked")
+		}
+		v := validator.Validator{}
+		v.AddFieldError("driver", targetConnectionFieldError(err))
+		app.failedValidation(w, r, v)
+	default:
+		app.serverError(w, r, err)
+	}
+}
+
+func (app *application) revealError(w http.ResponseWriter, r *http.Request, reveal *catalog.ErrReveal) {
+	switch reveal.Code {
+	case catalog.RevealCodeDisabled:
+		app.logWarn(r, "connection secret reveal denied", slog.String("reason", reveal.Code))
+		app.apiError(w, r, http.StatusForbidden, catalog.RevealCodeDisabled, "Revealing connection secrets is disabled for this organization.", response.APIError{}, nil)
+	default:
+		app.apiError(w, r, http.StatusConflict, catalog.RevealCodeNotRevealable, "This secret cannot be revealed.", response.APIError{}, nil)
+	}
+}
+
 func (app *application) createConnection(w http.ResponseWriter, r *http.Request) {
 	var input struct {
-		Name              string              `json:"name"`
-		Driver            string              `json:"driver"`
-		DSN               string              `json:"dsn"`
-		EnvironmentID     *int64              `json:"environment_id"`
-		AccessMode        string              `json:"access_mode"`
-		DefaultScope      metadata.ScopePath  `json:"default_scope,omitempty"`
-		ShowSystemSchemas bool                `json:"show_system_schemas"`
-		ShowAllDatabases  bool                `json:"show_all_databases"`
-		TLS               *tlsConfigDocument  `json:"tls"`
-		SSH               *sshConfigDocument  `json:"ssh"`
-		V                 validator.Validator `json:"-"`
+		Name              string                             `json:"name"`
+		Driver            string                             `json:"driver"`
+		EnvironmentID     *int64                             `json:"environment_id"`
+		Params            engine.Params                      `json:"params"`
+		TLSConfig         *tlsConfigInput                    `json:"tls_config"`
+		SSHConfig         *sshConfigInput                    `json:"ssh_config"`
+		Secrets           map[credentials.SecretName]*string `json:"secrets"`
+		AccessMode        string                             `json:"access_mode"`
+		DefaultScope      metadata.ScopePath                 `json:"default_scope,omitempty"`
+		ShowSystemSchemas bool                               `json:"show_system_schemas"`
+		ShowAllDatabases  bool                               `json:"show_all_databases"`
 	}
-
-	err := request.DecodeJSON(w, r, &input)
-	if err != nil {
+	if err := request.DecodeJSON(w, r, &input); err != nil {
 		app.badRequest(w, r, err)
 		return
 	}
-
-	input.V.CheckField(input.Name != "", "name", "Name is required.")
-	input.V.CheckField(input.Driver != "", "driver", "Driver is required.")
-	input.V.CheckField(input.DSN != "", "dsn", "DSN is required.")
-
-	var tlsDoc tlsConfigDocument
-	if input.TLS != nil {
-		tlsDoc = *input.TLS
-		app.validateTLSDocument(input.Driver, tlsDoc, &input.V)
-	}
-
-	var sshDoc sshConfigDocument
-	if input.SSH != nil {
-		sshDoc = *input.SSH
-		app.validateSSHDocument(input.Driver, sshDoc, &input.V)
-	}
-	if input.Driver != "" {
-		if err := app.targetPolicy.Check(r.Context(), input.Driver, input.DSN); err != nil {
-			if isSQLiteTargetDisabled(err) {
-				app.logWarn(r, "sqlite target connection blocked", slog.String("operation", "create_connection"), slog.String("driver", input.Driver))
-			}
-			input.V.CheckField(false, "driver", targetConnectionFieldError(err))
-		}
-	}
-	if input.AccessMode == "" {
-		input.AccessMode = "open"
-	}
-	input.V.CheckField(
-		input.AccessMode == "open" || input.AccessMode == "restricted",
-		"access_mode", "Access mode must be open or restricted.",
-	)
-
-	if input.V.HasErrors() {
-		app.failedValidation(w, r, input.V)
+	principal, ok := app.requestPrincipal(w, r)
+	if !ok {
 		return
 	}
-
-	dsnEncrypted, err := app.keyring.Encrypt(input.DSN)
+	routeEnv := routeEnvironmentID(r)
+	targetEnv := input.EnvironmentID
+	if routeEnv != nil {
+		targetEnv = routeEnv
+	}
+	view, err := app.catalogService().Create(r.Context(), principal, catalog.CreateInput{
+		OrgID:                      contextGetOrg(r).ID,
+		WorkspaceID:                contextGetWorkspace(r).ID,
+		EnvironmentID:              targetEnv,
+		AuthorizationEnvironmentID: routeEnv,
+		Name:                       input.Name,
+		Driver:                     input.Driver,
+		Params:                     input.Params,
+		TLSConfig:                  input.TLSConfig,
+		SSHConfig:                  input.SSHConfig,
+		Secrets:                    input.Secrets,
+		AccessMode:                 input.AccessMode,
+		DefaultScope:               input.DefaultScope,
+		ShowSystemSchemas:          input.ShowSystemSchemas,
+		ShowAllDatabases:           input.ShowAllDatabases,
+	})
 	if err != nil {
-		app.serverError(w, r, err)
+		app.catalogError(w, r, err)
 		return
 	}
-
-	tlsEncrypted, err := app.sealTLSDocument(tlsDoc)
-	if err != nil {
-		app.serverError(w, r, err)
-		return
-	}
-
-	sshEncrypted, err := app.sealSSHDocument(sshDoc)
-	if err != nil {
-		app.serverError(w, r, err)
-		return
-	}
-
-	ws := contextGetWorkspace(r)
-	env := contextGetEnvironment(r)
-	targetEnvID := input.EnvironmentID
-	if env.ID != 0 {
-		targetEnvID = &env.ID
-	} else {
-		var ok bool
-		targetEnvID, ok, err = app.validateConnectionEnvironment(r, ws.ID, targetEnvID)
-		if err != nil {
-			app.serverError(w, r, err)
-			return
-		}
-		if !ok {
-			app.notFound(w, r)
-			return
-		}
-	}
-
-	showSystemSchemas := input.ShowSystemSchemas && driverSupportsSystemSchemas(input.Driver)
-	set, _ := engine.Describe(input.Driver)
-	showAllDatabases := resolveShowAllDatabases(set.Tree, input.DefaultScope, input.ShowAllDatabases)
-
-	conn, err := app.db.InsertConnectionWithScope(context.Background(),
-		ws.ID, targetEnvID,
-		input.Name, input.Driver, dsnEncrypted, input.AccessMode, input.DefaultScope,
-		showSystemSchemas, showAllDatabases,
-	)
-	if err != nil {
-		app.serverError(w, r, err)
-		return
-	}
-
-	if tlsEncrypted != "" {
-		if err := app.db.UpdateConnectionTLSConfig(context.Background(), conn.ID, tlsEncrypted); err != nil {
-			app.serverError(w, r, err)
-			return
-		}
-		conn.TLSConfigEncrypted = tlsEncrypted
-		app.logInfo(r, "connection tls configured", slog.Int64("connection_id", conn.ID))
-	}
-
-	if sshEncrypted != "" {
-		if err := app.db.UpdateConnectionSSHConfig(context.Background(), conn.ID, sshEncrypted); err != nil {
-			app.serverError(w, r, err)
-			return
-		}
-		conn.SSHConfigEncrypted = sshEncrypted
-		app.logInfo(r, "connection ssh configured", slog.Int64("connection_id", conn.ID))
-	}
-
-	app.logInfo(r, "connection created", slog.Int64("workspace_id", ws.ID), slog.Int64("connection_id", conn.ID), slog.String("driver", conn.Driver), slog.String("access_mode", conn.AccessMode))
-	err = response.JSON(w, http.StatusCreated, conn)
-	if err != nil {
+	app.logInfo(r, "connection created", slog.Int64("workspace_id", view.WorkspaceID), slog.Int64("connection_id", view.ID), slog.String("driver", view.Driver), slog.String("access_mode", view.AccessMode))
+	if err := response.JSON(w, http.StatusCreated, view); err != nil {
 		app.serverError(w, r, err)
 	}
 }
 
 func (app *application) getConnection(w http.ResponseWriter, r *http.Request) {
-	conn := contextGetConnection(r)
-	ws := contextGetWorkspace(r)
-	if ws.OwnerType == "org" {
-		account := contextGetAccount(r)
-		org := contextGetOrg(r)
-		ok, err := app.db.HasAccessibleConnection(r.Context(), account.ID, org.ID, ws.ID, conn.ID)
-		if err != nil {
-			app.serverError(w, r, err)
-			return
-		}
-		if !ok {
-			app.notFound(w, r)
-			return
-		}
-	}
-	err := response.JSON(w, http.StatusOK, conn)
-	if err != nil {
-		app.serverError(w, r, err)
-	}
-}
-
-// getConnectionDSN reveals the decrypted DSN so it can be pre-filled when editing a
-// connection. The route requires conn:update, since holding conn:update is what makes
-// re-entering the DSN unnecessary.
-func (app *application) getConnectionDSN(w http.ResponseWriter, r *http.Request) {
-	org := contextGetOrg(r)
-	if org.MaskConnectionCredentialsOnEdit {
-		app.notPermitted(w, r)
+	principal, ok := app.requestPrincipal(w, r)
+	if !ok {
 		return
 	}
-
-	conn := contextGetConnection(r)
-	dsn, err := app.keyring.Decrypt(conn.DSNEncrypted)
-	if err != nil {
-		app.serverError(w, r, err)
+	view, err := app.catalogService().Get(r.Context(), principal, connectionRef(r))
+	if errors.Is(err, catalog.ErrForbidden) {
+		app.notFound(w, r)
 		return
 	}
-	app.logInfo(r, "connection dsn revealed", slog.Int64("connection_id", conn.ID))
-	err = response.JSON(w, http.StatusOK, map[string]string{"dsn": dsn})
 	if err != nil {
-		app.serverError(w, r, err)
-	}
-}
-
-// getConnectionTLS reveals the stored TLS config, minus the private key, so the
-// edit form can pre-fill it. Gated by conn:update like getConnectionDSN.
-func (app *application) getConnectionTLS(w http.ResponseWriter, r *http.Request) {
-	org := contextGetOrg(r)
-	if org.MaskConnectionCredentialsOnEdit {
-		app.notPermitted(w, r)
+		app.catalogError(w, r, err)
 		return
 	}
-
-	conn := contextGetConnection(r)
-	doc, has, err := app.decodeTLSDocument(conn.TLSConfigEncrypted)
-	if err != nil {
-		app.serverError(w, r, err)
-		return
-	}
-	mode := doc.Mode
-	if !has || mode == "" {
-		mode = string(engine.TLSModeDisable)
-	}
-	app.logInfo(r, "connection tls revealed", slog.Int64("connection_id", conn.ID))
-	err = response.JSON(w, http.StatusOK, map[string]any{
-		"configured":      has,
-		"mode":            mode,
-		"server_name":     doc.ServerName,
-		"ca_pem":          doc.CAPEM,
-		"client_cert_pem": doc.ClientCertPEM,
-		"client_key_set":  doc.ClientKeyPEM != "",
-	})
-	if err != nil {
+	if err := response.JSON(w, http.StatusOK, view); err != nil {
 		app.serverError(w, r, err)
 	}
 }
 
 func (app *application) updateConnection(w http.ResponseWriter, r *http.Request) {
 	var input struct {
-		Name                 *string             `json:"name"`
-		Driver               *string             `json:"driver"`
-		DSN                  *string             `json:"dsn"`
-		AccessMode           *string             `json:"access_mode"`
-		SchemaSnapshotPolicy *string             `json:"schema_snapshot_policy"`
-		DefaultScope         *metadata.ScopePath `json:"default_scope"`
-		ShowSystemSchemas    *bool               `json:"show_system_schemas"`
-		ShowAllDatabases     *bool               `json:"show_all_databases"`
-		TLS                  *tlsConfigDocument  `json:"tls"`
-		SSH                  *sshConfigDocument  `json:"ssh"`
-		Force                bool                `json:"force"`
-		V                    validator.Validator `json:"-"`
+		Name                 *string                            `json:"name"`
+		Driver               *string                            `json:"driver"`
+		Params               engine.Params                      `json:"params"`
+		TLSConfig            *tlsConfigInput                    `json:"tls_config"`
+		SSHConfig            *sshConfigInput                    `json:"ssh_config"`
+		Secrets              map[credentials.SecretName]*string `json:"secrets"`
+		AccessMode           *string                            `json:"access_mode"`
+		SchemaSnapshotPolicy *string                            `json:"schema_snapshot_policy"`
+		DefaultScope         *metadata.ScopePath                `json:"default_scope"`
+		ShowSystemSchemas    *bool                              `json:"show_system_schemas"`
+		ShowAllDatabases     *bool                              `json:"show_all_databases"`
+		Force                bool                               `json:"force"`
 	}
-
-	err := request.DecodeJSON(w, r, &input)
-	if err != nil {
+	if err := request.DecodeJSON(w, r, &input); err != nil {
 		app.badRequest(w, r, err)
 		return
 	}
-
-	input.V.CheckField(input.Driver == nil, "driver", "Driver cannot be changed.")
-	if input.Name != nil {
-		name := strings.TrimSpace(*input.Name)
-		input.Name = &name
-		input.V.CheckField(name != "", "name", "Name must not be empty.")
-	}
-	if input.DSN != nil {
-		input.V.CheckField(strings.TrimSpace(*input.DSN) != "", "dsn", "DSN must not be empty.")
-	}
-	if input.AccessMode != nil {
-		input.V.CheckField(*input.AccessMode == "open" || *input.AccessMode == "restricted",
-			"access_mode", "Access mode must be open or restricted.")
-	}
-	if input.SchemaSnapshotPolicy != nil {
-		input.V.CheckField(*input.SchemaSnapshotPolicy == database.SchemaSnapshotPolicyInherit ||
-			*input.SchemaSnapshotPolicy == database.SchemaSnapshotPolicyDisabled,
-			"schema_snapshot_policy", "Schema snapshot policy must be inherit or disabled.")
-	}
-	input.V.CheckField(input.Name != nil || input.DSN != nil || input.AccessMode != nil || input.SchemaSnapshotPolicy != nil || input.DefaultScope != nil || input.ShowSystemSchemas != nil || input.ShowAllDatabases != nil || input.TLS != nil || input.SSH != nil,
-		"request", "At least one setting is required.")
-	if input.V.HasErrors() {
-		app.failedValidation(w, r, input.V)
+	if input.Driver != nil {
+		app.failedDuplicateField(w, r, "driver", "Driver cannot be changed.")
 		return
 	}
-
-	conn := contextGetConnection(r)
-
-	tlsEncrypted := ""
-	tlsChanged := false
-	if input.TLS != nil {
-		next := *input.TLS
-		clearClientKey := next.ClearClientKey
-		next.ClearClientKey = false
-		current, hasCurrent, decodeErr := app.decodeTLSDocument(conn.TLSConfigEncrypted)
-		if decodeErr != nil {
-			app.serverError(w, r, decodeErr)
-			return
-		}
-		if next.ClientKeyPEM == "" && hasCurrent && !clearClientKey {
-			next.ClientKeyPEM = current.ClientKeyPEM
-		}
-		tlsV := validator.Validator{}
-		app.validateTLSDocument(conn.Driver, next, &tlsV)
-		if tlsV.HasErrors() {
-			app.failedValidation(w, r, tlsV)
-			return
-		}
-		tlsEncrypted, err = app.sealTLSDocument(next)
-		if err != nil {
-			app.serverError(w, r, err)
-			return
-		}
-		tlsChanged = true
+	principal, ok := app.requestPrincipal(w, r)
+	if !ok {
+		return
 	}
-
-	sshEncrypted := ""
-	sshChanged := false
-	if input.SSH != nil {
-		next := *input.SSH
-		clearPassword := next.ClearPassword
-		clearPrivateKey := next.ClearPrivateKey
-		clearPassphrase := next.ClearPassphrase
-		next.ClearPassword, next.ClearPrivateKey, next.ClearPassphrase = false, false, false
-		current, hasCurrent, decodeErr := app.decodeSSHDocument(conn.SSHConfigEncrypted)
-		if decodeErr != nil {
-			app.serverError(w, r, decodeErr)
-			return
-		}
-		if hasCurrent {
-			if next.Password == "" && !clearPassword {
-				next.Password = current.Password
-			}
-			if next.PrivateKeyPEM == "" && !clearPrivateKey {
-				next.PrivateKeyPEM = current.PrivateKeyPEM
-			}
-			if next.Passphrase == "" && !clearPassphrase {
-				next.Passphrase = current.Passphrase
-			}
-		}
-		sshV := validator.Validator{}
-		app.validateSSHDocument(conn.Driver, next, &sshV)
-		if sshV.HasErrors() {
-			app.failedValidation(w, r, sshV)
-			return
-		}
-		sshEncrypted, err = app.sealSSHDocument(next)
-		if err != nil {
-			app.serverError(w, r, err)
-			return
-		}
-		sshChanged = true
-	}
-
-	currentDSN, err := app.keyring.Decrypt(conn.DSNEncrypted)
+	ref := connectionRef(r)
+	err := app.catalogService().Update(r.Context(), principal, ref, catalog.UpdateInput{
+		Name:                 input.Name,
+		Params:               input.Params,
+		TLSConfig:            input.TLSConfig,
+		SSHConfig:            input.SSHConfig,
+		Secrets:              input.Secrets,
+		AccessMode:           input.AccessMode,
+		SchemaSnapshotPolicy: input.SchemaSnapshotPolicy,
+		DefaultScope:         input.DefaultScope,
+		ShowSystemSchemas:    input.ShowSystemSchemas,
+		ShowAllDatabases:     input.ShowAllDatabases,
+		Force:                input.Force,
+	})
 	if err != nil {
-		app.serverError(w, r, err)
+		app.catalogError(w, r, err)
 		return
 	}
-	nextDSN := currentDSN
-	if input.DSN != nil {
-		nextDSN = *input.DSN
-	}
-	if err := app.targetPolicy.Check(r.Context(), conn.Driver, nextDSN); err != nil {
-		if isSQLiteTargetDisabled(err) {
-			app.logWarn(r, "sqlite target connection blocked", slog.String("operation", "update_connection"), slog.Int64("connection_id", conn.ID), slog.String("driver", conn.Driver))
-		}
-		v := validator.Validator{}
-		v.AddFieldError("driver", targetConnectionFieldError(err))
-		app.failedValidation(w, r, v)
-		return
-	}
-
-	dsnEncrypted := conn.DSNEncrypted
-	if input.DSN != nil {
-		dsnEncrypted, err = app.keyring.Encrypt(nextDSN)
-	}
-	if err != nil {
-		app.errorMessage(w, r, http.StatusUnprocessableEntity, err.Error(), nil)
-		return
-	}
-
-	dsnChanged := currentDSN != nextDSN
-	dropSessions := false
-	if dsnChanged {
-		activeSessions, err := app.revoker.CountForConnection(r.Context(), strconv.FormatInt(conn.ID, 10))
-		if err != nil {
-			app.serverError(w, r, err)
-			return
-		}
-		if activeSessions > 0 && !input.Force {
-			app.errorMessage(w, r, http.StatusConflict, "Connection has active sessions. Retry with force=true to rotate the DSN and drop them.", nil)
-			return
-		}
-		if input.Force && activeSessions > 0 {
-			dropSessions = true
-			app.logInfo(r, "connection sessions dropped for dsn rotation", slog.Int64("connection_id", conn.ID), slog.Int("dropped_sessions", activeSessions))
-		}
-	}
-	nextName := conn.Name
-	if input.Name != nil {
-		nextName = *input.Name
-	}
-	nextAccessMode := conn.AccessMode
-	if input.AccessMode != nil {
-		nextAccessMode = *input.AccessMode
-	}
-	nextSnapshotPolicy := conn.SchemaSnapshotPolicy
-	if nextSnapshotPolicy == "" {
-		nextSnapshotPolicy = database.SchemaSnapshotPolicyInherit
-	}
-	if input.SchemaSnapshotPolicy != nil {
-		nextSnapshotPolicy = *input.SchemaSnapshotPolicy
-	}
-	nextDefaultScope := conn.DefaultScope
-	if input.DefaultScope != nil {
-		nextDefaultScope = *input.DefaultScope
-	}
-	nextShowSystemSchemas := conn.ShowSystemSchemas
-	if input.ShowSystemSchemas != nil {
-		nextShowSystemSchemas = *input.ShowSystemSchemas
-	}
-	nextShowSystemSchemas = nextShowSystemSchemas && driverSupportsSystemSchemas(conn.Driver)
-	nextShowAllDatabases := conn.ShowAllDatabases
-	if input.ShowAllDatabases != nil {
-		nextShowAllDatabases = *input.ShowAllDatabases
-	}
-	set, _ := engine.Describe(conn.Driver)
-	nextShowAllDatabases = resolveShowAllDatabases(set.Tree, nextDefaultScope, nextShowAllDatabases)
-	scopeChanged := nextDefaultScope != conn.DefaultScope
-	if scopeChanged && !dsnChanged {
-		activeSessions, err := app.revoker.CountForConnection(r.Context(), strconv.FormatInt(conn.ID, 10))
-		if err != nil {
-			app.serverError(w, r, err)
-			return
-		}
-		if activeSessions > 0 && !input.Force {
-			app.errorMessage(w, r, http.StatusConflict, "Connection has active sessions. Retry with force=true to change its default scope and drop them.", nil)
-			return
-		}
-		if input.Force && activeSessions > 0 {
-			dropSessions = true
-		}
-	}
-	// Purge before persisting so a failed purge leaves the DSN unchanged and
-	// the rotation can be retried, instead of stranding the old target's cache.
-	if dsnChanged {
-		if err := app.purgeConnectionSchemaCache(r.Context(), conn.ID); err != nil {
-			app.serverError(w, r, err)
-			return
-		}
-		app.logInfo(r, "connection schema cache purged for dsn rotation", slog.Int64("connection_id", conn.ID))
-	}
-	err = app.db.UpdateConnectionWithScopeAndPolicy(r.Context(), conn.ID, nextName, dsnEncrypted, nextAccessMode, nextSnapshotPolicy, nextDefaultScope, nextShowSystemSchemas, nextShowAllDatabases)
-	if err != nil {
-		app.serverError(w, r, err)
-		return
-	}
-	if conn.SchemaSnapshotPolicy != database.SchemaSnapshotPolicyDisabled &&
-		nextSnapshotPolicy == database.SchemaSnapshotPolicyDisabled {
-		if err := app.purgeConnectionSchemaCache(r.Context(), conn.ID); err != nil {
-			app.serverError(w, r, err)
-			return
-		}
-	}
-	if tlsChanged {
-		if err := app.db.UpdateConnectionTLSConfig(r.Context(), conn.ID, tlsEncrypted); err != nil {
-			app.serverError(w, r, err)
-			return
-		}
-		app.logInfo(r, "connection tls updated", slog.Int64("connection_id", conn.ID))
-	}
-	if sshChanged {
-		if err := app.db.UpdateConnectionSSHConfig(r.Context(), conn.ID, sshEncrypted); err != nil {
-			app.serverError(w, r, err)
-			return
-		}
-		app.logInfo(r, "connection ssh updated", slog.Int64("connection_id", conn.ID))
-	}
-	if dropSessions {
-		app.revokeSessions(r, sessionRevokeInput{Kind: sessionRevokeConnection, ConnectionID: strconv.FormatInt(conn.ID, 10)})
-	}
-
-	app.logInfo(r, "connection updated", slog.Int64("connection_id", conn.ID), slog.Bool("dsn_rotated", dsnChanged), slog.Bool("scope_changed", scopeChanged), slog.String("access_mode", nextAccessMode), slog.String("schema_snapshot_policy", nextSnapshotPolicy), slog.Bool("show_all_databases", nextShowAllDatabases))
+	app.logInfo(r, "connection updated", slog.Int64("connection_id", ref.ConnectionID))
 	w.WriteHeader(http.StatusNoContent)
 }
 
 func (app *application) deleteConnection(w http.ResponseWriter, r *http.Request) {
-	conn := contextGetConnection(r)
-	err := app.db.DeleteConnection(context.Background(), conn.ID)
-	if err != nil {
-		app.serverError(w, r, err)
+	principal, ok := app.requestPrincipal(w, r)
+	if !ok {
 		return
 	}
-	app.enforcer.InvalidateAncestry("connection", conn.ID)
-	app.logInfo(r, "connection deleted", slog.Int64("connection_id", conn.ID), slog.Int64("workspace_id", conn.WorkspaceID), slog.String("driver", conn.Driver))
+	ref := connectionRef(r)
+	if err := app.catalogService().Delete(r.Context(), principal, ref); err != nil {
+		app.catalogError(w, r, err)
+		return
+	}
+	app.logInfo(r, "connection deleted", slog.Int64("connection_id", ref.ConnectionID), slog.Int64("workspace_id", ref.WorkspaceID))
 	w.WriteHeader(http.StatusNoContent)
 }
 
 func (app *application) testConnection(w http.ResponseWriter, r *http.Request) {
 	var input struct {
-		Driver      string              `json:"driver"`
-		DSN         string              `json:"dsn"`
-		ParentScope metadata.ScopePath  `json:"parent_scope,omitempty"`
-		TLS         *tlsConfigDocument  `json:"tls"`
-		SSH         *sshConfigDocument  `json:"ssh"`
-		V           validator.Validator `json:"-"`
+		ConnectionID *int64                             `json:"connection_id"`
+		Driver       string                             `json:"driver"`
+		Params       engine.Params                      `json:"params"`
+		TLSConfig    *tlsConfigInput                    `json:"tls_config"`
+		SSHConfig    *sshConfigInput                    `json:"ssh_config"`
+		Secrets      map[credentials.SecretName]*string `json:"secrets"`
+		ParentScope  metadata.ScopePath                 `json:"parent_scope,omitempty"`
 	}
-
-	err := request.DecodeJSON(w, r, &input)
-	if err != nil {
+	if err := request.DecodeJSON(w, r, &input); err != nil {
 		app.badRequest(w, r, err)
 		return
 	}
-
-	input.V.CheckField(input.Driver != "", "driver", "Driver is required.")
-	input.V.CheckField(input.DSN != "", "dsn", "DSN is required.")
-	var tlsCfg *engine.TLSConfig
-	if input.TLS != nil {
-		app.validateTLSDocument(input.Driver, *input.TLS, &input.V)
-		tlsCfg = input.TLS.ToEngine()
-	}
-	var sshCfg *credentials.SSHConfig
-	if input.SSH != nil {
-		app.validateSSHDocument(input.Driver, *input.SSH, &input.V)
-		sshCfg = input.SSH.ToConfig()
-	}
-	if input.V.HasErrors() {
-		app.failedValidation(w, r, input.V)
+	principal, ok := app.requestPrincipal(w, r)
+	if !ok {
 		return
 	}
-	if err := app.targetPolicy.Check(r.Context(), input.Driver, input.DSN); err != nil {
-		if !isTargetPolicyDenial(err) {
-			app.serverError(w, r, err)
-			return
-		}
-		if isSQLiteTargetDisabled(err) {
-			app.logWarn(r, "sqlite target connection blocked", slog.String("operation", "test_connection"), slog.String("driver", input.Driver))
-		}
-		v := validator.Validator{}
-		v.AddFieldError("driver", targetConnectionFieldError(err))
-		app.failedValidation(w, r, v)
-		return
-	}
-
-	ctx, cancel := context.WithTimeout(r.Context(), 10*time.Second)
-	defer cancel()
-
-	start := time.Now()
-
-	if _, err := engine.New(input.Driver); err != nil {
-		app.logWarn(r, "connection test failed", slog.String("driver", input.Driver), slog.Int64("latency_ms", time.Since(start).Milliseconds()), slog.String("stage", "driver_init"), slog.String("error_category", connectionTestErrorCategory(err)))
-		err = response.JSON(w, http.StatusUnprocessableEntity, map[string]any{
-			"ok":    false,
-			"error": err.Error(),
-		})
-		if err != nil {
-			app.serverError(w, r, err)
-		}
-		return
-	}
-
-	settings, err := app.runtimeSettingsService().effectiveForOrg(ctx, nil)
+	settings, err := app.runtimeSettingsService().effectiveForOrg(r.Context(), nil)
 	if err != nil {
 		app.serverError(w, r, err)
 		return
 	}
-	scope := runtimeScope(r)
-	scope.ConnectionID = ""
-	creds := credentials.Credentials{Driver: input.Driver, DSN: input.DSN, TLS: tlsCfg, SSH: sshCfg}
-
-	var latency int64
-	payload := map[string]any{"ok": true}
-	err = app.runtime.Probe(ctx, scope, creds, queryLimits(settings), func(inspector metadata.SchemaInspector) error {
-		latency = time.Since(start).Milliseconds()
-		discovery, discoveryErr := schemaapp.DiscoverScopes(ctx, inspector.Tree(), schemaapp.LiveFromInspector(inspector), input.ParentScope)
-		if discoveryErr == nil {
-			payload["scope_discovery"] = discovery
-		} else {
-			payload["scope_discovery_error"] = discoveryErr.Error()
-		}
-		return nil
+	routeEnv := routeEnvironmentID(r)
+	result, err := app.catalogService().Test(r.Context(), principal, catalog.TestInput{
+		OrgID:                      contextGetOrg(r).ID,
+		WorkspaceID:                contextGetWorkspace(r).ID,
+		EnvironmentID:              routeEnv,
+		AuthorizationEnvironmentID: routeEnv,
+		ConnectionID:               input.ConnectionID,
+		Driver:                     input.Driver,
+		Params:                     input.Params,
+		TLSConfig:                  input.TLSConfig,
+		SSHConfig:                  input.SSHConfig,
+		Secrets:                    input.Secrets,
+		ParentScope:                input.ParentScope,
+		Limits:                     queryLimits(settings),
 	})
-	if errors.Is(err, execution.ErrSchemaUnsupported) {
-		latency = time.Since(start).Milliseconds()
-		err = nil
-	}
 	if err != nil {
-		latency = time.Since(start).Milliseconds()
-		var tunnelErr *execution.TunnelError
-		if errors.As(err, &tunnelErr) {
-			app.logWarn(r, "connection test failed", slog.String("driver", input.Driver), slog.Int64("latency_ms", latency), slog.String("stage", "ssh_tunnel"), slog.String("error_category", connectionTestErrorCategory(tunnelErr.Err)))
-			app.errorMessage(w, r, http.StatusUnprocessableEntity, "SSH tunnel: "+tunnelErr.Err.Error(), nil)
-			return
-		}
-		var connectErr *execution.ConnectError
-		if !errors.As(err, &connectErr) {
-			app.serverError(w, r, err)
-			return
-		}
-		app.logWarn(r, "connection test failed", slog.String("driver", input.Driver), slog.Int64("latency_ms", latency), slog.String("stage", "connect"), slog.String("error_category", connectionTestErrorCategory(err)))
-		err = response.JSON(w, http.StatusOK, map[string]any{
-			"ok":         false,
-			"latency_ms": latency,
-			"error":      err.Error(),
-		})
-		if err != nil {
-			app.serverError(w, r, err)
-		}
+		app.catalogError(w, r, err)
 		return
 	}
-	payload["latency_ms"] = latency
-	app.logInfo(r, "connection test completed", slog.String("driver", input.Driver), slog.Int64("latency_ms", latency), slog.Bool("ok", true))
-	err = response.JSON(w, http.StatusOK, payload)
+	if !result.OK {
+		app.logWarn(r, "connection test failed", slog.String("driver", input.Driver), slog.Int64("latency_ms", result.LatencyMS), slog.String("stage", result.Stage), slog.String("error_category", result.ErrorCategory))
+		switch result.Stage {
+		case catalog.TestStageSSHTunnel:
+			app.errorMessage(w, r, http.StatusUnprocessableEntity, result.Error, nil)
+			return
+		case catalog.TestStageDriverInit:
+			if err := response.JSON(w, http.StatusUnprocessableEntity, map[string]any{"ok": false, "error": result.Error}); err != nil {
+				app.serverError(w, r, err)
+			}
+			return
+		}
+	} else {
+		app.logInfo(r, "connection test completed", slog.String("driver", input.Driver), slog.Int64("latency_ms", result.LatencyMS), slog.Bool("ok", true))
+	}
+	if err := response.JSON(w, http.StatusOK, result); err != nil {
+		app.serverError(w, r, err)
+	}
+}
+
+// revealNoStore marks reveal responses uncacheable before connection
+// resolution runs, so errors raised by that middleware carry the header too.
+func revealNoStore(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method == http.MethodPost && strings.HasSuffix(r.URL.Path, "/reveal") {
+			w.Header().Set("Cache-Control", "no-store")
+		}
+		next.ServeHTTP(w, r)
+	})
+}
+
+func (app *application) revealConnectionSecret(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set("Cache-Control", "no-store")
+	principal, ok := app.requestPrincipal(w, r)
+	if !ok {
+		return
+	}
+	value, err := app.catalogService().RevealSecret(r.Context(), principal, connectionRef(r), credentials.SecretName(chi.URLParam(r, "name")))
+	if errors.Is(err, catalog.ErrForbidden) {
+		app.logWarn(r, "connection secret reveal denied", slog.String("reason", "forbidden"))
+	}
+	if err != nil {
+		app.catalogError(w, r, err)
+		return
+	}
+	err = response.JSON(w, http.StatusOK, map[string]string{"value": value})
 	if err != nil {
 		app.serverError(w, r, err)
 	}
@@ -907,7 +597,16 @@ func (app *application) connectToDatabase(w http.ResponseWriter, r *http.Request
 		)
 		if errors.As(err, &tunnelErr) || errors.As(err, &connectErr) {
 			app.logWarn(r, "database session open failed", slog.Int64("connection_id", conn.ID), slog.String("driver", conn.Driver), slog.String("error_category", connectionTestErrorCategory(err)))
-			app.errorMessage(w, r, http.StatusUnprocessableEntity, err.Error(), nil)
+			message := "Connection failed."
+			resolved, resolveErr := app.credentialPorts.provider.Resolve(r.Context(), credentials.ConnectionRef{
+				OrgID:        strconv.FormatInt(org.ID, 10),
+				WorkspaceID:  strconv.FormatInt(ws.ID, 10),
+				ConnectionID: strconv.FormatInt(conn.ID, 10),
+			})
+			if resolveErr == nil {
+				message = catalog.RedactConnectionError(err.Error(), resolved)
+			}
+			app.errorMessage(w, r, http.StatusUnprocessableEntity, message, nil)
 			return
 		}
 		app.serverError(w, r, err)

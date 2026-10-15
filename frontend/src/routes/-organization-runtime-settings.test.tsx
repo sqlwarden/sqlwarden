@@ -92,7 +92,9 @@ describe('organization general settings runtime tab', () => {
     await user.clear(name)
     await user.type(name, 'Acme Cloud')
     await user.click(screen.getByRole('checkbox', { name: /Persist schema snapshots/ }))
-    await user.click(screen.getByRole('checkbox', { name: /Mask connection credentials on edit/ }))
+    await user.click(
+      screen.getByRole('switch', { name: /Allow revealing saved connection secrets/ }),
+    )
     expect(save).toBeEnabled()
     await user.click(save)
 
@@ -100,7 +102,7 @@ describe('organization general settings runtime tab', () => {
       expect(capturedBody).toMatchObject({
         name: 'Acme Cloud',
         schema_snapshots_enabled: false,
-        mask_connection_credentials_on_edit: true,
+        allow_connection_secret_reveal: true,
       }),
     )
   })

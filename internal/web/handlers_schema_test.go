@@ -198,7 +198,7 @@ func disableSchemaSnapshots(t *testing.T, app *application, connectionID int64) 
 	if err != nil || !found {
 		t.Fatalf("get schema test connection: found=%v err=%v", found, err)
 	}
-	if err := app.db.UpdateConnectionWithPolicy(context.Background(), conn.ID, conn.Name, conn.DSNEncrypted, conn.AccessMode, database.SchemaSnapshotPolicyDisabled); err != nil {
+	if err := app.db.UpdateConnectionWithScopeAndPolicy(context.Background(), conn.ID, conn.Name, conn.AccessMode, database.SchemaSnapshotPolicyDisabled, conn.DefaultScope, conn.ShowSystemSchemas, conn.ShowAllDatabases); err != nil {
 		t.Fatalf("disable snapshots for ephemeral schema test: %v", err)
 	}
 }

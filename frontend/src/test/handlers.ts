@@ -1,6 +1,12 @@
 import { http, HttpResponse } from 'msw'
-import type { SessionResponse, SetupStatusResponse } from '#/lib/api/types'
-import { sessionFixture, setupStatusFixture } from './fixtures'
+import type { ConnectionFieldSpec, SessionResponse, SetupStatusResponse } from '#/lib/api/types'
+import { connectionFieldSpecFixture, sessionFixture, setupStatusFixture } from './fixtures'
+
+export function connectionFieldsHandler(
+  fields: ConnectionFieldSpec[] = connectionFieldSpecFixture(),
+) {
+  return http.get('/api/v1/engines/:driver/connection-fields', () => HttpResponse.json({ fields }))
+}
 
 export function setupStatusHandler(payload: SetupStatusResponse = setupStatusFixture()) {
   return http.get('/api/setup/status', () => HttpResponse.json(payload))

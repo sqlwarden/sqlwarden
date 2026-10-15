@@ -8,22 +8,21 @@ import (
 	"net/http"
 	"strings"
 
+	"github.com/sqlwarden/internal/credentials"
+	"github.com/sqlwarden/internal/engine"
 	"github.com/sqlwarden/internal/response"
 )
 
 // EncryptionRotationReport summarizes a key-rotation pass over all
 // application-encrypted data.
 type EncryptionRotationReport struct {
-	ConnectionsScanned          int `json:"connections_scanned"`
-	ConnectionsRotated          int `json:"connections_rotated"`
-	ConnectionTLSConfigsScanned int `json:"connection_tls_configs_scanned"`
-	ConnectionTLSConfigsRotated int `json:"connection_tls_configs_rotated"`
-	ConnectionSSHConfigsScanned int `json:"connection_ssh_configs_scanned"`
-	ConnectionSSHConfigsRotated int `json:"connection_ssh_configs_rotated"`
-	FileContentsScanned         int `json:"file_contents_scanned"`
-	FileContentsRotated         int `json:"file_contents_rotated"`
-	SMTPPasswordsScanned        int `json:"smtp_passwords_scanned"`
-	SMTPPasswordsRotated        int `json:"smtp_passwords_rotated"`
+	ConnectionsSplit         int `json:"connections_split"`
+	ConnectionSecretsRotated int `json:"connection_secrets_rotated"`
+	ConnectionSecretsSkipped int `json:"connection_secrets_skipped"`
+	FileContentsScanned      int `json:"file_contents_scanned"`
+	FileContentsRotated      int `json:"file_contents_rotated"`
+	SMTPPasswordsScanned     int `json:"smtp_passwords_scanned"`
+	SMTPPasswordsRotated     int `json:"smtp_passwords_rotated"`
 }
 
 // rotateEncryptionKeysHandler re-encrypts all application-encrypted data with
@@ -47,12 +46,13 @@ func (app *application) rotateEncryptionKeysHandler(w http.ResponseWriter, r *ht
 //
 // Rotation is idempotent: values already sealed with the primary key are left
 // untouched, so it is safe to run repeatedly. Each item is committed
-// independently, so a mid-run failure leaves already-rotated items rotated.
+// independently per connection, file, or settings row, so a mid-run failure
+// leaves already-rotated items rotated.
 func (app *application) RotateEncryptionKeys(ctx context.Context) (EncryptionRotationReport, error) {
 	var report EncryptionRotationReport
 
 	app.logger.InfoContext(ctx, "encryption key rotation started")
-	if err := app.rotateConnectionDSNs(ctx, &report); err != nil {
+	if err := app.rotateConnectionCredentials(ctx, &report); err != nil {
 		return report, err
 	}
 	if err := app.rotateFileContents(ctx, &report); err != nil {
@@ -62,12 +62,9 @@ func (app *application) RotateEncryptionKeys(ctx context.Context) (EncryptionRot
 		return report, err
 	}
 	app.logger.InfoContext(ctx, "encryption key rotation complete",
-		slog.Int("connections_scanned", report.ConnectionsScanned),
-		slog.Int("connections_rotated", report.ConnectionsRotated),
-		slog.Int("connection_tls_configs_scanned", report.ConnectionTLSConfigsScanned),
-		slog.Int("connection_tls_configs_rotated", report.ConnectionTLSConfigsRotated),
-		slog.Int("connection_ssh_configs_scanned", report.ConnectionSSHConfigsScanned),
-		slog.Int("connection_ssh_configs_rotated", report.ConnectionSSHConfigsRotated),
+		slog.Int("connections_split", report.ConnectionsSplit),
+		slog.Int("connection_secrets_rotated", report.ConnectionSecretsRotated),
+		slog.Int("connection_secrets_skipped", report.ConnectionSecretsSkipped),
 		slog.Int("file_contents_scanned", report.FileContentsScanned),
 		slog.Int("file_contents_rotated", report.FileContentsRotated),
 	)
@@ -103,73 +100,17 @@ func (app *application) rotateSMTPPassword(ctx context.Context, report *Encrypti
 	return nil
 }
 
-// rotateConnectionDSNs re-encrypts stored connection DSNs with the primary key.
-func (app *application) rotateConnectionDSNs(ctx context.Context, report *EncryptionRotationReport) error {
-	conns, err := app.db.ListAllConnections(ctx)
+// rotateConnectionCredentials converts legacy connection rows and re-seals
+// stored connection secrets with the primary key.
+func (app *application) rotateConnectionCredentials(ctx context.Context, report *EncryptionRotationReport) error {
+	rotator := credentials.NewRotator(app.db, app.keyring, engine.ConnectionSpecFor)
+	rotated, err := rotator.Run(ctx)
+	report.ConnectionsSplit = rotated.Split
+	report.ConnectionSecretsRotated = rotated.Reencrypted
+	report.ConnectionSecretsSkipped = rotated.Skipped
 	if err != nil {
-		return fmt.Errorf("rotate dsn: list connections: %w", err)
+		return fmt.Errorf("rotate connection credentials: %w", err)
 	}
-	for _, conn := range conns {
-		report.ConnectionsScanned++
-		if app.keyring.NeedsRotation(conn.DSNEncrypted) {
-			plaintext, err := app.keyring.Decrypt(conn.DSNEncrypted)
-			if err != nil {
-				return fmt.Errorf("rotate dsn: decrypt connection %d: %w", conn.ID, err)
-			}
-			reencrypted, err := app.keyring.Encrypt(plaintext)
-			if err != nil {
-				return fmt.Errorf("rotate dsn: encrypt connection %d: %w", conn.ID, err)
-			}
-			if err := app.db.UpdateConnectionDSN(ctx, conn.ID, reencrypted); err != nil {
-				return fmt.Errorf("rotate dsn: update connection %d: %w", conn.ID, err)
-			}
-			report.ConnectionsRotated++
-		}
-
-		if conn.TLSConfigEncrypted != "" {
-			report.ConnectionTLSConfigsScanned++
-			if app.keyring.NeedsRotation(conn.TLSConfigEncrypted) {
-				plain, err := app.keyring.Decrypt(conn.TLSConfigEncrypted)
-				if err != nil {
-					return fmt.Errorf("rotate tls: decrypt connection %d: %w", conn.ID, err)
-				}
-				reSealed, err := app.keyring.Encrypt(plain)
-				if err != nil {
-					return fmt.Errorf("rotate tls: encrypt connection %d: %w", conn.ID, err)
-				}
-				if err := app.db.UpdateConnectionTLSConfig(ctx, conn.ID, reSealed); err != nil {
-					return fmt.Errorf("rotate tls: update connection %d: %w", conn.ID, err)
-				}
-				report.ConnectionTLSConfigsRotated++
-			}
-		}
-
-		if conn.SSHConfigEncrypted != "" {
-			report.ConnectionSSHConfigsScanned++
-			if app.keyring.NeedsRotation(conn.SSHConfigEncrypted) {
-				plain, err := app.keyring.Decrypt(conn.SSHConfigEncrypted)
-				if err != nil {
-					return fmt.Errorf("rotate ssh: decrypt connection %d: %w", conn.ID, err)
-				}
-				reSealed, err := app.keyring.Encrypt(plain)
-				if err != nil {
-					return fmt.Errorf("rotate ssh: encrypt connection %d: %w", conn.ID, err)
-				}
-				if err := app.db.UpdateConnectionSSHConfig(ctx, conn.ID, reSealed); err != nil {
-					return fmt.Errorf("rotate ssh: update connection %d: %w", conn.ID, err)
-				}
-				report.ConnectionSSHConfigsRotated++
-			}
-		}
-	}
-	app.logger.InfoContext(ctx, "connection dsn rotation pass complete",
-		slog.Int("connections_scanned", report.ConnectionsScanned),
-		slog.Int("connections_rotated", report.ConnectionsRotated),
-		slog.Int("connection_tls_configs_scanned", report.ConnectionTLSConfigsScanned),
-		slog.Int("connection_tls_configs_rotated", report.ConnectionTLSConfigsRotated),
-		slog.Int("connection_ssh_configs_scanned", report.ConnectionSSHConfigsScanned),
-		slog.Int("connection_ssh_configs_rotated", report.ConnectionSSHConfigsRotated),
-	)
 	return nil
 }
 

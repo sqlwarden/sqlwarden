@@ -3,7 +3,9 @@ import { QueryClientProvider } from '@tanstack/react-query'
 import { act, renderHook, waitFor } from '@testing-library/react'
 import { http, HttpResponse } from 'msw'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
-import type { Connection } from '#/lib/api/types'
+import type { Connection, ConnectionDetail } from '#/lib/api/types'
+import { connectionDetailFixture } from '#/test/fixtures'
+import { connectionFieldsHandler } from '#/test/handlers'
 import { createTestQueryClient } from '#/test/render'
 import { server } from '#/test/server'
 import { useEditConnectionForm } from './useEditConnectionForm'
@@ -23,21 +25,21 @@ const connection: Connection = {
   updated_at: '',
 }
 
-const disabledSshReveal = {
-  enabled: false,
-  host: '',
-  port: 22,
-  user: '',
-  auth_method: 'password',
-  known_hosts_entry: '',
-  fingerprint: '',
-  insecure_skip_host_key: false,
-  password_set: false,
-  private_key_set: false,
+const connectionPath = '/api/v1/orgs/acme/workspaces/3/connections/7'
+
+function detailHandler(detail: ConnectionDetail = connectionDetailFixture()) {
+  return http.get(connectionPath, () => HttpResponse.json(detail))
 }
 
-function sshRevealHandler(body: Record<string, unknown> = disabledSshReveal) {
-  return http.get('/api/v1/orgs/acme/workspaces/3/connections/7/ssh', () => HttpResponse.json(body))
+function capturePatch() {
+  const captured: { body: Record<string, unknown> } = { body: {} }
+  server.use(
+    http.patch(connectionPath, async ({ request }) => {
+      captured.body = (await request.json()) as Record<string, unknown>
+      return HttpResponse.json({ id: 7 })
+    }),
+  )
+  return captured
 }
 
 function stubEngine(overrides: Record<string, unknown> = {}) {
@@ -56,14 +58,14 @@ function stubEngine(overrides: Record<string, unknown> = {}) {
   )
 }
 
-describe('useEditConnectionForm DSN reveal', () => {
+describe('useEditConnectionForm', () => {
   const queryClient = createTestQueryClient()
   let onOpenChange: ReturnType<typeof vi.fn>
 
   beforeEach(() => {
     queryClient.clear()
     onOpenChange = vi.fn()
-    server.use(sshRevealHandler())
+    server.use(connectionFieldsHandler(), detailHandler())
     stubEngine()
   })
 
@@ -71,7 +73,7 @@ describe('useEditConnectionForm DSN reveal', () => {
     return <QueryClientProvider client={queryClient}>{children}</QueryClientProvider>
   }
 
-  function renderForm(canRevealDsn: boolean, initialOpen = true) {
+  function renderForm(initialOpen = true) {
     return renderHook(
       ({ open }: { open: boolean }) =>
         useEditConnectionForm({
@@ -80,262 +82,243 @@ describe('useEditConnectionForm DSN reveal', () => {
           orgSlug: 'acme',
           workspaceId: 3,
           connection,
-          canRevealDsn,
         }),
       { wrapper, initialProps: { open: initialOpen } },
     )
   }
 
-  it('fetches and parses the DSN into fields when canRevealDsn is true', async () => {
-    server.use(
-      http.get('/api/v1/orgs/acme', () =>
-        HttpResponse.json({
-          id: 1,
-          slug: 'acme',
-          name: 'Acme',
-          mask_connection_credentials_on_edit: false,
-          created_at: '',
-          updated_at: '',
-        }),
-      ),
-      http.get('/api/v1/orgs/acme/workspaces/3/connections/7/dsn', () =>
-        HttpResponse.json({
-          dsn: 'postgresql://reader:secret@db.internal:5433/analytics',
-        }),
-      ),
-      http.get('/api/v1/orgs/acme/workspaces/3/connections/7/tls', () =>
-        HttpResponse.json({
-          mode: 'disable',
-          server_name: '',
-          ca_pem: '',
-          client_cert_pem: '',
-          client_key_set: false,
-        }),
-      ),
-    )
-    const { result } = renderForm(true)
+  it('hydrates params and secret states from the connection detail', async () => {
+    const { result } = renderForm()
 
-    await waitFor(() => expect(result.current.fields.host).toBe('db.internal'))
+    await waitFor(() => expect(result.current.fields.host).toBe('db.example.test'))
     expect(result.current.fields).toEqual(
       expect.objectContaining({
-        host: 'db.internal',
-        port: '5433',
+        port: '5432',
         database: 'analytics',
         username: 'reader',
-        password: 'secret',
       }),
     )
+    expect(result.current.fields).not.toHaveProperty('password')
+    expect(result.current.bindSecret('password').state).toEqual({
+      kind: 'saved',
+      revealable: true,
+    })
+    expect(result.current.loading).toBe(false)
   })
 
-  it('hydrates TLS state from the reveal endpoint and sends it in the update payload', async () => {
+  it('hydrates TLS state and sends it in the update payload', async () => {
     server.use(
-      http.get('/api/v1/orgs/acme', () =>
-        HttpResponse.json({
-          id: 1,
-          slug: 'acme',
-          name: 'Acme',
-          mask_connection_credentials_on_edit: false,
-          created_at: '',
-          updated_at: '',
-        }),
-      ),
-      http.get('/api/v1/orgs/acme/workspaces/3/connections/7/dsn', () =>
-        HttpResponse.json({ dsn: 'postgresql://reader:secret@db.internal:5433/analytics' }),
-      ),
-      http.get('/api/v1/orgs/acme/workspaces/3/connections/7/tls', () =>
-        HttpResponse.json({
-          mode: 'verify-ca',
-          server_name: 'db.internal',
-          ca_pem: '-----BEGIN CERTIFICATE-----\nca\n-----END CERTIFICATE-----',
-          client_cert_pem: '',
-          client_key_set: true,
+      detailHandler(
+        connectionDetailFixture({
+          tls_config: {
+            mode: 'verify-ca',
+            server_name: 'db.internal',
+            ca_pem: '-----BEGIN CERTIFICATE-----\nca\n-----END CERTIFICATE-----',
+            client_cert_pem: '',
+          },
         }),
       ),
     )
-    let body: Record<string, unknown> = {}
-    server.use(
-      http.patch('/api/v1/orgs/acme/workspaces/3/connections/7', async ({ request }) => {
-        body = (await request.json()) as Record<string, unknown>
-        return HttpResponse.json({ id: 7 })
-      }),
-    )
-    const { result } = renderForm(true)
+    const patch = capturePatch()
+    const { result } = renderForm()
 
     await waitFor(() => expect(result.current.tls.mode).toBe('verify-ca'))
     expect(result.current.tls.serverName).toBe('db.internal')
-    expect(result.current.tls.clientKeySet).toBe(true)
-    expect(result.current.tls.clientKeyPem).toBe('')
 
-    act(() => {
-      result.current.changeName('analytics-pg')
-      for (const field of result.current.driver.fields.filter((f) => f.required)) {
-        result.current.changeField(field.key, field.default ?? `${field.key}-value`)
-      }
-    })
     act(() => result.current.submit())
 
     await waitFor(() => expect(onOpenChange).toHaveBeenCalledWith(false))
-    expect(body.tls).toEqual({
+    expect(patch.body.tls_config).toEqual({
       mode: 'verify-ca',
       server_name: 'db.internal',
       ca_pem: '-----BEGIN CERTIFICATE-----\nca\n-----END CERTIFICATE-----',
       client_cert_pem: '',
-      client_key_pem: '',
-      clear_client_key: false,
     })
+    expect(patch.body.secrets).toEqual({})
   })
 
-  it('sends clear_client_key when the stored TLS client key is removed', async () => {
+  it('sends null for a saved secret that was cleared and omits untouched secrets', async () => {
+    const patch = capturePatch()
+    const { result } = renderForm()
+    await waitFor(() => expect(result.current.bindSecret('password').state.kind).toBe('saved'))
+
+    act(() => result.current.bindSecret('password').dispatch({ type: 'clear' }))
+    act(() => result.current.submit())
+
+    await waitFor(() => expect(onOpenChange).toHaveBeenCalledWith(false))
+    expect(patch.body.secrets).toEqual({ password: null })
+    expect(patch.body.params).not.toHaveProperty('password')
+  })
+
+  it('omits ssh_config and tls_config when the connection has none stored', async () => {
+    let testBody: Record<string, unknown> = {}
     server.use(
-      http.get('/api/v1/orgs/acme', () =>
-        HttpResponse.json({
-          id: 1,
-          slug: 'acme',
-          name: 'Acme',
-          mask_connection_credentials_on_edit: false,
-          created_at: '',
-          updated_at: '',
-        }),
-      ),
-      http.get('/api/v1/orgs/acme/workspaces/3/connections/7/dsn', () =>
-        HttpResponse.json({ dsn: 'postgresql://reader:secret@db.internal:5433/analytics' }),
-      ),
-      http.get('/api/v1/orgs/acme/workspaces/3/connections/7/tls', () =>
-        HttpResponse.json({
-          configured: true,
-          mode: 'verify-full',
-          server_name: 'db.internal',
-          ca_pem: '',
-          client_cert_pem: '-----BEGIN CERTIFICATE-----\ncrt\n-----END CERTIFICATE-----',
-          client_key_set: true,
-        }),
-      ),
-    )
-    let body: Record<string, unknown> = {}
-    server.use(
-      http.patch('/api/v1/orgs/acme/workspaces/3/connections/7', async ({ request }) => {
-        body = (await request.json()) as Record<string, unknown>
-        return HttpResponse.json({ id: 7 })
+      http.post('/api/v1/orgs/acme/workspaces/3/connections/test', async ({ request }) => {
+        testBody = (await request.json()) as Record<string, unknown>
+        return HttpResponse.json({ ok: true, latency_ms: 1 })
       }),
     )
-    const { result } = renderForm(true)
+    const patch = capturePatch()
+    const { result } = renderForm()
+    await waitFor(() => expect(result.current.requiredFieldsFilled).toBe(true))
 
-    await waitFor(() => expect(result.current.tls.clientKeySet).toBe(true))
-    act(() => result.current.changeTls({ ...result.current.tls, clearClientKey: true }))
+    await act(() => result.current.testConnection.mutateAsync())
+    act(() => result.current.submit())
+
+    await waitFor(() => expect(onOpenChange).toHaveBeenCalledWith(false))
+    for (const body of [testBody, patch.body]) {
+      expect(body).not.toHaveProperty('ssh_config')
+      expect(body).not.toHaveProperty('tls_config')
+      expect(body.secrets).toEqual({})
+    }
+  })
+
+  it('includes ssh_config and tls_config when the connection has them stored', async () => {
+    server.use(
+      detailHandler(
+        connectionDetailFixture({
+          tls_config: { mode: 'disable', server_name: '', ca_pem: '', client_cert_pem: '' },
+          ssh_config: {
+            enabled: false,
+            host: '',
+            port: 22,
+            user: '',
+            auth_method: 'password',
+            known_hosts_entry: '',
+            fingerprint: '',
+            insecure_skip_host_key: false,
+          },
+        }),
+      ),
+    )
+    const patch = capturePatch()
+    const { result } = renderForm()
+    await waitFor(() => expect(result.current.requiredFieldsFilled).toBe(true))
+
+    act(() => result.current.submit())
+
+    await waitFor(() => expect(onOpenChange).toHaveBeenCalledWith(false))
+    expect(patch.body.tls_config).toMatchObject({ mode: 'disable' })
+    expect(patch.body.ssh_config).toMatchObject({ enabled: false })
+  })
+
+  it('includes ssh_config when the user enables a tunnel on a connection without one', async () => {
+    const patch = capturePatch()
+    const { result } = renderForm()
+    await waitFor(() => expect(result.current.requiredFieldsFilled).toBe(true))
+
+    act(() =>
+      result.current.changeSsh({
+        ...result.current.ssh,
+        enabled: true,
+        host: 'bastion',
+        user: 'j',
+      }),
+    )
+    act(() => result.current.submit())
+
+    await waitFor(() => expect(onOpenChange).toHaveBeenCalledWith(false))
+    expect(patch.body.ssh_config).toMatchObject({ enabled: true, host: 'bastion' })
+  })
+
+  it('does not send ssh or tls secrets that no longer apply', async () => {
+    const patch = capturePatch()
+    const { result } = renderForm()
+    await waitFor(() => expect(result.current.requiredFieldsFilled).toBe(true))
+
     act(() => {
-      result.current.changeName('analytics-pg')
-      for (const field of result.current.driver.fields.filter((f) => f.required)) {
-        result.current.changeField(field.key, field.default ?? `${field.key}-value`)
-      }
+      result.current.bindSecret('ssh_password').dispatch({ type: 'edit', value: 'sp' })
+      result.current.bindSecret('tls_client_key').dispatch({ type: 'edit', value: 'tk' })
     })
     act(() => result.current.submit())
 
     await waitFor(() => expect(onOpenChange).toHaveBeenCalledWith(false))
-    expect((body.tls as Record<string, unknown>).clear_client_key).toBe(true)
+    expect(patch.body.secrets).toEqual({})
   })
 
-  it('does not fetch the DSN when canRevealDsn is false', async () => {
-    let requested = false
-    server.use(
-      http.get('/api/v1/orgs/acme', () =>
-        HttpResponse.json({
-          id: 1,
-          slug: 'acme',
-          name: 'Acme',
-          mask_connection_credentials_on_edit: false,
-          created_at: '',
-          updated_at: '',
-        }),
-      ),
-      http.get('/api/v1/orgs/acme/workspaces/3/connections/7/dsn', () => {
-        requested = true
-        return HttpResponse.json({ dsn: 'postgresql://reader:secret@db.internal:5433/analytics' })
-      }),
-    )
-    const { result } = renderForm(false)
+  it('sends a replacement string for an edited secret', async () => {
+    const patch = capturePatch()
+    const { result } = renderForm()
+    await waitFor(() => expect(result.current.bindSecret('password').state.kind).toBe('saved'))
 
-    await waitFor(() => expect(result.current.revealDsnPending).toBe(false))
-    expect(requested).toBe(false)
-    expect(result.current.fields.host).toBe('')
+    act(() => result.current.bindSecret('password').dispatch({ type: 'edit', value: 'rotated' }))
+    act(() => result.current.submit())
+
+    await waitFor(() => expect(onOpenChange).toHaveBeenCalledWith(false))
+    expect(patch.body.secrets).toEqual({ password: 'rotated' })
   })
 
-  it('does not fetch the DSN when the org masks credentials on edit, even with canRevealDsn true', async () => {
-    let requested = false
+  it('reveals a saved secret through the reveal endpoint without caching the value', async () => {
+    let revealed = 0
     server.use(
-      http.get('/api/v1/orgs/acme', () =>
-        HttpResponse.json({
-          id: 1,
-          slug: 'acme',
-          name: 'Acme',
-          mask_connection_credentials_on_edit: true,
-          created_at: '',
-          updated_at: '',
-        }),
-      ),
-      http.get('/api/v1/orgs/acme/workspaces/3/connections/7/dsn', () => {
-        requested = true
-        return HttpResponse.json({ dsn: 'postgresql://reader:secret@db.internal:5433/analytics' })
+      http.post(`${connectionPath}/secrets/password/reveal`, () => {
+        revealed += 1
+        return HttpResponse.json({ value: 'hunter2' })
       }),
     )
-    const { result } = renderForm(true)
+    const { result } = renderForm()
+    await waitFor(() => expect(result.current.bindSecret('password').state.kind).toBe('saved'))
 
-    await waitFor(() => expect(result.current.revealDsnAllowed).toBe(false))
-    expect(requested).toBe(false)
-    expect(result.current.fields.host).toBe('')
+    let value = ''
+    await act(async () => {
+      value = await result.current.bindSecret('password').reveal!()
+    })
+
+    expect(value).toBe('hunter2')
+    expect(revealed).toBe(1)
+    const cached = queryClient
+      .getMutationCache()
+      .getAll()
+      .filter((mutation) => mutation.state.data !== undefined)
+    expect(cached).toHaveLength(0)
+  })
+
+  it('does not offer a reveal action without a connection', () => {
+    const { result } = renderHook(
+      () =>
+        useEditConnectionForm({
+          open: false,
+          onOpenChange,
+          orgSlug: 'acme',
+          workspaceId: 3,
+          connection: undefined,
+        }),
+      { wrapper },
+    )
+
+    expect(result.current.bindSecret('password').reveal).toBeUndefined()
   })
 
   it('re-populates the form when the same connection is edited again after closing', async () => {
-    server.use(
-      http.get('/api/v1/orgs/acme', () =>
-        HttpResponse.json({
-          id: 1,
-          slug: 'acme',
-          name: 'Acme',
-          mask_connection_credentials_on_edit: false,
-          created_at: '',
-          updated_at: '',
-        }),
-      ),
-      http.get('/api/v1/orgs/acme/workspaces/3/connections/7/dsn', () =>
-        HttpResponse.json({
-          dsn: 'postgresql://reader:secret@db.internal:5433/analytics',
-        }),
-      ),
-      http.get('/api/v1/orgs/acme/workspaces/3/connections/7/tls', () =>
-        HttpResponse.json({
-          mode: 'disable',
-          server_name: '',
-          ca_pem: '',
-          client_cert_pem: '',
-          client_key_set: false,
-        }),
-      ),
-    )
-    const { result, rerender } = renderForm(true)
-    await waitFor(() => expect(result.current.fields.host).toBe('db.internal'))
+    const { result, rerender } = renderForm()
+    await waitFor(() => expect(result.current.fields.host).toBe('db.example.test'))
 
     act(() => result.current.handleOpenChange(false))
     rerender({ open: false })
     expect(result.current.fields.host).toBe('')
 
     rerender({ open: true })
-    await waitFor(() => expect(result.current.fields.host).toBe('db.internal'))
+    await waitFor(() => expect(result.current.fields.host).toBe('db.example.test'))
   })
 
-  it('discovers scopes on test and includes the selected default_scope in the update payload', async () => {
+  it('reports a load failure when the detail request fails', async () => {
     server.use(
-      http.get('/api/v1/orgs/acme', () =>
-        HttpResponse.json({
-          id: 1,
-          slug: 'acme',
-          name: 'Acme',
-          mask_connection_credentials_on_edit: false,
-          created_at: '',
-          updated_at: '',
-        }),
+      http.get(connectionPath, () =>
+        HttpResponse.json({ error: { code: 'forbidden', message: 'No.' } }, { status: 403 }),
       ),
-      http.post('/api/v1/orgs/acme/workspaces/3/connections/test', () =>
-        HttpResponse.json({
+    )
+    const { result } = renderForm()
+
+    await waitFor(() => expect(result.current.loadFailed).toBe(true))
+    expect(result.current.requiredFieldsFilled).toBe(false)
+  })
+
+  it('discovers scopes on test, passes connection_id, and includes the selected default_scope', async () => {
+    let testBody: Record<string, unknown> = {}
+    server.use(
+      http.post('/api/v1/orgs/acme/workspaces/3/connections/test', async ({ request }) => {
+        testBody = (await request.json()) as Record<string, unknown>
+        return HttpResponse.json({
           ok: true,
           latency_ms: 5,
           scope_discovery: {
@@ -345,26 +328,19 @@ describe('useEditConnectionForm DSN reveal', () => {
               [{ kind: 'database', name: 'reporting' }],
             ],
           },
-        }),
-      ),
-    )
-    let body: Record<string, unknown> = {}
-    server.use(
-      http.patch('/api/v1/orgs/acme/workspaces/3/connections/7', async ({ request }) => {
-        body = (await request.json()) as Record<string, unknown>
-        return HttpResponse.json({ id: 7 })
+        })
       }),
     )
-    const { result } = renderForm(false)
-    await waitFor(() => expect(result.current.revealDsnPending).toBe(false))
-    act(() => {
-      result.current.changeName('analytics-pg')
-      for (const field of result.current.driver.fields.filter((f) => f.required)) {
-        result.current.changeField(field.key, field.default ?? `${field.key}-value`)
-      }
-    })
+    const patch = capturePatch()
+    const { result } = renderForm()
+    await waitFor(() => expect(result.current.requiredFieldsFilled).toBe(true))
 
     await act(() => result.current.testConnection.mutateAsync())
+    expect(testBody.connection_id).toBe(7)
+    expect(testBody.driver).toBe('postgres')
+    expect(testBody.params).toEqual(
+      expect.objectContaining({ host: 'db.example.test', username: 'reader' }),
+    )
     expect(result.current.scopeDiscovery?.scopes).toHaveLength(2)
     expect(result.current.defaultScope).toEqual([{ kind: 'database', name: 'analytics' }])
 
@@ -374,279 +350,164 @@ describe('useEditConnectionForm DSN reveal', () => {
     act(() => result.current.submit())
 
     await waitFor(() => expect(onOpenChange).toHaveBeenCalledWith(false))
-    expect(body.default_scope).toEqual([{ kind: 'database', name: 'reporting' }])
+    expect(patch.body.default_scope).toEqual([{ kind: 'database', name: 'reporting' }])
   })
 
-  it('hydrates ssh state from the reveal query on open', async () => {
+  it('hydrates ssh state and secret states on open', async () => {
     server.use(
-      http.get('/api/v1/orgs/acme', () =>
-        HttpResponse.json({
-          id: 1,
-          slug: 'acme',
-          name: 'Acme',
-          mask_connection_credentials_on_edit: false,
-          created_at: '',
-          updated_at: '',
+      detailHandler(
+        connectionDetailFixture({
+          ssh_config: {
+            enabled: true,
+            host: 'bastion',
+            port: 2222,
+            user: 'jump',
+            auth_method: 'password',
+            known_hosts_entry: '',
+            fingerprint: '',
+            insecure_skip_host_key: true,
+          },
+          secrets: {
+            password: { set: true, source: 'stored', revealable: true },
+            ssh_password: { set: true, source: 'stored', revealable: true },
+          },
         }),
       ),
-      http.get('/api/v1/orgs/acme/workspaces/3/connections/7/dsn', () =>
-        HttpResponse.json({ dsn: 'postgresql://reader:secret@db.internal:5433/analytics' }),
-      ),
-      http.get('/api/v1/orgs/acme/workspaces/3/connections/7/tls', () =>
-        HttpResponse.json({
-          mode: 'disable',
-          server_name: '',
-          ca_pem: '',
-          client_cert_pem: '',
-          client_key_set: false,
-        }),
-      ),
-      sshRevealHandler({
-        enabled: true,
-        host: 'bastion',
-        port: 2222,
-        user: 'jump',
-        auth_method: 'password',
-        known_hosts_entry: '',
-        fingerprint: '',
-        insecure_skip_host_key: true,
-        password_set: true,
-        private_key_set: false,
-      }),
     )
-    const { result } = renderForm(true)
+    const { result } = renderForm()
 
     await waitFor(() => expect(result.current.ssh.host).toBe('bastion'))
     expect(result.current.ssh.enabled).toBe(true)
     expect(result.current.ssh.port).toBe('2222')
-    expect(result.current.ssh.passwordSet).toBe(true)
-    expect(result.current.ssh.password).toBe('')
+    expect(result.current.bindSecret('ssh_password').state.kind).toBe('saved')
   })
 
-  it('carries the stored key forward by sending blank secrets', async () => {
+  it('treats a secret supplied by an external source as managed and never sends it', async () => {
     server.use(
-      http.get('/api/v1/orgs/acme', () =>
-        HttpResponse.json({
-          id: 1,
-          slug: 'acme',
-          name: 'Acme',
-          mask_connection_credentials_on_edit: false,
-          created_at: '',
-          updated_at: '',
+      detailHandler(
+        connectionDetailFixture({
+          secrets: { password: { set: true, source: 'vault', revealable: false } },
         }),
       ),
-      http.get('/api/v1/orgs/acme/workspaces/3/connections/7/dsn', () =>
-        HttpResponse.json({ dsn: 'postgresql://reader:secret@db.internal:5433/analytics' }),
-      ),
-      http.get('/api/v1/orgs/acme/workspaces/3/connections/7/tls', () =>
-        HttpResponse.json({
-          mode: 'disable',
-          server_name: '',
-          ca_pem: '',
-          client_cert_pem: '',
-          client_key_set: false,
-        }),
-      ),
-      sshRevealHandler({
-        enabled: true,
-        host: 'bastion',
-        port: 22,
-        user: 'jump',
-        auth_method: 'private_key',
-        known_hosts_entry: '',
-        fingerprint: '',
-        insecure_skip_host_key: true,
-        password_set: false,
-        private_key_set: true,
+    )
+    const patch = capturePatch()
+    const { result } = renderForm()
+    await waitFor(() =>
+      expect(result.current.bindSecret('password').state).toEqual({
+        kind: 'managed',
+        source: 'vault',
       }),
     )
-    let body: Record<string, unknown> = {}
-    server.use(
-      http.patch('/api/v1/orgs/acme/workspaces/3/connections/7', async ({ request }) => {
-        body = (await request.json()) as Record<string, unknown>
-        return HttpResponse.json({ id: 7 })
-      }),
-    )
-    const { result } = renderForm(true)
 
-    await waitFor(() => expect(result.current.ssh.host).toBe('bastion'))
-
-    act(() => {
-      result.current.changeName('analytics-pg')
-      for (const field of result.current.driver.fields.filter((f) => f.required)) {
-        result.current.changeField(field.key, field.default ?? `${field.key}-value`)
-      }
-    })
-    act(() => result.current.changeSsh({ ...result.current.ssh, host: 'bastion-2' }))
+    act(() => result.current.bindSecret('password').dispatch({ type: 'edit', value: 'x' }))
     act(() => result.current.submit())
 
     await waitFor(() => expect(onOpenChange).toHaveBeenCalledWith(false))
-    const ssh = body.ssh as Record<string, unknown>
-    expect(ssh.host).toBe('bastion-2')
-    expect(ssh.private_key_pem).toBe('')
-    expect(ssh.passphrase).toBe('')
-    expect(ssh.enabled).toBe(true)
+    expect(patch.body.secrets).toEqual({})
   })
 
-  it('sends clear_private_key (and clear_passphrase) when the stored key is removed', async () => {
+  it('disables ssh by sending enabled false rather than a delete request', async () => {
     server.use(
-      http.get('/api/v1/orgs/acme', () =>
-        HttpResponse.json({
-          id: 1,
-          slug: 'acme',
-          name: 'Acme',
-          mask_connection_credentials_on_edit: false,
-          created_at: '',
-          updated_at: '',
+      detailHandler(
+        connectionDetailFixture({
+          ssh_config: {
+            enabled: true,
+            host: 'bastion',
+            port: 22,
+            user: 'jump',
+            auth_method: 'password',
+            known_hosts_entry: '',
+            fingerprint: '',
+            insecure_skip_host_key: true,
+          },
         }),
       ),
-      http.get('/api/v1/orgs/acme/workspaces/3/connections/7/dsn', () =>
-        HttpResponse.json({ dsn: 'postgresql://reader:secret@db.internal:5433/analytics' }),
-      ),
-      http.get('/api/v1/orgs/acme/workspaces/3/connections/7/tls', () =>
-        HttpResponse.json({
-          mode: 'disable',
-          server_name: '',
-          ca_pem: '',
-          client_cert_pem: '',
-          client_key_set: false,
-        }),
-      ),
-      sshRevealHandler({
-        configured: true,
-        enabled: true,
-        host: 'bastion',
-        port: 22,
-        user: 'jump',
-        auth_method: 'private_key',
-        known_hosts_entry: '',
-        fingerprint: '',
-        insecure_skip_host_key: true,
-        password_set: false,
-        private_key_set: true,
-      }),
     )
-    let body: Record<string, unknown> = {}
-    server.use(
-      http.patch('/api/v1/orgs/acme/workspaces/3/connections/7', async ({ request }) => {
-        body = (await request.json()) as Record<string, unknown>
-        return HttpResponse.json({ id: 7 })
-      }),
-    )
-    const { result } = renderForm(true)
+    const patch = capturePatch()
+    const { result } = renderForm()
+    await waitFor(() => expect(result.current.ssh.enabled).toBe(true))
 
-    await waitFor(() => expect(result.current.ssh.privateKeySet).toBe(true))
-    act(() => result.current.changeSsh({ ...result.current.ssh, clearPrivateKey: true }))
-    act(() => {
-      result.current.changeName('analytics-pg')
-      for (const field of result.current.driver.fields.filter((f) => f.required)) {
-        result.current.changeField(field.key, field.default ?? `${field.key}-value`)
-      }
-    })
+    act(() => result.current.changeSsh({ ...result.current.ssh, enabled: false }))
     act(() => result.current.submit())
 
     await waitFor(() => expect(onOpenChange).toHaveBeenCalledWith(false))
-    const ssh = body.ssh as Record<string, unknown>
-    expect(ssh.clear_private_key).toBe(true)
-    expect(ssh.clear_passphrase).toBe(true)
-    expect(ssh.clear_password).toBe(false)
+    expect((patch.body.ssh_config as Record<string, unknown>).enabled).toBe(false)
   })
 
-  it('removeSsh calls the SSH delete endpoint and resets ssh state', async () => {
+  it('sends a saved ssh secret clear when disabling the tunnel', async () => {
     server.use(
-      http.get('/api/v1/orgs/acme', () =>
-        HttpResponse.json({
-          id: 1,
-          slug: 'acme',
-          name: 'Acme',
-          mask_connection_credentials_on_edit: false,
-          created_at: '',
-          updated_at: '',
+      detailHandler(
+        connectionDetailFixture({
+          ssh_config: {
+            enabled: true,
+            host: 'bastion',
+            port: 22,
+            user: 'jump',
+            auth_method: 'password',
+            known_hosts_entry: '',
+            fingerprint: '',
+            insecure_skip_host_key: true,
+          },
+          secrets: { ssh_password: { set: true, source: 'stored', revealable: true } },
         }),
       ),
-      http.get('/api/v1/orgs/acme/workspaces/3/connections/7/dsn', () =>
-        HttpResponse.json({ dsn: 'postgresql://reader:secret@db.internal:5433/analytics' }),
-      ),
-      http.get('/api/v1/orgs/acme/workspaces/3/connections/7/tls', () =>
-        HttpResponse.json({
-          mode: 'disable',
-          server_name: '',
-          ca_pem: '',
-          client_cert_pem: '',
-          client_key_set: false,
+    )
+    const patch = capturePatch()
+    const { result } = renderForm()
+    await waitFor(() => expect(result.current.bindSecret('ssh_password').state.kind).toBe('saved'))
+
+    act(() => result.current.bindSecret('ssh_password').dispatch({ type: 'clear' }))
+    act(() => result.current.changeSsh({ ...result.current.ssh, enabled: false }))
+    act(() => result.current.submit())
+
+    await waitFor(() => expect(onOpenChange).toHaveBeenCalledWith(false))
+    expect(patch.body.secrets).toEqual({ ssh_password: null })
+  })
+
+  it('sends a saved ssh password clear when switching auth method', async () => {
+    server.use(
+      detailHandler(
+        connectionDetailFixture({
+          ssh_config: {
+            enabled: true,
+            host: 'bastion',
+            port: 22,
+            user: 'jump',
+            auth_method: 'password',
+            known_hosts_entry: '',
+            fingerprint: '',
+            insecure_skip_host_key: true,
+          },
+          secrets: { ssh_password: { set: true, source: 'stored', revealable: true } },
         }),
       ),
-      sshRevealHandler({
-        configured: true,
-        enabled: true,
-        host: 'bastion',
-        port: 22,
-        user: 'jump',
-        auth_method: 'password',
-        known_hosts_entry: '',
-        fingerprint: '',
-        insecure_skip_host_key: true,
-        password_set: true,
-        private_key_set: false,
-      }),
     )
-    let deleted = false
-    server.use(
-      http.delete('/api/v1/orgs/acme/workspaces/3/connections/7/ssh', () => {
-        deleted = true
-        server.use(sshRevealHandler({ ...disabledSshReveal, configured: false }))
-        return new HttpResponse(null, { status: 204 })
-      }),
-    )
-    const { result } = renderForm(true)
+    const patch = capturePatch()
+    const { result } = renderForm()
+    await waitFor(() => expect(result.current.bindSecret('ssh_password').state.kind).toBe('saved'))
 
-    await waitFor(() => expect(result.current.sshConfigured).toBe(true))
-    await act(async () => {
-      await result.current.removeSsh.mutateAsync()
-    })
+    act(() => result.current.bindSecret('ssh_password').dispatch({ type: 'clear' }))
+    act(() => result.current.changeSsh({ ...result.current.ssh, authMethod: 'private_key' }))
+    act(() => result.current.submit())
 
-    expect(deleted).toBe(true)
-    await waitFor(() => expect(result.current.sshConfigured).toBe(false))
-    expect(result.current.ssh.host).toBe('')
-    expect(result.current.ssh.enabled).toBe(false)
+    await waitFor(() => expect(onOpenChange).toHaveBeenCalledWith(false))
+    expect(patch.body.secrets).toEqual({ ssh_password: null })
   })
 
   it('hydrates show all databases and sends the edited value', async () => {
     stubEngine({ show_all_databases: true })
-    server.use(
-      http.get('/api/v1/orgs/acme', () =>
-        HttpResponse.json({
-          id: 1,
-          slug: 'acme',
-          name: 'Acme',
-          mask_connection_credentials_on_edit: false,
-          created_at: '',
-          updated_at: '',
-        }),
-      ),
-    )
-    let body: Record<string, unknown> = {}
-    server.use(
-      http.patch('/api/v1/orgs/acme/workspaces/3/connections/7', async ({ request }) => {
-        body = (await request.json()) as Record<string, unknown>
-        return HttpResponse.json({ id: 7 })
-      }),
-    )
-    const { result } = renderForm(false)
+    const patch = capturePatch()
+    const { result } = renderForm()
     await waitFor(() => expect(result.current.showAllDatabasesSupported).toBe(true))
-    act(() => {
-      result.current.changeName('analytics-pg')
-      for (const field of result.current.driver.fields.filter((f) => f.required)) {
-        result.current.changeField(field.key, field.default ?? `${field.key}-value`)
-      }
-      result.current.changeField('database', 'analytics')
-    })
+    await waitFor(() => expect(result.current.requiredFieldsFilled).toBe(true))
     expect(result.current.showAllDatabases).toBe(true)
 
+    act(() => result.current.selectDatabase('analytics'))
+    expect(result.current.showAllDatabasesForced).toBe(false)
     act(() => result.current.changeShowAllDatabases(false))
     act(() => result.current.submit())
 
     await waitFor(() => expect(onOpenChange).toHaveBeenCalledWith(false))
-    expect(body.show_all_databases).toBe(false)
+    expect(patch.body.show_all_databases).toBe(false)
   })
 })

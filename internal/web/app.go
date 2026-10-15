@@ -15,8 +15,10 @@ import (
 
 	"github.com/sqlwarden/internal/access"
 	"github.com/sqlwarden/internal/audit"
+	"github.com/sqlwarden/internal/catalog"
 	completionapp "github.com/sqlwarden/internal/completion"
 	"github.com/sqlwarden/internal/config"
+	"github.com/sqlwarden/internal/credentials"
 	"github.com/sqlwarden/internal/database"
 	"github.com/sqlwarden/internal/encrypt"
 	"github.com/sqlwarden/internal/execution"
@@ -56,7 +58,13 @@ type Dependencies struct {
 	Runtime    execution.Runtime
 	// TargetPolicy vets target drivers and DSNs before they are stored or
 	// probed. It defaults to the instance settings policy over DB.
-	TargetPolicy          execution.TargetPolicy
+	TargetPolicy execution.TargetPolicy
+	// Credentials reads connection secret metadata and reveals values; it is
+	// the edition-composed provider. CredentialWriter stores secret changes.
+	// RevealPolicy is the product profile's reveal decision.
+	Credentials           credentials.Provider
+	CredentialWriter      credentials.Writer
+	RevealPolicy          credentials.RevealPolicy
 	Audit                 audit.Writer
 	Edition               EditionCapabilities
 	EditionHandler        http.Handler
@@ -105,6 +113,9 @@ type application struct {
 	clientIPs             clientip.Resolver
 	authChain             identity.Chain
 	audit                 audit.Writer
+	catalogOnce           sync.Once
+	catalog               *catalog.Service
+	credentialPorts       credentialPorts
 	edition               EditionCapabilities
 	editionHandler        http.Handler
 	editionJobs           []jobs.Definition
@@ -124,6 +135,9 @@ func NewApplication(deps Dependencies) (*App, error) {
 	}
 	if deps.Setup == nil || deps.Invitations == nil || deps.SignIn == nil {
 		return nil, errors.New("web: setup strategy, invitation policy, and sign-in strategy are required")
+	}
+	if deps.Credentials == nil || deps.CredentialWriter == nil || deps.RevealPolicy == nil {
+		return nil, errors.New("web: credential provider, credential writer, and reveal policy are required")
 	}
 	auditWriter := deps.Audit
 	if auditWriter == nil {
@@ -165,6 +179,7 @@ func NewApplication(deps Dependencies) (*App, error) {
 		app.targetPolicy = settings.NewTargetPolicy(deps.DB)
 	}
 	app.clientIPs = clientip.New(deps.TrustedProxies)
+	app.credentialPorts = credentialPorts{provider: deps.Credentials, writer: deps.CredentialWriter, reveal: deps.RevealPolicy}
 	app.authChain = app.newAuthChain()
 	initialSettings, err := app.instanceSettings(context.Background())
 	if err != nil {
@@ -175,9 +190,6 @@ func NewApplication(deps Dependencies) (*App, error) {
 	}
 	app.initialSettings = initialSettings
 	app.configureConnectionCacheInvalidation()
-	if _, err := app.backfillConnectionTLSConfig(context.Background()); err != nil {
-		logger.Warn("connection tls backfill failed; will retry next boot", slog.Any("error", err))
-	}
 	app.jobRegistry = app.defaultJobRegistry()
 	for _, definition := range app.editionJobs {
 		if _, exists := app.jobRegistry.Definition(definition.Type); exists {

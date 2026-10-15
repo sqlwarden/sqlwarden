@@ -19,6 +19,7 @@ import (
 	"github.com/sqlwarden/internal/database"
 	"github.com/sqlwarden/internal/edition"
 	"github.com/sqlwarden/internal/encrypt"
+	"github.com/sqlwarden/internal/engine"
 	"github.com/sqlwarden/internal/execution"
 	"github.com/sqlwarden/internal/settings"
 	"github.com/sqlwarden/internal/web"
@@ -67,7 +68,7 @@ func Build(ctx context.Context, opts Options) (*Application, error) {
 	if opts.Edition == nil {
 		return nil, errors.New("edition is required")
 	}
-	prof, err := selectProfile(cfg.Profile)
+	prof, err := selectProfile(cfg.Profile, nil)
 	if err != nil {
 		return nil, err
 	}
@@ -109,6 +110,11 @@ func Build(ctx context.Context, opts Options) (*Application, error) {
 		openDatabases.Add(-1)
 		return nil
 	})
+	// The reveal policy reads organization settings, so the profile is
+	// selected again now that the database exists.
+	if prof, err = selectProfile(cfg.Profile, db); err != nil {
+		return fail(err)
+	}
 
 	composition, err := edition.Compose(ctx, opts.Edition, edition.Dependencies{
 		SQL: db.DB, AuditEvents: audit.NewSQLStore(db.DB), Logger: logger, Now: time.Now,
@@ -138,6 +144,12 @@ func Build(ctx context.Context, opts Options) (*Application, error) {
 	if opts.Command == CommandMigrate {
 		return application, nil
 	}
+	if opts.Command != CommandRotateKeys {
+		if err := credentials.VerifyStartup(ctx, db); err != nil {
+			logger.Error(err.Error())
+			return fail(err)
+		}
+	}
 
 	if err := web.InitializeInstanceBaseURL(ctx, db, cfg.BootstrapBaseURL); err != nil {
 		return fail(err)
@@ -163,12 +175,15 @@ func Build(ctx context.Context, opts Options) (*Application, error) {
 	}
 
 	targetPolicy := settings.NewTargetPolicy(db)
+	credentialCore := credentials.NewEncryptedColumnProvider(db, credentials.NewKeyringSealer(keyring), engine.ConnectionSpecFor)
+	credentialProvider := composition.Credentials(credentialCore)
 	runtime := execution.NewLocal(execution.LocalConfig{
-		Credentials: credentials.NewLegacyDSNProvider(db, keyring),
+		Credentials: credentialProvider,
 		Policy:      targetPolicy,
 		IdleTimeout: sessionIdleTimeout,
 		Logger:      logger,
 	})
+	application.runtime = runtime
 	application.resources.push("execution", func(context.Context) error { runtime.Shutdown(); return nil })
 
 	if failWebConstruction != nil {
@@ -198,6 +213,9 @@ func Build(ctx context.Context, opts Options) (*Application, error) {
 		FileStores:            stores,
 		Runtime:               runtime,
 		TargetPolicy:          targetPolicy,
+		Credentials:           credentialProvider,
+		CredentialWriter:      credentialCore,
+		RevealPolicy:          prof.RevealPolicy(),
 		Audit:                 auditWriter,
 		Edition:               web.EditionCapabilities{Name: capabilities.Edition, Features: webFeatures},
 		EditionHandler:        composition.Handler(),

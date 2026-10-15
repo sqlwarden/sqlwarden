@@ -2,12 +2,14 @@ package web
 
 import (
 	"context"
+	"encoding/json"
 	"io"
 	"net/http"
 	"strings"
 	"testing"
 
 	"github.com/sqlwarden/internal/assert"
+	"github.com/sqlwarden/internal/credentials"
 	"github.com/sqlwarden/internal/database"
 	"github.com/sqlwarden/internal/encrypt"
 )
@@ -60,6 +62,23 @@ func seedEncryptedFileContent(t *testing.T, app *application, ws database.Worksp
 	return saved, storageKey
 }
 
+func seedLegacyRotationConnection(t *testing.T, app *application, driver, dsn string, kr *encrypt.Keyring) int64 {
+	t.Helper()
+	ctx := context.Background()
+	account, _, org := seedOrgOwner(t, app, "rotation-owner@example.com", "Owner", "Rotation Org")
+	workspace := seedWorkspaceForAccount(t, app, org, account, "Rotation WS", "")
+	environment := seedEnvironment(t, app, workspace.ID, org.ID, "prod")
+	ciphertext, err := kr.Encrypt(dsn)
+	if err != nil {
+		t.Fatal(err)
+	}
+	connection, err := app.db.InsertConnection(ctx, workspace.ID, &environment.ID, "legacy", driver, ciphertext, "open")
+	if err != nil {
+		t.Fatal(err)
+	}
+	return connection.ID
+}
+
 func TestRotateEncryptionKeys(t *testing.T) {
 	ctx := context.Background()
 	app := newTestApp(t)
@@ -91,8 +110,9 @@ func TestRotateEncryptionKeys(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	// A connection already sealed with the primary key — must be left untouched.
-	freshDSN := "sqlite:///data/fresh.db"
+	// A legacy connection already sealed with the primary key still needs to be
+	// split into structured fields.
+	freshDSN := "file:/data/fresh.db"
 	freshCipher, err := keyring.Encrypt(freshDSN)
 	if err != nil {
 		t.Fatal(err)
@@ -110,11 +130,11 @@ func TestRotateEncryptionKeys(t *testing.T) {
 		t.Fatalf("rotateEncryptionKeys failed: %v", err)
 	}
 
-	if report.ConnectionsScanned != 2 {
-		t.Errorf("expected 2 connections scanned, got %d", report.ConnectionsScanned)
+	if report.ConnectionsSplit != 2 {
+		t.Errorf("expected 2 connections split, got %d", report.ConnectionsSplit)
 	}
-	if report.ConnectionsRotated != 1 {
-		t.Errorf("expected 1 connection rotated, got %d", report.ConnectionsRotated)
+	if report.ConnectionSecretsRotated != 0 {
+		t.Errorf("expected split secrets to use the active key, got %d later rotations", report.ConnectionSecretsRotated)
 	}
 	if report.FileContentsScanned != 1 {
 		t.Errorf("expected 1 file content scanned, got %d", report.FileContentsScanned)
@@ -123,25 +143,33 @@ func TestRotateEncryptionKeys(t *testing.T) {
 		t.Errorf("expected 1 file content rotated, got %d", report.FileContentsRotated)
 	}
 
-	// Stale connection is now sealed with the primary key and still decrypts.
+	// Legacy connections are now structured and their extracted secrets use the
+	// active key.
 	got, found, err := app.db.GetConnection(ctx, staleConn.ID)
 	if err != nil || !found {
 		t.Fatalf("reload stale connection: found=%v err=%v", found, err)
 	}
-	if app.keyring.NeedsRotation(got.DSNEncrypted) {
-		t.Error("stale connection DSN still needs rotation after rotate")
+	if got.DSNEncrypted != "" {
+		t.Error("stale connection DSN was not cleared")
 	}
-	if plain, err := app.keyring.Decrypt(got.DSNEncrypted); err != nil || plain != staleDSN {
-		t.Errorf("stale DSN decrypt = %q, %v; want %q", plain, err, staleDSN)
+	secrets, err := app.db.ListConnectionSecrets(ctx, staleConn.ID)
+	if err != nil || len(secrets) != 1 || secrets[0].Name != "password" {
+		t.Fatalf("split secrets = %+v, err=%v", secrets, err)
+	}
+	if app.keyring.NeedsRotation(secrets[0].ValueEncrypted) {
+		t.Error("split password does not use the active key")
+	}
+	if plain, err := app.keyring.Decrypt(secrets[0].ValueEncrypted); err != nil || plain != "pass" {
+		t.Errorf("split password = %q, %v", plain, err)
 	}
 
-	// Already-current connection is unchanged.
+	// Rows already encrypted with the active key are split too.
 	got, _, err = app.db.GetConnection(ctx, freshConn.ID)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if got.DSNEncrypted != freshCipher {
-		t.Error("fresh connection DSN was rewritten unnecessarily")
+	if got.DSNEncrypted != "" || len(got.Params) == 0 {
+		t.Error("fresh legacy connection was not split")
 	}
 
 	// File content re-keyed: bytes decrypt with the primary key and the row's
@@ -181,15 +209,14 @@ func TestRotateEncryptionKeys(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if report.ConnectionsRotated != 0 || report.FileContentsRotated != 0 {
-		t.Errorf("second rotation rotated %d connections, %d file contents; want 0/0",
-			report.ConnectionsRotated, report.FileContentsRotated)
+	if report.ConnectionsSplit != 0 || report.ConnectionSecretsRotated != 0 || report.FileContentsRotated != 0 {
+		t.Errorf("second rotation unexpectedly changed data: %+v", report)
 	}
 }
 
 func TestRotateEncryptionKeysRotatesTLSConfig(t *testing.T) {
 	ctx := context.Background()
-	app := newTestApplication(t)
+	app := newTestApp(t)
 
 	keyring, err := encrypt.NewKeyring("new-tls-primary-key", "old-tls-retired-key")
 	if err != nil {
@@ -202,44 +229,66 @@ func TestRotateEncryptionKeysRotatesTLSConfig(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	id := seedRawConnection(t, app, "postgres", "postgres://u:p@h:5432/db")
-	blob, err := oldKeyring.Encrypt(`{"mode":"require"}`)
+	id := seedLegacyRotationConnection(t, app, "postgres", "postgres://u:p@h:5432/db", oldKeyring)
+	blob, err := oldKeyring.Encrypt(`{"mode":"require","server_name":"db.internal","ca_pem":"CA","client_cert_pem":"CERT","client_key_pem":"TLSKEY"}`)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err := app.db.UpdateConnectionTLSConfig(ctx, id, blob); err != nil {
-		t.Fatal(err)
-	}
+	setLegacyColumn(t, app, id, "tls_config_encrypted", blob)
 
 	rep, err := app.RotateEncryptionKeys(ctx)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if rep.ConnectionTLSConfigsScanned == 0 || rep.ConnectionTLSConfigsRotated != 1 {
+	if rep.ConnectionsSplit != 1 {
 		t.Fatalf("report: %+v", rep)
 	}
 
 	c, _, _ := app.db.GetConnection(ctx, id)
-	if app.keyring.NeedsRotation(c.TLSConfigEncrypted) {
-		t.Fatal("tls blob still needs rotation")
+	if c.TLSConfigEncrypted != "" {
+		t.Fatal("legacy tls blob was not cleared")
 	}
-	doc, _, _ := app.decodeTLSDocument(c.TLSConfigEncrypted)
-	if doc.Mode != "require" {
-		t.Fatalf("tls blob corrupted by rotation: %+v", doc)
+	var tlsDoc credentials.TLSDocument
+	if err := json.Unmarshal(c.TLSConfig, &tlsDoc); err != nil {
+		t.Fatalf("decode structured tls config %s: %v", c.TLSConfig, err)
+	}
+	if tlsDoc.Mode != "require" || tlsDoc.ServerName != "db.internal" || tlsDoc.CAPEM != "CA" || tlsDoc.ClientCertPEM != "CERT" {
+		t.Fatalf("structured tls config corrupted by rotation: %+v", tlsDoc)
+	}
+	if tlsDoc.ClientKeyPEM != "" {
+		t.Fatalf("structured tls config retained secret fields: %+v", tlsDoc)
+	}
+	tlsSecrets, err := app.db.ListConnectionSecrets(ctx, id)
+	if err != nil || len(tlsSecrets) != 2 {
+		t.Fatalf("split tls secrets = %+v, err=%v", tlsSecrets, err)
+	}
+	var foundTLSKey bool
+	for _, secret := range tlsSecrets {
+		if secret.Name != string(credentials.SecretTLSClientKey) {
+			continue
+		}
+		foundTLSKey = true
+		plain, err := app.keyring.Decrypt(secret.ValueEncrypted)
+		if err != nil || plain != "TLSKEY" {
+			t.Fatalf("split tls client key = %q, err=%v", plain, err)
+		}
+	}
+	if !foundTLSKey {
+		t.Fatal("split tls client key is missing")
 	}
 
 	rep2, err := app.RotateEncryptionKeys(ctx)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if rep2.ConnectionTLSConfigsRotated != 0 {
-		t.Fatalf("second rotation rotated %d tls configs; want 0", rep2.ConnectionTLSConfigsRotated)
+	if rep2.ConnectionsSplit != 0 {
+		t.Fatalf("second rotation split %d connections; want 0", rep2.ConnectionsSplit)
 	}
 }
 
 func TestRotateEncryptionKeysRotatesSSHConfig(t *testing.T) {
 	ctx := context.Background()
-	app := newTestApplication(t)
+	app := newTestApp(t)
 
 	keyring, err := encrypt.NewKeyring("new-ssh-primary-key", "old-ssh-retired-key")
 	if err != nil {
@@ -252,38 +301,47 @@ func TestRotateEncryptionKeysRotatesSSHConfig(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	id := seedRawConnection(t, app, "postgres", "postgres://u:p@h:5432/db")
+	id := seedLegacyRotationConnection(t, app, "postgres", "postgres://u:p@h:5432/db", oldKeyring)
 	blob, err := oldKeyring.Encrypt(`{"enabled":true,"host":"bastion","user":"jump","auth_method":"password","password":"pw","insecure_skip_host_key":true}`)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err := app.db.UpdateConnectionSSHConfig(ctx, id, blob); err != nil {
-		t.Fatal(err)
-	}
+	setLegacyColumn(t, app, id, "ssh_config_encrypted", blob)
 
 	rep, err := app.RotateEncryptionKeys(ctx)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if rep.ConnectionSSHConfigsScanned == 0 || rep.ConnectionSSHConfigsRotated != 1 {
+	if rep.ConnectionsSplit != 1 {
 		t.Fatalf("report: %+v", rep)
 	}
 
 	c, _, _ := app.db.GetConnection(ctx, id)
-	if app.keyring.NeedsRotation(c.SSHConfigEncrypted) {
-		t.Fatal("ssh blob still needs rotation")
+	if c.SSHConfigEncrypted != "" {
+		t.Fatal("legacy ssh blob was not cleared")
 	}
-	doc, _, _ := app.decodeSSHDocument(c.SSHConfigEncrypted)
-	if !doc.Enabled || doc.Host != "bastion" || doc.Password != "pw" {
-		t.Fatalf("ssh blob corrupted by rotation: %+v", doc)
+	var sshDoc credentials.SSHDocument
+	if err := json.Unmarshal(c.SSHConfig, &sshDoc); err != nil {
+		t.Fatalf("decode structured ssh config %s: %v", c.SSHConfig, err)
+	}
+	if !sshDoc.Enabled || sshDoc.Host != "bastion" || sshDoc.User != "jump" ||
+		sshDoc.AuthMethod != "password" || !sshDoc.InsecureSkipHostKey {
+		t.Fatalf("structured ssh config corrupted by rotation: %+v", sshDoc)
+	}
+	if sshDoc.Password != "" || sshDoc.PrivateKeyPEM != "" || sshDoc.Passphrase != "" {
+		t.Fatalf("structured ssh config retained secret fields: %+v", sshDoc)
+	}
+	secrets, err := app.db.ListConnectionSecrets(ctx, id)
+	if err != nil || len(secrets) != 2 {
+		t.Fatalf("split secrets = %+v, err=%v", secrets, err)
 	}
 
 	rep2, err := app.RotateEncryptionKeys(ctx)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if rep2.ConnectionSSHConfigsRotated != 0 {
-		t.Fatalf("second rotation rotated %d ssh configs; want 0", rep2.ConnectionSSHConfigsRotated)
+	if rep2.ConnectionsSplit != 0 {
+		t.Fatalf("second rotation split %d connections; want 0", rep2.ConnectionsSplit)
 	}
 }
 
@@ -356,10 +414,20 @@ func TestRotateEncryptionKeysEndpointReturnsReport(t *testing.T) {
 
 	res := send(t, newAuthRequest(t, http.MethodPost, "/api/v1/instance/encryption/rotate", nil, adminTok), app.routes())
 	assert.Equal(t, res.StatusCode, http.StatusOK)
-	if _, ok := res.BodyFields["connections_scanned"]; !ok {
-		t.Errorf("expected connections_scanned in response, got %v", res.BodyFields)
+	if _, ok := res.BodyFields["connections_split"]; !ok {
+		t.Errorf("expected connections_split in response, got %v", res.BodyFields)
 	}
 	if _, ok := res.BodyFields["file_contents_rotated"]; !ok {
 		t.Errorf("expected file_contents_rotated in response, got %v", res.BodyFields)
+	}
+}
+
+func setLegacyColumn(t *testing.T, app *application, id int64, column, value string) {
+	t.Helper()
+	if _, err := app.db.NewUpdate().Model((*database.Connection)(nil)).
+		Set(column+" = ?", value).
+		Where("id = ?", id).
+		Exec(context.Background()); err != nil {
+		t.Fatal(err)
 	}
 }

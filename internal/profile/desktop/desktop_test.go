@@ -1,10 +1,13 @@
 package desktop
 
 import (
+	"context"
 	"path/filepath"
 	"testing"
 
+	"github.com/sqlwarden/internal/access"
 	"github.com/sqlwarden/internal/config"
+	"github.com/sqlwarden/internal/credentials"
 	"github.com/sqlwarden/internal/identity"
 	"github.com/sqlwarden/internal/orgs"
 )
@@ -22,6 +25,13 @@ func TestDesktopProfileStrategies(t *testing.T) {
 	}
 	if p.Invitations() != orgs.InvitationsDisabled {
 		t.Fatal("desktop must disable invitations")
+	}
+}
+
+func TestDesktopRevealPolicyAlwaysAllows(t *testing.T) {
+	allowed, err := New().RevealPolicy().Allowed(context.Background(), credentials.OrgRef{OrgID: "1"}, access.Principal{})
+	if err != nil || !allowed {
+		t.Fatalf("Allowed = %v, %v", allowed, err)
 	}
 }
 

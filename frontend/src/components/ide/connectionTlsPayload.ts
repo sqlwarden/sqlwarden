@@ -1,29 +1,21 @@
-import type { ConnectionTlsReveal } from '#/lib/api/queries/workspace'
+import type { ConnectionTlsConfig } from '#/lib/api/types'
 import { emptyTlsState, type TlsFormState } from './ConnectionTlsFields'
 
-/** Shape sent to the connection create/update/test endpoints. */
-export function tlsStateToPayload(tls: TlsFormState) {
+export function tlsStateToConfig(tls: TlsFormState): ConnectionTlsConfig {
   return {
     mode: tls.mode,
     server_name: tls.serverName,
     ca_pem: tls.caPem,
     client_cert_pem: tls.clientCertPem,
-    client_key_pem: tls.clientKeyPem,
-    clear_client_key: tls.clearClientKey,
   }
 }
 
-/** Hydrates edit-form state from the reveal endpoint. The private key is never
- *  returned, so it starts blank; clientKeySet records that one is stored. */
-export function tlsRevealToState(r: ConnectionTlsReveal): TlsFormState {
+export function tlsConfigToState(config: ConnectionTlsConfig | undefined): TlsFormState {
+  if (!config) return emptyTlsState
   return {
-    ...emptyTlsState,
-    mode: r.mode,
-    serverName: r.server_name ?? '',
-    caPem: r.ca_pem ?? '',
-    clientCertPem: r.client_cert_pem ?? '',
-    clientKeyPem: '',
-    clientKeySet: r.client_key_set,
-    clearClientKey: false,
+    mode: config.mode,
+    serverName: config.server_name ?? '',
+    caPem: config.ca_pem ?? '',
+    clientCertPem: config.client_cert_pem ?? '',
   }
 }

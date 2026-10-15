@@ -11,6 +11,7 @@ import (
 
 	"github.com/jackc/pgx/v5/pgconn"
 	"github.com/sqlwarden/internal/engine"
+	"github.com/sqlwarden/internal/engine/connectionspectest"
 	"github.com/sqlwarden/internal/engine/metadata"
 
 	tcpostgres "github.com/testcontainers/testcontainers-go/modules/postgres"
@@ -19,6 +20,9 @@ import (
 var testDSN string
 
 func TestMain(m *testing.M) {
+	if connectionspectest.OnlyRequested() {
+		os.Exit(m.Run())
+	}
 	ctx := context.Background()
 
 	pgContainer, err := tcpostgres.Run(ctx,

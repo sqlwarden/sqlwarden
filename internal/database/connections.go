@@ -3,6 +3,7 @@ package database
 import (
 	"context"
 	"database/sql"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"strings"
@@ -20,7 +21,10 @@ type Connection struct {
 	EnvironmentID        int64              `bun:",notnull"          json:"environment_id"`
 	Name                 string             `bun:",notnull"          json:"name"`
 	Driver               string             `bun:",notnull"          json:"driver"`
-	DSNEncrypted         string             `bun:",notnull"          json:"-"`
+	Params               json.RawMessage    `bun:",type:jsonb,notnull,default:'{}'" json:"-"`
+	TLSConfig            json.RawMessage    `bun:",type:jsonb"        json:"-"`
+	SSHConfig            json.RawMessage    `bun:",type:jsonb"        json:"-"`
+	DSNEncrypted         string             `bun:",nullzero"         json:"-"`
 	TLSConfigEncrypted   string             `bun:",nullzero"         json:"-"`
 	SSHConfigEncrypted   string             `bun:",nullzero"         json:"-"`
 	AccessMode           string             `bun:",notnull,default:'open'" json:"access_mode"`
@@ -92,6 +96,7 @@ func (db *DB) InsertConnectionWithScopeAndExecutor(ctx context.Context, exec bun
 		EnvironmentID:        resolvedEnvID,
 		Name:                 name,
 		Driver:               driver,
+		Params:               json.RawMessage(`{}`),
 		DSNEncrypted:         dsnEncrypted,
 		AccessMode:           accessMode,
 		SchemaSnapshotPolicy: SchemaSnapshotPolicyInherit,
@@ -142,33 +147,15 @@ func (db *DB) GetConnection(ctx context.Context, id int64) (Connection, bool, er
 	return conn, true, nil
 }
 
-// UpdateConnection updates only mutable connection fields.
-// Workspace, environment, ownership, and driver are intentionally immutable.
-func (db *DB) UpdateConnection(ctx context.Context, id int64, name, dsnEncrypted, accessMode string) error {
-	return db.UpdateConnectionWithPolicy(ctx, id, name, dsnEncrypted, accessMode, SchemaSnapshotPolicyInherit)
-}
-
-func (db *DB) UpdateConnectionWithPolicy(ctx context.Context, id int64, name, dsnEncrypted, accessMode, snapshotPolicy string) error {
-	ctx, cancel := context.WithTimeout(ctx, defaultTimeout)
-	defer cancel()
-	_, err := db.NewUpdate().Model((*Connection)(nil)).
-		Set("name = ?", name).
-		Set("dsn_encrypted = ?", dsnEncrypted).
-		Set("access_mode = ?", accessMode).
-		Set("schema_snapshot_policy = ?", snapshotPolicy).
-		Set("updated_at = ?", time.Now()).
-		Where("id = ?", id).
-		Exec(ctx)
-	return err
-}
-
-func (db *DB) UpdateConnectionWithScopeAndPolicy(ctx context.Context, id int64, name, dsnEncrypted, accessMode, snapshotPolicy string, defaultScope metadata.ScopePath, showSystemSchemas, showAllDatabases bool) error {
+// UpdateConnectionWithScopeAndPolicy updates the mutable connection fields.
+// Workspace, environment, ownership, and driver are intentionally immutable,
+// and the legacy dsn_encrypted column is never touched.
+func (db *DB) UpdateConnectionWithScopeAndPolicy(ctx context.Context, id int64, name, accessMode, snapshotPolicy string, defaultScope metadata.ScopePath, showSystemSchemas, showAllDatabases bool) error {
 	ctx, cancel := context.WithTimeout(ctx, defaultTimeout)
 	defer cancel()
 
 	_, err := db.NewUpdate().Model((*Connection)(nil)).
 		Set("name = ?", name).
-		Set("dsn_encrypted = ?", dsnEncrypted).
 		Set("access_mode = ?", accessMode).
 		Set("schema_snapshot_policy = ?", snapshotPolicy).
 		Set("default_scope = ?", defaultScope).
@@ -220,60 +207,34 @@ func (db *DB) ListOrgConnections(ctx context.Context, orgID int64) ([]Connection
 	return conns, err
 }
 
-// ListAllConnections returns every connection across all workspaces. It is used
-// by encryption-key rotation to re-encrypt stored DSNs and must not be exposed
-// through tenant-scoped handlers.
-func (db *DB) ListAllConnections(ctx context.Context) ([]Connection, error) {
-	ctx, cancel := context.WithTimeout(ctx, defaultTimeout)
-	defer cancel()
-
-	var conns []Connection
-	err := db.NewSelect().Model(&conns).OrderExpr("id ASC").Scan(ctx)
-	return conns, err
-}
-
-// UpdateConnectionDSN replaces only the encrypted DSN for a connection. It is
-// used by encryption-key rotation and deliberately leaves all other fields,
-// including updated_at, untouched so rotation is invisible to consumers.
-func (db *DB) UpdateConnectionDSN(ctx context.Context, id int64, dsnEncrypted string) error {
+func (db *DB) UpdateConnectionStructured(ctx context.Context, id int64, params, tlsConfig, sshConfig json.RawMessage) error {
 	ctx, cancel := context.WithTimeout(ctx, defaultTimeout)
 	defer cancel()
 
 	_, err := db.NewUpdate().Model((*Connection)(nil)).
-		Set("dsn_encrypted = ?", dsnEncrypted).
+		Set("params = ?", rawJSONValue(params)).
+		Set("tls_config = ?", rawJSONValue(tlsConfig)).
+		Set("ssh_config = ?", rawJSONValue(sshConfig)).
+		Set("updated_at = ?", time.Now()).
 		Where("id = ?", id).
 		Exec(ctx)
 	return err
 }
 
-// UpdateConnectionTLSConfig replaces only the encrypted TLS configuration blob
-// for a connection. An empty string clears the column back to NULL. Like
-// UpdateConnectionDSN it leaves all other fields, including updated_at,
-// untouched so key rotation stays invisible to consumers.
-func (db *DB) UpdateConnectionTLSConfig(ctx context.Context, id int64, tlsConfigEncrypted string) error {
-	ctx, cancel := context.WithTimeout(ctx, defaultTimeout)
-	defer cancel()
-
-	_, err := db.NewUpdate().Model((*Connection)(nil)).
-		Set("tls_config_encrypted = ?", sql.NullString{String: tlsConfigEncrypted, Valid: tlsConfigEncrypted != ""}).
-		Where("id = ?", id).
-		Exec(ctx)
-	return err
+func rawJSONValue(value json.RawMessage) any {
+	if len(value) == 0 {
+		return nil
+	}
+	return string(value)
 }
 
-// UpdateConnectionSSHConfig replaces only the encrypted SSH tunnel
-// configuration blob for a connection. An empty string clears the column back
-// to NULL. Like UpdateConnectionDSN it leaves all other fields, including
-// updated_at, untouched so key rotation stays invisible to consumers.
-func (db *DB) UpdateConnectionSSHConfig(ctx context.Context, id int64, sshConfigEncrypted string) error {
+func (db *DB) CountLegacyConnections(ctx context.Context) (int, error) {
 	ctx, cancel := context.WithTimeout(ctx, defaultTimeout)
 	defer cancel()
 
-	_, err := db.NewUpdate().Model((*Connection)(nil)).
-		Set("ssh_config_encrypted = ?", sql.NullString{String: sshConfigEncrypted, Valid: sshConfigEncrypted != ""}).
-		Where("id = ?", id).
-		Exec(ctx)
-	return err
+	return db.NewSelect().Model((*Connection)(nil)).
+		Where(legacyConnectionWhere).
+		Count(ctx)
 }
 
 func (db *DB) ListConnectionsPage(ctx context.Context, params ListConnectionsParams) (response.Paginated[Connection], error) {
