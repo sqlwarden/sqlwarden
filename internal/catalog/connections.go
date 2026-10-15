@@ -229,6 +229,33 @@ func RedactConnectionError(text string, creds credentials.Credentials) string {
 	return redactSecrets(text, creds.DSN, secrets)
 }
 
+// ConnectErrorRedactor removes a connection's resolved secret values from a
+// connect failure message. Callers report driver errors without ever holding
+// the secrets themselves.
+type ConnectErrorRedactor interface {
+	RedactConnectError(ctx context.Context, orgID, workspaceID, connectionID int64, message string) (string, error)
+}
+
+// NewConnectErrorRedactor returns the redactor that resolves secrets through
+// resolver.
+func NewConnectErrorRedactor(resolver credentials.Resolver) ConnectErrorRedactor {
+	return connectErrorRedactor{resolver: resolver}
+}
+
+type connectErrorRedactor struct{ resolver credentials.Resolver }
+
+func (r connectErrorRedactor) RedactConnectError(ctx context.Context, orgID, workspaceID, connectionID int64, message string) (string, error) {
+	resolved, err := r.resolver.Resolve(ctx, credentials.ConnectionRef{
+		OrgID:        strconv.FormatInt(orgID, 10),
+		WorkspaceID:  strconv.FormatInt(workspaceID, 10),
+		ConnectionID: strconv.FormatInt(connectionID, 10),
+	})
+	if err != nil {
+		return "", err
+	}
+	return RedactConnectionError(message, resolved), nil
+}
+
 func mapValues(m map[string]string) []string {
 	out := make([]string, 0, len(m))
 	for _, v := range m {

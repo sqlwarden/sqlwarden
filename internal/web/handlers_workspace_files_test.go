@@ -327,7 +327,7 @@ func TestWorkspaceFileContentRejectsStaleExternalWrite(t *testing.T) {
 	if !strings.HasPrefix(content.StorageKey, "objects/") || strings.Contains(content.StorageKey, file.Name) {
 		t.Fatalf("object-store key must be opaque, got %q", content.StorageKey)
 	}
-	store, err := app.fileStores.Store(context.Background(), content.StorageBackendID)
+	store, err := testStores(app).Store(context.Background(), content.StorageBackendID)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -351,7 +351,7 @@ func setupFileModeWorkspaceOwner(t *testing.T, root string) (*application, datab
 		t.Fatal(err)
 	}
 	return setupWorkspaceOwnerWith(t, testAppOptions{
-		fileStores: func(FileStores) FileStores {
+		fileStores: func(files.StoreResolver) files.StoreResolver {
 			return &testFileStores{activeBackendID: database.DefaultFileStorageBackendID, stores: map[string]filestore.Store{database.DefaultFileStorageBackendID: store}}
 		},
 		configure: func(cfg *config.Config) { cfg.Files.StorageMode = config.FilesStorageModeFile },

@@ -40,7 +40,11 @@ func (s *Service) RevokeInstanceSessions(ctx context.Context, p access.Principal
 		return err
 	}
 	revokedBy := p.Subject.ID
-	return s.store.RevokeAuthSessionsForAccount(ctx, accountID, &revokedBy, "instance_admin_revoked_all")
+	if err := s.store.RevokeAuthSessionsForAccount(ctx, accountID, &revokedBy, "instance_admin_revoked_all"); err != nil {
+		return err
+	}
+	s.publishAccountRevoked(ctx, accountID)
+	return nil
 }
 
 // ListOrgMemberAccessSessions lists a member's access sessions for the
@@ -74,7 +78,11 @@ func (s *Service) RevokeOrgMemberAccessSession(ctx context.Context, p access.Pri
 		return ErrNotFound
 	}
 	revokedBy := p.Subject.ID
-	return s.store.RevokeOrgAccessSession(ctx, session.ID, orgID, &revokedBy, "org_admin_revoked")
+	if err := s.store.RevokeOrgAccessSession(ctx, session.ID, orgID, &revokedBy, "org_admin_revoked"); err != nil {
+		return err
+	}
+	s.publishAccountRevoked(ctx, accountID)
+	return nil
 }
 
 func requireInstanceAdmin(p access.Principal) error {

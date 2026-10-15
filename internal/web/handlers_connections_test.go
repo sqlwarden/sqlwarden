@@ -1611,7 +1611,7 @@ func TestQueryCursorFetchRequiresRuntimePermission(t *testing.T) {
 		Scan(context.Background(), &bindingID); err != nil {
 		t.Fatal(err)
 	}
-	if err := app.enforcer.UnbindRole(context.Background(), bindingID, org.ID); err != nil {
+	if err := testEnforcer(app).UnbindRole(context.Background(), bindingID, org.ID); err != nil {
 		t.Fatal(err)
 	}
 
@@ -2533,7 +2533,7 @@ func TestConnectToDatabaseRejectsPersistedSQLiteFileTargetWhenInstanceDisablesLo
 
 	conn := insertStructuredConnection(t, app, wsIDInt, &envID, "Seeded Host SQLite", "sqlite",
 		map[string]any{"path": filepath.Join(t.TempDir(), "host.db")})
-	app.enforcer.InvalidateAncestry("connection", conn.ID)
+	testEnforcer(app).InvalidateAncestry("connection", conn.ID)
 
 	connectRes := send(t, newAuthRequest(t, http.MethodPost,
 		orgConnectionURL(slug, wsIDInt, envID, strconv.FormatInt(conn.ID, 10))+"/connect", nil, tok), app.routes())

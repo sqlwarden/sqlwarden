@@ -77,7 +77,7 @@ func TestIdentitySetupSeedsOwnedOrganization(t *testing.T) {
 		t.Fatal(err)
 	}
 	deps.Config.JWT.SecretKey = "services-setup-test-secret-key-32"
-	svc, err := Build(deps)
+	svc, infra, err := Build(deps)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -89,10 +89,10 @@ func TestIdentitySetupSeedsOwnedOrganization(t *testing.T) {
 		t.Fatal(err)
 	}
 	owner := accountPrincipal(result.Account.ID)
-	if _, err := svc.Requirer.Org(ctx, owner, result.Org.ID); err != nil {
+	if _, err := infra.Requirer.Org(ctx, owner, result.Org.ID); err != nil {
 		t.Fatalf("owner is not an org member: %v", err)
 	}
-	if !svc.Requirer.Can(ctx, owner, result.Org.ID, "org", "org", result.Org.ID, access.PermOrgDelete) {
+	if !infra.Requirer.Can(ctx, owner, result.Org.ID, "org", "org", result.Org.ID, access.PermOrgDelete) {
 		t.Fatal("owner policy was not seeded")
 	}
 }

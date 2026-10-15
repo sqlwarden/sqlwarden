@@ -28,13 +28,13 @@ func testConfig(t *testing.T) config.Config {
 	return cfg
 }
 
-func TestBuildAllBuildsRuntimeAndHTTP(t *testing.T) {
+func TestBuildAllBuildsJobsSettingsAndHTTP(t *testing.T) {
 	built, err := Build(context.Background(), Options{Config: testConfig(t), Logger: discardLogger(), Edition: testEdition()})
 	if err != nil {
 		t.Fatal(err)
 	}
 	t.Cleanup(func() { _ = built.Close(context.Background()) })
-	if got := built.ProcessKindNames(); !slices.Equal(got, []string{"runtime", "http"}) {
+	if got := built.ProcessKindNames(); !slices.Equal(got, []string{"jobs", "settings", "http"}) {
 		t.Fatalf("ProcessKindNames() = %v", got)
 	}
 }

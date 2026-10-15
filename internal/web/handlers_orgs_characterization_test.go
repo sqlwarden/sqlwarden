@@ -110,7 +110,7 @@ func newAccessCharacterizationFixture(t *testing.T) *accessCharacterizationFixtu
 	if err := testDB(app).AddWorkspaceMember(ctx, f.workspace.ID, f.wsMember.ID, nil); err != nil {
 		t.Fatal(err)
 	}
-	app.enforcer.InvalidatePrincipals(f.org.ID, f.wsMember.ID)
+	testEnforcer(app).InvalidatePrincipals(f.org.ID, f.wsMember.ID)
 
 	f.foreignWS = seedWorkspaceForAccount(t, app, f.otherOrg, f.otherOwner, "Foreign Access Characterization Workspace", "")
 	f.foreignEnvID = defaultEnvironmentID(t, app, f.foreignWS.ID)

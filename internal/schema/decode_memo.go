@@ -3,6 +3,7 @@ package schema
 import (
 	"hash/maphash"
 	"sync"
+	"time"
 
 	"github.com/sqlwarden/internal/database"
 	metadata "github.com/sqlwarden/internal/engine/metadata"
@@ -22,12 +23,18 @@ func identify(data []byte) blobID {
 type memoListing struct {
 	id      blobID
 	listing Listing
+	at      time.Time
 }
 
 type memoObject struct {
 	id     blobID
 	object metadata.Object
+	at     time.Time
 }
+
+// decodeMemoTTL bounds how long a decoded value is reused, even when its blob
+// never changes, so a memo entry cannot outlive the navigator memory ceiling.
+const decodeMemoTTL = navigatorMemoryTTL
 
 type connectionMemo struct {
 	listings map[listingKey]memoListing
@@ -37,8 +44,9 @@ type connectionMemo struct {
 // decodeMemo remembers the decoded form of stored listing and object blobs,
 // keyed by the blob's content, so repeated completion reads decode only rows
 // that changed. A row whose blob differs is decoded again, and rows no longer
-// present are dropped when a read commits. Decoded values are shared between
-// reads and must be treated as read-only.
+// present are dropped when a read commits. A value decoded longer ago than
+// decodeMemoTTL is decoded again. Decoded values are shared between reads and
+// must be treated as read-only.
 type decodeMemo struct {
 	mu    sync.Mutex
 	conns map[int64]*connectionMemo
@@ -50,6 +58,12 @@ func (m *decodeMemo) forget(connID int64) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	delete(m.conns, connID)
+}
+
+func (m *decodeMemo) clear() {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	clear(m.conns)
 }
 
 func (m *decodeMemo) previous(connID int64) *connectionMemo {
@@ -65,12 +79,14 @@ type memoRead struct {
 	connID int64
 	prev   *connectionMemo
 	next   *connectionMemo
+	now    time.Time
 }
 
-func (m *decodeMemo) begin(connID int64) *memoRead {
+func (m *decodeMemo) begin(connID int64, now time.Time) *memoRead {
 	return &memoRead{
 		memo:   m,
 		connID: connID,
+		now:    now,
 		prev:   m.previous(connID),
 		next:   &connectionMemo{listings: map[listingKey]memoListing{}, objects: map[database.SchemaObjectKey]memoObject{}},
 	}
@@ -92,7 +108,7 @@ func (r *memoRead) listing(row database.SchemaListing) (Listing, error) {
 	key := listingKey{parent: metadata.ScopePath(row.ParentPath), folder: row.Folder}
 	id := identify(row.ChildrenData)
 	if r.prev != nil {
-		if hit, ok := r.prev.listings[key]; ok && hit.id == id {
+		if hit, ok := r.prev.listings[key]; ok && hit.id == id && r.fresh(hit.at) {
 			r.next.listings[key] = hit
 			return hit.listing, nil
 		}
@@ -101,7 +117,7 @@ func (r *memoRead) listing(row database.SchemaListing) (Listing, error) {
 	if err != nil {
 		return Listing{}, err
 	}
-	r.next.listings[key] = memoListing{id: id, listing: listing}
+	r.next.listings[key] = memoListing{id: id, listing: listing, at: r.now}
 	return listing, nil
 }
 
@@ -114,7 +130,7 @@ func (r *memoRead) object(row database.SchemaObject) (metadata.Object, error) {
 	key := database.SchemaObjectKey{Scope: row.Scope, Kind: row.Kind, Name: row.Name}
 	id := identify(row.ObjectData)
 	if r.prev != nil {
-		if hit, ok := r.prev.objects[key]; ok && hit.id == id {
+		if hit, ok := r.prev.objects[key]; ok && hit.id == id && r.fresh(hit.at) {
 			r.next.objects[key] = hit
 			return hit.object, nil
 		}
@@ -123,6 +139,10 @@ func (r *memoRead) object(row database.SchemaObject) (metadata.Object, error) {
 	if err := gunzipJSON(row.ObjectData, &obj); err != nil {
 		return metadata.Object{}, err
 	}
-	r.next.objects[key] = memoObject{id: id, object: obj}
+	r.next.objects[key] = memoObject{id: id, object: obj, at: r.now}
 	return obj, nil
+}
+
+func (r *memoRead) fresh(at time.Time) bool {
+	return r.now.Sub(at) < decodeMemoTTL
 }

@@ -9,10 +9,9 @@ import (
 	"github.com/sqlwarden/internal/database"
 	"github.com/sqlwarden/internal/files"
 	"github.com/sqlwarden/internal/filestore"
-	"github.com/sqlwarden/internal/web"
 )
 
-var _ web.FileStores = (*FileStores)(nil)
+var _ files.StoreResolver = (*FileStores)(nil)
 
 // FileStores resolves configured workspace-file storage backends by their
 // stable backend ID. Content written before a backend was retired still

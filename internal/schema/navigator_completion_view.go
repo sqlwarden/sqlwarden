@@ -17,7 +17,7 @@ import (
 // live session, when present, supplies the current scope that fills in the
 // levels the configured default scope leaves open.
 func (n *Navigator) CompletionView(ctx context.Context, conn Connection, tree metadata.Tree, live Live) (*metadata.CompletionView, error) {
-	read := n.decoded.begin(conn.ID)
+	read := n.decoded.begin(conn.ID, n.now())
 	listings, err := n.cachedWithin(ctx, conn, "", read)
 	if err != nil {
 		return nil, err
@@ -238,8 +238,10 @@ func (n *Navigator) cachedObjects(ctx context.Context, conn Connection, read *me
 	}
 	n.mu.Lock()
 	defer n.mu.Unlock()
-	for ref, obj := range n.memoryFor(conn.ID).objects {
-		out[ref] = obj
+	for ref, entry := range n.memoryFor(conn.ID).objects {
+		if n.fresh(entry.at) {
+			out[ref] = entry.value
+		}
 	}
 	return out, nil
 }

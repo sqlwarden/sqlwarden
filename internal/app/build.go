@@ -21,6 +21,8 @@ import (
 	"github.com/sqlwarden/internal/encrypt"
 	"github.com/sqlwarden/internal/engine"
 	"github.com/sqlwarden/internal/execution"
+	"github.com/sqlwarden/internal/jobs"
+	"github.com/sqlwarden/internal/platform/invalidate"
 	"github.com/sqlwarden/internal/services"
 	"github.com/sqlwarden/internal/settings"
 	"github.com/sqlwarden/internal/web"
@@ -158,7 +160,8 @@ func Build(ctx context.Context, opts Options) (*Application, error) {
 	if err := settings.ValidateInvariant(ctx, db); err != nil {
 		return fail(err)
 	}
-	enforcer, err := access.New(db.DB)
+	invalidator := invalidate.NewMemory(logger)
+	enforcer, err := access.New(db.DB, access.WithInvalidator(invalidator), access.WithLogger(logger))
 	if err != nil {
 		return fail(fmt.Errorf("enforcer init: %w", err))
 	}
@@ -204,7 +207,7 @@ func Build(ctx context.Context, opts Options) (*Application, error) {
 			DocsURL: feature.DocsURL, Navigation: feature.Navigation, State: string(feature.State),
 		})
 	}
-	svc, err := services.Build(services.Deps{
+	svc, infra, err := services.Build(services.Deps{
 		Config:           cfg,
 		DB:               db,
 		Enforcer:         enforcer,
@@ -222,21 +225,20 @@ func Build(ctx context.Context, opts Options) (*Application, error) {
 		Invitations:      prof.Invitations(),
 		SignIn:           prof.SignIn(db),
 		Setup:            prof.Setup(),
+		Invalidator:      invalidator,
 	})
 	if err != nil {
 		return fail(fmt.Errorf("services init: %w", err))
 	}
+	application.services = svc
+	application.infra = infra
 	webApp, err := web.NewApplication(web.Dependencies{
 		Config:                cfg,
 		Logger:                logger,
-		Enforcer:              enforcer,
-		FileStores:            stores,
 		Services:              svc,
-		Credentials:           credentialProvider,
-		Audit:                 auditWriter,
+		SettingsAppliers:      infra.SettingsAppliers(),
 		Edition:               web.EditionCapabilities{Name: capabilities.Edition, Features: webFeatures},
 		EditionHandler:        composition.Handler(),
-		EditionJobs:           composition.Jobs(),
 		Authenticators:        composition.Authenticators(),
 		DecorateAuthenticator: composition.Authenticator,
 		RequestPolicies:       composition.RequestPolicies(),
@@ -256,6 +258,12 @@ func Build(ctx context.Context, opts Options) (*Application, error) {
 		return application, nil
 	}
 
+	// Every serving process builds the registry, so a duplicate edition job
+	// fails startup whichever process kinds are selected.
+	registry, err := infra.JobRegistry(composition.Jobs()...)
+	if err != nil {
+		return fail(err)
+	}
 	health := NewHealth()
 	serveAPI, runJobs := selectKinds(cfg)
 	var api http.Handler
@@ -265,12 +273,19 @@ func Build(ctx context.Context, opts Options) (*Application, error) {
 	handler := httpHandler(api, health)
 	application.handler = handler
 	tls := web.TLSFiles{Enabled: cfg.TLS.Enabled, CertFile: cfg.TLS.CertFile, KeyFile: cfg.TLS.KeyFile}
-	// Kinds close in reverse, so HTTP drains in-flight requests before the
-	// runtime and its job runner stop.
-	application.kinds = append(application.kinds,
-		newRuntimeKind(webApp, runJobs),
-		newHTTPKind(web.NewServer(cfg.HTTPPort, handler, logger), tls, logger),
-	)
+	application.kinds = serveKinds(serveKindsPlan{
+		runJobs:  runJobs,
+		initial:  webApp.InitialSettings(),
+		appliers: webApp.SettingsAppliers(),
+		workerID: jobs.NewWorkerID(),
+		newJobs: func() (jobSupervisor, jobScheduler) {
+			return jobs.NewSupervisor(infra.JobStore, registry, logger), jobs.NewScheduler(logger, infra.FileReapSchedule())
+		},
+		newWatcher: func(appliers []settings.Applier) settingsWatcher {
+			return settings.NewWatcher(svc.Settings, infra.Invalidator, logger, appliers...)
+		},
+		http: newHTTPKind(web.NewServer(cfg.HTTPPort, handler, logger), tls, logger),
+	})
 	health.bind(application)
 	logger.Info("process kinds built",
 		"process_kinds", application.ProcessKindNames(),

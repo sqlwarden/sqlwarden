@@ -3,7 +3,6 @@ package web
 import (
 	"context"
 	"errors"
-	"fmt"
 	"io"
 	"log/slog"
 	"net/http"
@@ -12,50 +11,31 @@ import (
 	"sync/atomic"
 	"time"
 
-	"github.com/sqlwarden/internal/access"
-	"github.com/sqlwarden/internal/audit"
 	"github.com/sqlwarden/internal/config"
-	"github.com/sqlwarden/internal/credentials"
-	"github.com/sqlwarden/internal/execution"
-	"github.com/sqlwarden/internal/filestore"
 	"github.com/sqlwarden/internal/identity"
-	"github.com/sqlwarden/internal/jobs"
 	"github.com/sqlwarden/internal/orgs"
 	"github.com/sqlwarden/internal/platform/clientip"
 	"github.com/sqlwarden/internal/services"
 	"github.com/sqlwarden/internal/settings"
 )
 
-const (
-	fileReaperInterval = 15 * time.Minute
-	fileReaperRetry    = time.Minute
-)
-
 type App = application
-
-// FileStores resolves the storage backend for workspace file content.
-type FileStores interface {
-	ActiveBackendID() string
-	Store(ctx context.Context, backendID string) (filestore.Store, error)
-}
 
 // Dependencies are the already-constructed resources the web application
 // uses. The caller owns their lifecycle: closing the App never closes them.
+// internal/architecture pins every field type, so web holds no handle that
+// skips service authorization.
 type Dependencies struct {
-	Config     config.Config
-	Logger     *slog.Logger
-	Enforcer   *access.Enforcer
-	FileStores FileStores
-	// Services is the built service graph. Its policy evaluator and runtime
-	// are the ones handlers authorize and execute through.
+	Config config.Config
+	Logger *slog.Logger
+	// Services is the transport half of the service graph; every handler
+	// reaches metadata, secrets, and sessions through it.
 	Services *services.Services
-	// Credentials is the edition-composed provider; connect failures use it
-	// to redact resolved secrets from driver errors.
-	Credentials           credentials.Provider
-	Audit                 audit.Writer
+	// SettingsAppliers put instance settings into effect below web, such as
+	// the live mailer. They run before web's own appliers, in order.
+	SettingsAppliers      []settings.Applier
 	Edition               EditionCapabilities
 	EditionHandler        http.Handler
-	EditionJobs           []jobs.Definition
 	Authenticators        []identity.Authenticator
 	DecorateAuthenticator func(identity.Authenticator) identity.Authenticator
 	RequestPolicies       []identity.RequestPolicy
@@ -70,28 +50,15 @@ type application struct {
 	config                config.Config
 	logger                *slog.Logger
 	wg                    sync.WaitGroup
-	runtime               execution.Runtime
-	revoker               execution.Revoker
-	enforcer              *access.Enforcer
-	policy                access.PolicyEvaluator
 	services              *services.Services
-	fileStores            FileStores
-	fileReaperCancel      context.CancelFunc
-	jobStore              *jobs.DatabaseStore
-	jobRegistry           *jobs.Registry
-	runtimeCancel         context.CancelFunc
-	runtimeStarted        atomic.Bool
-	runtimeUpdates        chan settings.Instance
+	settingsAppliers      []settings.Applier
 	initialSettings       settings.Instance
 	accessLogsEnabled     atomic.Bool
 	invitationPolicy      orgs.InvitationPolicy
 	clientIPs             clientip.Resolver
 	authChain             identity.Chain
-	audit                 audit.Writer
-	credentials           credentials.Provider
 	edition               EditionCapabilities
 	editionHandler        http.Handler
-	editionJobs           []jobs.Definition
 	authenticators        []identity.Authenticator
 	decorateAuthenticator func(identity.Authenticator) identity.Authenticator
 	requestPolicies       []identity.RequestPolicy
@@ -99,8 +66,8 @@ type application struct {
 }
 
 // NewApplication wires the web application from its dependencies. It applies
-// the stored instance settings but starts no background work; call
-// StartRuntime for that.
+// the stored instance settings but starts no background work; the caller runs
+// the settings watcher and job runner.
 func NewApplication(deps Dependencies) (*App, error) {
 	logger := deps.Logger
 	if logger == nil {
@@ -112,30 +79,14 @@ func NewApplication(deps Dependencies) (*App, error) {
 	if deps.Services == nil {
 		return nil, errors.New("web: services are required")
 	}
-	if deps.Credentials == nil {
-		return nil, errors.New("web: credential provider is required")
-	}
-	auditWriter := deps.Audit
-	if auditWriter == nil {
-		auditWriter = audit.Discard
-	}
 	app := &application{
 		invitationPolicy:      deps.Invitations,
 		config:                deps.Config,
 		logger:                logger,
-		runtime:               deps.Services.Runtime,
-		revoker:               deps.Services.Runtime,
-		enforcer:              deps.Enforcer,
-		policy:                deps.Services.Policy,
 		services:              deps.Services,
-		fileStores:            deps.FileStores,
-		jobStore:              deps.Services.JobStore,
-		runtimeUpdates:        make(chan settings.Instance, 1),
-		audit:                 auditWriter,
-		credentials:           deps.Credentials,
+		settingsAppliers:      deps.SettingsAppliers,
 		edition:               deps.Edition,
 		editionHandler:        deps.EditionHandler,
-		editionJobs:           deps.EditionJobs,
 		authenticators:        deps.Authenticators,
 		decorateAuthenticator: deps.DecorateAuthenticator,
 		requestPolicies:       deps.RequestPolicies,
@@ -147,153 +98,22 @@ func NewApplication(deps Dependencies) (*App, error) {
 	if err != nil {
 		return nil, err
 	}
-	if err := app.applyRuntimeOperations(initialSettings); err != nil {
+	if err := app.ApplyInstanceSettings(context.Background(), initialSettings); err != nil {
 		return nil, err
 	}
 	app.initialSettings = initialSettings
-	deps.Services.Settings.Subscribe(app.queueRuntimeOperations)
-	app.jobRegistry = app.defaultJobRegistry()
-	for _, definition := range app.editionJobs {
-		if _, exists := app.jobRegistry.Definition(definition.Type); exists {
-			return nil, fmt.Errorf("web: duplicate job definition %q", definition.Type)
-		}
-		app.jobRegistry.Register(definition)
-	}
 	return app, nil
 }
 
-// StartRuntime starts the runtime supervisor. Every serving process runs it,
-// because it applies instance settings changes made by any replica. With
-// runJobs it also owns the job runner, and the file content deletion reaper
-// starts beside it. Only the first call has an effect.
-func (app *application) StartRuntime(runJobs bool) {
-	if !app.runtimeStarted.CompareAndSwap(false, true) {
-		app.logger.Warn("runtime already started; ignoring repeated start", "run_jobs", runJobs)
-		return
-	}
-	app.logger.Info("runtime starting", "run_jobs", runJobs)
-	app.startRuntimeSupervisor(app.initialSettings, runJobs)
-	if runJobs {
-		app.startFileContentDeletionReaper()
-	}
-}
-
-// StopRuntime cancels the runtime goroutines and waits for them to return.
-func (app *application) StopRuntime() {
-	if app.fileReaperCancel != nil {
-		app.fileReaperCancel()
-	}
-	if app.runtimeCancel != nil {
-		app.runtimeCancel()
-	}
-	app.wg.Wait()
-}
-
-// Close stops the runtime. Sessions, cursors, and the database belong to the
-// caller that created them.
+// Close waits for request-spawned background tasks. Sessions, cursors, the
+// settings watcher, the job runner, and the database belong to the caller
+// that created them.
 func (app *application) Close() {
 	startedAt := time.Now()
-	app.StopRuntime()
+	app.wg.Wait()
 	app.logger.Info("background workers stopped", "duration_ms", time.Since(startedAt).Milliseconds())
 }
 
 func (app *application) Handler() http.Handler {
 	return app.routes()
-}
-
-func (app *application) defaultJobRegistry() *jobs.Registry {
-	registry := jobs.NewRegistry()
-	registry.Register(jobs.Definition{
-		Type:        "noop",
-		MaxAttempts: 1,
-		Handler: jobs.HandlerFunc(func(context.Context, jobs.Runtime) (any, error) {
-			return map[string]any{"ok": true}, nil
-		}),
-	})
-	registry.Register(jobs.Definition{
-		Type:        jobs.TypeFileContentReap,
-		MaxAttempts: 3,
-		Backoff: func(attempt int) time.Duration {
-			return time.Duration(attempt) * time.Minute
-		},
-		Handler: jobs.HandlerFunc(func(ctx context.Context, _ jobs.Runtime) (any, error) {
-			processed, err := app.workspaceFileService().ReapContentDeletionsOnce(ctx, 100, fileReaperRetry)
-			if err != nil {
-				return nil, jobs.Retryable("file_content_reap_failed", err.Error())
-			}
-			if processed > 0 {
-				app.logger.InfoContext(ctx, "file content deletion job processed batch", "processed", processed)
-			} else {
-				app.logger.DebugContext(ctx, "file content deletion job found no work")
-			}
-			return map[string]any{"processed": processed}, nil
-		}),
-	})
-	registry.Register(jobs.Definition{
-		Type:        jobs.TypeExportQueryCSV,
-		MaxAttempts: 1,
-		Handler: jobs.HandlerFunc(func(ctx context.Context, runtime jobs.Runtime) (any, error) {
-			return app.exportService().RunJob(ctx, runtime)
-		}),
-	})
-	registry.Register(jobs.Definition{
-		Type:        jobs.TypeSessionRevoke,
-		MaxAttempts: jobs.SessionRevokeMaxAttempts,
-		Backoff: func(attempt int) time.Duration {
-			return time.Duration(attempt) * 15 * time.Second
-		},
-		Handler: jobs.HandlerFunc(app.handleSessionRevoke),
-	})
-	return registry
-}
-
-func (app *application) startFileContentDeletionReaper() {
-	ctx, cancel := context.WithCancel(context.Background())
-	app.fileReaperCancel = cancel
-	app.wg.Add(1)
-	go func() {
-		defer app.wg.Done()
-		app.logger.Info("file content deletion reaper started")
-		ticker := time.NewTicker(fileReaperInterval)
-		defer ticker.Stop()
-		for {
-			if err := app.enqueueFileContentReapJob(ctx); err != nil {
-				app.logger.ErrorContext(ctx, "file content deletion reaper job enqueue failed", "error", err)
-			}
-			select {
-			case <-ctx.Done():
-				app.logger.Info("file content deletion reaper stopped")
-				return
-			case <-ticker.C:
-			}
-		}
-	}()
-}
-
-func (app *application) enqueueFileContentReapJob(ctx context.Context) error {
-	active, err := app.jobStore.HasActiveJobType(ctx, jobs.VisibilityInternal, jobs.TypeFileContentReap)
-	if err != nil {
-		return err
-	}
-	if active {
-		app.logger.DebugContext(ctx, "file content deletion reaper job already active", "job.type", jobs.TypeFileContentReap)
-		return nil
-	}
-	job, created, err := app.jobStore.EnqueueSingleton(ctx, jobs.EnqueueInput{
-		Type:         jobs.TypeFileContentReap,
-		SingletonKey: jobs.TypeFileContentReap,
-		Visibility:   jobs.VisibilityInternal,
-		Priority:     jobs.PriorityLow,
-		MaxAttempts:  3,
-	})
-	if errors.Is(err, jobs.ErrActiveExists) {
-		app.logger.DebugContext(ctx, "file content deletion reaper job already active", "job.type", jobs.TypeFileContentReap)
-		return nil
-	}
-	if err == nil {
-		if created {
-			app.logger.InfoContext(ctx, "file content deletion reaper job queued", "job.id", job.ID, "job.type", job.Type, "job.priority", job.Priority)
-		}
-	}
-	return err
 }

@@ -89,7 +89,7 @@ func TestOrgStoreCreateOwnedOrgRollsBackWhenOwnerMembershipFails(t *testing.T) {
 
 func TestOrgStoreReplaceBuiltinRoleRollsBackWhenNewBindingFails(t *testing.T) {
 	deps := newTestDeps(t)
-	svc, err := Build(deps)
+	svc, _, err := Build(deps)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -124,7 +124,7 @@ func TestOrgStoreReplaceBuiltinRoleRollsBackWhenNewBindingFails(t *testing.T) {
 
 func TestOrgsUpdateMemberRoleReplacesBuiltinRole(t *testing.T) {
 	deps := newTestDeps(t)
-	svc, err := Build(deps)
+	svc, _, err := Build(deps)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -160,7 +160,7 @@ func TestOrgsRemoveMemberRevokesOrgSessions(t *testing.T) {
 	deps := newTestDeps(t)
 	revoker := &orgRevoker{Revoker: deps.Runtime}
 	deps.Revoker = revoker
-	svc, err := Build(deps)
+	svc, _, err := Build(deps)
 	if err != nil {
 		t.Fatal(err)
 	}

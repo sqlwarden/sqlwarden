@@ -1,0 +1,207 @@
+{
+  "$schema": "https://json-schema.org/draft-07/schema#",
+  "title": "SQLWarden Helm values",
+  "type": "object",
+  "additionalProperties": true,
+  "required": ["mode", "image", "config", "database", "all", "api", "jobs", "migration"],
+  "properties": {
+    "nameOverride": { "type": "string" },
+    "fullnameOverride": { "type": "string" },
+    "mode": {
+      "description": "all runs one Deployment with process kind all. split runs api and jobs Deployments and requires PostgreSQL.",
+      "type": "string",
+      "enum": ["all", "split"]
+    },
+    "image": {
+      "type": "object",
+      "required": ["repository", "pullPolicy"],
+      "properties": {
+        "repository": { "type": "string", "minLength": 1 },
+        "tag": { "type": "string" },
+        "pullPolicy": { "type": "string", "enum": ["Always", "IfNotPresent", "Never"] }
+      }
+    },
+    "imagePullSecrets": { "type": "array", "items": { "type": "object" } },
+    "config": {
+      "type": "object",
+      "required": ["baseURL", "logFormat", "shutdownTimeout", "terminationGracePeriodSeconds"],
+      "properties": {
+        "baseURL": { "type": "string", "minLength": 1 },
+        "logFormat": { "type": "string", "enum": ["json", "text"] },
+        "trustedProxies": { "type": "array", "items": { "type": "string", "minLength": 1 } },
+        "shutdownTimeout": { "type": "string", "pattern": "^[0-9]+(ns|us|ms|s|m|h)$" },
+        "terminationGracePeriodSeconds": { "type": "integer", "minimum": 1 },
+        "extraEnv": { "type": "array", "items": { "type": "object" } }
+      }
+    },
+    "database": {
+      "type": "object",
+      "required": ["driver", "dsnKey", "migrationTimeout"],
+      "properties": {
+        "driver": { "type": "string", "enum": ["postgres", "sqlite"] },
+        "dsn": { "description": "Stored in a Secret. Required unless existingSecret is set.", "type": "string" },
+        "existingSecret": { "description": "Secret holding the DSN under dsnKey.", "type": "string" },
+        "dsnKey": { "type": "string", "minLength": 1 },
+        "migrationTimeout": { "type": "string", "pattern": "^[0-9]+(ns|us|ms|s|m|h)$" }
+      }
+    },
+    "secrets": {
+      "description": "Required: cookie_secret_key, jwt_secret_key, and encryption_key, either from the values below or from a Secret named by existingSecret. Secrets are never written to a ConfigMap.",
+      "type": "object",
+      "properties": {
+        "create": { "type": "boolean" },
+        "existingSecret": { "type": "string" },
+        "cookieSecretKey": { "type": "string" },
+        "jwtSecretKey": { "type": "string" },
+        "encryptionKey": { "type": "string" }
+      }
+    },
+    "serviceAccount": {
+      "type": "object",
+      "properties": {
+        "create": { "type": "boolean" },
+        "annotations": { "type": "object" }
+      }
+    },
+    "storage": {
+      "type": "object",
+      "properties": {
+        "existingClaim": { "type": "string" },
+        "mountPath": { "type": "string", "minLength": 1 }
+      }
+    },
+    "all": {
+      "type": "object",
+      "required": ["replicaCount", "httpPort"],
+      "properties": {
+        "replicaCount": { "type": "integer", "minimum": 1 },
+        "httpPort": { "type": "integer", "minimum": 1, "maximum": 65535 },
+        "service": { "$ref": "#/definitions/service" },
+        "resources": { "$ref": "#/definitions/resources" },
+        "probes": { "$ref": "#/definitions/probes" },
+        "extraEnv": { "type": "array", "items": { "type": "object" } }
+      }
+    },
+    "api": {
+      "type": "object",
+      "required": ["replicaCount", "httpPort"],
+      "properties": {
+        "replicaCount": { "type": "integer", "minimum": 1 },
+        "httpPort": { "type": "integer", "minimum": 1, "maximum": 65535 },
+        "service": { "$ref": "#/definitions/service" },
+        "resources": { "$ref": "#/definitions/resources" },
+        "probes": { "$ref": "#/definitions/probes" },
+        "extraEnv": { "type": "array", "items": { "type": "object" } }
+      }
+    },
+    "jobs": {
+      "type": "object",
+      "required": ["replicaCount", "httpPort"],
+      "properties": {
+        "replicaCount": { "type": "integer", "minimum": 1 },
+        "httpPort": { "type": "integer", "minimum": 1, "maximum": 65535 },
+        "resources": { "$ref": "#/definitions/resources" },
+        "probes": { "$ref": "#/definitions/probes" },
+        "extraEnv": { "type": "array", "items": { "type": "object" } }
+      }
+    },
+    "migration": {
+      "type": "object",
+      "required": ["enabled", "backoffLimit", "activeDeadlineSeconds"],
+      "properties": {
+        "enabled": { "type": "boolean" },
+        "backoffLimit": { "type": "integer", "minimum": 0 },
+        "activeDeadlineSeconds": { "type": "integer", "minimum": 1 },
+        "ttlSecondsAfterFinished": { "type": "integer", "minimum": 0 },
+        "resources": { "$ref": "#/definitions/resources" }
+      }
+    },
+    "podSecurityContext": { "type": "object" },
+    "securityContext": { "type": "object" }
+  },
+  "allOf": [
+    {
+      "description": "Split mode runs several processes against one database, so it must be PostgreSQL.",
+      "if": { "properties": { "mode": { "const": "split" } }, "required": ["mode"] },
+      "then": { "properties": { "database": { "properties": { "driver": { "const": "postgres" } } } } }
+    },
+    {
+      "description": "A SQLite file is owned by one process: single replica, no separate migration Job.",
+      "if": { "properties": { "database": { "properties": { "driver": { "const": "sqlite" } }, "required": ["driver"] } }, "required": ["database"] },
+      "then": {
+        "properties": {
+          "mode": { "const": "all" },
+          "all": { "properties": { "replicaCount": { "const": 1 } } },
+          "migration": { "properties": { "enabled": { "const": false } } }
+        }
+      }
+    },
+    {
+      "description": "Chart-managed secrets must be provided when no existing Secret is named.",
+      "if": {
+        "properties": {
+          "secrets": {
+            "properties": {
+              "create": { "const": true },
+              "existingSecret": { "maxLength": 0 }
+            }
+          }
+        },
+        "required": ["secrets"]
+      },
+      "then": {
+        "properties": {
+          "secrets": {
+            "required": ["cookieSecretKey", "jwtSecretKey", "encryptionKey"],
+            "properties": {
+              "cookieSecretKey": { "minLength": 1 },
+              "jwtSecretKey": { "minLength": 1 },
+              "encryptionKey": { "minLength": 1 }
+            }
+          }
+        }
+      }
+    }
+  ],
+  "definitions": {
+    "service": {
+      "type": "object",
+      "properties": {
+        "type": { "type": "string", "enum": ["ClusterIP", "NodePort", "LoadBalancer"] },
+        "port": { "type": "integer", "minimum": 1, "maximum": 65535 },
+        "annotations": { "type": "object" }
+      }
+    },
+    "resources": {
+      "type": "object",
+      "properties": {
+        "requests": { "$ref": "#/definitions/resourceQuantities" },
+        "limits": { "$ref": "#/definitions/resourceQuantities" }
+      }
+    },
+    "resourceQuantities": {
+      "type": "object",
+      "properties": {
+        "cpu": { "type": ["string", "number"] },
+        "memory": { "type": ["string", "number"] }
+      }
+    },
+    "probe": {
+      "type": "object",
+      "properties": {
+        "periodSeconds": { "type": "integer", "minimum": 1 },
+        "timeoutSeconds": { "type": "integer", "minimum": 1 },
+        "failureThreshold": { "type": "integer", "minimum": 1 }
+      }
+    },
+    "probes": {
+      "type": "object",
+      "required": ["startup", "liveness", "readiness"],
+      "properties": {
+        "startup": { "$ref": "#/definitions/probe" },
+        "liveness": { "$ref": "#/definitions/probe" },
+        "readiness": { "$ref": "#/definitions/probe" }
+      }
+    }
+  }
+}

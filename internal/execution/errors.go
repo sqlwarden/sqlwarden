@@ -47,7 +47,8 @@ func (e *TargetError) Unwrap() error { return e.Err }
 // refused or failed the connection attempt. Like TargetError its message is
 // meant for the user; credential and policy-store failures never carry it.
 type ConnectError struct {
-	Err error
+	Err    error
+	Driver string
 }
 
 func (e *ConnectError) Error() string { return e.Err.Error() }

@@ -18,10 +18,12 @@ This file gives AI coding agents working guidance for this repository. For archi
 SQLWarden is a Go API plus embedded React SPA.
 
 - `cmd/sqlwarden` is a thin server entrypoint with `serve`, `migrate`, and `rotate-keys` subcommands.
-- `internal/app` is the composition root. It builds the database, migrations, keyring, enforcer, and stores, and runs the selected process kinds (`all`, `api`, `jobs`). Only `cmd/*` imports it.
+- `internal/app` is the composition root. It builds the database, migrations, keyring, enforcer, and stores, and runs the selected process kinds (`all`, `api`, `jobs`) as `jobs`, `settings`, and `http` kinds. Only `cmd/*` imports it.
 - `internal/config` loads and validates configuration.
-- `internal/web` is transport only: routes, authentication and path-id middleware (`authenticateV1`, `requireAccount`, `orgScope`, `workspacePath`/`environmentPath`/`connectionPath`), handlers, and static frontend serving. Handlers decode, call services, map errors, and encode; every service method authorizes. Production web code never imports `internal/database`, `internal/encrypt`, `internal/connection`, `internal/engine`, `internal/schema`, or `internal/completion`; direct `.db` use in web is ratcheted at 0. Both are enforced by `internal/architecture`.
-- `internal/services` composes the service graph (`services.Build(services.Deps)`); `internal/app` supplies the deps.
+- `internal/web` is transport only: routes, authentication and path-id middleware (`authenticateV1`, `requireAccount`, `orgScope`, `workspacePath`/`environmentPath`/`connectionPath`), handlers, and static frontend serving. Handlers decode, call services, map errors, and encode; every service method authorizes. Production web code never imports `internal/database`, `internal/encrypt`, `internal/connection`, `internal/engine`, `internal/schema`, or `internal/completion`; direct `.db` use in web is ratcheted at 0. Web imports are an allow-list, and `bundle_test.go` pins the fields web receives; all are enforced by `internal/architecture`.
+- `internal/services` composes the service graph: `services.Build(services.Deps)` returns `*Services` (authorization services plus the `settings.Sender`, `identity.Authentication`, and `catalog.ConnectErrorRedactor` ports, the only thing web receives) and `*Infra` (runtime, navigator, job store, invalidator; held by `internal/app` only). `internal/app` supplies the deps.
+- `internal/platform/invalidate` is the cache-invalidation port (`Invalidator`, in-process `Memory` bus). Caches publish on a topic and subscribe with a TTL ceiling; Postgres and Redis transports are future work.
+- `internal/jobs` also owns the `Supervisor` (job runner lifecycle), `Scheduler` (recurring enqueues such as the file reap), and unique per-process worker ids. `internal/settings.Watcher` applies instance setting changes in every serving process.
 - `internal/settings`, `internal/orgs`, `internal/rbac`, `internal/identity`, `internal/keyrotation`, `internal/catalog`, `internal/query`, `internal/files`, `internal/exportjob`, and `internal/jobs` are authorization services. Exported `Service` methods take `context.Context` and `access.Principal`, with reasoned exemptions in `internal/architecture/authz_contract_test.go`. The auth chain sets `Principal.InstanceAdmin` per request. `rotate-keys` authorizes through `keyrotation.OperatorPrincipal()`.
 - `internal/database` stores SQLWarden metadata through Bun against SQLite/PostgreSQL.
 - `internal/access` owns the RBAC enforcer and `Requirer` (`Org`, `Workspace`, `WorkspaceMember`, `Connection`, `ConnectionMember`, `ResolveConnection`, and the resolve-free `Can`), shared `ErrForbidden`/`ErrNotFound`, and the `CredentialJob` principal kind.
@@ -32,7 +34,8 @@ SQLWarden is a Go API plus embedded React SPA.
 - `internal/exportjob` owns export requests, bounded downloads, and background export jobs; `internal/jobs.Service` owns user job list/get/events/cancel routes.
 - `internal/engine` contains external data-system integrations and capabilities; current engines support PostgreSQL, MySQL, and SQLite.
 - `internal/files` takes an `access.Principal` and authorizes workspace file operations; `internal/filestore` implements content storage.
-- `internal/architecture` enforces context-plus-Principal service contracts, the `internal/web` import deny-list, and a ratchet of 0 on any `.db` use in production `internal/web` code.
+- `internal/architecture` enforces context-plus-Principal service contracts, the `internal/web` import deny-list and allow-list, the web bundle and dependency field allow-lists, and a ratchet of 0 on any `.db` use in production `internal/web` code.
+- `deploy/experimental/helm` is an experimental, unpublished Helm chart (modes `all` and `split`; split requires PostgreSQL).
 - `frontend/` is the React app using TanStack Router, TanStack Query, Tailwind CSS, shadcn/ui, Base UI, CodeMirror, Zustand, IndexedDB, Y.js, and BroadcastChannel.
 
 Future Wails desktop work should reuse `internal/web`; do not put reusable web logic in `cmd/sqlwarden`.

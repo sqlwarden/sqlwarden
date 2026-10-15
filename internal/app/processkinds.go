@@ -5,10 +5,13 @@ import (
 	"errors"
 	"log/slog"
 	"net/http"
+	"sync/atomic"
 	"time"
 
 	"github.com/go-chi/chi/v5"
 	"github.com/sqlwarden/internal/config"
+	"github.com/sqlwarden/internal/jobs"
+	"github.com/sqlwarden/internal/settings"
 	"github.com/sqlwarden/internal/web"
 )
 
@@ -109,24 +112,133 @@ func (k *httpKind) Close(ctx context.Context) error {
 
 func (k *httpKind) Done() <-chan error { return k.done }
 
-// runtimeController is the part of web.App that the runtime kind controls.
-type runtimeController interface {
-	StartRuntime(runJobs bool)
-	StopRuntime()
+type settingsWatcher interface {
+	Seed(settings.Instance)
+	Start(context.Context)
+	Stop()
 }
 
-// runtimeKind applies instance settings changes in every serving process and
-// runs background jobs only when the process selects jobs.
-type runtimeKind struct {
-	rt      runtimeController
-	runJobs bool
+type jobSupervisor interface {
+	Apply(context.Context, jobs.WorkerConfig)
+	Stop()
 }
 
-func newRuntimeKind(rt runtimeController, runJobs bool) *runtimeKind {
-	return &runtimeKind{rt: rt, runJobs: runJobs}
+type jobScheduler interface {
+	Start(context.Context)
+	Stop()
 }
 
-func (k *runtimeKind) Name() string                { return "runtime" }
-func (k *runtimeKind) Start(context.Context) error { k.rt.StartRuntime(k.runJobs); return nil }
-func (k *runtimeKind) Ready(context.Context) error { return nil }
-func (k *runtimeKind) Close(context.Context) error { k.rt.StopRuntime(); return nil }
+// serveKindsPlan describes the process kinds of a serving process. The
+// watcher is built once every applier is known, because the jobs kind adds
+// its supervisor applier to the same watcher.
+type serveKindsPlan struct {
+	runJobs  bool
+	initial  settings.Instance
+	appliers []settings.Applier
+	workerID string
+	// newJobs is called only when the process runs jobs.
+	newJobs    func() (jobSupervisor, jobScheduler)
+	newWatcher func(appliers []settings.Applier) settingsWatcher
+	http       ProcessKind
+}
+
+// serveKinds returns the kinds in start order: jobs (when selected), settings,
+// then http. The jobs kind applies the initial worker configuration before the
+// watcher can apply a later one. Close runs in reverse, so HTTP drains first,
+// then the watcher stops (cancelling the context of any supervisor restart it
+// is waiting on, which cancels the job blocking that restart), then the
+// scheduler and the supervisor stop, all before the database closes.
+func serveKinds(plan serveKindsPlan) []ProcessKind {
+	var kinds []ProcessKind
+	appliers := plan.appliers
+	if plan.runJobs {
+		supervisor, scheduler := plan.newJobs()
+		jk := newJobsKind(supervisor, scheduler, plan.workerID, plan.initial)
+		appliers = append(append([]settings.Applier(nil), appliers...), jk.applier())
+		kinds = append(kinds, jk)
+	}
+	kinds = append(kinds, newSettingsKind(plan.newWatcher(appliers), plan.initial))
+	return append(kinds, plan.http)
+}
+
+// settingsKind applies instance settings changes made by any replica. It runs
+// in every serving process.
+type settingsKind struct {
+	watcher settingsWatcher
+	initial settings.Instance
+	started atomic.Bool
+}
+
+func newSettingsKind(watcher settingsWatcher, initial settings.Instance) *settingsKind {
+	return &settingsKind{watcher: watcher, initial: initial}
+}
+
+func (k *settingsKind) Name() string { return "settings" }
+
+func (k *settingsKind) Start(ctx context.Context) error {
+	k.watcher.Seed(k.initial)
+	k.watcher.Start(context.WithoutCancel(ctx))
+	k.started.Store(true)
+	return nil
+}
+
+func (k *settingsKind) Ready(context.Context) error {
+	if !k.started.Load() {
+		return errors.New("settings watcher has not started")
+	}
+	return nil
+}
+
+func (k *settingsKind) Close(context.Context) error {
+	k.watcher.Stop()
+	return nil
+}
+
+// jobsKind runs the job supervisor and the job scheduler. It runs only in
+// processes that select jobs.
+type jobsKind struct {
+	supervisor jobSupervisor
+	scheduler  jobScheduler
+	workerID   string
+	initial    settings.Instance
+	started    atomic.Bool
+}
+
+func newJobsKind(supervisor jobSupervisor, scheduler jobScheduler, workerID string, initial settings.Instance) *jobsKind {
+	return &jobsKind{supervisor: supervisor, scheduler: scheduler, workerID: workerID, initial: initial}
+}
+
+func (k *jobsKind) Name() string { return "jobs" }
+
+func (k *jobsKind) Start(ctx context.Context) error {
+	runCtx := context.WithoutCancel(ctx)
+	k.supervisor.Apply(runCtx, jobs.WorkerConfigFromSettings(k.initial, k.workerID))
+	k.scheduler.Start(runCtx)
+	k.started.Store(true)
+	return nil
+}
+
+func (k *jobsKind) Ready(context.Context) error {
+	if !k.started.Load() {
+		return errors.New("job runner has not started")
+	}
+	return nil
+}
+
+// Close stops the scheduler before the supervisor, so no schedule enqueues
+// into a process whose runner has stopped. Supervisor.Stop cancels in-flight
+// jobs before it waits for them.
+func (k *jobsKind) Close(context.Context) error {
+	k.scheduler.Stop()
+	k.supervisor.Stop()
+	return nil
+}
+
+// applier reconfigures the supervisor from instance settings, keeping this
+// process's worker id.
+func (k *jobsKind) applier() settings.Applier {
+	return func(ctx context.Context, in settings.Instance) error {
+		k.supervisor.Apply(ctx, jobs.WorkerConfigFromSettings(in, k.workerID))
+		return nil
+	}
+}

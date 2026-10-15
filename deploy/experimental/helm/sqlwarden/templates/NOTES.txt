@@ -1,0 +1,25 @@
+SQLWarden {{ .Chart.AppVersion }} is installed as release {{ .Release.Name }} (experimental chart).
+
+Mode: {{ .Values.mode }}
+{{- if eq .Values.mode "split" }}
+  api   {{ .Values.api.replicaCount }} replica(s) at {{ include "sqlwarden.api.fullname" . }}:{{ .Values.api.service.port }}
+  jobs  {{ .Values.jobs.replicaCount }} replica(s), health endpoints only
+{{- else }}
+  all   {{ .Values.all.replicaCount }} replica(s) at {{ include "sqlwarden.all.fullname" . }}:{{ .Values.all.service.port }}
+{{- end }}
+
+Reach the UI and API:
+
+  kubectl --namespace {{ .Release.Namespace }} port-forward svc/{{ include "sqlwarden.serving.fullname" . }} {{ index .Values (include "sqlwarden.serving.component" .) "service" "port" }}:{{ index .Values (include "sqlwarden.serving.component" .) "service" "port" }}
+
+Then open {{ .Values.config.baseURL }} and complete setup at /setup.
+{{- if .Values.migration.enabled }}
+
+Schema migrations ran in the pre-install/pre-upgrade Job
+{{ include "sqlwarden.migration.fullname" . }}, not in the serving replicas.
+{{- end }}
+{{- if not .Values.storage.existingClaim }}
+
+Workspace file content is on an emptyDir and is lost when the pod restarts.
+Set storage.existingClaim before storing anything you need to keep.
+{{- end }}

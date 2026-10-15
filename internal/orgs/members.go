@@ -7,6 +7,7 @@ import (
 
 	"github.com/sqlwarden/internal/access"
 	"github.com/sqlwarden/internal/database"
+	"github.com/sqlwarden/internal/platform/invalidate"
 	"github.com/sqlwarden/internal/rbac"
 	"github.com/sqlwarden/internal/response"
 )
@@ -93,6 +94,7 @@ func (s *Service) RemoveMember(ctx context.Context, p access.Principal, orgID, a
 		return err
 	}
 	s.revokeSessions(ctx, orgID, accountID)
+	s.publishCredentialsRevoked(ctx, accountID)
 	s.invalidatePrincipals(orgID, accountID)
 	s.emit(ctx, p, orgID, ActionMemberRemoved, "account", accountID, nil)
 	return nil
@@ -209,5 +211,16 @@ func (s *Service) revokeSessions(ctx context.Context, orgID, accountID int64) {
 	}
 	if _, err := s.revoker.RevokeOrgAccount(context.WithoutCancel(ctx), strconv.FormatInt(orgID, 10), strconv.FormatInt(accountID, 10)); err != nil {
 		s.logger.WarnContext(ctx, "organization member session revocation failed", slog.Int64("org_id", orgID), slog.Int64("target_account_id", accountID), slog.Any("error", err))
+	}
+}
+
+// publishCredentialsRevoked announces the removed member's revoked org access.
+// Delivery is best-effort: a failure is logged and never fails the removal.
+func (s *Service) publishCredentialsRevoked(ctx context.Context, accountID int64) {
+	if s.inval == nil {
+		return
+	}
+	if err := s.inval.Publish(context.WithoutCancel(ctx), invalidate.TopicCredentials, "account:"+strconv.FormatInt(accountID, 10)); err != nil {
+		s.logger.WarnContext(ctx, "credential invalidation publish failed", slog.Any("error", err))
 	}
 }

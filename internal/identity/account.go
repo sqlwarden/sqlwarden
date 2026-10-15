@@ -85,7 +85,11 @@ func (s *Service) UpdatePassword(ctx context.Context, p access.Principal, in Upd
 	if p.Credential.Kind == access.CredentialSession {
 		keep = p.Credential.ID
 	}
-	return s.store.ChangeAccountPassword(ctx, account.ID, hashed, keep, PasswordChangedReason)
+	if err := s.store.ChangeAccountPassword(ctx, account.ID, hashed, keep, PasswordChangedReason); err != nil {
+		return err
+	}
+	s.publishAccountRevoked(ctx, account.ID)
+	return nil
 }
 
 type ListOrgsInput struct {
@@ -162,7 +166,11 @@ func (s *Service) RevokeOwnSessions(ctx context.Context, p access.Principal) err
 		return err
 	}
 	revokedBy := p.Subject.ID
-	return s.store.RevokeAuthSessionsForAccount(ctx, p.Subject.ID, &revokedBy, "user_revoked_all")
+	if err := s.store.RevokeAuthSessionsForAccount(ctx, p.Subject.ID, &revokedBy, "user_revoked_all"); err != nil {
+		return err
+	}
+	s.publishAccountRevoked(ctx, p.Subject.ID)
+	return nil
 }
 
 func (s *Service) loadAccount(ctx context.Context, id int64) (database.Account, error) {
@@ -197,5 +205,9 @@ func (s *Service) revokeSession(ctx context.Context, accountID int64, sessionID 
 	if !found {
 		return ErrNotFound
 	}
-	return s.store.RevokeAuthSession(ctx, session.ID, &revokedBy, reason)
+	if err := s.store.RevokeAuthSession(ctx, session.ID, &revokedBy, reason); err != nil {
+		return err
+	}
+	s.publishSessionRevoked(ctx, session.ID)
+	return nil
 }

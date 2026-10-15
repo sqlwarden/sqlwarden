@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"github.com/sqlwarden/internal/execution"
+	"github.com/sqlwarden/internal/services"
 	"github.com/sqlwarden/internal/web"
 )
 
@@ -20,10 +21,12 @@ var ErrNotStarted = errors.New("application has not started")
 // kinds this process runs. Build it with [Build], start background work with
 // [Application.Start] or [Application.Run], and always close it.
 type Application struct {
-	web     *web.App
-	runtime *execution.LocalRuntime
-	handler http.Handler
-	kinds   []ProcessKind
+	web      *web.App
+	runtime  *execution.LocalRuntime
+	services *services.Services
+	infra    *services.Infra
+	handler  http.Handler
+	kinds    []ProcessKind
 
 	logger           *slog.Logger
 	resources        *resourceStack

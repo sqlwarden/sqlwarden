@@ -90,7 +90,7 @@ func TestInstanceRuntimeOperationsAndWriteOnlySMTPPassword(t *testing.T) {
 	if !stored.AccessLogsEnabled {
 		t.Fatal("access log setting was not persisted")
 	}
-	if err := app.applyRuntimeOperations(settings.Instance(stored)); err != nil {
+	if err := app.ApplyInstanceSettings(context.Background(), settings.Instance(stored)); err != nil {
 		t.Fatal(err)
 	}
 	if !app.accessLogsEnabled.Load() {

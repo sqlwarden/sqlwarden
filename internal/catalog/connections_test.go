@@ -854,6 +854,37 @@ func TestRedactConnectionError(t *testing.T) {
 	}
 }
 
+type refResolver struct {
+	creds credentials.Credentials
+	err   error
+	got   credentials.ConnectionRef
+}
+
+func (r *refResolver) Resolve(_ context.Context, ref credentials.ConnectionRef) (credentials.Credentials, error) {
+	r.got = ref
+	return r.creds, r.err
+}
+
+func TestConnectErrorRedactorResolvesTheConnectionAndRedacts(t *testing.T) {
+	resolver := &refResolver{creds: credentials.Credentials{Driver: "postgres", DSN: "postgresql://user:db-password@db.example.com:5432/app"}}
+	redacted, err := NewConnectErrorRedactor(resolver).RedactConnectError(context.Background(), 1, 2, 3, "dial failed: db-password")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if strings.Contains(redacted, "db-password") {
+		t.Fatalf("redacted message contains the secret: %s", redacted)
+	}
+	want := credentials.ConnectionRef{OrgID: "1", WorkspaceID: "2", ConnectionID: "3"}
+	if resolver.got != want {
+		t.Fatalf("resolved %+v, want %+v", resolver.got, want)
+	}
+
+	failing := &refResolver{err: errors.New("resolve failed")}
+	if _, err := NewConnectErrorRedactor(failing).RedactConnectError(context.Background(), 1, 2, 3, "dial failed"); err == nil {
+		t.Fatal("a resolve failure returned no error")
+	}
+}
+
 func TestConnectionTargetChanged(t *testing.T) {
 	spec := fakeSpec{}
 	tests := []struct {

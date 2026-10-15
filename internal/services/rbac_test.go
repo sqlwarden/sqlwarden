@@ -18,7 +18,7 @@ import (
 func seedRBACOrg(t *testing.T) (*Services, Deps, database.Organization, database.Account, database.Account) {
 	t.Helper()
 	deps := newTestDeps(t)
-	svc, err := Build(deps)
+	svc, _, err := Build(deps)
 	if err != nil {
 		t.Fatal(err)
 	}

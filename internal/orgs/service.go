@@ -11,6 +11,7 @@ import (
 	"github.com/sqlwarden/internal/access"
 	"github.com/sqlwarden/internal/audit"
 	"github.com/sqlwarden/internal/database"
+	"github.com/sqlwarden/internal/platform/invalidate"
 )
 
 // Org is an organization as the service returns it.
@@ -32,6 +33,9 @@ type Deps struct {
 	// be nil when no policy is cached.
 	Cache   PolicyCache
 	Revoker SessionRevoker
+	// Invalidator announces credential revocations to other replicas. It
+	// may be nil.
+	Invalidator invalidate.Invalidator
 	// Invitations stores organization invitations. InvitationPolicy gates
 	// them and defaults to InvitationsDisabled. A nil Mailer reports every
 	// delivery as disabled.
@@ -52,6 +56,7 @@ type Service struct {
 	requirer *access.Requirer
 	cache    PolicyCache
 	revoker  SessionRevoker
+	inval    invalidate.Invalidator
 	audit    audit.Writer
 	logger   *slog.Logger
 
@@ -77,6 +82,7 @@ func New(deps Deps) *Service {
 		requirer: deps.Requirer,
 		cache:    deps.Cache,
 		revoker:  deps.Revoker,
+		inval:    deps.Invalidator,
 		audit:    deps.Audit,
 		logger:   deps.Logger,
 

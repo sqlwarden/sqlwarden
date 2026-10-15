@@ -23,7 +23,7 @@ func TestOrganizationInvitationExistingAccountLifecycle(t *testing.T) {
 	created := createInvitationForTest(t, app, slug, invitee.Email, ownerToken)
 	assert.Equal(t, created.StatusCode, http.StatusCreated)
 	assert.Equal(t, created.BodyFields["delivery_status"], database.InvitationDeliverySent)
-	sent := app.services.Mailer.Current().SentMessages
+	sent := testInfra(app).Mailer.Current().SentMessages
 	if len(sent) != 1 || !strings.Contains(sent[0], invitee.Email) {
 		t.Fatal("expected invitation email to be sent to the invitee")
 	}
@@ -113,7 +113,7 @@ func TestOrganizationInvitationListResendAndRevoke(t *testing.T) {
 func TestOrganizationInvitationDeliveryDisabledAndExpiration(t *testing.T) {
 	t.Parallel()
 	app := newTestApp(t)
-	app.services.Mailer.Set(smtp.NewDisabledMailer(""))
+	testInfra(app).Mailer.Set(smtp.NewDisabledMailer(""))
 	_, ownerToken, slug := registerAndLogin(t, app, uniqueEmail(t, "invite-disabled-owner"), "Invite Owner", "securepass99")
 	created := createInvitationForTest(t, app, slug, uniqueEmail(t, "invite-disabled"), ownerToken)
 	assert.Equal(t, created.BodyFields["delivery_status"], database.InvitationDeliveryDisabled)
@@ -134,7 +134,7 @@ func TestOrganizationInvitationDeliveryDisabledAndExpiration(t *testing.T) {
 func TestOrganizationInvitationDeliveryFailureKeepsCopyableLink(t *testing.T) {
 	t.Parallel()
 	app := newTestApp(t)
-	app.services.Mailer.Set(smtp.NewMockMailer(""))
+	testInfra(app).Mailer.Set(smtp.NewMockMailer(""))
 	_, ownerToken, slug := registerAndLogin(t, app, uniqueEmail(t, "invite-failed-owner"), "Invite Owner", "securepass99")
 	created := createInvitationForTest(t, app, slug, uniqueEmail(t, "invite-failed"), ownerToken)
 	assert.Equal(t, created.StatusCode, http.StatusCreated)

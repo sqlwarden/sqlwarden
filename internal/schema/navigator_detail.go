@@ -14,8 +14,8 @@ func (n *Navigator) Objects(ctx context.Context, conn Connection, live Live, ref
 	n.mu.Lock()
 	mem := n.memoryFor(conn.ID)
 	for _, ref := range refs {
-		if obj, ok := mem.objects[ref]; ok {
-			found[ref] = obj
+		if entry, ok := mem.objects[ref]; ok && n.fresh(entry.at) {
+			found[ref] = entry.value
 		} else {
 			misses = append(misses, ref)
 		}
@@ -71,10 +71,10 @@ func (n *Navigator) Objects(ctx context.Context, conn Connection, live Live, ref
 
 func (n *Navigator) Relationships(ctx context.Context, conn Connection, live Live, scope metadata.ScopePath) (*metadata.RelationshipGraph, error) {
 	n.mu.Lock()
-	graph, ok := n.memoryFor(conn.ID).relationships[scope]
+	entry, ok := n.memoryFor(conn.ID).relationships[scope]
 	n.mu.Unlock()
-	if ok {
-		return graph, nil
+	if ok && n.fresh(entry.at) {
+		return entry.value, nil
 	}
 	if conn.Persistent && n.store != nil {
 		row, found, err := n.store.SchemaRelationship(ctx, conn.ID, string(scope))
@@ -112,22 +112,25 @@ func (n *Navigator) Relationships(ctx context.Context, conn Connection, live Liv
 }
 
 func (n *Navigator) Invalidate(ctx context.Context, conn Connection, root metadata.ScopePath) error {
-	return n.invalidateDetail(ctx, conn, root)
+	err := n.invalidateDetail(ctx, conn, root)
+	n.publishInvalidation(conn.ID)
+	return err
 }
 
 func (n *Navigator) rememberObjects(connID int64, objects []metadata.Object) {
 	n.mu.Lock()
 	defer n.mu.Unlock()
 	mem := n.memoryFor(connID)
+	at := n.now()
 	for _, obj := range objects {
-		mem.objects[obj.Ref] = obj
+		mem.objects[obj.Ref] = memoryEntry[metadata.Object]{value: obj, at: at}
 	}
 }
 
 func (n *Navigator) rememberRelationships(connID int64, scope metadata.ScopePath, graph *metadata.RelationshipGraph) {
 	n.mu.Lock()
 	defer n.mu.Unlock()
-	n.memoryFor(connID).relationships[scope] = graph
+	n.memoryFor(connID).relationships[scope] = memoryEntry[*metadata.RelationshipGraph]{value: graph, at: n.now()}
 }
 
 func (n *Navigator) saveObjects(ctx context.Context, conn Connection, objects []metadata.Object) error {

@@ -11,6 +11,7 @@ import (
 
 	"github.com/sqlwarden/internal/database"
 	metadata "github.com/sqlwarden/internal/engine/metadata"
+	"github.com/sqlwarden/internal/platform/invalidate"
 	"golang.org/x/sync/singleflight"
 )
 
@@ -62,11 +63,23 @@ type listingKey struct {
 	folder string
 }
 
-type connectionMemory struct {
-	listings      map[listingKey]Listing
-	objects       map[metadata.ObjectRef]metadata.Object
-	relationships map[metadata.ScopePath]*metadata.RelationshipGraph
+// memoryEntry is a value held in navigator memory with the time it was
+// remembered, which the memory ceiling is measured from.
+type memoryEntry[T any] struct {
+	value T
+	at    time.Time
 }
+
+type connectionMemory struct {
+	listings      map[listingKey]memoryEntry[Listing]
+	objects       map[metadata.ObjectRef]memoryEntry[metadata.Object]
+	relationships map[metadata.ScopePath]memoryEntry[*metadata.RelationshipGraph]
+}
+
+// navigatorMemoryTTL bounds how long a remembered listing, object or
+// relationship graph is served without being reloaded, so a lost
+// invalidation self-heals.
+const navigatorMemoryTTL = 15 * time.Minute
 
 // Navigator serves lazily loaded navigator listings from memory, then the
 // persistent store, then the caller's live session. It never opens a
@@ -76,6 +89,11 @@ type Navigator struct {
 	logger *slog.Logger
 	now    func() time.Time
 	group  singleflight.Group
+
+	bus invalidate.Invalidator
+	// origin identifies this instance in published invalidation keys so its
+	// own messages, whose local work is already done, are not applied twice.
+	origin string
 
 	mu     sync.Mutex
 	memory map[int64]*connectionMemory
@@ -94,11 +112,50 @@ type Navigator struct {
 // its singleflight key and block every later request for the same folder.
 const navigatorLoadTimeout = 2 * time.Minute
 
-func NewNavigator(store Store, logger *slog.Logger) *Navigator {
+// NavigatorOption configures a Navigator.
+type NavigatorOption func(*Navigator)
+
+// WithInvalidator connects the navigator to an invalidation bus. Refresh,
+// Invalidate, Refresh and PurgeConnection publish on invalidate.TopicSchema and
+// invalidate.TopicCompletion, and the navigator drops its memory for
+// connections invalidated by other instances.
+func WithInvalidator(inv invalidate.Invalidator) NavigatorOption {
+	return func(n *Navigator) { n.bus = inv }
+}
+
+// WithClock replaces the navigator's time source.
+func WithClock(now func() time.Time) NavigatorOption {
+	return func(n *Navigator) {
+		if now != nil {
+			n.now = now
+		}
+	}
+}
+
+func NewNavigator(store Store, logger *slog.Logger, opts ...NavigatorOption) *Navigator {
 	if logger == nil {
 		logger = slog.New(slog.NewTextHandler(io.Discard, nil))
 	}
-	return &Navigator{store: store, logger: logger, now: time.Now, memory: map[int64]*connectionMemory{}, inflight: map[string]struct{}{}, sessionScopes: map[int64]sessionScopeMemo{}, decoded: newDecodeMemo()}
+	n := &Navigator{
+		store:         store,
+		logger:        logger,
+		now:           time.Now,
+		origin:        newOriginID(),
+		memory:        map[int64]*connectionMemory{},
+		inflight:      map[string]struct{}{},
+		sessionScopes: map[int64]sessionScopeMemo{},
+		decoded:       newDecodeMemo(),
+	}
+	for _, opt := range opts {
+		opt(n)
+	}
+	// The subscriptions live as long as the bus, which the composition root
+	// owns.
+	if n.bus != nil {
+		n.bus.Subscribe(invalidate.TopicSchema, n.applySchemaInvalidation)
+		n.bus.Subscribe(invalidate.TopicCompletion, n.applyCompletionInvalidation)
+	}
+	return n
 }
 
 // memoryFor returns the connection's memory cache; callers must hold n.mu.
@@ -106,21 +163,47 @@ func (n *Navigator) memoryFor(connID int64) *connectionMemory {
 	mem, ok := n.memory[connID]
 	if !ok {
 		mem = &connectionMemory{
-			listings:      map[listingKey]Listing{},
-			objects:       map[metadata.ObjectRef]metadata.Object{},
-			relationships: map[metadata.ScopePath]*metadata.RelationshipGraph{},
+			listings:      map[listingKey]memoryEntry[Listing]{},
+			objects:       map[metadata.ObjectRef]memoryEntry[metadata.Object]{},
+			relationships: map[metadata.ScopePath]memoryEntry[*metadata.RelationshipGraph]{},
 		}
 		n.memory[connID] = mem
 	}
 	return mem
 }
 
+// fresh reports whether a memory entry remembered at at is within the memory
+// ceiling.
+func (n *Navigator) fresh(at time.Time) bool {
+	return n.now().Sub(at) < navigatorMemoryTTL
+}
+
+// cachedListing returns the connection's remembered listing for key when it
+// is within the memory ceiling; callers must hold n.mu.
+func (n *Navigator) cachedListing(connID int64, key listingKey) (Listing, bool) {
+	entry, ok := n.memoryFor(connID).listings[key]
+	if !ok || !n.fresh(entry.at) {
+		return Listing{}, false
+	}
+	return entry.value, true
+}
+
+// ForgetConnection drops this instance's in-memory state for a connection.
+// It is local: it describes this process (for example its last session
+// closing), not a change to the schema other instances share.
 func (n *Navigator) ForgetConnection(connID int64) {
 	n.mu.Lock()
-	defer n.mu.Unlock()
 	delete(n.memory, connID)
 	delete(n.sessionScopes, connID)
 	n.decoded.forget(connID)
+	n.mu.Unlock()
+}
+
+// PurgeConnection forgets a connection locally and tells other instances to do
+// the same, for changes to the shared snapshot store.
+func (n *Navigator) PurgeConnection(connID int64) {
+	n.ForgetConnection(connID)
+	n.publishInvalidation(connID)
 }
 
 func (n *Navigator) Children(ctx context.Context, conn Connection, tree metadata.Tree, live Live, parent metadata.ScopePath, folderKind string) (Listing, error) {
@@ -155,7 +238,7 @@ func flightKeyFor(connID int64, parent metadata.ScopePath, folder string) string
 func (n *Navigator) cachedOrLoad(ctx context.Context, conn Connection, tree metadata.Tree, live Live, parent metadata.ScopePath, folder metadata.Folder, timeout time.Duration) (Listing, loadOrigin, error) {
 	key := listingKey{parent: parent, folder: folder.Kind}
 	n.mu.Lock()
-	cached, ok := n.memoryFor(conn.ID).listings[key]
+	cached, ok := n.cachedListing(conn.ID, key)
 	n.mu.Unlock()
 	if ok {
 		cached.Source = SourceMemory
@@ -183,7 +266,7 @@ func (n *Navigator) cachedOrLoad(ctx context.Context, conn Connection, tree meta
 	n.mu.Lock()
 	// Re-checked under mu: a load that finished since the first check has
 	// already remembered its listing and forgotten its flight.
-	if cached, ok := n.memoryFor(conn.ID).listings[key]; ok {
+	if cached, ok := n.cachedListing(conn.ID, key); ok {
 		n.mu.Unlock()
 		cached.Source = SourceMemory
 		return cached, originCache, nil
@@ -255,9 +338,10 @@ func (n *Navigator) remember(connID int64, listings ...Listing) {
 	n.mu.Lock()
 	defer n.mu.Unlock()
 	mem := n.memoryFor(connID)
+	at := n.now()
 	for _, listing := range listings {
 		listing.Source = ""
-		mem.listings[listingKey{parent: listing.Parent, folder: listing.Folder}] = listing
+		mem.listings[listingKey{parent: listing.Parent, folder: listing.Folder}] = memoryEntry[Listing]{value: listing, at: at}
 	}
 }
 

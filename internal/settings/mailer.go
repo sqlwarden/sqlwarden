@@ -42,6 +42,12 @@ func NewMailer(in Instance, keys Decrypter) (*smtp.Mailer, error) {
 	return mailer, nil
 }
 
+// Sender delivers a templated email. A holder of a Sender can send but cannot
+// replace the mailer the instance settings describe.
+type Sender interface {
+	Send(recipient string, data any, templates ...string) error
+}
+
 // LiveMailer holds the mailer built from the current instance settings. It is
 // swapped when the SMTP settings change, so senders never keep a stale one.
 type LiveMailer struct {
@@ -90,7 +96,7 @@ func (l *LiveMailer) SendOnce(recipient string, data any, templates ...string) e
 }
 
 // RotateSMTPPassword re-seals a stored SMTP password that is not sealed with
-// the primary key of keys and notifies subscribers when it does. scanned
+// the primary key of keys and publishes the change when it does. scanned
 // reports whether a password is stored at all.
 func (s *Service) RotateSMTPPassword(ctx context.Context, keys KeyRotator) (scanned, rotated bool, err error) {
 	in, err := s.Instance(ctx)
@@ -111,10 +117,9 @@ func (s *Service) RotateSMTPPassword(ctx context.Context, keys KeyRotator) (scan
 	if err != nil {
 		return true, false, fmt.Errorf("rotate SMTP password: encrypt: %w", err)
 	}
-	stored, err := s.store.UpsertInstanceSettings(ctx, database.InstanceSettings(in))
-	if err != nil {
+	if _, err := s.store.UpsertInstanceSettings(ctx, database.InstanceSettings(in)); err != nil {
 		return true, false, fmt.Errorf("rotate SMTP password: update: %w", err)
 	}
-	s.publish(Instance(stored))
+	s.publishInstanceChange(ctx)
 	return true, true, nil
 }

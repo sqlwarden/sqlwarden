@@ -1,0 +1,3 @@
+{{- if eq .Values.mode "split" }}
+{{ include "sqlwarden.deployment" (dict "root" . "kind" "api" "name" (include "sqlwarden.api.fullname" .) "cfg" .Values.api) }}
+{{- end }}

@@ -1,0 +1,17 @@
+apiVersion: v2
+name: sqlwarden
+description: Experimental SQLWarden chart. Runs one all-in-one Deployment, or split api and jobs Deployments.
+type: application
+version: 0.1.0
+appVersion: "0.9.4"
+kubeVersion: ">=1.25.0-0"
+home: https://github.com/sqlwarden/sqlwarden
+sources:
+  - https://github.com/sqlwarden/sqlwarden
+maintainers:
+  - name: SQLWarden
+    url: https://github.com/sqlwarden
+keywords:
+  - sql
+  - database
+  - ide
