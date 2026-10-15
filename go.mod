@@ -1,6 +1,6 @@
 module github.com/sqlwarden
 
-go 1.26.6
+go 1.26.9
 
 require (
 	github.com/bytebase/omni v0.0.0-20260924090414-198ce4f34cd4

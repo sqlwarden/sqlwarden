@@ -8,7 +8,7 @@ RUN bun install --frozen-lockfile
 COPY frontend/ ./
 RUN bun run build && test -s /build/assets/static/index.html
 
-FROM --platform=$BUILDPLATFORM golang:1.26.6-alpine AS builder
+FROM --platform=$BUILDPLATFORM golang:1.26.9-alpine AS builder
 
 ARG TARGETOS
 ARG TARGETARCH

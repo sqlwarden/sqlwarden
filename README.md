@@ -110,7 +110,7 @@ Open `http://localhost:6020` and complete first-run setup. By default the applic
 
 Prerequisites:
 
-- Go 1.26.6 or newer.
+- Go 1.26.9 or newer.
 - Bun 1.3.10 for frontend dependency installation and builds.
 
 ```sh
