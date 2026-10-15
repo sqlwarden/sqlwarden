@@ -46,7 +46,7 @@ func TestForbiddenProductionImports(t *testing.T) {
 			if strings.HasPrefix(rel, "internal/platform/clientip/") && strings.Contains(strings.Split(importPath, "/")[0], ".") {
 				t.Errorf("%s imports %q; platform/clientip may import only the standard library", rel, importPath)
 			}
-			if parts[0] != "ee" && (importPath == "github.com/sqlwarden/ee" || strings.HasPrefix(importPath, "github.com/sqlwarden/ee/")) {
+			if parts[0] != "ee" && rel != "cmd/sqlwarden/edition_ee.go" && (importPath == "github.com/sqlwarden/ee" || strings.HasPrefix(importPath, "github.com/sqlwarden/ee/")) {
 				t.Errorf("%s imports enterprise implementation %q", rel, importPath)
 			}
 			if applicationModules[owner] {

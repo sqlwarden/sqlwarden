@@ -16,7 +16,7 @@ func TestDesktopProfileEndToEnd(t *testing.T) {
 	cfg := testConfig(t)
 	cfg.Profile = config.ProfileDesktop
 	cfg.Desktop.AppDir = t.TempDir()
-	built, err := Build(t.Context(), Options{Config: cfg, Logger: discardLogger()})
+	built, err := Build(t.Context(), Options{Config: cfg, Logger: discardLogger(), Edition: testEdition()})
 	if err != nil {
 		t.Fatal(err)
 	}

@@ -6,8 +6,19 @@ import { tanstackRouter } from '@tanstack/router-plugin/vite'
 
 import viteReact from '@vitejs/plugin-react'
 import tailwindcss from '@tailwindcss/vite'
+import { fileURLToPath, URL } from 'node:url'
+
+const editionEntry =
+  process.env.SQLWARDEN_EDITION === 'enterprise'
+    ? './src/enterprise/index.ts'
+    : './src/edition/community.ts'
 
 const config = defineConfig({
+  resolve: {
+    alias: {
+      '@edition': fileURLToPath(new URL(editionEntry, import.meta.url)),
+    },
+  },
   plugins: [
     devtools(),
     tsconfigPaths({ projects: ['./tsconfig.json'] }),

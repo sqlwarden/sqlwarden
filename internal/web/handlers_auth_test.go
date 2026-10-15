@@ -34,6 +34,7 @@ func newTestApp(t *testing.T) *application {
 		t.Fatal(err)
 	}
 	app.enforcer = enforcer
+	app.policy = enforcer
 	app.connManager = connection.New(30 * time.Minute)
 	app.schemaNavigator = schemaapp.NewNavigator(app.db, app.logger)
 	app.completionService = completionapp.NewService()

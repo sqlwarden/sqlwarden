@@ -8,13 +8,14 @@ import (
 	"testing"
 
 	"github.com/sqlwarden/internal/app"
+	"github.com/sqlwarden/internal/community"
 	"github.com/sqlwarden/internal/config"
 	"github.com/sqlwarden/internal/database"
 	"github.com/sqlwarden/internal/web"
 )
 
 func buildApp(cfg config.Config) (*app.Application, error) {
-	return app.Build(context.Background(), app.Options{Config: cfg, Logger: slog.Default()})
+	return app.Build(context.Background(), app.Options{Config: cfg, Logger: slog.Default(), Edition: community.New()})
 }
 
 func closeApp(t *testing.T, built *app.Application) {

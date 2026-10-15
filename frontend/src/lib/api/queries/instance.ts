@@ -4,6 +4,7 @@ import type {
   Account,
   InstanceAdmin,
   InstanceConfiguration,
+  EditionCapabilities,
   InstanceSettings,
   ListQuery,
   Organization,
@@ -47,6 +48,14 @@ export function instanceConfigurationQueryOptions() {
   return queryOptions({
     queryKey: queryKeys.instanceConfiguration(),
     queryFn: () => api.get<InstanceConfiguration>('/api/v1/instance/configuration'),
+    staleTime: 60_000,
+  })
+}
+
+export function editionCapabilitiesQueryOptions() {
+  return queryOptions({
+    queryKey: queryKeys.editionCapabilities(),
+    queryFn: () => api.get<EditionCapabilities>('/api/v1/instance/capabilities'),
     staleTime: 60_000,
   })
 }

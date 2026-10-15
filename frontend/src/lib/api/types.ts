@@ -446,6 +446,22 @@ export interface InstanceConfiguration {
   file_storage_backend: string
 }
 
+export type EditionFeatureState = 'available' | 'upgrade' | 'unlicensed'
+
+export interface EditionFeatureCapability {
+  key: string
+  label: string
+  description: string
+  docs_url: string | null
+  navigation: string | null
+  state: EditionFeatureState
+}
+
+export interface EditionCapabilities {
+  edition: 'community' | 'enterprise' | string
+  features: EditionFeatureCapability[]
+}
+
 export interface OrganizationRuntimeOverrideValues {
   query_max_result_rows: number | null
   query_max_result_bytes: number | null

@@ -102,7 +102,11 @@ func run(args []string) error {
 	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
 	defer stop()
 
-	built, err := app.Build(ctx, app.Options{Config: loaded.Config, Logger: logger, Command: command})
+	selected, err := selectedEdition(loaded.Config)
+	if err != nil {
+		return err
+	}
+	built, err := app.Build(ctx, app.Options{Config: loaded.Config, Logger: logger, Command: command, Edition: selected})
 	if err != nil {
 		return err
 	}

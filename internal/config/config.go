@@ -25,6 +25,7 @@ const (
 	defaultSecretsDir           = ""
 	defaultShutdownTimeout      = 30 * time.Second
 	defaultMigrationTimeout     = 5 * time.Minute
+	defaultLicense              = ""
 )
 
 // DefaultFilesActiveBackend is the backend ID used when file storage runs in
@@ -92,6 +93,9 @@ type Config struct {
 	// Profile selects the product composition: setup, sign-in and
 	// invitation behavior. It is fixed for the life of a process.
 	Profile string
+	// License is accepted only by an Enterprise build. It is intentionally
+	// opaque until a real license verifier replaces the no-op licenser.
+	License string
 	Server  struct {
 		// TrustedProxies lists CIDRs or IPs whose X-Forwarded-For header is
 		// believed when resolving the client IP.
@@ -172,6 +176,7 @@ func Default() Config {
 	cfg.BootstrapBaseURL = defaultBaseURL
 	cfg.HTTPPort = defaultHTTPPort
 	cfg.Profile = defaultProfile
+	cfg.License = defaultLicense
 	cfg.ProcessKinds = []string{ProcessKindAll}
 	cfg.Log.Format = defaultLogFormat
 	cfg.Cookie.SecretKey = defaultCookieSecretKey
