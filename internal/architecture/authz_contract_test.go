@@ -2,9 +2,7 @@ package architecture
 
 import (
 	"go/ast"
-	"go/parser"
 	"go/token"
-	"io/fs"
 	"maps"
 	"path/filepath"
 	"slices"
@@ -63,30 +61,22 @@ func TestServiceMethodsTakeContextAndPrincipal(t *testing.T) {
 		t.Run(pkg, func(t *testing.T) {
 			fset := token.NewFileSet()
 			dir := filepath.Join(root, "internal", pkg)
-			parsed, err := parser.ParseDir(fset, dir, func(info fs.FileInfo) bool {
-				return !strings.HasSuffix(info.Name(), "_test.go")
-			}, 0)
-			if err != nil {
-				t.Fatal(err)
-			}
 			checked := 0
 			seenExempt := map[string]bool{}
-			for _, p := range parsed {
-				for _, file := range p.Files {
-					for _, decl := range file.Decls {
-						fn, ok := decl.(*ast.FuncDecl)
-						if !ok || fn.Recv == nil || !fn.Name.IsExported() || len(fn.Recv.List) != 1 || receiverName(fn.Recv.List[0].Type) != "Service" {
-							continue
-						}
-						if _, exempt := authzExemptMethods[pkg][fn.Name.Name]; exempt {
-							seenExempt[fn.Name.Name] = true
-							continue
-						}
-						checked++
-						params := flattenParams(fn.Type.Params)
-						if len(params) < 2 || !isSelector(params[0], "context", "Context") || !isSelector(params[1], "access", "Principal") {
-							t.Errorf("%s.Service.%s must take (context.Context, access.Principal, ...)", pkg, fn.Name.Name)
-						}
+			for _, file := range parseProductionDir(t, fset, dir, 0) {
+				for _, decl := range file.Decls {
+					fn, ok := decl.(*ast.FuncDecl)
+					if !ok || fn.Recv == nil || !fn.Name.IsExported() || len(fn.Recv.List) != 1 || receiverName(fn.Recv.List[0].Type) != "Service" {
+						continue
+					}
+					if _, exempt := authzExemptMethods[pkg][fn.Name.Name]; exempt {
+						seenExempt[fn.Name.Name] = true
+						continue
+					}
+					checked++
+					params := flattenParams(fn.Type.Params)
+					if len(params) < 2 || !isSelector(params[0], "context", "Context") || !isSelector(params[1], "access", "Principal") {
+						t.Errorf("%s.Service.%s must take (context.Context, access.Principal, ...)", pkg, fn.Name.Name)
 					}
 				}
 			}

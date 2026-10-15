@@ -5,7 +5,6 @@ import (
 	"testing"
 
 	"github.com/sqlwarden/internal/engine/metadata"
-	"github.com/sqlwarden/internal/schema"
 )
 
 func TestLiveAdaptsLocalRuntime(t *testing.T) {
@@ -16,7 +15,7 @@ func TestLiveAdaptsLocalRuntime(t *testing.T) {
 		t.Fatalf("capabilities: %+v %v", caps, err)
 	}
 	tree := *caps.Schema
-	var live schema.Live = NewLive(r, baseScope, info.ID, tree)
+	live := NewLive(r, baseScope, info.ID, tree)
 
 	folder, ok := tree.Folder(tree.NodeKindOf(mainDB), "tables")
 	if !ok {

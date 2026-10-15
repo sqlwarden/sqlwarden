@@ -223,7 +223,7 @@ func (s *Service) Login(ctx context.Context, in LoginInput, attrs access.Request
 		return &CredentialError{Reason: reason}
 	}
 
-	subject, err := method.Begin(ctx, Credentials{Email: in.Email, Password: in.Password})
+	subject, err := method.Begin(ctx, Credentials(in))
 	var credErr *CredentialError
 	if errors.As(err, &credErr) {
 		return Issued{}, reject(credErr.Reason)

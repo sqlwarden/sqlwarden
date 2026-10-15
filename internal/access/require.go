@@ -5,16 +5,17 @@ import (
 	"slices"
 )
 
-// Org, Workspace and Connection are the resource facts the Requirer needs.
-// They are access-owned because internal/database imports this package, so
-// the Requirer cannot name database row types; callers adapt their store to
-// Directory instead.
+// Org is the organization resource fact the Requirer needs.
+// Resource facts are access-owned because internal/database imports this
+// package, so the Requirer cannot name database row types; callers adapt their
+// store to Directory instead.
 type Org struct {
 	ID   int64
 	Slug string
 	Name string
 }
 
+// Workspace is the workspace resource fact the Requirer needs.
 type Workspace struct {
 	ID        int64
 	OrgID     *int64
@@ -23,6 +24,7 @@ type Workspace struct {
 	Name      string
 }
 
+// Connection is the connection resource fact the Requirer needs.
 type Connection struct {
 	ID            int64
 	WorkspaceID   int64

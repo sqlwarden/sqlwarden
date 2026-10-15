@@ -30,7 +30,7 @@ func TestScopeValid(t *testing.T) {
 }
 
 func TestFailure(t *testing.T) {
-	var err error = fmt.Errorf("wrapped: %w", &Failure{Code: FailureCursorLost, Retryable: true, Err: ErrCursorLost})
+	err := fmt.Errorf("wrapped: %w", &Failure{Code: FailureCursorLost, Retryable: true, Err: ErrCursorLost})
 	var f *Failure
 	if !errors.As(err, &f) || f.Code != FailureCursorLost || !f.Retryable {
 		t.Fatalf("errors.As failed: %#v", f)

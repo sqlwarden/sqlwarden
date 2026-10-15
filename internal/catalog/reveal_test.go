@@ -169,13 +169,13 @@ func TestRevealSecretRejectsUnknownSecretName(t *testing.T) {
 }
 
 func TestRevealableFalseForMissingPermissionAndReferenceSource(t *testing.T) {
-	service, provider, _, _, principal, ref := revealFixture()
+	service, _, _, _, principal, ref := revealFixture()
 	service.deps.Policy = fakePolicy{permissions: map[string]bool{access.PermConnRead: true}}
 	allowed, err := service.Revealable(context.Background(), principal, ref, credentials.SecretPassword)
 	if err != nil || allowed {
 		t.Fatalf("missing permission: Revealable = %v, %v", allowed, err)
 	}
-	service, provider, _, _, principal, ref = revealFixture()
+	service, provider, _, _, principal, ref := revealFixture()
 	provider.states[credentials.SecretPassword] = credentials.SecretState{Set: true, Source: credentials.SourceReference}
 	allowed, err = service.Revealable(context.Background(), principal, ref, credentials.SecretPassword)
 	if err != nil || allowed {

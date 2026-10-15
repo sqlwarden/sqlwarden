@@ -2,10 +2,10 @@ package architecture
 
 import (
 	"go/ast"
+	"go/build"
 	"go/parser"
 	"go/token"
 	"go/types"
-	"io/fs"
 	"maps"
 	"path/filepath"
 	"slices"
@@ -212,15 +212,19 @@ func exportedStructFields(t *testing.T, dir, typeName string) map[string]string 
 
 func parseProductionDir(t *testing.T, fset *token.FileSet, dir string, mode parser.Mode) map[string]*ast.File {
 	t.Helper()
-	pkgs, err := parser.ParseDir(fset, dir, func(info fs.FileInfo) bool {
-		return !strings.HasSuffix(info.Name(), "_test.go")
-	}, mode)
+	pkg, err := build.Default.ImportDir(dir, build.ImportComment)
 	if err != nil {
 		t.Fatal(err)
 	}
 	files := map[string]*ast.File{}
-	for _, pkg := range pkgs {
-		maps.Copy(files, pkg.Files)
+	names := append(append([]string{}, pkg.GoFiles...), pkg.CgoFiles...)
+	for _, name := range names {
+		path := filepath.Join(dir, name)
+		file, err := parser.ParseFile(fset, path, nil, mode)
+		if err != nil {
+			t.Fatal(err)
+		}
+		files[path] = file
 	}
 	return files
 }

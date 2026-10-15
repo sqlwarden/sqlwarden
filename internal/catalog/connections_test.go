@@ -1440,7 +1440,7 @@ func TestUpdateEnablingTunnelAppliesRevealGateToDatabaseAndSSHSecrets(t *testing
 	})
 
 	t.Run("non-revealing user must re-enter both", func(t *testing.T) {
-		service, _, provider, principal := fixture()
+		service, _, _, principal := fixture()
 		service.deps.Policy = fakePolicy{permissions: map[string]bool{access.PermConnUpdate: true}}
 		err := service.Update(context.Background(), principal, ref, UpdateInput{SSHConfig: next})
 		var validation *ValidationError
@@ -1448,7 +1448,7 @@ func TestUpdateEnablingTunnelAppliesRevealGateToDatabaseAndSSHSecrets(t *testing
 			t.Fatalf("Update error = %v, want database password error", err)
 		}
 
-		service, _, provider, principal = fixture()
+		service, _, provider, principal := fixture()
 		service.deps.Policy = fakePolicy{permissions: map[string]bool{access.PermConnUpdate: true}}
 		reentered := "new-db-password"
 		err = service.Update(context.Background(), principal, ref, UpdateInput{SSHConfig: next, Secrets: map[credentials.SecretName]*string{credentials.SecretPassword: &reentered}})

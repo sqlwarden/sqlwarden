@@ -136,7 +136,7 @@ type mixedLoader struct {
 func (l *mixedLoader) View(context.Context) (*metadata.CompletionView, error) {
 	listings := map[metadata.ListingKey][]metadata.Child{}
 	for demand := range l.listed {
-		listings[metadata.ListingKey{Parent: demand.Parent, Folder: demand.Folder}] = nil
+		listings[metadata.ListingKey(demand)] = nil
 	}
 	return metadata.NewCompletionView(metadata.Tree{}, "", "", listings, nil), nil
 }

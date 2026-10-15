@@ -41,7 +41,7 @@ type credentialEdition struct{ resolveCalls *int }
 func (credentialEdition) Name() string               { return "credential" }
 func (credentialEdition) Licenser() edition.Licenser { return edition.NoopLicenser{} }
 func (e credentialEdition) Modules() []edition.Module {
-	return []edition.Module{credentialModule{resolveCalls: e.resolveCalls}}
+	return []edition.Module{credentialModule(e)}
 }
 
 type credentialModule struct{ resolveCalls *int }
