@@ -3,6 +3,7 @@ package web
 import (
 	"fmt"
 	"net/http"
+	"strconv"
 	"testing"
 
 	"github.com/sqlwarden/internal/assert"
@@ -103,6 +104,40 @@ func TestCreateQueryFavoriteValidatesInput(t *testing.T) {
 	if _, ok := fieldErrors["sql_text"]; !ok {
 		t.Fatalf("expected sql_text field error, got %+v", fieldErrors)
 	}
+}
+
+func TestQueryFavoriteConnectionMustBelongToWorkspace(t *testing.T) {
+	t.Parallel()
+	app := newTestApp(t)
+	updateInstanceSettingsForTest(t, app, func(settings *database.InstanceSettings) {
+		settings.QueryFavoritesMode = "backend"
+	})
+	account, tok, org := seedOrgOwner(t, app, uniqueEmail(t, "query-favorites-conn"), "Favorite Conn Owner", "Favorite Conn Org")
+	ws := seedWorkspaceForAccount(t, app, org, account, "Favorite WS", "")
+	otherWS := seedWorkspaceForAccount(t, app, org, account, "Other Favorite WS", "")
+	ownConn := createPostgresConnectionWithPassword(t, app, org.Slug, ws.ID, defaultEnvironmentID(t, app, ws.ID), tok, "pw")
+	foreignConn := createPostgresConnectionWithPassword(t, app, org.Slug, otherWS.ID, defaultEnvironmentID(t, app, otherWS.ID), tok, "pw")
+	baseURL := fmt.Sprintf("/api/v1/orgs/%s/workspaces/%d/query-favorites", org.Slug, ws.ID)
+	toID := func(s string) int64 {
+		id, err := strconv.ParseInt(s, 10, 64)
+		if err != nil {
+			t.Fatal(err)
+		}
+		return id
+	}
+
+	rejected := send(t, newAuthRequest(t, http.MethodPost, baseURL, map[string]any{
+		"name": "Foreign", "sql_text": "select 1", "connection_id": toID(foreignConn),
+	}, tok), app.routes())
+	assert.Equal(t, rejected.StatusCode, http.StatusUnprocessableEntity)
+	assert.Equal(t, rejected.ErrorCode(), "validation_failed")
+	fieldErrors := rejected.BodyFields["error"].(map[string]any)["field_errors"].(map[string]any)
+	assert.Equal(t, fieldErrors["connection_id"], "Connection was not found in this workspace.")
+
+	accepted := send(t, newAuthRequest(t, http.MethodPost, baseURL, map[string]any{
+		"name": "Own", "sql_text": "select 1", "connection_id": toID(ownConn),
+	}, tok), app.routes())
+	assert.Equal(t, accepted.StatusCode, http.StatusCreated)
 }
 
 func TestUpdateAndDeleteQueryFavorite(t *testing.T) {

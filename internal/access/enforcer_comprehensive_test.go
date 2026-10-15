@@ -979,6 +979,62 @@ func TestWsMemberRoleBasicPermissions(t *testing.T) {
 	}
 }
 
+func TestSeededBuiltinRolesGrantRevealSecret(t *testing.T) {
+	e, db := newTestEnforcer(t)
+	orgID, ownerID := seedOrg(t, db, e, "reveal-seed")
+	ctx := context.Background()
+
+	ws, err := db.InsertWorkspace(ctx, &orgID, "org", orgID, "Main", "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err = e.SeedWorkspace(ctx, orgID, ws.ID, ownerID); err != nil {
+		t.Fatal(err)
+	}
+
+	if !e.Can(ctx, ownerID, orgID, "org", "workspace", ws.ID, access.PermConnRevealSecret) {
+		t.Error("seeded org owner should hold conn:reveal_secret")
+	}
+
+	orgAdminID := newMember(t, db, orgID, "reveal-org-admin@example.com")
+	orgAdminRole := findRoleID(t, db, orgID, access.BuiltinOrgAdminRole)
+	if err = e.BindRole(ctx, orgID, orgAdminRole, "account", orgAdminID, "org", orgID, ownerID); err != nil {
+		t.Fatal(err)
+	}
+	if !e.Can(ctx, orgAdminID, orgID, "org", "workspace", ws.ID, access.PermConnRevealSecret) {
+		t.Error("seeded org admin should hold conn:reveal_secret")
+	}
+
+	wsAdminID := newMember(t, db, orgID, "reveal-ws-admin@example.com")
+	wsAdminRole := findWorkspaceRoleID(t, db, orgID, ws.ID, access.BuiltinWorkspaceAdminRole)
+	if err = e.BindRole(ctx, orgID, wsAdminRole, "account", wsAdminID, "workspace", ws.ID, ownerID); err != nil {
+		t.Fatal(err)
+	}
+	if !e.Can(ctx, wsAdminID, orgID, "org", "workspace", ws.ID, access.PermConnRevealSecret) {
+		t.Error("seeded workspace admin should hold conn:reveal_secret")
+	}
+
+	otherWS, err := db.InsertWorkspace(ctx, &orgID, "org", orgID, "Other", "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err = e.SeedWorkspace(ctx, orgID, otherWS.ID, ownerID); err != nil {
+		t.Fatal(err)
+	}
+	if e.Can(ctx, wsAdminID, orgID, "org", "workspace", otherWS.ID, access.PermConnRevealSecret) {
+		t.Error("workspace admin must not hold conn:reveal_secret in another workspace")
+	}
+
+	plainID := newMember(t, db, orgID, "reveal-plain@example.com")
+	memberRole := findRoleID(t, db, orgID, access.BuiltinOrgMemberRole)
+	if err = e.BindRole(ctx, orgID, memberRole, "account", plainID, "org", orgID, ownerID); err != nil {
+		t.Fatal(err)
+	}
+	if e.Can(ctx, plainID, orgID, "org", "workspace", ws.ID, access.PermConnRevealSecret) {
+		t.Error("plain org member must not hold conn:reveal_secret")
+	}
+}
+
 // ─────────────────────────────────────────────────────────────────────────────
 // SeedOrg idempotency
 // ─────────────────────────────────────────────────────────────────────────────

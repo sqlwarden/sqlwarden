@@ -14,6 +14,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/sqlwarden/internal/access"
 	"github.com/sqlwarden/internal/assert"
 	"github.com/sqlwarden/internal/audit"
 	"golang.org/x/crypto/ssh"
@@ -100,6 +101,43 @@ func TestRevealConnectionSecretStatuses(t *testing.T) {
 	outsider := send(t, newAuthRequest(t, http.MethodPost, base+"/secrets/password/reveal", nil, nonMemberTok), app.routes())
 	assert.Equal(t, outsider.StatusCode, http.StatusForbidden)
 	assert.Equal(t, outsider.Header.Get("Cache-Control"), "no-store")
+}
+
+func TestRevealConnectionSecretWorkspaceAdminScope(t *testing.T) {
+	t.Parallel()
+	app := newTestApp(t)
+	owner, ownerTok, org := seedOrgOwner(t, app, "conn-reveal-wsadmin-owner@example.com", "WS Admin Owner", "WS Admin Org")
+	setConnectionSecretRevealForTest(t, app, org.Slug, true)
+	wsA := seedWorkspaceForAccount(t, app, org, owner, "Reveal A", "")
+	wsB := seedWorkspaceForAccount(t, app, org, owner, "Reveal B", "")
+	envA := defaultEnvironmentID(t, app, wsA.ID)
+	envB := defaultEnvironmentID(t, app, wsB.ID)
+	connA := createPostgresConnectionWithPassword(t, app, org.Slug, wsA.ID, envA, ownerTok, "secret-in-a")
+	connB := createPostgresConnectionWithPassword(t, app, org.Slug, wsB.ID, envB, ownerTok, "secret-in-b")
+	revealA := orgConnectionURL(org.Slug, wsA.ID, envA, connA) + "/secrets/password/reveal"
+	revealB := orgConnectionURL(org.Slug, wsB.ID, envB, connB) + "/secrets/password/reveal"
+
+	adminTok := wsJoinAs(t, app, org.Slug, strconv.FormatInt(wsA.ID, 10), access.BuiltinWorkspaceAdminRole, "conn-reveal-wsadmin@example.com", ownerTok)
+
+	inA := send(t, newAuthRequest(t, http.MethodPost, revealA, nil, adminTok), app.routes())
+	assert.Equal(t, inA.StatusCode, http.StatusOK)
+	assert.Equal(t, inA.BodyFields["value"], "secret-in-a")
+
+	inB := send(t, newAuthRequest(t, http.MethodPost, revealB, nil, adminTok), app.routes())
+	assert.Equal(t, inB.StatusCode, http.StatusForbidden)
+	assert.False(t, strings.Contains(string(inB.BodyBytes), "secret-in-b"))
+
+	plain, plainTok := seedAccountWithToken(t, app, "conn-reveal-plain@example.com", "Plain Member")
+	if err := app.db.AddOrgMember(context.Background(), org.ID, plain.ID); err != nil {
+		t.Fatal(err)
+	}
+	plainRes := send(t, newAuthRequest(t, http.MethodPost, revealA, nil, plainTok), app.routes())
+	assert.Equal(t, plainRes.StatusCode, http.StatusForbidden)
+
+	setConnectionSecretRevealForTest(t, app, org.Slug, false)
+	disabled := send(t, newAuthRequest(t, http.MethodPost, revealA, nil, adminTok), app.routes())
+	assert.Equal(t, disabled.StatusCode, http.StatusForbidden)
+	assert.Equal(t, disabled.ErrorCode(), "reveal_disabled")
 }
 
 func TestRevealPersonalSpaceConnectionSecret(t *testing.T) {

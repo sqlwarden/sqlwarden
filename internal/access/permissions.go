@@ -186,7 +186,7 @@ var WorkspaceBuiltinRoles = map[string][]string{
 		PermWsRead, PermWsWrite,
 		PermWsFileRead, PermWsFileCreate, PermWsFileWrite, PermWsFileDelete,
 		PermEnvRead, PermEnvWrite, PermEnvCreate, PermEnvDelete, PermEnvDeploy,
-		PermConnRead, PermConnUpdate, PermConnCreate, PermConnDelete, PermConnExecute,
+		PermConnRead, PermConnUpdate, PermConnRevealSecret, PermConnCreate, PermConnDelete, PermConnExecute,
 		PermConnDQL, PermConnDML, PermConnDDL,
 		PermPolicyRead, PermPolicyModify,
 	},

@@ -3,6 +3,9 @@ package access
 import "errors"
 
 var (
+	ErrForbidden = errors.New("forbidden")
+	ErrNotFound  = errors.New("not found")
+
 	ErrBuiltinRole            = errors.New("builtin role")
 	ErrRoleNotFound           = errors.New("role not found")
 	ErrRoleInUse              = errors.New("role has policy bindings")

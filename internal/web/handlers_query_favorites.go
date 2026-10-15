@@ -6,21 +6,20 @@ import (
 
 	"github.com/go-chi/chi/v5"
 
-	"github.com/sqlwarden/internal/database"
+	"github.com/sqlwarden/internal/query"
 	"github.com/sqlwarden/internal/request"
 	"github.com/sqlwarden/internal/response"
-	"github.com/sqlwarden/internal/validator"
 )
 
 func (app *application) listQueryFavorites(w http.ResponseWriter, r *http.Request) {
-	ws := contextGetWorkspace(r)
-	account := contextGetAccount(r)
+	principal, ok := app.requestPrincipal(w, r)
+	if !ok {
+		return
+	}
 
-	search := r.URL.Query().Get("q")
-
-	favorites, err := app.db.ListQueryFavorites(r.Context(), ws.ID, account.ID, search)
+	favorites, err := app.queryService().ListFavorites(r.Context(), principal, contextGetOrg(r).ID, contextGetWorkspace(r).ID, r.URL.Query().Get("q"))
 	if err != nil {
-		app.serverError(w, r, err)
+		app.queryError(w, r, err)
 		return
 	}
 
@@ -30,46 +29,27 @@ func (app *application) listQueryFavorites(w http.ResponseWriter, r *http.Reques
 }
 
 func (app *application) createQueryFavorite(w http.ResponseWriter, r *http.Request) {
-	ws := contextGetWorkspace(r)
-	account := contextGetAccount(r)
-
 	var input struct {
-		Name         string              `json:"name"`
-		SQL          string              `json:"sql_text"`
-		ConnectionID *int64              `json:"connection_id"`
-		V            validator.Validator `json:"-"`
+		Name         string `json:"name"`
+		SQL          string `json:"sql_text"`
+		ConnectionID *int64 `json:"connection_id"`
 	}
 	if err := request.DecodeJSON(w, r, &input); err != nil {
 		app.badRequest(w, r, err)
 		return
 	}
-	input.V.CheckField(input.Name != "", "name", "Name is required.")
-	input.V.CheckField(input.SQL != "", "sql_text", "SQL text is required.")
-	if input.V.HasErrors() {
-		app.failedValidation(w, r, input.V)
+	principal, ok := app.requestPrincipal(w, r)
+	if !ok {
 		return
 	}
 
-	effective, err := app.runtimeSettingsService().effectiveForOrg(r.Context(), ws.OrgID)
-	if err != nil {
-		app.serverError(w, r, err)
-		return
-	}
-	input.V.Check(effective.QueryFavoritesMode == "backend", "Query favorites are not enabled for this workspace.")
-	if input.V.HasErrors() {
-		app.failedValidation(w, r, input.V)
-		return
-	}
-
-	favorite, err := app.db.CreateQueryFavorite(r.Context(), database.QueryFavorite{
-		WorkspaceID:  ws.ID,
-		AccountID:    account.ID,
-		ConnectionID: input.ConnectionID,
+	favorite, err := app.queryService().CreateFavorite(r.Context(), principal, contextGetOrg(r).ID, contextGetWorkspace(r).ID, query.FavoriteInput{
 		Name:         input.Name,
 		SQL:          input.SQL,
+		ConnectionID: input.ConnectionID,
 	})
 	if err != nil {
-		app.serverError(w, r, err)
+		app.queryError(w, r, err)
 		return
 	}
 
@@ -79,9 +59,6 @@ func (app *application) createQueryFavorite(w http.ResponseWriter, r *http.Reque
 }
 
 func (app *application) updateQueryFavorite(w http.ResponseWriter, r *http.Request) {
-	ws := contextGetWorkspace(r)
-	account := contextGetAccount(r)
-
 	id, err := strconv.ParseInt(chi.URLParam(r, "favorite_id"), 10, 64)
 	if err != nil {
 		app.notFound(w, r)
@@ -89,28 +66,21 @@ func (app *application) updateQueryFavorite(w http.ResponseWriter, r *http.Reque
 	}
 
 	var input struct {
-		Name string              `json:"name"`
-		SQL  string              `json:"sql_text"`
-		V    validator.Validator `json:"-"`
+		Name string `json:"name"`
+		SQL  string `json:"sql_text"`
 	}
 	if err := request.DecodeJSON(w, r, &input); err != nil {
 		app.badRequest(w, r, err)
 		return
 	}
-	input.V.CheckField(input.Name != "", "name", "Name is required.")
-	input.V.CheckField(input.SQL != "", "sql_text", "SQL text is required.")
-	if input.V.HasErrors() {
-		app.failedValidation(w, r, input.V)
+	principal, ok := app.requestPrincipal(w, r)
+	if !ok {
 		return
 	}
 
-	updated, found, err := app.db.UpdateQueryFavorite(r.Context(), id, ws.ID, account.ID, input.Name, input.SQL)
+	updated, err := app.queryService().UpdateFavorite(r.Context(), principal, contextGetOrg(r).ID, contextGetWorkspace(r).ID, id, query.FavoriteInput{Name: input.Name, SQL: input.SQL})
 	if err != nil {
-		app.serverError(w, r, err)
-		return
-	}
-	if !found {
-		app.notFound(w, r)
+		app.queryError(w, r, err)
 		return
 	}
 
@@ -120,22 +90,18 @@ func (app *application) updateQueryFavorite(w http.ResponseWriter, r *http.Reque
 }
 
 func (app *application) deleteQueryFavorite(w http.ResponseWriter, r *http.Request) {
-	ws := contextGetWorkspace(r)
-	account := contextGetAccount(r)
-
 	id, err := strconv.ParseInt(chi.URLParam(r, "favorite_id"), 10, 64)
 	if err != nil {
 		app.notFound(w, r)
 		return
 	}
-
-	found, err := app.db.DeleteQueryFavorite(r.Context(), id, ws.ID, account.ID)
-	if err != nil {
-		app.serverError(w, r, err)
+	principal, ok := app.requestPrincipal(w, r)
+	if !ok {
 		return
 	}
-	if !found {
-		app.notFound(w, r)
+
+	if err := app.queryService().DeleteFavorite(r.Context(), principal, contextGetOrg(r).ID, contextGetWorkspace(r).ID, id); err != nil {
+		app.queryError(w, r, err)
 		return
 	}
 

@@ -56,6 +56,17 @@ func TestForbiddenProductionImports(t *testing.T) {
 					}
 				}
 			}
+			if authzServicePackages[owner] {
+				for _, forbidden := range []string{"internal/web", "internal/app", "internal/profile"} {
+					full := "github.com/sqlwarden/" + forbidden
+					if importPath == full || strings.HasPrefix(importPath, full+"/") {
+						t.Errorf("%s imports %q; authorization services must not depend on adapters, the composition root, or profiles", rel, importPath)
+					}
+				}
+			}
+			if (owner == "files" || owner == "jobs") && (importPath == "github.com/sqlwarden/internal/execution" || importPath == "github.com/sqlwarden/internal/connection") {
+				t.Errorf("%s imports %q; only query, exportjob, and execution reach live sessions", rel, importPath)
+			}
 			// credentials adapts stored TLS/SSH documents into the connection
 			// package's input types, so it is the only other legitimate importer.
 			if importPath == "github.com/sqlwarden/internal/connection" && owner != "execution" && owner != "credentials" && owner != "connection" {
@@ -84,6 +95,9 @@ func TestForbiddenProductionImports(t *testing.T) {
 		t.Fatal(err)
 	}
 }
+
+// authzServicePackages own the authorization decisions for their resources.
+var authzServicePackages = map[string]bool{"query": true, "files": true, "exportjob": true, "jobs": true}
 
 func repoRoot(t *testing.T) string {
 	t.Helper()

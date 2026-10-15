@@ -30,6 +30,7 @@ const (
 	CredentialOAuthToken CredentialKind = "oauth_token"
 	CredentialSCIMToken  CredentialKind = "scim_token"
 	CredentialLocal      CredentialKind = "local"
+	CredentialJob        CredentialKind = "job"
 )
 
 // AAL identifies an authentication assurance level.

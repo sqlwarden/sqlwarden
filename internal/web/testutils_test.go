@@ -356,7 +356,7 @@ func newTestDB(t *testing.T) *database.DB {
 
 	if driver == "postgres" {
 		db.SetMaxOpenConns(1)
-		db.SetMaxIdleConns(0)
+		db.SetMaxIdleConns(1)
 	}
 
 	t.Cleanup(func() {

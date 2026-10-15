@@ -19,15 +19,15 @@ const (
 	maxEventDetailsBytes  = 16 * 1024
 )
 
-type Store struct {
+type DatabaseStore struct {
 	db *database.DB
 }
 
-func NewStore(db *database.DB) *Store {
-	return &Store{db: db}
+func NewStore(db *database.DB) *DatabaseStore {
+	return &DatabaseStore{db: db}
 }
 
-func (s *Store) Enqueue(ctx context.Context, input EnqueueInput) (Record, error) {
+func (s *DatabaseStore) Enqueue(ctx context.Context, input EnqueueInput) (Record, error) {
 	if strings.TrimSpace(input.SingletonKey) != "" {
 		return Record{}, ErrSingletonKeyNotAllowed
 	}
@@ -44,7 +44,7 @@ func (s *Store) Enqueue(ctx context.Context, input EnqueueInput) (Record, error)
 
 // EnqueueSingleton inserts a job that may have only one active queued/running
 // instance for the same singleton key across all API/worker processes.
-func (s *Store) EnqueueSingleton(ctx context.Context, input EnqueueInput) (Record, bool, error) {
+func (s *DatabaseStore) EnqueueSingleton(ctx context.Context, input EnqueueInput) (Record, bool, error) {
 	if strings.TrimSpace(input.SingletonKey) == "" {
 		return Record{}, false, ErrInvalidScope
 	}
@@ -107,7 +107,7 @@ func newRecord(input EnqueueInput) (Record, error) {
 // HasActiveJobType reports whether a queued or running job of the same
 // visibility/type already exists. Internal schedulers use this to avoid
 // accumulating redundant maintenance jobs when workers are busy.
-func (s *Store) HasActiveJobType(ctx context.Context, visibility, jobType string) (bool, error) {
+func (s *DatabaseStore) HasActiveJobType(ctx context.Context, visibility, jobType string) (bool, error) {
 	var exists bool
 	err := s.db.NewSelect().Model((*Record)(nil)).
 		ColumnExpr("COUNT(*) > 0").
@@ -118,7 +118,7 @@ func (s *Store) HasActiveJobType(ctx context.Context, visibility, jobType string
 	return exists, err
 }
 
-func (s *Store) ActiveBySingletonKey(ctx context.Context, singletonKey string) (Record, bool, error) {
+func (s *DatabaseStore) ActiveBySingletonKey(ctx context.Context, singletonKey string) (Record, bool, error) {
 	var job Record
 	err := s.db.NewSelect().Model(&job).
 		Where("singleton_key = ?", singletonKey).
@@ -134,7 +134,7 @@ func (s *Store) ActiveBySingletonKey(ctx context.Context, singletonKey string) (
 
 // RequestCancelSingleton cancels a queued singleton immediately or requests
 // cooperative cancellation of a running singleton.
-func (s *Store) RequestCancelSingleton(ctx context.Context, singletonKey string) error {
+func (s *DatabaseStore) RequestCancelSingleton(ctx context.Context, singletonKey string) error {
 	now := time.Now()
 	_, err := s.db.NewUpdate().Model((*Record)(nil)).
 		Set("status = CASE WHEN status = ? THEN ? ELSE status END", StatusQueued, StatusCancelled).
@@ -147,7 +147,7 @@ func (s *Store) RequestCancelSingleton(ctx context.Context, singletonKey string)
 	return err
 }
 
-func (s *Store) ListUserWorkspaceJobs(ctx context.Context, orgID, workspaceID, accountID int64, page, pageSize int) (response.Paginated[Record], error) {
+func (s *DatabaseStore) ListUserWorkspaceJobs(ctx context.Context, orgID, workspaceID, accountID int64, page, pageSize int) (response.Paginated[Record], error) {
 	if page < 1 {
 		page = 1
 	}
@@ -191,7 +191,7 @@ func (s *Store) ListUserWorkspaceJobs(ctx context.Context, orgID, workspaceID, a
 	}, nil
 }
 
-func (s *Store) GetUserWorkspaceJob(ctx context.Context, orgID, workspaceID, accountID int64, jobID string) (Record, bool, error) {
+func (s *DatabaseStore) GetUserWorkspaceJob(ctx context.Context, orgID, workspaceID, accountID int64, jobID string) (Record, bool, error) {
 	var job Record
 	err := s.db.NewSelect().Model(&job).
 		Where("id = ?", jobID).
@@ -208,7 +208,7 @@ func (s *Store) GetUserWorkspaceJob(ctx context.Context, orgID, workspaceID, acc
 }
 
 // AppendEvent records one user-facing job progress event.
-func (s *Store) AppendEvent(ctx context.Context, input EventInput) (Event, error) {
+func (s *DatabaseStore) AppendEvent(ctx context.Context, input EventInput) (Event, error) {
 	event, err := newEvent(input)
 	if err != nil {
 		return Event{}, err
@@ -234,7 +234,7 @@ func (s *Store) AppendEvent(ctx context.Context, input EventInput) (Event, error
 // ListUserWorkspaceJobEvents lists user-visible progress events for a job the
 // current account owns in the workspace. afterID is a ULID marker returned by a
 // previous response; only newer events are returned.
-func (s *Store) ListUserWorkspaceJobEvents(ctx context.Context, orgID, workspaceID, accountID int64, jobID, afterID string, pageSize int) (EventPage, error) {
+func (s *DatabaseStore) ListUserWorkspaceJobEvents(ctx context.Context, orgID, workspaceID, accountID int64, jobID, afterID string, pageSize int) (EventPage, error) {
 	if _, found, err := s.GetUserWorkspaceJob(ctx, orgID, workspaceID, accountID, jobID); err != nil {
 		return EventPage{}, err
 	} else if !found {
@@ -267,7 +267,7 @@ func (s *Store) ListUserWorkspaceJobEvents(ctx context.Context, orgID, workspace
 	return page, nil
 }
 
-func (s *Store) RequestCancelUserWorkspaceJob(ctx context.Context, orgID, workspaceID, accountID int64, jobID string) (Record, bool, error) {
+func (s *DatabaseStore) RequestCancelUserWorkspaceJob(ctx context.Context, orgID, workspaceID, accountID int64, jobID string) (Record, bool, error) {
 	now := time.Now()
 	var job Record
 	err := s.db.RunInTx(ctx, nil, func(ctx context.Context, tx bun.Tx) error {
@@ -315,7 +315,7 @@ func (s *Store) RequestCancelUserWorkspaceJob(ctx context.Context, orgID, worksp
 	return job, err == nil, err
 }
 
-func (s *Store) ClaimDue(ctx context.Context, workerID string, now time.Time, lease time.Duration) (Record, bool, error) {
+func (s *DatabaseStore) ClaimDue(ctx context.Context, workerID string, now time.Time, lease time.Duration) (Record, bool, error) {
 	var claimed Record
 	err := s.db.RunInTx(ctx, nil, func(ctx context.Context, tx bun.Tx) error {
 		var candidates []Record
@@ -428,7 +428,7 @@ func isUniqueConstraintError(err error) bool {
 		strings.Contains(msg, "constraint failed")
 }
 
-func (s *Store) Complete(ctx context.Context, jobID string, output any) error {
+func (s *DatabaseStore) Complete(ctx context.Context, jobID string, output any) error {
 	payload, err := marshalPayload(output)
 	if err != nil {
 		return err
@@ -446,7 +446,7 @@ func (s *Store) Complete(ctx context.Context, jobID string, output any) error {
 	return err
 }
 
-func (s *Store) FailOrRetry(ctx context.Context, job Record, code, message string, retryable bool, delay time.Duration) (string, error) {
+func (s *DatabaseStore) FailOrRetry(ctx context.Context, job Record, code, message string, retryable bool, delay time.Duration) (string, error) {
 	now := time.Now()
 	nextStatus := StatusFailed
 	runAt := job.RunAt
@@ -474,7 +474,7 @@ func (s *Store) FailOrRetry(ctx context.Context, job Record, code, message strin
 	return nextStatus, err
 }
 
-func (s *Store) MarkCancelled(ctx context.Context, jobID string) error {
+func (s *DatabaseStore) MarkCancelled(ctx context.Context, jobID string) error {
 	now := time.Now()
 	_, err := s.db.NewUpdate().Model((*Record)(nil)).
 		Set("status = ?", StatusCancelled).
@@ -487,7 +487,7 @@ func (s *Store) MarkCancelled(ctx context.Context, jobID string) error {
 	return err
 }
 
-func (s *Store) Heartbeat(ctx context.Context, jobID, workerID string, lease time.Duration) (bool, bool, error) {
+func (s *DatabaseStore) Heartbeat(ctx context.Context, jobID, workerID string, lease time.Duration) (bool, bool, error) {
 	var job Record
 	err := s.db.NewSelect().Model(&job).Where("id = ? AND claimed_by = ?", jobID, workerID).Scan(ctx)
 	if errors.Is(err, sql.ErrNoRows) {
@@ -508,7 +508,7 @@ func (s *Store) Heartbeat(ctx context.Context, jobID, workerID string, lease tim
 	return true, false, err
 }
 
-func (s *Store) RecoverExpiredRunning(ctx context.Context, now time.Time) (int, int, error) {
+func (s *DatabaseStore) RecoverExpiredRunning(ctx context.Context, now time.Time) (int, int, error) {
 	var expired []Record
 	if err := s.db.NewSelect().Model(&expired).
 		Where("status = ?", StatusRunning).
@@ -562,7 +562,7 @@ func (s *Store) RecoverExpiredRunning(ctx context.Context, now time.Time) (int, 
 	return requeued, failed, nil
 }
 
-func (s *Store) PruneCompleted(ctx context.Context, olderThan time.Time, limit int) (int, error) {
+func (s *DatabaseStore) PruneCompleted(ctx context.Context, olderThan time.Time, limit int) (int, error) {
 	if limit <= 0 {
 		limit = 100
 	}

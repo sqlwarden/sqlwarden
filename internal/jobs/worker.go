@@ -18,13 +18,13 @@ type WorkerConfig struct {
 }
 
 type Runner struct {
-	store    *Store
+	store    *DatabaseStore
 	registry *Registry
 	logger   *slog.Logger
 	cfg      WorkerConfig
 }
 
-func NewRunner(store *Store, registry *Registry, logger *slog.Logger, cfg WorkerConfig) *Runner {
+func NewRunner(store *DatabaseStore, registry *Registry, logger *slog.Logger, cfg WorkerConfig) *Runner {
 	if cfg.WorkerID == "" {
 		cfg.WorkerID = "sqlwarden"
 	}
@@ -303,12 +303,12 @@ func (noopEventWriter) Warn(context.Context, string, string, any)  {}
 func (noopEventWriter) Error(context.Context, string, string, any) {}
 
 type storeEventWriter struct {
-	store  *Store
+	store  *DatabaseStore
 	logger *slog.Logger
 	job    Record
 }
 
-func newStoreEventWriter(store *Store, logger *slog.Logger, job Record) EventWriter {
+func newStoreEventWriter(store *DatabaseStore, logger *slog.Logger, job Record) EventWriter {
 	if job.Visibility != VisibilityUser || store == nil {
 		return noopEventWriter{}
 	}

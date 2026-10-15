@@ -7,7 +7,6 @@ import (
 	"fmt"
 	"io"
 	"net/http"
-	"net/http/httptest"
 	"path/filepath"
 	"strconv"
 	"strings"
@@ -19,10 +18,10 @@ import (
 	"github.com/sqlwarden/internal/database"
 	"github.com/sqlwarden/internal/engine/metadata"
 	"github.com/sqlwarden/internal/execution"
+	"github.com/sqlwarden/internal/exportjob"
 	"github.com/sqlwarden/internal/exports"
 	"github.com/sqlwarden/internal/filestore"
 	"github.com/sqlwarden/internal/jobs"
-	"github.com/sqlwarden/internal/settings"
 )
 
 func TestConnectionExportsUnavailableWithoutRegisteredClassifier(t *testing.T) {
@@ -59,7 +58,7 @@ func TestHandleExportJobFailsBeforeTargetAccessWithoutRegisteredClassifier(t *te
 	envID := defaultEnvironmentID(t, app, ws.ID)
 	conn := seedConnection(t, app, ws.ID, &envID, org.ID, "driver-with-no-engine", "Export Worker Unavailable Conn", "open")
 
-	inputJSON, err := json.Marshal(exportJobInput{
+	inputJSON, err := json.Marshal(exportjob.JobInput{
 		AccountID:    account.ID,
 		OrgID:        org.ID,
 		WorkspaceID:  ws.ID,
@@ -72,7 +71,7 @@ func TestHandleExportJobFailsBeforeTargetAccessWithoutRegisteredClassifier(t *te
 		t.Fatal(err)
 	}
 
-	output, err := app.handleExportJob(context.Background(), jobs.Runtime{
+	output, err := app.exportService().RunJob(context.Background(), jobs.Runtime{
 		Job:    jobs.Record{ID: database.NewID(), Type: jobs.TypeExportQueryCSV, InputJSON: string(inputJSON)},
 		Events: recordingEventWriter{},
 	})
@@ -85,61 +84,6 @@ func TestHandleExportJobFailsBeforeTargetAccessWithoutRegisteredClassifier(t *te
 	}
 	assert.Equal(t, coded.Code, "export_classifier_unavailable")
 	assert.Equal(t, coded.Retryable, false)
-}
-
-func TestRegisteredClassifierIsRequiredForExportValidation(t *testing.T) {
-	t.Parallel()
-	app := newTestApp(t)
-	recorder := httptest.NewRecorder()
-	req, err := http.NewRequestWithContext(context.Background(), http.MethodPost, "/", nil)
-	if err != nil {
-		t.Fatal(err)
-	}
-
-	ok := app.validateExportSQL(recorder, req, database.Connection{Driver: "driver-with-no-engine"}, "SELECT 1")
-	assert.Equal(t, ok, false)
-	assert.Equal(t, recorder.Code, http.StatusNotImplemented)
-}
-
-func TestOmniClassifierExportValidation(t *testing.T) {
-	t.Parallel()
-	app := newTestApp(t)
-	tests := []struct {
-		name       string
-		driver     string
-		sql        string
-		wantOK     bool
-		wantStatus int
-	}{
-		{name: "postgres read", driver: "postgres", sql: "SELECT 1", wantOK: true},
-		{name: "mysql read", driver: "mysql", sql: "SHOW TABLES", wantOK: true},
-		{name: "postgres read CTE", driver: "postgres", sql: "WITH value AS (SELECT 1 AS n) SELECT n FROM value", wantOK: true},
-		{name: "mysql read CTE", driver: "mysql", sql: "WITH value AS (SELECT 1 AS n) SELECT n FROM value", wantOK: true},
-		{name: "postgres mutation", driver: "postgres", sql: "DELETE FROM widgets", wantStatus: http.StatusUnprocessableEntity},
-		{name: "mysql locking read", driver: "mysql", sql: "SELECT * FROM widgets FOR UPDATE", wantStatus: http.StatusUnprocessableEntity},
-		{name: "postgres multi query", driver: "postgres", sql: "SELECT 1; SELECT 2", wantStatus: http.StatusUnprocessableEntity},
-		{name: "mysql invalid", driver: "mysql", sql: "SELECT FROM", wantStatus: http.StatusUnprocessableEntity},
-		{name: "sqlite read", driver: "sqlite", sql: "SELECT 1", wantOK: true},
-		{name: "sqlite read CTE", driver: "sqlite", sql: "WITH value AS (SELECT 1 AS n) SELECT n FROM value", wantOK: true},
-		{name: "sqlite mutation", driver: "sqlite", sql: "DELETE FROM widgets", wantStatus: http.StatusUnprocessableEntity},
-		{name: "sqlite multi query", driver: "sqlite", sql: "SELECT 1; SELECT 2", wantStatus: http.StatusUnprocessableEntity},
-	}
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			recorder := httptest.NewRecorder()
-			req, err := http.NewRequestWithContext(context.Background(), http.MethodPost, "/", nil)
-			if err != nil {
-				t.Fatal(err)
-			}
-			got := app.validateExportSQL(recorder, req, database.Connection{Driver: tt.driver}, tt.sql)
-			if got != tt.wantOK {
-				t.Fatalf("validateExportSQL() = %v, want %v", got, tt.wantOK)
-			}
-			if !tt.wantOK && recorder.Code != tt.wantStatus {
-				t.Fatalf("status = %d, want %d", recorder.Code, tt.wantStatus)
-			}
-		})
-	}
 }
 
 type recordingEventWriter struct{}
@@ -198,7 +142,7 @@ func installLifecycleRuntime(app *application) *lifecycleRuntime {
 	return rt
 }
 
-func seedExportJobInput(t *testing.T, app *application, sql string) (exportJobInput, jobs.Runtime) {
+func seedExportJobInput(t *testing.T, app *application, sql string) (exportjob.JobInput, jobs.Runtime) {
 	t.Helper()
 	account, _, org := seedOrgOwner(t, app, uniqueEmail(t, "export-lifecycle"), "Export Lifecycle", "Export Lifecycle Org")
 	ws := seedWorkspaceForAccount(t, app, org, account, "Export Lifecycle WS", "")
@@ -206,7 +150,7 @@ func seedExportJobInput(t *testing.T, app *application, sql string) (exportJobIn
 	conn := insertStructuredConnection(t, app, ws.ID, &envID, "Export Lifecycle Conn", "sqlite",
 		map[string]any{"path": filepath.Join(t.TempDir(), "export.db")})
 	app.enforcer.InvalidateAncestry("connection", conn.ID)
-	input := exportJobInput{
+	input := exportjob.JobInput{
 		AccountID: account.ID, OrgID: org.ID, WorkspaceID: ws.ID, ConnectionID: conn.ID,
 		SQL: sql, Format: "csv", Filename: "lifecycle",
 	}
@@ -220,7 +164,7 @@ func seedExportJobInput(t *testing.T, app *application, sql string) (exportJobIn
 	}
 }
 
-func requireSingleClosedEphemeralSession(t *testing.T, rt *lifecycleRuntime, input exportJobInput) {
+func requireSingleClosedEphemeralSession(t *testing.T, rt *lifecycleRuntime, input exportjob.JobInput) {
 	t.Helper()
 	rt.mu.Lock()
 	defer rt.mu.Unlock()
@@ -245,13 +189,13 @@ func TestHandleExportJobClosesEphemeralSessionOnSuccess(t *testing.T) {
 	rt := installLifecycleRuntime(app)
 	input, job := seedExportJobInput(t, app, "SELECT 1 AS id")
 
-	output, err := app.handleExportJob(context.Background(), job)
+	output, err := app.exportService().RunJob(context.Background(), job)
 	if err != nil {
 		t.Fatal(err)
 	}
-	result, ok := output.(exportJobOutput)
+	result, ok := output.(exportjob.JobOutput)
 	if !ok {
-		t.Fatalf("output = %#v, want exportJobOutput", output)
+		t.Fatalf("output = %#v, want exportjob.JobOutput", output)
 	}
 	assert.Equal(t, result.RowCount, int64(1))
 	requireSingleClosedEphemeralSession(t, rt, input)
@@ -263,7 +207,7 @@ func TestHandleExportJobClosesEphemeralSessionOnStreamError(t *testing.T) {
 	rt := installLifecycleRuntime(app)
 	input, job := seedExportJobInput(t, app, "SELECT * FROM table_that_does_not_exist")
 
-	output, err := app.handleExportJob(context.Background(), job)
+	output, err := app.exportService().RunJob(context.Background(), job)
 	if err == nil || output != nil {
 		t.Fatalf("output = %#v, err = %v, want failure", output, err)
 	}
@@ -282,7 +226,7 @@ func TestHandleExportJobClosesEphemeralSessionOnCancel(t *testing.T) {
 		<-ctx.Done()
 		return ctx.Err()
 	}
-	_, err := app.handleExportJob(ctx, job)
+	_, err := app.exportService().RunJob(ctx, job)
 	if !errors.Is(err, context.Canceled) {
 		t.Fatalf("err = %v, want context.Canceled", err)
 	}
@@ -298,7 +242,7 @@ func TestHandleExportJobBlockedTargetOpensNoSession(t *testing.T) {
 		s.SQLiteLocalTargetsEnabled = false
 	})
 
-	_, err := app.handleExportJob(context.Background(), job)
+	_, err := app.exportService().RunJob(context.Background(), job)
 	var coded jobs.CodedError
 	if !errors.As(err, &coded) {
 		t.Fatalf("error = %v, want jobs.CodedError", err)
@@ -369,7 +313,7 @@ func TestHandleExportJobAbandonedPipeStopsStreamAndClosesSession(t *testing.T) {
 			}
 		}
 	}
-	_, err := app.handleExportJob(context.Background(), job)
+	_, err := app.exportService().RunJob(context.Background(), job)
 	if !errors.Is(err, errTestDiskFull) {
 		t.Fatalf("err = %v, want the write failure", err)
 	}
@@ -379,45 +323,6 @@ func TestHandleExportJobAbandonedPipeStopsStreamAndClosesSession(t *testing.T) {
 		t.Fatal("stream goroutine was still running when the job returned")
 	}
 	requireSingleClosedEphemeralSession(t, rt, input)
-}
-
-func TestExportOpenErrorClassification(t *testing.T) {
-	t.Parallel()
-	tests := []struct {
-		name      string
-		err       error
-		wantCode  string
-		wantRetry bool
-		wantRaw   error
-	}{
-		{name: "cancelled during connect", err: &execution.ConnectError{Err: context.Canceled}, wantRaw: context.Canceled},
-		{name: "deadline during connect", err: &execution.TunnelError{Err: context.DeadlineExceeded}, wantRaw: context.DeadlineExceeded},
-		{name: "connect failure", err: &execution.ConnectError{Err: errors.New("refused")}, wantCode: "export_connect_failed", wantRetry: true},
-		{name: "tunnel failure", err: &execution.TunnelError{Err: errors.New("refused")}, wantCode: "export_connect_failed", wantRetry: true},
-		{name: "policy denial", err: settings.ErrSQLiteFileTargetDisabled, wantCode: "export_target_blocked"},
-		{name: "missing connection", err: fmt.Errorf("execution: %w", credentials.ErrNotFound), wantCode: "connection_not_found"},
-	}
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			got := exportOpenError(tt.err)
-			if tt.wantRaw != nil {
-				if !errors.Is(got, tt.wantRaw) {
-					t.Fatalf("got %v, want %v", got, tt.wantRaw)
-				}
-				var coded jobs.CodedError
-				if errors.As(got, &coded) {
-					t.Fatalf("cancellation was wrapped as job error %q", coded.Code)
-				}
-				return
-			}
-			var coded jobs.CodedError
-			if !errors.As(got, &coded) {
-				t.Fatalf("got %v, want jobs.CodedError", got)
-			}
-			assert.Equal(t, coded.Code, tt.wantCode)
-			assert.Equal(t, coded.Retryable, tt.wantRetry)
-		})
-	}
 }
 
 func TestTestConnectionFailureDoesNotEchoCallerSecrets(t *testing.T) {

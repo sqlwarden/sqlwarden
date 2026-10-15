@@ -36,12 +36,7 @@ var allSecretNames = [...]credentials.SecretName{
 
 // ConnRef identifies a connection and the routed hierarchy used to reach it.
 // EnvironmentID is optional for workspace-level connection routes.
-type ConnRef struct {
-	OrgID         int64
-	WorkspaceID   int64
-	EnvironmentID *int64
-	ConnectionID  int64
-}
+type ConnRef = access.ConnRef
 
 type TLSConfig struct {
 	Mode          string `json:"mode"`
@@ -276,6 +271,8 @@ type Deps struct {
 	Revoker      SessionRevoker
 	Ancestry     AncestryInvalidator
 	SpecLookup   credentials.SpecLookup
+	// Requirer defaults to one built from Store and Policy.
+	Requirer *access.Requirer
 }
 
 type Service struct {
@@ -290,6 +287,15 @@ func New(deps Deps) *Service {
 		deps.SpecLookup = engine.ConnectionSpecFor
 	}
 	return &Service{deps: deps}
+}
+
+// requirer resolves the Requirer at call time so Store and Policy replaced on
+// a constructed Service are honored when no explicit Requirer was supplied.
+func (s *Service) requirer() *access.Requirer {
+	if s.deps.Requirer != nil {
+		return s.deps.Requirer
+	}
+	return access.NewRequirer(storeDirectory{store: s.deps.Store}, s.deps.Policy)
 }
 
 type discardWriter struct{}
@@ -614,7 +620,7 @@ func (s *Service) Test(ctx context.Context, p access.Principal, in TestInput) (T
 	var (
 		storedRef  *ConnRef
 		storedConn database.Connection
-		storedWS   database.Workspace
+		storedWS   access.Workspace
 	)
 	if in.ConnectionID != nil {
 		ref := ConnRef{OrgID: in.OrgID, WorkspaceID: in.WorkspaceID, EnvironmentID: in.EnvironmentID, ConnectionID: *in.ConnectionID}
@@ -885,46 +891,26 @@ func sshOrEmpty(c *SSHConfig) SSHConfig {
 	return *c
 }
 
-func (s *Service) authorizeCreate(ctx context.Context, p access.Principal, orgID, workspaceID int64, environmentID *int64) (database.Workspace, error) {
+func (s *Service) authorizeCreate(ctx context.Context, p access.Principal, orgID, workspaceID int64, environmentID *int64) (access.Workspace, error) {
 	ws, err := s.loadWorkspace(ctx, p, orgID, workspaceID)
 	if err != nil {
-		return database.Workspace{}, err
+		return access.Workspace{}, err
 	}
 	resourceType, resourceID := "workspace", workspaceID
 	if environmentID != nil {
 		if err := s.requireEnvironmentOwnership(ctx, workspaceID, *environmentID); err != nil {
-			return database.Workspace{}, err
+			return access.Workspace{}, err
 		}
 		resourceType, resourceID = "environment", *environmentID
 	}
 	if s.deps.Policy == nil || !s.deps.Policy.Can(ctx, p.Subject.ID, orgID, ws.OwnerType, resourceType, resourceID, access.PermConnCreate) {
-		return database.Workspace{}, ErrForbidden
+		return access.Workspace{}, ErrForbidden
 	}
 	return ws, nil
 }
 
-func (s *Service) loadWorkspace(ctx context.Context, p access.Principal, orgID, workspaceID int64) (database.Workspace, error) {
-	if s.deps.Store == nil {
-		return database.Workspace{}, errors.New("catalog: store is not configured")
-	}
-	if p.Subject.Kind != access.SubjectAccount {
-		return database.Workspace{}, ErrForbidden
-	}
-	member, err := s.deps.Store.IsOrgMember(ctx, orgID, p.Subject.ID)
-	if err != nil {
-		return database.Workspace{}, err
-	}
-	if !member {
-		return database.Workspace{}, ErrForbidden
-	}
-	ws, found, err := s.deps.Store.GetWorkspace(ctx, workspaceID)
-	if err != nil {
-		return database.Workspace{}, err
-	}
-	if !found || ws.OwnerType != "org" || ws.OrgID == nil || *ws.OrgID != orgID {
-		return database.Workspace{}, ErrNotFound
-	}
-	return ws, nil
+func (s *Service) loadWorkspace(ctx context.Context, p access.Principal, orgID, workspaceID int64) (access.Workspace, error) {
+	return s.requirer().Workspace(ctx, p, orgID, workspaceID, "")
 }
 
 func (s *Service) requireEnvironmentOwnership(ctx context.Context, workspaceID, environmentID int64) error {
@@ -938,20 +924,19 @@ func (s *Service) requireEnvironmentOwnership(ctx context.Context, workspaceID, 
 	return nil
 }
 
-func (s *Service) loadConnection(ctx context.Context, p access.Principal, ref ConnRef, permission string) (database.Connection, database.Workspace, error) {
-	ws, err := s.loadWorkspace(ctx, p, ref.OrgID, ref.WorkspaceID)
+// loadConnection authorizes through the Requirer, then reads the full row
+// because the Requirer returns only the facts it authorizes on.
+func (s *Service) loadConnection(ctx context.Context, p access.Principal, ref ConnRef, permission string) (database.Connection, access.Workspace, error) {
+	authorized, ws, err := s.requirer().Connection(ctx, p, ref, permission)
 	if err != nil {
-		return database.Connection{}, database.Workspace{}, err
+		return database.Connection{}, access.Workspace{}, err
 	}
-	conn, found, err := s.deps.Store.GetConnection(ctx, ref.ConnectionID)
+	conn, found, err := s.deps.Store.GetConnection(ctx, authorized.ID)
 	if err != nil {
-		return database.Connection{}, database.Workspace{}, err
+		return database.Connection{}, access.Workspace{}, err
 	}
-	if !found || conn.WorkspaceID != ref.WorkspaceID || (ref.EnvironmentID != nil && conn.EnvironmentID != *ref.EnvironmentID) {
-		return database.Connection{}, database.Workspace{}, ErrNotFound
-	}
-	if s.deps.Policy == nil || !s.deps.Policy.Can(ctx, p.Subject.ID, ref.OrgID, ws.OwnerType, "connection", conn.ID, permission) {
-		return database.Connection{}, database.Workspace{}, ErrForbidden
+	if !found {
+		return database.Connection{}, access.Workspace{}, ErrNotFound
 	}
 	return conn, ws, nil
 }
@@ -1128,7 +1113,7 @@ func (s *Service) mergeStoredSecrets(ctx context.Context, ref credentials.Connec
 	return merged, nil
 }
 
-func (s *Service) connectionView(ctx context.Context, p access.Principal, ref ConnRef, ws database.Workspace, conn database.Connection) (ConnectionView, error) {
+func (s *Service) connectionView(ctx context.Context, p access.Principal, ref ConnRef, ws access.Workspace, conn database.Connection) (ConnectionView, error) {
 	params, tlsConfig, sshConfig, err := decodeConfigs(conn)
 	if err != nil {
 		return ConnectionView{}, err

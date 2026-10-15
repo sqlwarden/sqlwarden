@@ -9,6 +9,7 @@ import (
 	"strconv"
 
 	"github.com/go-chi/chi/v5"
+	"github.com/sqlwarden/internal/access"
 	"github.com/sqlwarden/internal/database"
 	"github.com/sqlwarden/internal/files"
 	"github.com/sqlwarden/internal/request"
@@ -42,7 +43,11 @@ func (app *application) browseWorkspaceFiles(w http.ResponseWriter, r *http.Requ
 	if !ok {
 		return
 	}
-	result, err := app.workspaceFileService().Browser(r.Context(), app.workspaceFileScope(r, visibility), fileID)
+	principal, scope, ok := app.workspaceFileRequest(w, r, visibility)
+	if !ok {
+		return
+	}
+	result, err := app.workspaceFileService().Browser(r.Context(), principal, scope, fileID)
 	if err != nil {
 		app.workspaceFileError(w, r, err)
 		return
@@ -66,7 +71,11 @@ func (app *application) listRecentWorkspaceFiles(w http.ResponseWriter, r *http.
 	if !ok {
 		return
 	}
-	files, err := app.workspaceFileService().Recent(r.Context(), app.workspaceFileScope(r, visibility), limit)
+	principal, scope, ok := app.workspaceFileRequest(w, r, visibility)
+	if !ok {
+		return
+	}
+	files, err := app.workspaceFileService().Recent(r.Context(), principal, scope, limit)
 	if err != nil {
 		app.workspaceFileError(w, r, err)
 		return
@@ -86,8 +95,12 @@ func (app *application) searchSharedWorkspaceFiles(w http.ResponseWriter, r *htt
 
 // searchWorkspaceFiles scans the route-selected file tree for a content match.
 func (app *application) searchWorkspaceFiles(w http.ResponseWriter, r *http.Request, visibility string) {
+	principal, scope, ok := app.workspaceFileRequest(w, r, visibility)
+	if !ok {
+		return
+	}
 	query := r.URL.Query().Get("q")
-	result, err := app.workspaceFileService().Search(r.Context(), app.workspaceFileScope(r, visibility), files.SearchInput{Query: query})
+	result, err := app.workspaceFileService().Search(r.Context(), principal, scope, files.SearchInput{Query: query})
 	if err != nil {
 		app.workspaceFileError(w, r, err)
 		return
@@ -103,7 +116,11 @@ func (app *application) listWorkspaceFiles(w http.ResponseWriter, r *http.Reques
 	if !ok {
 		return
 	}
-	files, err := app.workspaceFileService().List(r.Context(), app.workspaceFileScope(r, visibility), parentID)
+	principal, scope, ok := app.workspaceFileRequest(w, r, visibility)
+	if !ok {
+		return
+	}
+	files, err := app.workspaceFileService().List(r.Context(), principal, scope, parentID)
 	if err != nil {
 		app.workspaceFileError(w, r, err)
 		return
@@ -135,7 +152,11 @@ func (app *application) createWorkspaceFile(w http.ResponseWriter, r *http.Reque
 		app.badRequest(w, r, err)
 		return
 	}
-	file, err := app.workspaceFileService().Create(r.Context(), app.workspaceFileScope(r, visibility), files.CreateInput{
+	principal, scope, ok := app.workspaceFileRequest(w, r, visibility)
+	if !ok {
+		return
+	}
+	file, err := app.workspaceFileService().Create(r.Context(), principal, scope, files.CreateInput{
 		Name:       input.Name,
 		ObjectType: input.ObjectType,
 		ParentID:   input.ParentID,
@@ -170,7 +191,11 @@ func (app *application) getWorkspaceFile(w http.ResponseWriter, r *http.Request,
 	if !ok {
 		return
 	}
-	file, err := app.workspaceFileService().Get(r.Context(), app.workspaceFileScope(r, visibility), fileID)
+	principal, scope, ok := app.workspaceFileRequest(w, r, visibility)
+	if !ok {
+		return
+	}
+	file, err := app.workspaceFileService().Get(r.Context(), principal, scope, fileID)
 	if err != nil {
 		app.workspaceFileError(w, r, err)
 		return
@@ -200,6 +225,10 @@ func (app *application) duplicatePrivateWorkspaceFile(w http.ResponseWriter, r *
 		app.badRequest(w, r, err)
 		return
 	}
+	principal, scope, ok := app.workspaceFileRequest(w, r, database.FileVisibilityPrivate)
+	if !ok {
+		return
+	}
 	service, err := app.workspaceFileServiceForRequest(r)
 	if err != nil {
 		app.serverError(w, r, err)
@@ -207,7 +236,8 @@ func (app *application) duplicatePrivateWorkspaceFile(w http.ResponseWriter, r *
 	}
 	file, err := service.Duplicate(
 		r.Context(),
-		app.workspaceFileScope(r, database.FileVisibilityPrivate),
+		principal,
+		scope,
 		fileID,
 		files.DuplicateInput{Name: input.Name},
 	)
@@ -248,7 +278,11 @@ func (app *application) updateWorkspaceFile(w http.ResponseWriter, r *http.Reque
 		}
 		parsed.ParentID = &parentID
 	}
-	file, err := app.workspaceFileService().Update(r.Context(), app.workspaceFileScope(r, visibility), fileID, parsed)
+	principal, scope, ok := app.workspaceFileRequest(w, r, visibility)
+	if !ok {
+		return
+	}
+	file, err := app.workspaceFileService().Update(r.Context(), principal, scope, fileID, parsed)
 	if err != nil {
 		if isUniqueViolation(err) {
 			app.failedDuplicateField(w, r, "name", "A file or folder with this name already exists here.")
@@ -277,7 +311,11 @@ func (app *application) deleteWorkspaceFile(w http.ResponseWriter, r *http.Reque
 	if !ok {
 		return
 	}
-	if err := app.workspaceFileService().Delete(r.Context(), app.workspaceFileScope(r, visibility), fileID); err != nil {
+	principal, scope, ok := app.workspaceFileRequest(w, r, visibility)
+	if !ok {
+		return
+	}
+	if err := app.workspaceFileService().Delete(r.Context(), principal, scope, fileID); err != nil {
 		app.workspaceFileError(w, r, err)
 		return
 	}
@@ -299,7 +337,11 @@ func (app *application) getWorkspaceFileContent(w http.ResponseWriter, r *http.R
 	if !ok {
 		return
 	}
-	result, err := app.workspaceFileService().ReadContent(r.Context(), app.workspaceFileScope(r, visibility), fileID)
+	principal, scope, ok := app.workspaceFileRequest(w, r, visibility)
+	if !ok {
+		return
+	}
+	result, err := app.workspaceFileService().ReadContent(r.Context(), principal, scope, fileID)
 	if err != nil {
 		if errors.Is(err, files.ErrFolderContent) {
 			app.notFound(w, r)
@@ -336,6 +378,10 @@ func (app *application) updateWorkspaceFileContent(w http.ResponseWriter, r *htt
 	if !ok {
 		return
 	}
+	principal, scope, ok := app.workspaceFileRequest(w, r, visibility)
+	if !ok {
+		return
+	}
 	service, err := app.workspaceFileServiceForRequest(r)
 	if err != nil {
 		app.serverError(w, r, err)
@@ -343,7 +389,8 @@ func (app *application) updateWorkspaceFileContent(w http.ResponseWriter, r *htt
 	}
 	saved, err := service.WriteContent(
 		r.Context(),
-		app.workspaceFileScope(r, visibility),
+		principal,
+		scope,
 		fileID,
 		r.Header.Get("If-Match"),
 		http.MaxBytesReader(w, r.Body, 100<<20),
@@ -375,7 +422,14 @@ func (app *application) workspaceFileServiceWithSettings(settings effectiveRunti
 	if settings.FileRevisionsEnabled {
 		revisionPolicy = files.RevisionPolicyVersioned
 	}
-	return files.NewWithStoreResolver(app.db, app.fileStores, app.enforcer, files.Config{
+	return files.NewService(files.Deps{
+		DB:       app.db,
+		Stores:   app.fileStores,
+		Enforcer: app.policy,
+		Requirer: app.requirer(),
+		Audit:    app.audit,
+		Logger:   app.logger,
+	}, files.Config{
 		StorageMode:            app.config.Files.StorageMode,
 		ActiveStorageBackendID: app.config.Files.ActiveStorageBackend,
 		RevisionPolicy:         revisionPolicy,
@@ -391,17 +445,17 @@ func (app *application) workspaceFileServiceForRequest(r *http.Request) (*files.
 	return app.workspaceFileServiceWithSettings(settings), nil
 }
 
-// workspaceFileScope converts request context into domain scope.
-func (app *application) workspaceFileScope(r *http.Request, visibility string) files.Scope {
-	account := contextGetAccount(r)
-	org := contextGetOrg(r)
-	return files.Scope{
-		AccountID:  account.ID,
-		OrgID:      org.ID,
-		OrgSlug:    org.Slug,
-		Workspace:  contextGetWorkspace(r),
-		Visibility: visibility,
+// workspaceFileRequest returns the request principal and the routed file scope.
+func (app *application) workspaceFileRequest(w http.ResponseWriter, r *http.Request, visibility string) (access.Principal, files.Scope, bool) {
+	principal, ok := app.requestPrincipal(w, r)
+	if !ok {
+		return access.Principal{}, files.Scope{}, false
 	}
+	return principal, files.Scope{
+		OrgID:       contextGetOrg(r).ID,
+		WorkspaceID: contextGetWorkspace(r).ID,
+		Visibility:  visibility,
+	}, true
 }
 
 // workspaceFileID parses the path file ID.

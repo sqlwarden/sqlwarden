@@ -1,10 +1,14 @@
 package catalog
 
-import "errors"
+import (
+	"errors"
+
+	"github.com/sqlwarden/internal/access"
+)
 
 var (
-	ErrForbidden      = errors.New("catalog: forbidden")
-	ErrNotFound       = errors.New("catalog: connection not found")
+	ErrForbidden      = access.ErrForbidden
+	ErrNotFound       = access.ErrNotFound
 	ErrValidation     = errors.New("catalog: validation failed")
 	ErrActiveSessions = errors.New("catalog: connection has active sessions")
 )

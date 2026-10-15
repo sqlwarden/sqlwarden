@@ -8,7 +8,6 @@ import (
 	"github.com/sqlwarden/internal/execution"
 	"github.com/sqlwarden/internal/request"
 	"github.com/sqlwarden/internal/response"
-	"github.com/sqlwarden/internal/validator"
 )
 
 // transactionStatusView is the JSON shape shared by the transaction endpoints
@@ -40,26 +39,19 @@ func (app *application) writeTransactionStatus(w http.ResponseWriter, r *http.Re
 }
 
 func (app *application) setTransactionMode(w http.ResponseWriter, r *http.Request) {
-	session, ok := app.resolveRuntimeSession(w, r)
-	if !ok {
-		return
-	}
 	var input struct {
-		Mode string              `json:"mode"`
-		V    validator.Validator `json:"-"`
+		Mode string `json:"mode"`
 	}
 	if err := request.DecodeJSON(w, r, &input); err != nil {
 		app.badRequest(w, r, err)
 		return
 	}
-	input.V.CheckField(input.Mode == string(execution.TxModeAuto) || input.Mode == string(execution.TxModeManual),
-		"mode", "Mode must be auto or manual.")
-	if input.V.HasErrors() {
-		app.failedValidation(w, r, input.V)
+	principal, ok := app.requestPrincipal(w, r)
+	if !ok {
 		return
 	}
-
-	status, err := app.runtime.SetMode(r.Context(), runtimeScope(r), session.ID, execution.TxMode(input.Mode))
+	sessionID := requestSessionID(r)
+	status, err := app.queryService().SetTransactionMode(r.Context(), principal, connectionRef(r), sessionID, input.Mode)
 	if err != nil {
 		var failure *execution.Failure
 		switch {
@@ -68,26 +60,27 @@ func (app *application) setTransactionMode(w http.ResponseWriter, r *http.Reques
 		case errors.As(err, &failure):
 			app.executionError(w, r, err)
 		default:
-			app.serverError(w, r, err)
+			app.queryError(w, r, err)
 		}
 		return
 	}
-	app.logInfo(r, "transaction mode changed", slog.String("session_id", string(session.ID)), slog.String("mode", input.Mode))
+	app.logInfo(r, "transaction mode changed", slog.String("session_id", string(sessionID)), slog.String("mode", input.Mode))
 	app.writeTransactionStatus(w, r, status)
 }
 
 func (app *application) commitTransaction(w http.ResponseWriter, r *http.Request) {
-	sessionID, ok := app.requireSessionID(w, r)
+	principal, ok := app.requestPrincipal(w, r)
 	if !ok {
 		return
 	}
-	status, err := app.runtime.Commit(r.Context(), runtimeScope(r), sessionID)
+	sessionID := requestSessionID(r)
+	status, err := app.queryService().Commit(r.Context(), principal, connectionRef(r), sessionID)
 	if err != nil {
 		if errors.Is(err, execution.ErrNoOpenTransaction) {
 			app.errorMessage(w, r, http.StatusConflict, "No open transaction to commit.", nil)
 			return
 		}
-		app.executionError(w, r, err)
+		app.queryRuntimeError(w, r, err)
 		return
 	}
 	app.logInfo(r, "transaction committed", slog.String("session_id", string(sessionID)))
@@ -95,17 +88,18 @@ func (app *application) commitTransaction(w http.ResponseWriter, r *http.Request
 }
 
 func (app *application) rollbackTransaction(w http.ResponseWriter, r *http.Request) {
-	sessionID, ok := app.requireSessionID(w, r)
+	principal, ok := app.requestPrincipal(w, r)
 	if !ok {
 		return
 	}
-	status, err := app.runtime.Rollback(r.Context(), runtimeScope(r), sessionID)
+	sessionID := requestSessionID(r)
+	status, err := app.queryService().Rollback(r.Context(), principal, connectionRef(r), sessionID)
 	if err != nil {
 		if errors.Is(err, execution.ErrNoOpenTransaction) {
 			app.errorMessage(w, r, http.StatusConflict, "No open transaction to roll back.", nil)
 			return
 		}
-		app.executionError(w, r, err)
+		app.queryRuntimeError(w, r, err)
 		return
 	}
 	app.logInfo(r, "transaction rolled back", slog.String("session_id", string(sessionID)))
@@ -113,13 +107,13 @@ func (app *application) rollbackTransaction(w http.ResponseWriter, r *http.Reque
 }
 
 func (app *application) getTransactionStatus(w http.ResponseWriter, r *http.Request) {
-	sessionID, ok := app.requireSessionID(w, r)
+	principal, ok := app.requestPrincipal(w, r)
 	if !ok {
 		return
 	}
-	status, err := app.runtime.Status(r.Context(), runtimeScope(r), sessionID)
+	status, err := app.queryService().TransactionStatus(r.Context(), principal, connectionRef(r), requestSessionID(r))
 	if err != nil {
-		app.executionError(w, r, err)
+		app.queryRuntimeError(w, r, err)
 		return
 	}
 	app.writeTransactionStatus(w, r, status)
