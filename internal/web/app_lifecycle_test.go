@@ -23,10 +23,17 @@ import (
 	"github.com/sqlwarden/internal/identity"
 	"github.com/sqlwarden/internal/jobs"
 	"github.com/sqlwarden/internal/orgs"
+	"github.com/sqlwarden/internal/services"
 	"github.com/sqlwarden/internal/settings"
 )
 
 func newTestDependencies(t *testing.T) Dependencies {
+	t.Helper()
+	deps, _ := newTestDependenciesWithDB(t)
+	return deps
+}
+
+func newTestDependenciesWithDB(t *testing.T) (Dependencies, *database.DB) {
 	t.Helper()
 	db := newTestDB(t)
 	enforcer, err := access.New(db.DB)
@@ -41,7 +48,7 @@ func newTestDependencies(t *testing.T) Dependencies {
 	cfg.Files.StorageBackends = map[string]config.FileStorageBackend{
 		config.DefaultFilesActiveBackend: {Type: config.FilesStorageBackendFilesystem, RootDir: t.TempDir()},
 	}
-	if err := InitializeInstanceBaseURL(context.Background(), db, cfg.BootstrapBaseURL); err != nil {
+	if err := settings.InitializeInstanceBaseURL(context.Background(), db, cfg.BootstrapBaseURL); err != nil {
 		t.Fatal(err)
 	}
 	stores, err := newTestFileStores(cfg)
@@ -56,24 +63,34 @@ func newTestDependencies(t *testing.T) Dependencies {
 		IdleTimeout: 30 * time.Minute,
 	})
 	t.Cleanup(rt.Shutdown)
-	return Dependencies{
-		Config:       cfg,
-		DB:           db,
-		Logger:       slog.New(slog.NewTextHandler(io.Discard, nil)),
-		Keyring:      keyring,
-		Enforcer:     enforcer,
-		FileStores:   stores,
-		Runtime:      rt,
-		TargetPolicy: policy,
-
+	svc, err := services.Build(services.Deps{
+		Config:           cfg,
+		DB:               db,
+		Enforcer:         enforcer,
+		Runtime:          rt,
+		FileStores:       stores,
 		Credentials:      core,
 		CredentialWriter: core,
 		RevealPolicy:     server.New(db).RevealPolicy(),
-
-		Setup:       identity.FormSetup,
-		Invitations: orgs.InvitationsEnabled,
-		SignIn:      identity.PasswordSignIn(db),
+		TargetPolicy:     policy,
+		SecretSealer:     keyring,
+		Keyring:          keyring,
+		SignIn:           identity.PasswordSignIn(db),
+		Setup:            identity.FormSetup,
+	})
+	if err != nil {
+		t.Fatal(err)
 	}
+	return Dependencies{
+		Config:      cfg,
+		Logger:      slog.New(slog.NewTextHandler(io.Discard, nil)),
+		Enforcer:    enforcer,
+		FileStores:  stores,
+		Services:    svc,
+		Credentials: core,
+
+		Invitations: orgs.InvitationsEnabled,
+	}, db
 }
 
 func TestNewApplicationStartsNoGoroutines(t *testing.T) {
@@ -189,13 +206,13 @@ func TestStartRuntimeTwiceStartsOnce(t *testing.T) {
 }
 
 func TestCloseLeavesDatabaseOpen(t *testing.T) {
-	deps := newTestDependencies(t)
+	deps, db := newTestDependenciesWithDB(t)
 	app, err := NewApplication(deps)
 	if err != nil {
 		t.Fatal(err)
 	}
 	app.Close()
-	if err := deps.DB.PingContext(context.Background()); err != nil {
+	if err := db.PingContext(context.Background()); err != nil {
 		t.Fatalf("database closed by web: %v", err)
 	}
 }

@@ -17,7 +17,7 @@ func (app *application) listQueryFavorites(w http.ResponseWriter, r *http.Reques
 		return
 	}
 
-	favorites, err := app.queryService().ListFavorites(r.Context(), principal, contextGetOrg(r).ID, contextGetWorkspace(r).ID, r.URL.Query().Get("q"))
+	favorites, err := app.queryService().ListFavorites(r.Context(), principal, contextGetPathIDs(r).OrgID, contextGetPathIDs(r).WorkspaceID, r.URL.Query().Get("q"))
 	if err != nil {
 		app.queryError(w, r, err)
 		return
@@ -43,7 +43,7 @@ func (app *application) createQueryFavorite(w http.ResponseWriter, r *http.Reque
 		return
 	}
 
-	favorite, err := app.queryService().CreateFavorite(r.Context(), principal, contextGetOrg(r).ID, contextGetWorkspace(r).ID, query.FavoriteInput{
+	favorite, err := app.queryService().CreateFavorite(r.Context(), principal, contextGetPathIDs(r).OrgID, contextGetPathIDs(r).WorkspaceID, query.FavoriteInput{
 		Name:         input.Name,
 		SQL:          input.SQL,
 		ConnectionID: input.ConnectionID,
@@ -78,7 +78,7 @@ func (app *application) updateQueryFavorite(w http.ResponseWriter, r *http.Reque
 		return
 	}
 
-	updated, err := app.queryService().UpdateFavorite(r.Context(), principal, contextGetOrg(r).ID, contextGetWorkspace(r).ID, id, query.FavoriteInput{Name: input.Name, SQL: input.SQL})
+	updated, err := app.queryService().UpdateFavorite(r.Context(), principal, contextGetPathIDs(r).OrgID, contextGetPathIDs(r).WorkspaceID, id, query.FavoriteInput{Name: input.Name, SQL: input.SQL})
 	if err != nil {
 		app.queryError(w, r, err)
 		return
@@ -100,7 +100,7 @@ func (app *application) deleteQueryFavorite(w http.ResponseWriter, r *http.Reque
 		return
 	}
 
-	if err := app.queryService().DeleteFavorite(r.Context(), principal, contextGetOrg(r).ID, contextGetWorkspace(r).ID, id); err != nil {
+	if err := app.queryService().DeleteFavorite(r.Context(), principal, contextGetPathIDs(r).OrgID, contextGetPathIDs(r).WorkspaceID, id); err != nil {
 		app.queryError(w, r, err)
 		return
 	}

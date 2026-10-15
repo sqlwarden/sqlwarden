@@ -1,16 +1,13 @@
 package web
 
 import (
-	"context"
 	"fmt"
 	"net/http"
 	"net/url"
 	"sort"
 	"strconv"
 	"strings"
-	"time"
 
-	"github.com/pascaldekloe/jwt"
 	"github.com/sqlwarden/internal/validator"
 )
 
@@ -20,32 +17,6 @@ func newEmailData(baseURL string) map[string]any {
 	}
 
 	return data
-}
-
-func (app *application) newAuthenticationToken(userID int64) (string, time.Time, error) {
-	now := time.Now()
-
-	var claims jwt.Claims
-	claims.Subject = strconv.FormatInt(userID, 10)
-
-	settings, err := app.runtimeSettingsService().effectiveForOrg(context.Background(), nil)
-	if err != nil {
-		return "", time.Time{}, err
-	}
-	tokenTTL := settings.JWTAccessTokenTTL
-	if tokenTTL <= 0 {
-		tokenTTL = 24 * time.Hour
-	}
-	expiry := now.Add(tokenTTL)
-	claims.Issued = jwt.NewNumericTime(now)
-	claims.NotBefore = jwt.NewNumericTime(now)
-	claims.Expires = jwt.NewNumericTime(expiry)
-
-	claims.Issuer = settings.BaseURL
-	claims.Audiences = []string{settings.BaseURL}
-
-	jwt, err := claims.HMACSign(jwt.HS256, []byte(app.config.JWT.SecretKey))
-	return string(jwt), expiry, err
 }
 
 func (app *application) backgroundTask(r *http.Request, fn func() error) {

@@ -21,6 +21,7 @@ import (
 	"github.com/sqlwarden/internal/encrypt"
 	"github.com/sqlwarden/internal/engine"
 	"github.com/sqlwarden/internal/execution"
+	"github.com/sqlwarden/internal/services"
 	"github.com/sqlwarden/internal/settings"
 	"github.com/sqlwarden/internal/web"
 )
@@ -151,10 +152,10 @@ func Build(ctx context.Context, opts Options) (*Application, error) {
 		}
 	}
 
-	if err := web.InitializeInstanceBaseURL(ctx, db, cfg.BootstrapBaseURL); err != nil {
+	if err := settings.InitializeInstanceBaseURL(ctx, db, cfg.BootstrapBaseURL); err != nil {
 		return fail(err)
 	}
-	if err := web.ValidateRuntimeSettingsInvariant(ctx, db); err != nil {
+	if err := settings.ValidateInvariant(ctx, db); err != nil {
 		return fail(err)
 	}
 	enforcer, err := access.New(db.DB)
@@ -203,19 +204,35 @@ func Build(ctx context.Context, opts Options) (*Application, error) {
 			DocsURL: feature.DocsURL, Navigation: feature.Navigation, State: string(feature.State),
 		})
 	}
+	svc, err := services.Build(services.Deps{
+		Config:           cfg,
+		DB:               db,
+		Enforcer:         enforcer,
+		Policy:           policy,
+		Runtime:          runtime,
+		Audit:            auditWriter,
+		Logger:           logger,
+		FileStores:       stores,
+		Credentials:      credentialProvider,
+		CredentialWriter: credentialCore,
+		RevealPolicy:     prof.RevealPolicy(),
+		TargetPolicy:     targetPolicy,
+		SecretSealer:     keyring,
+		Keyring:          keyring,
+		Invitations:      prof.Invitations(),
+		SignIn:           prof.SignIn(db),
+		Setup:            prof.Setup(),
+	})
+	if err != nil {
+		return fail(fmt.Errorf("services init: %w", err))
+	}
 	webApp, err := web.NewApplication(web.Dependencies{
 		Config:                cfg,
-		DB:                    db,
 		Logger:                logger,
-		Keyring:               keyring,
 		Enforcer:              enforcer,
-		Policy:                policy,
 		FileStores:            stores,
-		Runtime:               runtime,
-		TargetPolicy:          targetPolicy,
+		Services:              svc,
 		Credentials:           credentialProvider,
-		CredentialWriter:      credentialCore,
-		RevealPolicy:          prof.RevealPolicy(),
 		Audit:                 auditWriter,
 		Edition:               web.EditionCapabilities{Name: capabilities.Edition, Features: webFeatures},
 		EditionHandler:        composition.Handler(),
@@ -227,9 +244,7 @@ func Build(ctx context.Context, opts Options) (*Application, error) {
 
 		TrustedProxies: trustedProxies,
 
-		Setup:       prof.Setup(),
 		Invitations: prof.Invitations(),
-		SignIn:      prof.SignIn(db),
 	})
 	if err != nil {
 		return fail(err)

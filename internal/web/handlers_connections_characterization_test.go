@@ -201,7 +201,7 @@ func newConnectionCharacterizationFixture(t *testing.T) connectionCharacterizati
 	app := newTestApp(t)
 	owner, ownerToken, org := seedOrgOwner(t, app, uniqueEmail(t, "connection-characterization-owner"), "Connection Characterization Owner", "Connection Characterization")
 	member, memberToken := seedAccountWithToken(t, app, uniqueEmail(t, "connection-characterization-member"), "Connection Characterization Member")
-	if err := app.db.AddOrgMember(context.Background(), org.ID, member.ID); err != nil {
+	if err := testDB(app).AddOrgMember(context.Background(), org.ID, member.ID); err != nil {
 		t.Fatal(err)
 	}
 	_, nonMemberToken := seedAccountWithToken(t, app, uniqueEmail(t, "connection-characterization-non-member"), "Connection Characterization Non-member")

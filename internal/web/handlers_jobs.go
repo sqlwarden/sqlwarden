@@ -1,29 +1,33 @@
 package web
 
 import (
+	"errors"
 	"log/slog"
 	"net/http"
 
 	"github.com/go-chi/chi/v5"
+	"github.com/sqlwarden/internal/jobs"
 	"github.com/sqlwarden/internal/response"
 )
 
-func (app *application) listWorkspaceJobs(w http.ResponseWriter, r *http.Request) {
-	q, errs := readListQuery(r.URL.Query(), map[string]string{
-		"created_at": "created_at",
-	})
-	if len(errs) != 0 {
-		app.failedValidation(w, r, fieldErrors(errs))
+func (app *application) jobError(w http.ResponseWriter, r *http.Request, err error) {
+	var validation *jobs.ValidationError
+	if errors.As(err, &validation) {
+		app.failedValidation(w, r, fieldErrors(validation.Fields))
 		return
 	}
+	app.serviceError(w, r, err)
+}
+
+func (app *application) listWorkspaceJobs(w http.ResponseWriter, r *http.Request) {
 	principal, ok := app.requestPrincipal(w, r)
 	if !ok {
 		return
 	}
-
-	result, err := app.jobService().List(r.Context(), principal, contextGetOrg(r).ID, contextGetWorkspace(r).ID, q.Page, q.PageSize)
+	query := r.URL.Query()
+	result, err := app.jobService().List(r.Context(), principal, contextGetPathIDs(r).OrgID, contextGetPathIDs(r).WorkspaceID, query.Get("page"), query.Get("page_size"))
 	if err != nil {
-		app.serviceError(w, r, err)
+		app.jobError(w, r, err)
 		return
 	}
 	if err := response.JSON(w, http.StatusOK, result); err != nil {
@@ -36,7 +40,7 @@ func (app *application) getWorkspaceJob(w http.ResponseWriter, r *http.Request) 
 	if !ok {
 		return
 	}
-	job, err := app.jobService().Get(r.Context(), principal, contextGetOrg(r).ID, contextGetWorkspace(r).ID, chi.URLParam(r, "job_id"))
+	job, err := app.jobService().Get(r.Context(), principal, contextGetPathIDs(r).OrgID, contextGetPathIDs(r).WorkspaceID, chi.URLParam(r, "job_id"))
 	if err != nil {
 		app.serviceError(w, r, err)
 		return
@@ -47,28 +51,22 @@ func (app *application) getWorkspaceJob(w http.ResponseWriter, r *http.Request) 
 }
 
 func (app *application) listWorkspaceJobEvents(w http.ResponseWriter, r *http.Request) {
-	q, errs := readListQuery(r.URL.Query(), map[string]string{
-		"created_at": "created_at",
-	})
-	if len(errs) != 0 {
-		app.failedValidation(w, r, fieldErrors(errs))
-		return
-	}
 	principal, ok := app.requestPrincipal(w, r)
 	if !ok {
 		return
 	}
+	query := r.URL.Query()
 	events, err := app.jobService().Events(
 		r.Context(),
 		principal,
-		contextGetOrg(r).ID,
-		contextGetWorkspace(r).ID,
+		contextGetPathIDs(r).OrgID,
+		contextGetPathIDs(r).WorkspaceID,
 		chi.URLParam(r, "job_id"),
-		r.URL.Query().Get("after_id"),
-		q.PageSize,
+		query.Get("after_id"),
+		query.Get("page_size"),
 	)
 	if err != nil {
-		app.serviceError(w, r, err)
+		app.jobError(w, r, err)
 		return
 	}
 	if err := response.JSON(w, http.StatusOK, events); err != nil {
@@ -81,7 +79,7 @@ func (app *application) cancelWorkspaceJob(w http.ResponseWriter, r *http.Reques
 	if !ok {
 		return
 	}
-	job, err := app.jobService().RequestCancel(r.Context(), principal, contextGetOrg(r).ID, contextGetWorkspace(r).ID, chi.URLParam(r, "job_id"))
+	job, err := app.jobService().RequestCancel(r.Context(), principal, contextGetPathIDs(r).OrgID, contextGetPathIDs(r).WorkspaceID, chi.URLParam(r, "job_id"))
 	if err != nil {
 		app.serviceError(w, r, err)
 		return

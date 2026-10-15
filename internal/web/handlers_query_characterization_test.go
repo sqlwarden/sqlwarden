@@ -147,7 +147,7 @@ func TestQueryWorkspaceRoutesRejectForeignWorkspace(t *testing.T) {
 	fixture := newQueryCharacterizationFixture(t)
 	_, _, foreignOrg := seedOrgOwner(t, fixture.app, uniqueEmail(t, "query-char-foreign-owner"), "Query Foreign Owner", "Query Foreign Org")
 	foreignOwner, _ := seedAccountWithToken(t, fixture.app, uniqueEmail(t, "query-char-foreign-account"), "Query Foreign Account")
-	if err := fixture.app.db.AddOrgMember(context.Background(), foreignOrg.ID, foreignOwner.ID); err != nil {
+	if err := testDB(fixture.app).AddOrgMember(context.Background(), foreignOrg.ID, foreignOwner.ID); err != nil {
 		t.Fatal(err)
 	}
 	foreignWorkspace := seedWorkspaceForAccount(t, fixture.app, foreignOrg, foreignOwner, "Query Foreign Workspace", "")
@@ -187,7 +187,7 @@ func TestQueryRuntimeRoutesHideForeignSessions(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err := app.db.AddWorkspaceMember(context.Background(), fixture.workspace.ID, fixture.differentAccountID, nil); err != nil {
+	if err := testDB(app).AddWorkspaceMember(context.Background(), fixture.workspace.ID, fixture.differentAccountID, nil); err != nil {
 		t.Fatal(err)
 	}
 	roleID := createRoleForTest(t, app, fixture.org.ID, nil, "connection", access.PermConnRead, access.PermConnExecute, access.PermConnDQL, access.PermConnDML, access.PermConnDDL)
@@ -221,14 +221,19 @@ func TestQueryRuntimeRoutesHideForeignSessions(t *testing.T) {
 		}
 	}
 
-	// The body is decoded before the session is resolved, so a malformed body
-	// is a 400 on a foreign or unknown session where a valid one is a 410.
+	// The mode is validated after the session is resolved, so an invalid mode
+	// is a 410 on a foreign or unknown session and a 422 on the caller's own.
 	for _, sessionID := range []string{fixture.ownerSessionID, "no-such-session"} {
 		req := newAuthRequest(t, http.MethodPost, fixture.targetURL+"/transaction/mode", map[string]any{"mode": 5}, fixture.differentConnToken)
 		req.Header.Set("X-Warden-Session", sessionID)
-		if res := send(t, req, app.routes()); res.StatusCode != http.StatusBadRequest {
-			t.Fatalf("bad transaction mode body on session %q: status = %d, want 400", sessionID, res.StatusCode)
+		if res := send(t, req, app.routes()); res.StatusCode != http.StatusGone {
+			t.Fatalf("bad transaction mode on session %q: status = %d, want 410", sessionID, res.StatusCode)
 		}
+	}
+	ownReq := newAuthRequest(t, http.MethodPost, fixture.targetURL+"/transaction/mode", map[string]any{"mode": 5}, fixture.ownerToken)
+	ownReq.Header.Set("X-Warden-Session", fixture.ownerSessionID)
+	if res := send(t, ownReq, app.routes()); res.StatusCode != http.StatusUnprocessableEntity {
+		t.Fatalf("bad transaction mode on own session: status = %d, want 422", res.StatusCode)
 	}
 
 	statusReq := newAuthRequest(t, http.MethodGet, fixture.targetURL+"/transaction", nil, fixture.ownerToken)
@@ -260,11 +265,11 @@ func newQueryCharacterizationFixture(t *testing.T) queryCharacterizationFixture 
 	})
 	owner, ownerToken, org := seedOrgOwner(t, app, uniqueEmail(t, "query-char-owner"), "Query Characterization Owner", "Query Characterization")
 	member, memberToken := seedAccountWithToken(t, app, uniqueEmail(t, "query-char-member"), "Query Characterization Member")
-	if err := app.db.AddOrgMember(context.Background(), org.ID, member.ID); err != nil {
+	if err := testDB(app).AddOrgMember(context.Background(), org.ID, member.ID); err != nil {
 		t.Fatal(err)
 	}
 	different, differentToken := seedAccountWithToken(t, app, uniqueEmail(t, "query-char-different"), "Query Characterization Different")
-	if err := app.db.AddOrgMember(context.Background(), org.ID, different.ID); err != nil {
+	if err := testDB(app).AddOrgMember(context.Background(), org.ID, different.ID); err != nil {
 		t.Fatal(err)
 	}
 	_, nonMemberToken := seedAccountWithToken(t, app, uniqueEmail(t, "query-char-non-member"), "Query Characterization Non-member")

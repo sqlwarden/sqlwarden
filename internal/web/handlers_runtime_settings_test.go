@@ -11,6 +11,7 @@ import (
 	"github.com/sqlwarden/internal/assert"
 	"github.com/sqlwarden/internal/config"
 	"github.com/sqlwarden/internal/database"
+	"github.com/sqlwarden/internal/settings"
 )
 
 func TestInstanceRuntimeSettingsAPI(t *testing.T) {
@@ -36,7 +37,7 @@ func TestInstanceRuntimeSettingsAPI(t *testing.T) {
 	assert.Equal(t, res.BodyFields["query_cursor_page_size"], any(float64(250)))
 	assert.Equal(t, res.BodyFields["error_notification_email"], "errors@example.com")
 
-	settings, err := app.runtimeSettingsService().effectiveForOrg(context.Background(), nil)
+	settings, err := app.services.Settings.EffectiveForOrg(context.Background(), nil)
 	assert.Nil(t, err)
 	assert.Equal(t, settings.QueryMaxResultRows, 2000)
 	assert.Equal(t, settings.QueryCursorPageSize, 250)
@@ -79,7 +80,7 @@ func TestInstanceRuntimeOperationsAndWriteOnlySMTPPassword(t *testing.T) {
 		t.Fatal("runtime settings response exposed encrypted SMTP password")
 	}
 
-	stored, found, err := app.db.GetInstanceSettings(context.Background())
+	stored, found, err := testDB(app).GetInstanceSettings(context.Background())
 	if err != nil || !found {
 		t.Fatalf("get stored settings: found=%v err=%v", found, err)
 	}
@@ -89,26 +90,26 @@ func TestInstanceRuntimeOperationsAndWriteOnlySMTPPassword(t *testing.T) {
 	if !stored.AccessLogsEnabled {
 		t.Fatal("access log setting was not persisted")
 	}
-	if err := app.applyRuntimeOperations(stored); err != nil {
+	if err := app.applyRuntimeOperations(settings.Instance(stored)); err != nil {
 		t.Fatal(err)
 	}
 	if !app.accessLogsEnabled.Load() {
 		t.Fatal("access log setting was not applied to the running instance")
 	}
-	plaintext, err := app.keyring.Decrypt(stored.SMTPPasswordEncrypted)
+	plaintext, err := testKeyring(app).Decrypt(stored.SMTPPasswordEncrypted)
 	assert.Nil(t, err)
 	assert.Equal(t, plaintext, "top-secret-password")
 
 	res = send(t, newAuthRequest(t, http.MethodPatch, "/api/v1/instance/settings", map[string]any{"smtp_username": "updated@example.com"}, adminToken), app.routes())
 	assert.Equal(t, res.StatusCode, http.StatusOK)
-	storedAfterOmit, _, err := app.db.GetInstanceSettings(context.Background())
+	storedAfterOmit, _, err := testDB(app).GetInstanceSettings(context.Background())
 	assert.Nil(t, err)
 	assert.Equal(t, storedAfterOmit.SMTPPasswordEncrypted, stored.SMTPPasswordEncrypted)
 
 	res = send(t, newAuthRequest(t, http.MethodPatch, "/api/v1/instance/settings", map[string]any{"smtp_password": nil}, adminToken), app.routes())
 	assert.Equal(t, res.StatusCode, http.StatusOK)
 	assert.Equal(t, res.BodyFields["smtp_password_configured"], false)
-	storedAfterClear, _, err := app.db.GetInstanceSettings(context.Background())
+	storedAfterClear, _, err := testDB(app).GetInstanceSettings(context.Background())
 	assert.Nil(t, err)
 	assert.Equal(t, storedAfterClear.SMTPPasswordEncrypted, "")
 }
@@ -123,7 +124,7 @@ func TestInstanceRuntimeOperationsValidationIsAtomic(t *testing.T) {
 	assertValidationField(t, res, "log_level")
 	assertValidationField(t, res, "jobs_worker_count")
 	assertValidationField(t, res, "smtp_port")
-	settings, err := app.instanceSettings(context.Background())
+	settings, err := app.services.Settings.Instance(context.Background())
 	assert.Nil(t, err)
 	assert.Equal(t, settings.LogLevel, config.LogLevelInfo)
 }
@@ -143,7 +144,7 @@ func TestInstanceRuntimeSettingsValidationIsAtomic(t *testing.T) {
 	assertValidationField(t, res, "query_cursor_page_size")
 	assertValidationField(t, res, "error_notification_email")
 
-	settings, err := app.instanceSettings(context.Background())
+	settings, err := app.services.Settings.Instance(context.Background())
 	assert.Nil(t, err)
 	assert.Equal(t, settings.QueryMaxResultRows, database.DefaultQueryMaxResultRows)
 	assert.Equal(t, settings.QueryCursorPageSize, database.DefaultQueryCursorPageSize)
@@ -175,7 +176,7 @@ func TestInstanceBootstrapConfigurationIsSanitized(t *testing.T) {
 func TestRuntimeSettingsReadFailureReturnsServiceUnavailable(t *testing.T) {
 	app := newTestApp(t)
 	adminToken := setupInstance(t, app, "settings-failure@example.com", "Settings Failure", "securepass99")
-	if err := app.db.Close(); err != nil {
+	if err := testDB(app).Close(); err != nil {
 		t.Fatal(err)
 	}
 
@@ -191,7 +192,7 @@ func TestConfiguredInstanceWithMissingBaseURLFailsInvariantInsteadOfRebootstrapp
 		settings.BaseURL = ""
 	})
 
-	err := InitializeInstanceBaseURL(context.Background(), app.db, "https://bootstrap.example.com")
+	err := settings.InitializeInstanceBaseURL(context.Background(), testDB(app), "https://bootstrap.example.com")
 	if err == nil || !strings.Contains(err.Error(), "base_url is invalid") {
 		t.Fatalf("initialize base URL error = %v", err)
 	}
@@ -200,7 +201,7 @@ func TestConfiguredInstanceWithMissingBaseURLFailsInvariantInsteadOfRebootstrapp
 func TestRuntimeSettingsMissingRowReturnsServiceUnavailable(t *testing.T) {
 	app := newTestApp(t)
 	adminToken := setupInstance(t, app, "settings-missing@example.com", "Settings Missing", "securepass99")
-	if _, err := app.db.ExecContext(context.Background(), "DELETE FROM instance_settings WHERE id = 1"); err != nil {
+	if _, err := testDB(app).ExecContext(context.Background(), "DELETE FROM instance_settings WHERE id = 1"); err != nil {
 		t.Fatal(err)
 	}
 
@@ -221,20 +222,20 @@ func TestRuntimeSettingsInvalidRowReturnsServiceUnavailable(t *testing.T) {
 	assertAPIError(t, res, apiErrorSettingsUnavailable, "Runtime settings are temporarily unavailable.")
 }
 
-func TestValidateRuntimeSettingsInvariant(t *testing.T) {
+func TestValidateInvariant(t *testing.T) {
 	t.Run("accepts canonical migration row", func(t *testing.T) {
 		app := newTestApp(t)
-		if err := ValidateRuntimeSettingsInvariant(context.Background(), app.db); err != nil {
+		if err := settings.ValidateInvariant(context.Background(), testDB(app)); err != nil {
 			t.Fatal(err)
 		}
 	})
 
 	t.Run("rejects missing singleton row", func(t *testing.T) {
 		app := newTestApp(t)
-		if _, err := app.db.ExecContext(context.Background(), "DELETE FROM instance_settings WHERE id = 1"); err != nil {
+		if _, err := testDB(app).ExecContext(context.Background(), "DELETE FROM instance_settings WHERE id = 1"); err != nil {
 			t.Fatal(err)
 		}
-		err := ValidateRuntimeSettingsInvariant(context.Background(), app.db)
+		err := settings.ValidateInvariant(context.Background(), testDB(app))
 		if err == nil || !strings.Contains(err.Error(), "row id=1 is missing") {
 			t.Fatalf("unexpected invariant error: %v", err)
 		}
@@ -245,7 +246,7 @@ func TestValidateRuntimeSettingsInvariant(t *testing.T) {
 		updateInstanceSettingsForTest(t, app, func(settings *database.InstanceSettings) {
 			settings.InstanceName = ""
 		})
-		err := ValidateRuntimeSettingsInvariant(context.Background(), app.db)
+		err := settings.ValidateInvariant(context.Background(), testDB(app))
 		if err == nil || !strings.Contains(err.Error(), "instance_name must not be empty") {
 			t.Fatalf("unexpected invariant error: %v", err)
 		}
@@ -256,7 +257,7 @@ func TestValidateRuntimeSettingsInvariant(t *testing.T) {
 		updateInstanceSettingsForTest(t, app, func(settings *database.InstanceSettings) {
 			settings.QueryCursorPageSize = 0
 		})
-		err := ValidateRuntimeSettingsInvariant(context.Background(), app.db)
+		err := settings.ValidateInvariant(context.Background(), testDB(app))
 		if err == nil || !strings.Contains(err.Error(), "query_cursor_page_size") {
 			t.Fatalf("unexpected invariant error: %v", err)
 		}
@@ -401,7 +402,7 @@ func TestOrganizationRuntimeSettingsQueryHistoryRowsRemainFlag(t *testing.T) {
 	envID := defaultEnvironmentID(t, app, ws.ID)
 	conn := seedConnection(t, app, ws.ID, &envID, org.ID, "sqlite", "Rows Remain Conn", "open")
 
-	_, err := app.db.InsertQueryHistoryEntry(context.Background(), database.QueryHistoryEntry{
+	_, err := testDB(app).InsertQueryHistoryEntry(context.Background(), database.QueryHistoryEntry{
 		ConnectionID: conn.ID,
 		AccountID:    owner.ID,
 		SQL:          "select 1",
@@ -429,7 +430,7 @@ func TestPurgeOrganizationQueryHistory(t *testing.T) {
 	envID := defaultEnvironmentID(t, app, ws.ID)
 	conn := seedConnection(t, app, ws.ID, &envID, org.ID, "sqlite", "Purge History Conn", "open")
 
-	_, err := app.db.InsertQueryHistoryEntry(context.Background(), database.QueryHistoryEntry{
+	_, err := testDB(app).InsertQueryHistoryEntry(context.Background(), database.QueryHistoryEntry{
 		ConnectionID: conn.ID,
 		AccountID:    owner.ID,
 		SQL:          "select 1",
@@ -439,7 +440,7 @@ func TestPurgeOrganizationQueryHistory(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	hasRows, err := app.db.QueryHistoryHasRowsForOrg(context.Background(), org.ID)
+	hasRows, err := testDB(app).QueryHistoryHasRowsForOrg(context.Background(), org.ID)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -450,7 +451,7 @@ func TestPurgeOrganizationQueryHistory(t *testing.T) {
 	res := send(t, newAuthRequest(t, http.MethodDelete, "/api/v1/orgs/"+org.Slug+"/query-history", nil, token), app.routes())
 	assert.Equal(t, res.StatusCode, http.StatusNoContent)
 
-	hasRows, err = app.db.QueryHistoryHasRowsForOrg(context.Background(), org.ID)
+	hasRows, err = testDB(app).QueryHistoryHasRowsForOrg(context.Background(), org.ID)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -465,7 +466,7 @@ func TestPurgeOrganizationQueryFavorites(t *testing.T) {
 	owner, token, org := seedOrgOwner(t, app, uniqueEmail(t, "purge-query-favorites"), "Purge Favorites Owner", "Purge Favorites Org")
 	ws := seedWorkspaceForAccount(t, app, org, owner, "Primary Workspace", "")
 
-	_, err := app.db.CreateQueryFavorite(context.Background(), database.QueryFavorite{
+	_, err := testDB(app).CreateQueryFavorite(context.Background(), database.QueryFavorite{
 		WorkspaceID: ws.ID,
 		AccountID:   owner.ID,
 		Name:        "Top customers",
@@ -475,7 +476,7 @@ func TestPurgeOrganizationQueryFavorites(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	hasRows, err := app.db.QueryFavoritesHasRowsForOrg(context.Background(), org.ID)
+	hasRows, err := testDB(app).QueryFavoritesHasRowsForOrg(context.Background(), org.ID)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -486,7 +487,7 @@ func TestPurgeOrganizationQueryFavorites(t *testing.T) {
 	res := send(t, newAuthRequest(t, http.MethodDelete, "/api/v1/orgs/"+org.Slug+"/query-favorites", nil, token), app.routes())
 	assert.Equal(t, res.StatusCode, http.StatusNoContent)
 
-	hasRows, err = app.db.QueryFavoritesHasRowsForOrg(context.Background(), org.ID)
+	hasRows, err = testDB(app).QueryFavoritesHasRowsForOrg(context.Background(), org.ID)
 	if err != nil {
 		t.Fatal(err)
 	}

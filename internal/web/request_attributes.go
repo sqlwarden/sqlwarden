@@ -25,7 +25,8 @@ func (app *application) clientIP(r *http.Request) string {
 }
 
 func (app *application) newAuthChain() identity.Chain {
-	core := identity.NewSessionAuthenticator(app.db, app.config.JWT.SecretKey, revocationFromContext, time.Now)
+	store := app.services.AuthStore
+	core := identity.NewSessionAuthenticator(store, app.config.JWT.SecretKey, revocationFromContext, time.Now)
 	if app.decorateAuthenticator != nil {
 		core = app.decorateAuthenticator(core)
 	}
@@ -33,6 +34,7 @@ func (app *application) newAuthChain() identity.Chain {
 	authenticators = append(authenticators, app.authenticators...)
 	return identity.Chain{
 		Authenticators: authenticators,
+		InstanceAdmins: store,
 		Posture:        append([]identity.PostureProvider(nil), app.postureProviders...),
 		Policies:       append([]identity.RequestPolicy(nil), app.requestPolicies...),
 	}

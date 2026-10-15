@@ -39,19 +39,22 @@ func (app *application) writeTransactionStatus(w http.ResponseWriter, r *http.Re
 }
 
 func (app *application) setTransactionMode(w http.ResponseWriter, r *http.Request) {
+	// Mode is decoded untyped so a wrongly typed value reaches the service,
+	// which validates it only after authorizing the session.
 	var input struct {
-		Mode string `json:"mode"`
+		Mode any `json:"mode"`
 	}
 	if err := request.DecodeJSON(w, r, &input); err != nil {
 		app.badRequest(w, r, err)
 		return
 	}
+	mode, _ := input.Mode.(string)
 	principal, ok := app.requestPrincipal(w, r)
 	if !ok {
 		return
 	}
 	sessionID := requestSessionID(r)
-	status, err := app.queryService().SetTransactionMode(r.Context(), principal, connectionRef(r), sessionID, input.Mode)
+	status, err := app.queryService().SetTransactionMode(r.Context(), principal, connectionRef(r), sessionID, mode)
 	if err != nil {
 		var failure *execution.Failure
 		switch {
@@ -64,7 +67,7 @@ func (app *application) setTransactionMode(w http.ResponseWriter, r *http.Reques
 		}
 		return
 	}
-	app.logInfo(r, "transaction mode changed", slog.String("session_id", string(sessionID)), slog.String("mode", input.Mode))
+	app.logInfo(r, "transaction mode changed", slog.String("session_id", string(sessionID)), slog.String("mode", mode))
 	app.writeTransactionStatus(w, r, status)
 }
 

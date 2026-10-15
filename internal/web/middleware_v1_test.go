@@ -17,18 +17,6 @@ import (
 	"github.com/sqlwarden/internal/token"
 )
 
-func newTestApplicationWithEnforcer(t *testing.T) *application {
-	t.Helper()
-	app := newTestApplication(t)
-	enforcer, err := access.New(app.db.DB)
-	if err != nil {
-		t.Fatal(err)
-	}
-	app.enforcer = enforcer
-	app.policy = enforcer
-	return app
-}
-
 // testWithParams injects chi URL params into the request context.
 func testWithParams(r *http.Request, params map[string]string) *http.Request {
 	rctx := chi.NewRouteContext()
@@ -41,7 +29,7 @@ func testWithParams(r *http.Request, params map[string]string) *http.Request {
 // issueTestToken creates a valid JWT for the given account using the test app's secret.
 func issueTestToken(t *testing.T, app *application, accountID int64, email, name string) string {
 	t.Helper()
-	authSession, err := app.db.InsertAuthSession(context.Background(), accountID, time.Now().Add(7*24*time.Hour), "test-agent", "127.0.0.1", database.SessionAuth{Method: "password", Assurance: "aal1"})
+	authSession, err := testDB(app).InsertAuthSession(context.Background(), accountID, time.Now().Add(7*24*time.Hour), "test-agent", "127.0.0.1", database.SessionAuth{Method: "password", Assurance: "aal1"})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -53,9 +41,9 @@ func issueTestToken(t *testing.T, app *application, accountID int64, email, name
 }
 
 func TestAuthenticateV1_ValidToken(t *testing.T) {
-	app := newTestApplicationWithEnforcer(t)
+	app := newTestApplication(t)
 
-	account, err := app.db.InsertAccount(context.Background(), "auth-test@example.com", "Auth Test", nil)
+	account, err := testDB(app).InsertAccount(context.Background(), "auth-test@example.com", "Auth Test", nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -84,7 +72,7 @@ func TestAuthenticateV1_ValidToken(t *testing.T) {
 }
 
 func TestAuthenticateV1_InvalidToken(t *testing.T) {
-	app := newTestApplicationWithEnforcer(t)
+	app := newTestApplication(t)
 
 	var gotID int64
 	finalHandler := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -108,9 +96,9 @@ func TestAuthenticateV1_InvalidToken(t *testing.T) {
 }
 
 func TestAuthenticateV1_RejectsTokenWithoutAuthSession(t *testing.T) {
-	app := newTestApplicationWithEnforcer(t)
+	app := newTestApplication(t)
 
-	account, err := app.db.InsertAccount(context.Background(), "missing-session@example.com", "Missing Session", nil)
+	account, err := testDB(app).InsertAccount(context.Background(), "missing-session@example.com", "Missing Session", nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -133,12 +121,12 @@ func TestAuthenticateV1_RejectsTokenWithoutAuthSession(t *testing.T) {
 }
 
 func TestAuthenticateV1_AllowsTokenWithoutAuthSessionWhenRevocationDisabled(t *testing.T) {
-	app := newTestApplicationWithEnforcer(t)
+	app := newTestApplication(t)
 	updateInstanceSettingsForTest(t, app, func(settings *database.InstanceSettings) {
 		settings.SessionsRevocationEnabled = false
 	})
 
-	account, err := app.db.InsertAccount(context.Background(), "revocation-disabled@example.com", "Revocation Disabled", nil)
+	account, err := testDB(app).InsertAccount(context.Background(), "revocation-disabled@example.com", "Revocation Disabled", nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -166,9 +154,9 @@ func TestAuthenticateV1_AllowsTokenWithoutAuthSessionWhenRevocationDisabled(t *t
 }
 
 func TestAuthenticateV1_RejectsRevokedAuthSession(t *testing.T) {
-	app := newTestApplicationWithEnforcer(t)
+	app := newTestApplication(t)
 
-	account, err := app.db.InsertAccount(context.Background(), "revoked-session@example.com", "Revoked Session", nil)
+	account, err := testDB(app).InsertAccount(context.Background(), "revoked-session@example.com", "Revoked Session", nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -177,7 +165,7 @@ func TestAuthenticateV1_RejectsRevokedAuthSession(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err = app.db.RevokeAuthSession(context.Background(), claims.AuthSessionID, &account.ID, "test"); err != nil {
+	if err = testDB(app).RevokeAuthSession(context.Background(), claims.AuthSessionID, &account.ID, "test"); err != nil {
 		t.Fatal(err)
 	}
 
@@ -194,52 +182,8 @@ func TestAuthenticateV1_RejectsRevokedAuthSession(t *testing.T) {
 	}
 }
 
-func TestOrgCtx_DoesNotCreateOrgAccessSessionWhenRevocationDisabled(t *testing.T) {
-	app := newTestApplicationWithEnforcer(t)
-	updateInstanceSettingsForTest(t, app, func(settings *database.InstanceSettings) {
-		settings.SessionsRevocationEnabled = false
-	})
-
-	account, err := app.db.InsertAccount(context.Background(), "orgctx-no-session@example.com", "Org Ctx No Session", nil)
-	if err != nil {
-		t.Fatal(err)
-	}
-	org, err := app.db.InsertOrg(context.Background(), "orgctx-no-session", "Org Ctx No Session")
-	if err != nil {
-		t.Fatal(err)
-	}
-	if err = app.db.AddOrgMember(context.Background(), org.ID, account.ID); err != nil {
-		t.Fatal(err)
-	}
-
-	req := httptest.NewRequest(http.MethodGet, "/api/v1/orgs/orgctx-no-session", nil)
-	req = contextSetAccount(req, account)
-	req = testWithParams(req, map[string]string{"org_slug": org.Slug})
-
-	rec := httptest.NewRecorder()
-	app.orgCtx(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		w.WriteHeader(http.StatusOK)
-	})).ServeHTTP(rec, req)
-
-	if rec.Code != http.StatusOK {
-		t.Fatalf("expected 200, got %d", rec.Code)
-	}
-	var count int
-	err = app.db.NewSelect().
-		TableExpr("org_access_sessions").
-		ColumnExpr("COUNT(*)").
-		Where("org_id = ? AND account_id = ?", org.ID, account.ID).
-		Scan(context.Background(), &count)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if count != 0 {
-		t.Fatalf("expected no org access session rows, got %d", count)
-	}
-}
-
 func TestRequireAccount_NoAccount(t *testing.T) {
-	app := newTestApplicationWithEnforcer(t)
+	app := newTestApplication(t)
 
 	req := httptest.NewRequest(http.MethodGet, "/api/v1/test", nil)
 	rec := httptest.NewRecorder()
@@ -255,442 +199,219 @@ func TestRequireAccount_NoAccount(t *testing.T) {
 	}
 }
 
-func TestOrgCtx_UnknownSlug(t *testing.T) {
-	app := newTestApplicationWithEnforcer(t)
-
-	account, err := app.db.InsertAccount(context.Background(), "orgctx-test@example.com", "Org Ctx Test", nil)
-	if err != nil {
-		t.Fatal(err)
-	}
-
-	req := httptest.NewRequest(http.MethodGet, "/api/v1/orgs/nonexistent", nil)
-	req = contextSetAccount(req, account)
-	req = testWithParams(req, map[string]string{"org_slug": "nonexistent"})
-
-	rec := httptest.NewRecorder()
-
-	finalHandler := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+// serveOrgScope authenticates a bearer token for the account and runs
+// orgScope for slug, returning the response and the path ids the next
+// handler saw.
+func serveOrgScope(t *testing.T, app *application, account database.Account, slug string) (*httptest.ResponseRecorder, pathIDs) {
+	t.Helper()
+	tok := issueTestToken(t, app, account.ID, account.Email, account.Name)
+	var got pathIDs
+	final := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		got = contextGetPathIDs(r)
 		w.WriteHeader(http.StatusOK)
 	})
-
-	app.orgCtx(finalHandler).ServeHTTP(rec, req)
-
-	if rec.Code != http.StatusNotFound {
-		t.Fatalf("expected 404, got %d", rec.Code)
-	}
+	req := httptest.NewRequest(http.MethodGet, "/api/v1/orgs/"+slug, nil)
+	req.Header.Set("Authorization", "Bearer "+tok)
+	req = testWithParams(req, map[string]string{"org_slug": slug})
+	rec := httptest.NewRecorder()
+	app.authenticateV1(app.requireAccount(app.orgScope(final))).ServeHTTP(rec, req)
+	return rec, got
 }
 
-func TestOrgCtx_NonMember(t *testing.T) {
-	app := newTestApplicationWithEnforcer(t)
-
-	account, err := app.db.InsertAccount(context.Background(), "non-member@example.com", "Non Member", nil)
+func countOrgAccessSessions(t *testing.T, app *application, orgID, accountID int64) int {
+	t.Helper()
+	var count int
+	err := testDB(app).NewSelect().
+		TableExpr("org_access_sessions").
+		ColumnExpr("COUNT(*)").
+		Where("org_id = ? AND account_id = ?", orgID, accountID).
+		Scan(context.Background(), &count)
 	if err != nil {
 		t.Fatal(err)
 	}
-
-	org, err := app.db.InsertOrg(context.Background(), "non-member-org", "Non Member Org")
-	if err != nil {
-		t.Fatal(err)
-	}
-
-	req := httptest.NewRequest(http.MethodGet, "/api/v1/orgs/"+org.Slug, nil)
-	authSession, err := app.db.InsertAuthSession(context.Background(), account.ID, time.Now().Add(7*24*time.Hour), "test-agent", "127.0.0.1", database.SessionAuth{Method: "password", Assurance: "aal1"})
-	if err != nil {
-		t.Fatal(err)
-	}
-	req = contextSetAuthSession(req, authSession)
-	req = contextSetAccount(req, account)
-	req = testWithParams(req, map[string]string{"org_slug": org.Slug})
-
-	rec := httptest.NewRecorder()
-
-	finalHandler := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		w.WriteHeader(http.StatusOK)
-	})
-
-	app.orgCtx(finalHandler).ServeHTTP(rec, req)
-
-	if rec.Code != http.StatusForbidden {
-		t.Fatalf("expected 403, got %d", rec.Code)
-	}
+	return count
 }
 
-func TestOrgCtx_Member(t *testing.T) {
-	app := newTestApplicationWithEnforcer(t)
-
-	account, err := app.db.InsertAccount(context.Background(), "member@example.com", "Member", nil)
-	if err != nil {
-		t.Fatal(err)
-	}
-
-	org, err := app.db.InsertOrg(context.Background(), "member-org", "Member Org")
-	if err != nil {
-		t.Fatal(err)
-	}
-
-	err = app.db.AddOrgMember(context.Background(), org.ID, account.ID)
-	if err != nil {
-		t.Fatal(err)
-	}
-
-	var gotSlug string
-	finalHandler := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		o := contextGetOrg(r)
-		gotSlug = o.Slug
-		w.WriteHeader(http.StatusOK)
+func TestOrgScope_DoesNotCreateOrgAccessSessionWhenRevocationDisabled(t *testing.T) {
+	app := newTestApplication(t)
+	updateInstanceSettingsForTest(t, app, func(settings *database.InstanceSettings) {
+		settings.SessionsRevocationEnabled = false
 	})
 
-	req := httptest.NewRequest(http.MethodGet, "/api/v1/orgs/"+org.Slug, nil)
-	authSession, err := app.db.InsertAuthSession(context.Background(), account.ID, time.Now().Add(7*24*time.Hour), "test-agent", "127.0.0.1", database.SessionAuth{Method: "password", Assurance: "aal1"})
+	account, err := testDB(app).InsertAccount(context.Background(), "orgctx-no-session@example.com", "Org Ctx No Session", nil)
 	if err != nil {
 		t.Fatal(err)
 	}
-	req = contextSetAuthSession(req, authSession)
-	req = contextSetAccount(req, account)
-	req = testWithParams(req, map[string]string{"org_slug": org.Slug})
+	org, err := testDB(app).InsertOrg(context.Background(), "orgctx-no-session", "Org Ctx No Session")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err = testDB(app).AddOrgMember(context.Background(), org.ID, account.ID); err != nil {
+		t.Fatal(err)
+	}
 
-	rec := httptest.NewRecorder()
-	app.orgCtx(finalHandler).ServeHTTP(rec, req)
-
+	rec, _ := serveOrgScope(t, app, account, org.Slug)
 	if rec.Code != http.StatusOK {
 		t.Fatalf("expected 200, got %d", rec.Code)
 	}
-	if gotSlug != org.Slug {
-		t.Fatalf("expected slug %s, got %s", org.Slug, gotSlug)
+	if count := countOrgAccessSessions(t, app, org.ID, account.ID); count != 0 {
+		t.Fatalf("expected no org access session rows, got %d", count)
 	}
 }
 
-func TestWsCtx_UnknownWsID(t *testing.T) {
-	app := newTestApplicationWithEnforcer(t)
+func TestOrgScope_UnknownSlug(t *testing.T) {
+	app := newTestApplication(t)
 
-	account, err := app.db.InsertAccount(context.Background(), "wsctx-test@example.com", "WS Ctx Test", nil)
+	account, err := testDB(app).InsertAccount(context.Background(), "orgctx-test@example.com", "Org Ctx Test", nil)
 	if err != nil {
 		t.Fatal(err)
 	}
 
-	org, err := app.db.InsertOrg(context.Background(), "ws-org-ctx", "WS Org")
-	if err != nil {
-		t.Fatal(err)
-	}
-
-	req := httptest.NewRequest(http.MethodGet, "/api/v1/orgs/ws-org/workspaces/99999", nil)
-	req = contextSetAccount(req, account)
-	req = contextSetOrg(req, org)
-	req = testWithParams(req, map[string]string{"org_slug": org.Slug, "ws_id": "99999"})
-
-	rec := httptest.NewRecorder()
-
-	finalHandler := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		w.WriteHeader(http.StatusOK)
-	})
-
-	app.wsCtx(finalHandler).ServeHTTP(rec, req)
-
+	rec, _ := serveOrgScope(t, app, account, "nonexistent")
 	if rec.Code != http.StatusNotFound {
 		t.Fatalf("expected 404, got %d", rec.Code)
 	}
 }
 
-func TestWsCtx_InvalidOrWrongOrg(t *testing.T) {
-	app := newTestApplicationWithEnforcer(t)
+func TestOrgScope_NonMember(t *testing.T) {
+	app := newTestApplication(t)
 
-	account, err := app.db.InsertAccount(context.Background(), "wsctx2@example.com", "WS Ctx 2", nil)
+	account, err := testDB(app).InsertAccount(context.Background(), "non-member@example.com", "Non Member", nil)
 	if err != nil {
 		t.Fatal(err)
 	}
-	orgA, err := app.db.InsertOrg(context.Background(), "ws-org-a", "WS Org A")
-	if err != nil {
-		t.Fatal(err)
-	}
-	orgB, err := app.db.InsertOrg(context.Background(), "ws-org-b", "WS Org B")
-	if err != nil {
-		t.Fatal(err)
-	}
-	ws, err := app.db.InsertWorkspace(context.Background(), &orgB.ID, "org", orgB.ID, "Other Org WS", "")
+	org, err := testDB(app).InsertOrg(context.Background(), "non-member-org", "Non Member Org")
 	if err != nil {
 		t.Fatal(err)
 	}
 
-	finalHandler := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		w.WriteHeader(http.StatusOK)
-	})
-
-	invalidReq := httptest.NewRequest(http.MethodGet, "/api/v1/orgs/ws-org-a/workspaces/not-a-number", nil)
-	invalidReq = contextSetAccount(invalidReq, account)
-	invalidReq = contextSetOrg(invalidReq, orgA)
-	invalidReq = testWithParams(invalidReq, map[string]string{"org_slug": orgA.Slug, "ws_id": "not-a-number"})
-	invalidRec := httptest.NewRecorder()
-	app.wsCtx(finalHandler).ServeHTTP(invalidRec, invalidReq)
-	if invalidRec.Code != http.StatusNotFound {
-		t.Fatalf("expected 404 for invalid workspace ID, got %d", invalidRec.Code)
+	rec, _ := serveOrgScope(t, app, account, org.Slug)
+	if rec.Code != http.StatusForbidden {
+		t.Fatalf("expected 403, got %d", rec.Code)
 	}
-
-	wrongOrgReq := httptest.NewRequest(http.MethodGet, "/api/v1/orgs/ws-org-a/workspaces/1", nil)
-	wrongOrgReq = contextSetAccount(wrongOrgReq, account)
-	wrongOrgReq = contextSetOrg(wrongOrgReq, orgA)
-	wrongOrgReq = testWithParams(wrongOrgReq, map[string]string{"org_slug": orgA.Slug, "ws_id": strconv.FormatInt(ws.ID, 10)})
-	wrongOrgRec := httptest.NewRecorder()
-	app.wsCtx(finalHandler).ServeHTTP(wrongOrgRec, wrongOrgReq)
-	if wrongOrgRec.Code != http.StatusNotFound {
-		t.Fatalf("expected 404 for cross-org workspace, got %d", wrongOrgRec.Code)
+	if count := countOrgAccessSessions(t, app, org.ID, account.ID); count != 0 {
+		t.Fatalf("expected no org access session rows for a non-member, got %d", count)
 	}
 }
 
-func TestEnvCtxBranches(t *testing.T) {
-	app := newTestApplicationWithEnforcer(t)
-
-	account, err := app.db.InsertAccount(context.Background(), "envctx@example.com", "EnvCtx", nil)
-	if err != nil {
-		t.Fatal(err)
-	}
-	org, err := app.db.InsertOrg(context.Background(), "env-org", "Env Org")
-	if err != nil {
-		t.Fatal(err)
-	}
-	ws1, err := app.db.InsertWorkspace(context.Background(), &org.ID, "org", org.ID, "WS1", "")
-	if err != nil {
-		t.Fatal(err)
-	}
-	ws2, err := app.db.InsertWorkspace(context.Background(), &org.ID, "org", org.ID, "WS2", "")
-	if err != nil {
-		t.Fatal(err)
-	}
-	env, err := app.db.InsertEnvironment(context.Background(), ws2.ID, "prod", "")
-	if err != nil {
-		t.Fatal(err)
-	}
-
-	finalHandler := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		w.WriteHeader(http.StatusOK)
+func TestOrgScope_MemberRecordsPathIDsAndOrgAccessSession(t *testing.T) {
+	app := newTestApplication(t)
+	updateInstanceSettingsForTest(t, app, func(settings *database.InstanceSettings) {
+		settings.SessionsRevocationEnabled = true
 	})
 
-	for name, envID := range map[string]string{"invalid": "bad", "missing": "99999"} {
-		req := httptest.NewRequest(http.MethodGet, "/api/v1/orgs/env-org/workspaces/1/environments/"+envID, nil)
-		req = contextSetAccount(req, account)
-		req = contextSetOrg(req, org)
-		req = contextSetWorkspace(req, ws1)
-		req = testWithParams(req, map[string]string{"env_id": envID})
-		rec := httptest.NewRecorder()
-		app.envCtx(finalHandler).ServeHTTP(rec, req)
-		if rec.Code != http.StatusNotFound {
-			t.Fatalf("%s: expected 404, got %d", name, rec.Code)
-		}
+	account, err := testDB(app).InsertAccount(context.Background(), "member@example.com", "Member", nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	org, err := testDB(app).InsertOrg(context.Background(), "member-org", "Member Org")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err = testDB(app).AddOrgMember(context.Background(), org.ID, account.ID); err != nil {
+		t.Fatal(err)
 	}
 
-	req := httptest.NewRequest(http.MethodGet, "/api/v1/orgs/env-org/workspaces/1/environments/"+strconv.FormatInt(env.ID, 10), nil)
-	req = contextSetAccount(req, account)
-	req = contextSetOrg(req, org)
-	req = contextSetWorkspace(req, ws1)
-	req = testWithParams(req, map[string]string{"env_id": strconv.FormatInt(env.ID, 10)})
-	rec := httptest.NewRecorder()
-	app.envCtx(finalHandler).ServeHTTP(rec, req)
-	if rec.Code != http.StatusNotFound {
-		t.Fatalf("expected 404 for cross-workspace environment, got %d", rec.Code)
+	rec, ids := serveOrgScope(t, app, account, org.Slug)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d", rec.Code)
+	}
+	if ids.OrgID != org.ID || ids.OrgSlug != org.Slug {
+		t.Fatalf("expected org %d/%s, got %d/%s", org.ID, org.Slug, ids.OrgID, ids.OrgSlug)
+	}
+	if ids.WorkspaceID != 0 || ids.EnvironmentID != 0 || ids.ConnectionID != 0 {
+		t.Fatalf("expected no nested path ids, got %+v", ids)
+	}
+	if count := countOrgAccessSessions(t, app, org.ID, account.ID); count != 1 {
+		t.Fatalf("expected one org access session row, got %d", count)
 	}
 }
 
-func TestConnCtxBranches(t *testing.T) {
-	app := newTestApplicationWithEnforcer(t)
-
-	account, err := app.db.InsertAccount(context.Background(), "connctx@example.com", "ConnCtx", nil)
-	if err != nil {
-		t.Fatal(err)
-	}
-	org, err := app.db.InsertOrg(context.Background(), "conn-org", "Conn Org")
-	if err != nil {
-		t.Fatal(err)
-	}
-	ws1, err := app.db.InsertWorkspace(context.Background(), &org.ID, "org", org.ID, "WS1", "")
-	if err != nil {
-		t.Fatal(err)
-	}
-	ws2, err := app.db.InsertWorkspace(context.Background(), &org.ID, "org", org.ID, "WS2", "")
-	if err != nil {
-		t.Fatal(err)
-	}
-	env1ID, err := app.db.DefaultEnvironmentID(context.Background(), ws1.ID)
-	if err != nil {
-		t.Fatal(err)
-	}
-	env1, found, err := app.db.GetEnvironment(context.Background(), env1ID)
-	if err != nil || !found {
-		t.Fatal("expected default environment for ws1")
-	}
-	conn, err := app.db.InsertConnection(context.Background(), ws2.ID, nil, "db", "sqlite", ":memory:", "open")
-	if err != nil {
-		t.Fatal(err)
-	}
-
-	finalHandler := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		w.WriteHeader(http.StatusOK)
-	})
-
-	for name, connID := range map[string]string{"invalid": "bad", "missing": "99999"} {
-		req := httptest.NewRequest(http.MethodGet, "/api/v1/orgs/conn-org/workspaces/1/environments/1/connections/"+connID, nil)
-		req = contextSetAccount(req, account)
-		req = contextSetOrg(req, org)
-		req = contextSetWorkspace(req, ws1)
-		req = contextSetEnvironment(req, env1)
-		req = testWithParams(req, map[string]string{"conn_id": connID})
-		rec := httptest.NewRecorder()
-		app.connCtx(finalHandler).ServeHTTP(rec, req)
-		if rec.Code != http.StatusNotFound {
-			t.Fatalf("%s: expected 404, got %d", name, rec.Code)
-		}
-	}
-
-	req := httptest.NewRequest(http.MethodGet, "/api/v1/orgs/conn-org/workspaces/1/environments/1/connections/"+strconv.FormatInt(conn.ID, 10), nil)
-	req = contextSetAccount(req, account)
-	req = contextSetOrg(req, org)
-	req = contextSetWorkspace(req, ws1)
-	req = contextSetEnvironment(req, env1)
-	req = testWithParams(req, map[string]string{"conn_id": strconv.FormatInt(conn.ID, 10)})
-	rec := httptest.NewRecorder()
-	app.connCtx(finalHandler).ServeHTTP(rec, req)
-	if rec.Code != http.StatusNotFound {
-		t.Fatalf("expected 404 for cross-workspace connection, got %d", rec.Code)
-	}
-}
-
-func TestRequireConcreteResourcePermissions(t *testing.T) {
-	app := newTestApplicationWithEnforcer(t)
+func TestOrgScope_RejectsRevokedOrgAccessSession(t *testing.T) {
+	app := newTestApplication(t)
 	ctx := context.Background()
-
-	account, err := app.db.InsertAccount(ctx, "resource-perms@example.com", "Resource Perms", nil)
-	if err != nil {
-		t.Fatal(err)
-	}
-	org, err := app.db.InsertOrg(ctx, "resource-perms-org", "Resource Perms Org")
-	if err != nil {
-		t.Fatal(err)
-	}
-	if err := app.db.AddOrgMember(ctx, org.ID, account.ID); err != nil {
-		t.Fatal(err)
-	}
-	ws, err := app.db.InsertWorkspace(ctx, &org.ID, "org", org.ID, "Resource Workspace", "")
-	if err != nil {
-		t.Fatal(err)
-	}
-	env, err := app.db.InsertEnvironment(ctx, ws.ID, "production", "")
-	if err != nil {
-		t.Fatal(err)
-	}
-	conn, err := app.db.InsertConnection(ctx, ws.ID, &env.ID, "primary", "sqlite", "dsn", "open")
-	if err != nil {
-		t.Fatal(err)
-	}
-
-	orgRoleID := createRoleForTest(t, app, org.ID, nil, "org", access.PermOrgWrite)
-	workspaceRoleID := createRoleForTest(t, app, org.ID, &ws.ID, "workspace", access.PermWsWrite)
-	envRoleID := createRoleForTest(t, app, org.ID, &ws.ID, "environment", access.PermEnvWrite)
-	connRoleID := createRoleForTest(t, app, org.ID, &ws.ID, "connection", access.PermConnUpdate)
-
-	for _, binding := range []struct {
-		roleID       int64
-		resourceType string
-		resourceID   int64
-	}{
-		{orgRoleID, "org", org.ID},
-		{workspaceRoleID, "workspace", ws.ID},
-		{envRoleID, "environment", env.ID},
-		{connRoleID, "connection", conn.ID},
-	} {
-		if err := app.enforcer.BindRole(ctx, org.ID, binding.roleID, access.SubjectTypeAccount, account.ID, binding.resourceType, binding.resourceID, account.ID); err != nil {
-			t.Fatal(err)
-		}
-	}
-
-	tests := []struct {
-		name       string
-		middleware func(http.Handler) http.Handler
-		request    func() *http.Request
-	}{
-		{
-			name:       "org",
-			middleware: app.requireOrgPermission(access.PermOrgWrite),
-			request: func() *http.Request {
-				req := httptest.NewRequest(http.MethodPatch, "/api/v1/orgs/resource-perms-org", nil)
-				req = contextSetAccount(req, account)
-				return contextSetOrg(req, org)
-			},
-		},
-		{
-			name:       "workspace",
-			middleware: app.requireWorkspacePermission(access.PermWsWrite),
-			request: func() *http.Request {
-				req := httptest.NewRequest(http.MethodPatch, "/api/v1/orgs/resource-perms-org/workspaces/1", nil)
-				req = contextSetAccount(req, account)
-				req = contextSetOrg(req, org)
-				return contextSetWorkspace(req, ws)
-			},
-		},
-		{
-			name:       "environment",
-			middleware: app.requireEnvironmentPermission(access.PermEnvWrite),
-			request: func() *http.Request {
-				req := httptest.NewRequest(http.MethodPatch, "/api/v1/orgs/resource-perms-org/workspaces/1/environments/1", nil)
-				req = contextSetAccount(req, account)
-				req = contextSetOrg(req, org)
-				req = contextSetWorkspace(req, ws)
-				return contextSetEnvironment(req, env)
-			},
-		},
-		{
-			name:       "connection",
-			middleware: app.requireConnectionPermission(access.PermConnUpdate),
-			request: func() *http.Request {
-				req := httptest.NewRequest(http.MethodPatch, "/api/v1/orgs/resource-perms-org/workspaces/1/environments/1/connections/1", nil)
-				req = contextSetAccount(req, account)
-				req = contextSetOrg(req, org)
-				req = contextSetWorkspace(req, ws)
-				req = contextSetEnvironment(req, env)
-				return contextSetConnection(req, conn)
-			},
-		},
-	}
-
-	finalHandler := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		w.WriteHeader(http.StatusOK)
+	updateInstanceSettingsForTest(t, app, func(settings *database.InstanceSettings) {
+		settings.SessionsRevocationEnabled = true
 	})
-	for _, tt := range tests {
+
+	account, err := testDB(app).InsertAccount(ctx, "revoked-org-access@example.com", "Revoked Org Access", nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	org, err := testDB(app).InsertOrg(ctx, "revoked-org-access", "Revoked Org Access")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err = testDB(app).AddOrgMember(ctx, org.ID, account.ID); err != nil {
+		t.Fatal(err)
+	}
+
+	tok := issueTestToken(t, app, account.ID, account.Email, account.Name)
+	claims, err := token.Verify(tok, app.config.JWT.SecretKey)
+	if err != nil {
+		t.Fatal(err)
+	}
+	serve := func() int {
+		req := httptest.NewRequest(http.MethodGet, "/api/v1/orgs/"+org.Slug, nil)
+		req.Header.Set("Authorization", "Bearer "+tok)
+		req = testWithParams(req, map[string]string{"org_slug": org.Slug})
 		rec := httptest.NewRecorder()
-		tt.middleware(finalHandler).ServeHTTP(rec, tt.request())
-		if rec.Code != http.StatusOK {
-			t.Fatalf("%s: expected 200, got %d", tt.name, rec.Code)
-		}
+		app.authenticateV1(app.requireAccount(app.orgScope(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			w.WriteHeader(http.StatusOK)
+		})))).ServeHTTP(rec, req)
+		return rec.Code
+	}
+	if code := serve(); code != http.StatusOK {
+		t.Fatalf("expected 200 before revocation, got %d", code)
+	}
+	session, found, err := testDB(app).GetOrgAccessSession(ctx, claims.AuthSessionID, org.ID, account.ID)
+	if err != nil || !found {
+		t.Fatalf("expected org access session: found=%v err=%v", found, err)
+	}
+	if err := testDB(app).RevokeOrgAccessSession(ctx, session.ID, org.ID, &account.ID, "test"); err != nil {
+		t.Fatal(err)
+	}
+	if code := serve(); code != http.StatusForbidden {
+		t.Fatalf("expected 403 after revocation, got %d", code)
 	}
 }
 
-func TestRequireConcreteResourcePermissionMissingContext(t *testing.T) {
-	app := newTestApplicationWithEnforcer(t)
-	account, err := app.db.InsertAccount(context.Background(), "missing-context@example.com", "Missing Context", nil)
-	if err != nil {
-		t.Fatal(err)
-	}
-	org, err := app.db.InsertOrg(context.Background(), "missing-context-org", "Missing Context Org")
-	if err != nil {
-		t.Fatal(err)
-	}
-
-	tests := []struct {
-		name       string
-		middleware func(http.Handler) http.Handler
-		request    *http.Request
+func TestPathIDMiddlewareRejectsMalformedIDs(t *testing.T) {
+	app := newTestApplication(t)
+	middlewares := map[string]struct {
+		param string
+		mw    func(http.Handler) http.Handler
+		get   func(pathIDs) int64
 	}{
-		{name: "org", middleware: app.requireOrgPermission(access.PermOrgRead), request: contextSetAccount(httptest.NewRequest(http.MethodGet, "/", nil), account)},
-		{name: "workspace", middleware: app.requireWorkspacePermission(access.PermWsRead), request: contextSetOrg(contextSetAccount(httptest.NewRequest(http.MethodGet, "/", nil), account), org)},
-		{name: "environment", middleware: app.requireEnvironmentPermission(access.PermEnvRead), request: contextSetOrg(contextSetAccount(httptest.NewRequest(http.MethodGet, "/", nil), account), org)},
-		{name: "connection", middleware: app.requireConnectionPermission(access.PermConnRead), request: contextSetOrg(contextSetAccount(httptest.NewRequest(http.MethodGet, "/", nil), account), org)},
+		"workspace":   {"ws_id", app.workspacePath, func(ids pathIDs) int64 { return ids.WorkspaceID }},
+		"environment": {"env_id", app.environmentPath, func(ids pathIDs) int64 { return ids.EnvironmentID }},
+		"connection":  {"conn_id", app.connectionPath, func(ids pathIDs) int64 { return ids.ConnectionID }},
 	}
+	for name, tt := range middlewares {
+		for _, raw := range []string{"", "bad", "0", "-1", "1.5", "99999999999999999999"} {
+			called := false
+			req := testWithParams(httptest.NewRequest(http.MethodGet, "/", nil), map[string]string{tt.param: raw})
+			rec := httptest.NewRecorder()
+			tt.mw(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) { called = true })).ServeHTTP(rec, req)
+			if rec.Code != http.StatusNotFound || called {
+				t.Fatalf("%s %q: expected 404 without calling next, got %d (called=%v)", name, raw, rec.Code, called)
+			}
+		}
 
-	finalHandler := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		w.WriteHeader(http.StatusOK)
-	})
-	for _, tt := range tests {
+		var got int64
+		req := testWithParams(httptest.NewRequest(http.MethodGet, "/", nil), map[string]string{tt.param: "42"})
+		req = contextSetPathIDs(req, pathIDs{OrgID: 7, OrgSlug: "acme"})
 		rec := httptest.NewRecorder()
-		tt.middleware(finalHandler).ServeHTTP(rec, tt.request)
-		if rec.Code != http.StatusNotFound {
-			t.Fatalf("%s: expected 404, got %d", tt.name, rec.Code)
+		tt.mw(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			ids := contextGetPathIDs(r)
+			if ids.OrgID != 7 || ids.OrgSlug != "acme" {
+				t.Fatalf("%s: parent path ids lost: %+v", name, ids)
+			}
+			got = tt.get(ids)
+			w.WriteHeader(http.StatusOK)
+		})).ServeHTTP(rec, req)
+		if rec.Code != http.StatusOK || got != 42 {
+			t.Fatalf("%s: expected 200 with id 42, got %d with id %d", name, rec.Code, got)
 		}
 	}
 }
@@ -713,7 +434,7 @@ func newTestSessionToken(t *testing.T, app *application) (string, string) {
 
 func revokeTestSession(t *testing.T, app *application, sessionID string) {
 	t.Helper()
-	assert.Nil(t, app.db.RevokeAuthSession(context.Background(), sessionID, nil, "test"))
+	assert.Nil(t, testDB(app).RevokeAuthSession(context.Background(), sessionID, nil, "test"))
 }
 
 func TestAuthenticateRejectsUnclaimedCredential(t *testing.T) {

@@ -85,6 +85,58 @@ func TestChainPolicyDenyWithoutReasonUsesDefault(t *testing.T) {
 	}
 }
 
+type adminLookup struct {
+	admins map[int64]bool
+	err    error
+	calls  int
+}
+
+func (l *adminLookup) IsInstanceAdmin(_ context.Context, accountID int64) (bool, error) {
+	l.calls++
+	return l.admins[accountID], l.err
+}
+
+type selfAdminAuthenticator struct{ id int64 }
+
+func (a selfAdminAuthenticator) Authenticate(context.Context, Presented) (Authenticated, bool, error) {
+	return Authenticated{Principal: access.Principal{Subject: access.SubjectRef{Kind: access.SubjectAccount, ID: a.id}, InstanceAdmin: true}}, true, nil
+}
+
+func TestChainResolvesInstanceAdminFromLookup(t *testing.T) {
+	lookup := &adminLookup{admins: map[int64]bool{7: true}}
+	c := Chain{Authenticators: []Authenticator{fakeAuthenticator{claim: true, id: 7}}, InstanceAdmins: lookup}
+	got, err := c.Authenticate(context.Background(), Presented{})
+	if err != nil || !got.Principal.InstanceAdmin {
+		t.Fatalf("admin: got %+v, %v", got.Principal, err)
+	}
+
+	c.Authenticators = []Authenticator{fakeAuthenticator{claim: true, id: 8}}
+	got, err = c.Authenticate(context.Background(), Presented{})
+	if err != nil || got.Principal.InstanceAdmin {
+		t.Fatalf("non-admin: got %+v, %v", got.Principal, err)
+	}
+}
+
+func TestChainIgnoresAuthenticatorInstanceAdminClaim(t *testing.T) {
+	got, err := Chain{Authenticators: []Authenticator{selfAdminAuthenticator{id: 3}}}.Authenticate(context.Background(), Presented{})
+	if err != nil || got.Principal.InstanceAdmin {
+		t.Fatalf("no lookup: got %+v, %v", got.Principal, err)
+	}
+	lookup := &adminLookup{}
+	got, err = Chain{Authenticators: []Authenticator{selfAdminAuthenticator{id: 3}}, InstanceAdmins: lookup}.Authenticate(context.Background(), Presented{})
+	if err != nil || got.Principal.InstanceAdmin || lookup.calls != 1 {
+		t.Fatalf("lookup denies: got %+v, calls=%d, %v", got.Principal, lookup.calls, err)
+	}
+}
+
+func TestChainInstanceAdminLookupErrorFails(t *testing.T) {
+	want := errors.New("store down")
+	c := Chain{Authenticators: []Authenticator{fakeAuthenticator{claim: true, id: 7}}, InstanceAdmins: &adminLookup{err: want}}
+	if _, err := c.Authenticate(context.Background(), Presented{}); !errors.Is(err, want) {
+		t.Fatalf("err = %v", err)
+	}
+}
+
 func TestChainPostureFillsSignals(t *testing.T) {
 	c := Chain{
 		Authenticators: []Authenticator{fakeAuthenticator{claim: true, id: 1}},

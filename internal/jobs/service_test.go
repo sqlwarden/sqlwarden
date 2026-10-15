@@ -105,8 +105,51 @@ func servicePrincipal(accountID int64) access.Principal {
 
 func TestServiceRejectsNonMemberBeforeStore(t *testing.T) {
 	store := &serviceStore{}
-	_, err := newServiceTest(store).List(context.Background(), servicePrincipal(8), serviceOrg, serviceWorkspace, 2, 25)
+	_, err := newServiceTest(store).List(context.Background(), servicePrincipal(8), serviceOrg, serviceWorkspace, "2", "25")
 	accesstest.AssertForbidden(t, err, "List")
+	if store.calls != 0 {
+		t.Fatalf("store calls = %d, want 0", store.calls)
+	}
+}
+
+func TestServiceAuthorizesBeforeValidatingPaging(t *testing.T) {
+	store := &serviceStore{}
+	svc := newServiceTest(store)
+	ctx := context.Background()
+
+	_, err := svc.List(ctx, servicePrincipal(8), serviceOrg, serviceWorkspace, "0", "x")
+	accesstest.AssertForbidden(t, err, "List")
+	_, err = svc.Events(ctx, servicePrincipal(8), serviceOrg, serviceWorkspace, "job-1", "", "0")
+	accesstest.AssertForbidden(t, err, "Events")
+	if store.calls != 0 {
+		t.Fatalf("store calls = %d, want 0", store.calls)
+	}
+}
+
+func TestServiceRejectsInvalidPagingForMembers(t *testing.T) {
+	store := &serviceStore{}
+	svc := newServiceTest(store)
+	ctx := context.Background()
+	p := servicePrincipal(serviceAccount)
+
+	cases := []struct{ page, pageSize, field string }{
+		{"0", "", "page"},
+		{"abc", "", "page"},
+		{"", "0", "page_size"},
+		{"", "101", "page_size"},
+	}
+	for _, tc := range cases {
+		_, err := svc.List(ctx, p, serviceOrg, serviceWorkspace, tc.page, tc.pageSize)
+		var validation *ValidationError
+		if !errors.As(err, &validation) || validation.Fields[tc.field] == "" {
+			t.Fatalf("List(%q, %q) error = %v, want validation error on %s", tc.page, tc.pageSize, err, tc.field)
+		}
+	}
+	_, err := svc.Events(ctx, p, serviceOrg, serviceWorkspace, "job-1", "", "0")
+	var validation *ValidationError
+	if !errors.As(err, &validation) || validation.Fields["page_size"] == "" {
+		t.Fatalf("Events error = %v, want validation error on page_size", err)
+	}
 	if store.calls != 0 {
 		t.Fatalf("store calls = %d, want 0", store.calls)
 	}
@@ -139,14 +182,14 @@ func TestServicePassesAccountAndPaginationToStore(t *testing.T) {
 	p := servicePrincipal(serviceAccount)
 	ctx := context.Background()
 
-	if _, err := svc.List(ctx, p, serviceOrg, serviceWorkspace, 3, 40); err != nil {
+	if _, err := svc.List(ctx, p, serviceOrg, serviceWorkspace, "3", "40"); err != nil {
 		t.Fatal(err)
 	}
 	if want := (storeCall{orgID: serviceOrg, workspaceID: serviceWorkspace, accountID: serviceAccount, page: 3, pageSize: 40}); store.listCall != want {
 		t.Fatalf("List call = %+v, want %+v", store.listCall, want)
 	}
 
-	if _, err := svc.Events(ctx, p, serviceOrg, serviceWorkspace, "job-1", "event-9", 75); err != nil {
+	if _, err := svc.Events(ctx, p, serviceOrg, serviceWorkspace, "job-1", "event-9", "75"); err != nil {
 		t.Fatal(err)
 	}
 	if want := (storeCall{orgID: serviceOrg, workspaceID: serviceWorkspace, accountID: serviceAccount, jobID: "job-1", afterID: "event-9", limit: 75}); store.eventsCall != want {

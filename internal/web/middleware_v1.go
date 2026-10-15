@@ -6,11 +6,10 @@ import (
 	"log/slog"
 	"net/http"
 	"strconv"
-	"time"
 
 	"github.com/go-chi/chi/v5"
-	"github.com/sqlwarden/internal/access"
 	"github.com/sqlwarden/internal/identity"
+	"github.com/sqlwarden/internal/settings"
 )
 
 // authenticateV1 authenticates the Authorization header through the identity
@@ -23,7 +22,7 @@ func (app *application) authenticateV1(next http.Handler) http.Handler {
 			next.ServeHTTP(w, r)
 			return
 		}
-		runtimeSettings, err := app.runtimeSettingsService().effectiveForOrg(r.Context(), nil)
+		runtimeSettings, err := app.services.Settings.EffectiveForOrg(r.Context(), nil)
 		if err != nil {
 			app.serverError(w, r, err)
 			return
@@ -61,8 +60,8 @@ func (app *application) authenticateV1(next http.Handler) http.Handler {
 }
 
 func revocationFromContext(ctx context.Context) bool {
-	settings, ok := ctx.Value(runtimeSettingsKey).(effectiveRuntimeSettings)
-	return ok && settings.SessionsRevocationEnabled
+	effective, ok := ctx.Value(runtimeSettingsKey).(settings.Effective)
+	return ok && effective.SessionsRevocationEnabled
 }
 
 // requireAccount rejects the request with 401 if no authenticated account is in context.
@@ -77,276 +76,87 @@ func (app *application) requireAccount(next http.Handler) http.Handler {
 	})
 }
 
-// orgCtx resolves the org from the URL slug and sets it on context.
-// Requires requireAccount to have run first.
-func (app *application) orgCtx(next http.Handler) http.Handler {
+// orgScope enters the organization named by the URL slug and records its id
+// in the path ids. Entry is the organization membership gate: an unknown slug
+// is 404 and a non-member is 403. Requires requireAccount to have run first.
+func (app *application) orgScope(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		slug := chi.URLParam(r, "org_slug")
-		org, found, err := app.db.GetOrgBySlug(r.Context(), slug)
-		if err != nil {
-			app.serverError(w, r, err)
+		p, ok := app.requestPrincipal(w, r)
+		if !ok {
 			return
 		}
-		if !found {
-			app.notFound(w, r)
-			return
-		}
-
-		account := contextGetAccount(r)
-		isMember, err := app.db.IsOrgMember(r.Context(), org.ID, account.ID)
-		if err != nil {
-			app.serverError(w, r, err)
-			return
-		}
-		if !isMember {
-			app.notPermitted(w, r)
-			return
-		}
-
 		runtimeSettings, ok := contextGetRuntimeSettings(r)
 		if !ok {
-			runtimeSettings, err = app.runtimeSettingsService().effectiveForOrg(r.Context(), nil)
+			var err error
+			runtimeSettings, err = app.services.Settings.EffectiveForOrg(r.Context(), nil)
 			if err != nil {
 				app.serverError(w, r, err)
 				return
 			}
 		}
-		if runtimeSettings.SessionsRevocationEnabled {
-			authSession := contextGetAuthSession(r)
-			if authSession.ID == "" {
-				app.invalidAuthenticationToken(w, r)
-				return
-			}
-			err = app.db.EnsureOrgAccessSession(r.Context(), authSession.ID, org.ID, account.ID, authSession.ExpiresAt)
-			if err != nil {
-				app.serverError(w, r, err)
-				return
-			}
-			orgAccessSession, found, err := app.db.GetOrgAccessSession(r.Context(), authSession.ID, org.ID, account.ID)
-			if err != nil {
-				app.serverError(w, r, err)
-				return
-			}
-			if !found || orgAccessSession.RevokedAt != nil || time.Now().After(orgAccessSession.ExpiresAt) {
-				reason := "org_access_session_not_found"
-				if found && orgAccessSession.RevokedAt != nil {
-					reason = "org_access_session_revoked"
-				} else if found && time.Now().After(orgAccessSession.ExpiresAt) {
-					reason = "org_access_session_expired"
-				}
-				app.logWarn(r, "organization access session rejected", slog.Int64("account_id", account.ID), slog.Int64("org_id", org.ID), slog.String("auth_session_id", authSession.ID), slog.String("reason", reason))
-				app.notPermitted(w, r)
-				return
-			}
-		}
-
-		r = contextSetOrg(r, org)
-		next.ServeHTTP(w, r)
-	})
-}
-
-// wsCtx resolves the workspace from the URL parameter and sets it on context.
-func (app *application) wsCtx(next http.Handler) http.Handler {
-	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		wsIDStr := chi.URLParam(r, "ws_id")
-		wsID, err := strconv.ParseInt(wsIDStr, 10, 64)
-		if err != nil {
-			app.notFound(w, r)
-			return
-		}
-
-		ws, found, err := app.db.GetWorkspace(r.Context(), wsID)
-		if err != nil {
-			app.serverError(w, r, err)
-			return
-		}
-		if !found {
-			app.notFound(w, r)
-			return
-		}
-
-		org := contextGetOrg(r)
-		if ws.OrgID == nil || *ws.OrgID != org.ID {
-			app.notFound(w, r)
-			return
-		}
-
-		r = contextSetWorkspace(r, ws)
-		next.ServeHTTP(w, r)
-	})
-}
-
-// envCtx resolves the environment from the URL parameter and sets it on context.
-func (app *application) envCtx(next http.Handler) http.Handler {
-	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		envIDStr := chi.URLParam(r, "env_id")
-		envID, err := strconv.ParseInt(envIDStr, 10, 64)
-		if err != nil {
-			app.notFound(w, r)
-			return
-		}
-
-		env, found, err := app.db.GetEnvironment(r.Context(), envID)
-		if err != nil {
-			app.serverError(w, r, err)
-			return
-		}
-		if !found {
-			app.notFound(w, r)
-			return
-		}
-
-		ws := contextGetWorkspace(r)
-		if env.WorkspaceID != ws.ID {
-			app.notFound(w, r)
-			return
-		}
-
-		r = contextSetEnvironment(r, env)
-		next.ServeHTTP(w, r)
-	})
-}
-
-// connCtx resolves the connection from the URL parameter and sets it on context.
-func (app *application) connCtx(next http.Handler) http.Handler {
-	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		connIDStr := chi.URLParam(r, "conn_id")
-		connID, err := strconv.ParseInt(connIDStr, 10, 64)
-		if err != nil {
-			app.notFound(w, r)
-			return
-		}
-
-		conn, found, err := app.db.GetConnection(r.Context(), connID)
-		if err != nil {
-			app.serverError(w, r, err)
-			return
-		}
-		if !found {
-			app.notFound(w, r)
-			return
-		}
-
-		ws := contextGetWorkspace(r)
-		if conn.WorkspaceID != ws.ID {
-			app.notFound(w, r)
-			return
-		}
-		env := contextGetEnvironment(r)
-		if env.ID != 0 && conn.EnvironmentID != env.ID {
-			app.notFound(w, r)
-			return
-		}
-
-		r = contextSetConnection(r, conn)
-		next.ServeHTTP(w, r)
-	})
-}
-
-func (app *application) requireOrgPermission(permission string) func(http.Handler) http.Handler {
-	return app.requireResourcePermission(permission, func(r *http.Request) (string, string, int64, bool) {
-		org := contextGetOrg(r)
-		return "org", "org", org.ID, org.ID != 0
-	})
-}
-
-func (app *application) requireWorkspacePermission(permission string) func(http.Handler) http.Handler {
-	return app.requireResourcePermission(permission, func(r *http.Request) (string, string, int64, bool) {
-		ws := contextGetWorkspace(r)
-		return ws.OwnerType, "workspace", ws.ID, ws.ID != 0
-	})
-}
-
-func (app *application) requireEnvironmentPermission(permission string) func(http.Handler) http.Handler {
-	return app.requireResourcePermission(permission, func(r *http.Request) (string, string, int64, bool) {
-		ws := contextGetWorkspace(r)
-		env := contextGetEnvironment(r)
-		return ws.OwnerType, "environment", env.ID, ws.ID != 0 && env.ID != 0
-	})
-}
-
-func (app *application) requireConnectionPermission(permission string) func(http.Handler) http.Handler {
-	return app.requireResourcePermission(permission, func(r *http.Request) (string, string, int64, bool) {
-		ws := contextGetWorkspace(r)
-		conn := contextGetConnection(r)
-		return ws.OwnerType, "connection", conn.ID, ws.ID != 0 && conn.ID != 0
-	})
-}
-
-func (app *application) requireResourcePermission(permission string, resource func(*http.Request) (string, string, int64, bool)) func(http.Handler) http.Handler {
-	return func(next http.Handler) http.Handler {
-		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-			ownerType, resourceType, resourceID, ok := resource(r)
-			if !ok {
-				app.notFound(w, r)
-				return
-			}
-			account := contextGetAccount(r)
-			org := contextGetOrg(r)
-			if org.ID == 0 {
-				app.notFound(w, r)
-				return
-			}
-			allowed := app.policy.Can(r.Context(),
-				account.ID, org.ID,
-				ownerType, resourceType, resourceID,
-				permission,
-			)
-			if !allowed {
-				app.notPermitted(w, r)
-				return
-			}
-			next.ServeHTTP(w, r)
+		authSession := contextGetAuthSession(r)
+		entry, err := app.services.Identity.EnterOrg(r.Context(), p, identity.EnterOrgInput{
+			Slug:                 chi.URLParam(r, "org_slug"),
+			RevocationEnabled:    runtimeSettings.SessionsRevocationEnabled,
+			AuthSessionID:        authSession.ID,
+			AuthSessionExpiresAt: authSession.ExpiresAt,
 		})
-	}
-}
-
-// requireInstanceAdmin rejects with 403 if the authenticated account is not an instance admin.
-func (app *application) requireInstanceAdmin(next http.Handler) http.Handler {
-	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		account := contextGetAccount(r)
-		isAdmin, err := app.db.IsInstanceAdmin(r.Context(), account.ID)
-		if err != nil {
-			app.serverError(w, r, err)
-			return
-		}
-		if !isAdmin {
+		var rejection *identity.OrgAccessRejection
+		switch {
+		case err == nil:
+		case errors.As(err, &rejection):
+			app.logWarn(r, "organization access session rejected",
+				slog.Int64("account_id", rejection.AccountID),
+				slog.Int64("org_id", rejection.OrgID),
+				slog.String("auth_session_id", rejection.AuthSessionID),
+				slog.String("reason", rejection.Reason))
 			app.notPermitted(w, r)
 			return
+		case errors.Is(err, identity.ErrAuthSessionRequired):
+			app.invalidAuthenticationToken(w, r)
+			return
+		case errors.Is(err, identity.ErrNotFound):
+			app.notFound(w, r)
+			return
+		case errors.Is(err, identity.ErrForbidden):
+			app.notPermitted(w, r)
+			return
+		default:
+			app.serverError(w, r, err)
+			return
 		}
-		next.ServeHTTP(w, r)
+		ids := contextGetPathIDs(r)
+		ids.OrgID, ids.OrgSlug = entry.ID, entry.Slug
+		next.ServeHTTP(w, contextSetPathIDs(r, ids))
 	})
 }
 
-// requireOrgRole checks that the account holds a role with PermOrgWrite (admin) or
-// PermOrgTransferOwnership (owner).
-func (app *application) requireOrgRole(roleName string) func(http.Handler) http.Handler {
+// pathID parses a positive integer URL parameter into the path ids. It reads
+// no store: services decide whether the id exists and belongs to its parent.
+// A malformed id cannot name any resource, so it is 404 like a missing one.
+func (app *application) pathID(param string, set func(*pathIDs, int64)) func(http.Handler) http.Handler {
 	return func(next http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-			account := contextGetAccount(r)
-			org := contextGetOrg(r)
-
-			var permission string
-			switch roleName {
-			case access.BuiltinOrgOwnerRole:
-				permission = "org:transfer_ownership"
-			case access.BuiltinOrgAdminRole:
-				permission = "org:write"
-			default:
-				app.notPermitted(w, r)
+			id, err := strconv.ParseInt(chi.URLParam(r, param), 10, 64)
+			if err != nil || id <= 0 {
+				app.notFound(w, r)
 				return
 			}
-
-			allowed := app.policy.Can(r.Context(),
-				account.ID, org.ID,
-				"org", "org", org.ID,
-				permission,
-			)
-			if !allowed {
-				app.notPermitted(w, r)
-				return
-			}
-			next.ServeHTTP(w, r)
+			ids := contextGetPathIDs(r)
+			set(&ids, id)
+			next.ServeHTTP(w, contextSetPathIDs(r, ids))
 		})
 	}
+}
+
+func (app *application) workspacePath(next http.Handler) http.Handler {
+	return app.pathID("ws_id", func(ids *pathIDs, id int64) { ids.WorkspaceID = id })(next)
+}
+
+func (app *application) environmentPath(next http.Handler) http.Handler {
+	return app.pathID("env_id", func(ids *pathIDs, id int64) { ids.EnvironmentID = id })(next)
+}
+
+func (app *application) connectionPath(next http.Handler) http.Handler {
+	return app.pathID("conn_id", func(ids *pathIDs, id int64) { ids.ConnectionID = id })(next)
 }

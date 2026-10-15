@@ -2,8 +2,11 @@ package catalog
 
 import (
 	"errors"
+	"strings"
 
 	"github.com/sqlwarden/internal/access"
+	"github.com/sqlwarden/internal/database"
+	"github.com/uptrace/bun/driver/pgdriver"
 )
 
 var (
@@ -11,6 +14,9 @@ var (
 	ErrNotFound       = access.ErrNotFound
 	ErrValidation     = errors.New("catalog: validation failed")
 	ErrActiveSessions = errors.New("catalog: connection has active sessions")
+	// ErrEnvironmentHasConnections refuses deleting an environment that still
+	// holds connections.
+	ErrEnvironmentHasConnections = database.ErrEnvironmentHasConnections
 )
 
 const (
@@ -37,4 +43,12 @@ func (e *ValidationError) Unwrap() error { return ErrValidation }
 
 func validationError(field, message string) error {
 	return &ValidationError{Fields: map[string]string{field: message}}
+}
+
+func isUniqueViolation(err error) bool {
+	var pgErr pgdriver.Error
+	if errors.As(err, &pgErr) {
+		return pgErr.Field('C') == "23505"
+	}
+	return strings.Contains(err.Error(), "UNIQUE constraint failed")
 }

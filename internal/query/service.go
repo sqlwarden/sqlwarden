@@ -7,9 +7,11 @@ import (
 
 	"github.com/sqlwarden/internal/access"
 	"github.com/sqlwarden/internal/audit"
+	"github.com/sqlwarden/internal/completion"
 	"github.com/sqlwarden/internal/database"
 	"github.com/sqlwarden/internal/execution"
 	"github.com/sqlwarden/internal/response"
+	"github.com/sqlwarden/internal/schema"
 )
 
 const (
@@ -53,6 +55,8 @@ type Runtime interface {
 	execution.Sessions
 	execution.Queries
 	execution.Transactions
+	execution.Metadata
+	execution.Capabilities
 }
 
 type Deps struct {
@@ -61,8 +65,17 @@ type Deps struct {
 	Requirer  *access.Requirer
 	Runtime   Runtime
 	Analyzers Analyzers
-	Audit     audit.Writer
-	Logger    *slog.Logger
+	// SchemaStore reads navigator settings and Navigator caches schema
+	// metadata. Navigator defaults to a memory-only navigator.
+	SchemaStore SchemaStore
+	Navigator   *schema.Navigator
+	// Engines defaults to EngineRegistry.
+	Engines SchemaEngines
+	// Completion defaults to a completion service over the registered
+	// engines.
+	Completion Completer
+	Audit      audit.Writer
+	Logger     *slog.Logger
 }
 
 type Service struct {
@@ -75,6 +88,15 @@ func New(deps Deps) *Service {
 	}
 	if deps.Analyzers == nil {
 		deps.Analyzers = EngineAnalyzers{}
+	}
+	if deps.Engines == nil {
+		deps.Engines = EngineRegistry{}
+	}
+	if deps.Completion == nil {
+		deps.Completion = completion.NewService()
+	}
+	if deps.Navigator == nil {
+		deps.Navigator = schema.NewNavigator(nil, deps.Logger)
 	}
 	return &Service{deps: deps}
 }

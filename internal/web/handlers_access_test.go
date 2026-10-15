@@ -20,7 +20,7 @@ func setupPolicyTest(t *testing.T, app *application, suffix string) (ownerTok, m
 
 	owner, ownerToken, org := seedOrgOwner(t, app, "access-owner-"+suffix+"@example.com", "Owner", "Owner's Org")
 	member, memberToken := seedAccountWithToken(t, app, "access-member-"+suffix+"@example.com", "Member")
-	if err := app.db.AddOrgMember(context.Background(), org.ID, member.ID); err != nil {
+	if err := testDB(app).AddOrgMember(context.Background(), org.ID, member.ID); err != nil {
 		t.Fatal(err)
 	}
 	ws := seedWorkspaceForAccount(t, app, org, owner, "AccessWS", "")
@@ -41,7 +41,7 @@ func policiesURL(orgSlug, wsID string) string {
 func policyScope(t *testing.T, app *application, orgSlug, wsID string) (database.Organization, int64) {
 	t.Helper()
 
-	org, found, err := app.db.GetOrgBySlug(context.Background(), orgSlug)
+	org, found, err := testDB(app).GetOrgBySlug(context.Background(), orgSlug)
 	if err != nil {
 		t.Fatal(err)
 	}

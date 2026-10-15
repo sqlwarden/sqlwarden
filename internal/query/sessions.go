@@ -94,13 +94,14 @@ func (s *Service) ListWorkspaceSessions(ctx context.Context, p access.Principal,
 	return out, nil
 }
 
-// RevokeSession closes a session in the workspace. The session owner may
-// always revoke it; anyone else needs policy:modify on the workspace. A
+// RevokeSession closes a session in the workspace. The caller must belong to
+// the workspace; the session owner may then always revoke it, and anyone else
+// needs policy:modify on the workspace. A
 // session outside the workspace is indistinguishable from one that has
 // already ended, so it reports nil with no error. The revoked session is
 // returned so the caller can record who owned it.
 func (s *Service) RevokeSession(ctx context.Context, p access.Principal, orgID, wsID int64, sessionID string) (*execution.SessionInfo, error) {
-	ws, err := s.deps.Requirer.Workspace(ctx, p, orgID, wsID, "")
+	ws, err := s.deps.Requirer.WorkspaceMember(ctx, p, orgID, wsID)
 	if err != nil {
 		return nil, err
 	}
@@ -118,9 +119,10 @@ func (s *Service) RevokeSession(ctx context.Context, p access.Principal, orgID, 
 	if session == nil {
 		return nil, nil
 	}
-	if session.Scope.AccountID != strconv.FormatInt(p.Subject.ID, 10) &&
-		!s.deps.Requirer.Can(ctx, p, orgID, ws.OwnerType, "workspace", ws.ID, access.PermPolicyModify) {
-		return nil, ErrForbidden
+	if session.Scope.AccountID != strconv.FormatInt(p.Subject.ID, 10) {
+		if _, err := s.deps.Requirer.Workspace(ctx, p, orgID, wsID, access.PermPolicyModify); err != nil {
+			return nil, err
+		}
 	}
 	if err := s.deps.Runtime.Close(ctx, session.Scope, session.ID); err != nil {
 		return nil, err

@@ -38,6 +38,10 @@ var allSecretNames = [...]credentials.SecretName{
 // EnvironmentID is optional for workspace-level connection routes.
 type ConnRef = access.ConnRef
 
+// ScopePath addresses a database, schema, or other scope in a connection's
+// metadata tree, such as its default scope.
+type ScopePath = metadata.ScopePath
+
 type TLSConfig struct {
 	Mode          string `json:"mode"`
 	ServerName    string `json:"server_name,omitempty"`
@@ -249,17 +253,30 @@ type TargetPolicy interface {
 	Check(ctx context.Context, driver, dsn string) error
 }
 
+// SessionRevoker closes live sessions after access to them changed.
+// Implementations queue a retry when revocation fails.
 type SessionRevoker interface {
 	CountForConnection(ctx context.Context, connectionID string) (int, error)
 	RevokeConnection(ctx context.Context, connectionID string) (int, error)
+	RevokeWorkspaceAccount(ctx context.Context, workspaceID, accountID string) (int, error)
 }
 
 type AncestryInvalidator interface {
 	InvalidateAncestry(resourceType string, resourceID int64)
 }
 
+// PolicyCache drops cached policy after workspace bindings or memberships
+// change.
+type PolicyCache interface {
+	InvalidateOrgPolicy(orgID int64)
+	InvalidatePrincipals(orgID, accountID int64)
+}
+
 type Deps struct {
-	Store        Store
+	Store Store
+	// Workspaces stores workspaces, environments, and workspace membership.
+	Workspaces   WorkspaceStore
+	Cache        PolicyCache
 	Policy       access.PolicyEvaluator
 	Credentials  credentials.Provider
 	Writer       credentials.Writer
@@ -914,14 +931,8 @@ func (s *Service) loadWorkspace(ctx context.Context, p access.Principal, orgID, 
 }
 
 func (s *Service) requireEnvironmentOwnership(ctx context.Context, workspaceID, environmentID int64) error {
-	env, found, err := s.deps.Store.GetEnvironment(ctx, environmentID)
-	if err != nil {
-		return err
-	}
-	if !found || env.WorkspaceID != workspaceID {
-		return ErrNotFound
-	}
-	return nil
+	_, err := s.loadEnvironment(ctx, workspaceID, environmentID)
+	return err
 }
 
 // loadConnection authorizes through the Requirer, then reads the full row
@@ -935,7 +946,7 @@ func (s *Service) loadConnection(ctx context.Context, p access.Principal, ref Co
 	if err != nil {
 		return database.Connection{}, access.Workspace{}, err
 	}
-	if !found {
+	if !found || conn.WorkspaceID != ws.ID {
 		return database.Connection{}, access.Workspace{}, ErrNotFound
 	}
 	return conn, ws, nil

@@ -17,27 +17,20 @@ import (
 	"github.com/sqlwarden/internal/access"
 	"github.com/sqlwarden/internal/assert"
 	"github.com/sqlwarden/internal/audit"
-	completionapp "github.com/sqlwarden/internal/completion"
 	"github.com/sqlwarden/internal/database"
 	"github.com/sqlwarden/internal/identity"
 	"github.com/sqlwarden/internal/orgs"
-	schemaapp "github.com/sqlwarden/internal/schema"
 	"github.com/sqlwarden/internal/token"
 )
 
 func newTestApp(t *testing.T) *application {
 	t.Helper()
-	app := newTestApplication(t)
-	enforcer, err := access.New(app.db.DB)
-	if err != nil {
-		t.Fatal(err)
-	}
-	app.enforcer = enforcer
-	app.policy = enforcer
-	app.schemaNavigator = schemaapp.NewNavigator(app.db, app.logger)
-	app.completionService = completionapp.NewService()
-	app.configureConnectionCacheInvalidation()
-	return app
+	return newTestAppWith(t, testAppOptions{})
+}
+
+func newTestAppWith(t *testing.T, opts testAppOptions) *application {
+	t.Helper()
+	return newTestApplicationWith(t, opts)
 }
 
 // registerTestUser is a helper that registers a user and returns the response.
@@ -109,12 +102,12 @@ func TestRefreshTokenCookieSecurityPolicy(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			app := newTestApp(t)
-			settings, found, err := app.db.GetInstanceSettings(context.Background())
+			settings, found, err := testDB(app).GetInstanceSettings(context.Background())
 			if err != nil || !found {
 				t.Fatalf("get instance settings: found=%v err=%v", found, err)
 			}
 			settings.BaseURL = tt.baseURL
-			if _, err := app.db.UpsertInstanceSettings(context.Background(), settings); err != nil {
+			if _, err := testDB(app).UpsertInstanceSettings(context.Background(), settings); err != nil {
 				t.Fatal(err)
 			}
 			app.config.TLS.Enabled = tt.tls
@@ -205,7 +198,7 @@ func TestLoginSuccess(t *testing.T) {
 	if claims.AuthSessionID == "" {
 		t.Fatal("expected auth_session_id claim")
 	}
-	rt, found, err := app.db.GetRefreshTokenByHash(context.Background(), token.Hash(cookie.Value))
+	rt, found, err := testDB(app).GetRefreshTokenByHash(context.Background(), token.Hash(cookie.Value))
 	assert.Nil(t, err)
 	assert.True(t, found)
 	assert.Equal(t, rt.AuthSessionID, claims.AuthSessionID)
@@ -236,14 +229,14 @@ func TestLoginValidationAndInactiveAccount(t *testing.T) {
 	assert.Equal(t, validationRes.StatusCode, http.StatusUnprocessableEntity)
 
 	registerTestUser(t, app, "inactive@example.com", "Inactive", "securepass99")
-	account, found, err := app.db.GetAccountByEmail(context.Background(), "inactive@example.com")
+	account, found, err := testDB(app).GetAccountByEmail(context.Background(), "inactive@example.com")
 	if err != nil {
 		t.Fatal(err)
 	}
 	if !found {
 		t.Fatal("expected inactive test account to exist")
 	}
-	if err := app.db.DeactivateAccount(context.Background(), account.ID); err != nil {
+	if err := testDB(app).DeactivateAccount(context.Background(), account.ID); err != nil {
 		t.Fatal(err)
 	}
 
@@ -326,7 +319,7 @@ func TestRefreshWithExpiredOrMissingAccount(t *testing.T) {
 	assert.Equal(t, loginRes.StatusCode, http.StatusOK)
 	cookie := extractRefreshCookie(t, loginRes)
 
-	rt, found, err := app.db.GetRefreshTokenByHash(context.Background(), token.Hash(cookie.Value))
+	rt, found, err := testDB(app).GetRefreshTokenByHash(context.Background(), token.Hash(cookie.Value))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -334,7 +327,7 @@ func TestRefreshWithExpiredOrMissingAccount(t *testing.T) {
 		t.Fatal("expected refresh token to exist")
 	}
 
-	if _, err := app.db.NewUpdate().Model((*database.RefreshToken)(nil)).
+	if _, err := testDB(app).NewUpdate().Model((*database.RefreshToken)(nil)).
 		Set("expires_at = ?", time.Now().Add(-time.Hour)).
 		Where("id = ?", rt.ID).
 		Exec(context.Background()); err != nil {
@@ -351,7 +344,7 @@ func TestRefreshWithExpiredOrMissingAccount(t *testing.T) {
 	assert.Equal(t, loginRes.StatusCode, http.StatusOK)
 	cookie = extractRefreshCookie(t, loginRes)
 
-	rt, found, err = app.db.GetRefreshTokenByHash(context.Background(), token.Hash(cookie.Value))
+	rt, found, err = testDB(app).GetRefreshTokenByHash(context.Background(), token.Hash(cookie.Value))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -359,7 +352,7 @@ func TestRefreshWithExpiredOrMissingAccount(t *testing.T) {
 		t.Fatal("expected refresh token to exist")
 	}
 
-	if _, err := app.db.NewDelete().Model((*database.Account)(nil)).Where("id = ?", rt.AccountID).Exec(context.Background()); err != nil {
+	if _, err := testDB(app).NewDelete().Model((*database.Account)(nil)).Where("id = ?", rt.AccountID).Exec(context.Background()); err != nil {
 		t.Fatal(err)
 	}
 
@@ -392,7 +385,7 @@ func TestLogout(t *testing.T) {
 
 	claims, err := token.Verify(extractAccessToken(t, loginRes), app.config.JWT.SecretKey)
 	assert.Nil(t, err)
-	session, found, err := app.db.GetAuthSession(context.Background(), claims.AuthSessionID, mustParseInt64(t, claims.AccountID))
+	session, found, err := testDB(app).GetAuthSession(context.Background(), claims.AuthSessionID, mustParseInt64(t, claims.AccountID))
 	assert.Nil(t, err)
 	assert.True(t, found)
 	assert.True(t, session.RevokedAt != nil)
@@ -409,7 +402,7 @@ func TestRevokedAuthSessionRejectsExistingAccessToken(t *testing.T) {
 	assert.Nil(t, err)
 	accountID := mustParseInt64(t, claims.AccountID)
 
-	err = app.db.RevokeAuthSession(context.Background(), claims.AuthSessionID, &accountID, "test")
+	err = testDB(app).RevokeAuthSession(context.Background(), claims.AuthSessionID, &accountID, "test")
 	assert.Nil(t, err)
 
 	var logs bytes.Buffer
@@ -472,10 +465,10 @@ func TestOrgAccessSessionRevocationBlocksOnlyThatOrg(t *testing.T) {
 	accountID := mustParseInt64(t, claims.AccountID)
 	orgAID := mustParseInt64(t, fmt.Sprintf("%v", orgARes.BodyFields["id"]))
 
-	orgAccess, found, err := app.db.GetOrgAccessSession(context.Background(), claims.AuthSessionID, orgAID, accountID)
+	orgAccess, found, err := testDB(app).GetOrgAccessSession(context.Background(), claims.AuthSessionID, orgAID, accountID)
 	assert.Nil(t, err)
 	assert.True(t, found)
-	err = app.db.RevokeOrgAccessSession(context.Background(), orgAccess.ID, orgAID, &accountID, "test")
+	err = testDB(app).RevokeOrgAccessSession(context.Background(), orgAccess.ID, orgAID, &accountID, "test")
 	assert.Nil(t, err)
 
 	blocked := send(t, newAuthRequest(t, http.MethodGet, "/api/v1/orgs/"+orgASlug, nil, tok), app.routes())
@@ -523,7 +516,7 @@ func TestUpdateAccount(t *testing.T) {
 	assert.Equal(t, res.BodyFields["name"], "New Name")
 	assert.Equal(t, res.BodyFields["email"], "update-account@example.com")
 
-	account, found, err := app.db.GetAccountByEmail(t.Context(), "update-account@example.com")
+	account, found, err := testDB(app).GetAccountByEmail(t.Context(), "update-account@example.com")
 	assert.Nil(t, err)
 	assert.True(t, found)
 	assert.Equal(t, account.Name, "New Name")
@@ -747,14 +740,14 @@ func TestGetSession(t *testing.T) {
 	loginRes := loginTestUser(t, app, "session@example.com", "securepass99")
 	tok := extractAccessToken(t, loginRes)
 
-	account, found, err := app.db.GetAccountByEmail(t.Context(), "session@example.com")
+	account, found, err := testDB(app).GetAccountByEmail(t.Context(), "session@example.com")
 	if err != nil {
 		t.Fatal(err)
 	}
 	if !found {
 		t.Fatal("expected account to exist")
 	}
-	if err := app.db.InsertInstanceAdmin(t.Context(), account.ID); err != nil {
+	if err := testDB(app).InsertInstanceAdmin(t.Context(), account.ID); err != nil {
 		t.Fatal(err)
 	}
 
@@ -810,18 +803,18 @@ func TestGetSessionWithoutOrgOrAdmin(t *testing.T) {
 	}
 }
 
-func captureAudit(app *application) *[]audit.Event {
+func newAuditCapturingApp(t *testing.T) (*application, *[]audit.Event) {
+	t.Helper()
 	var events []audit.Event
-	app.audit = audit.WriterFunc(func(_ context.Context, event audit.Event) error {
+	app := newTestAppWith(t, testAppOptions{audit: audit.WriterFunc(func(_ context.Context, event audit.Event) error {
 		events = append(events, event)
 		return nil
-	})
-	return &events
+	})})
+	return app, &events
 }
 
 func TestLoginFailureAuditsWithoutSubject(t *testing.T) {
-	app := newTestApp(t)
-	events := captureAudit(app)
+	app, events := newAuditCapturingApp(t)
 
 	res := loginTestUser(t, app, "ghost@example.com", "whatever-pass")
 	assert.Equal(t, res.StatusCode, http.StatusUnauthorized)
@@ -856,8 +849,7 @@ func TestLoginWrongPasswordSameReason(t *testing.T) {
 }
 
 func TestLoginSuccessAuditsSubject(t *testing.T) {
-	app := newTestApp(t)
-	events := captureAudit(app)
+	app, events := newAuditCapturingApp(t)
 
 	res := loginTestUser(t, app, testUsers["alice"].email, testUsers["alice"].password)
 	assert.Equal(t, res.StatusCode, http.StatusOK)
@@ -874,7 +866,7 @@ func TestLoginSuccessAuditsSubject(t *testing.T) {
 	assert.Equal(t, event.Actor.CredentialID, claims.AuthSessionID)
 	assert.Equal(t, event.Actor.AuthMethod, "password")
 
-	session, found, err := app.db.GetAuthSession(context.Background(), claims.AuthSessionID, testUsers["alice"].id)
+	session, found, err := testDB(app).GetAuthSession(context.Background(), claims.AuthSessionID, testUsers["alice"].id)
 	assert.Nil(t, err)
 	assert.True(t, found)
 	assert.Equal(t, session.AuthMethod, "password")
@@ -882,16 +874,14 @@ func TestLoginSuccessAuditsSubject(t *testing.T) {
 }
 
 func TestLoginUnavailableOnDesktop(t *testing.T) {
-	app := newTestApp(t)
-	app.signIn = identity.SignInUnavailable
+	app := newTestAppWith(t, testAppOptions{signIn: identity.SignInUnavailable})
 
 	res := loginTestUser(t, app, testUsers["alice"].email, testUsers["alice"].password)
 	assert.Equal(t, res.StatusCode, http.StatusNotFound)
 }
 
 func TestSetupRecordsSessionMethod(t *testing.T) {
-	app := newTestApp(t)
-	app.setupStrategy = identity.LocalSetup
+	app := newTestAppWith(t, testAppOptions{setup: identity.LocalSetup})
 	app.invitationPolicy = orgs.InvitationsDisabled
 
 	tok := setupInstance(t, app, "admin@example.com", "Admin", "securepass99")
@@ -899,7 +889,7 @@ func TestSetupRecordsSessionMethod(t *testing.T) {
 	assert.Nil(t, err)
 	accountID, err := strconv.ParseInt(claims.AccountID, 10, 64)
 	assert.Nil(t, err)
-	session, found, err := app.db.GetAuthSession(context.Background(), claims.AuthSessionID, accountID)
+	session, found, err := testDB(app).GetAuthSession(context.Background(), claims.AuthSessionID, accountID)
 	assert.Nil(t, err)
 	assert.True(t, found)
 	assert.Equal(t, session.AuthMethod, "local")

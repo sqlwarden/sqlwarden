@@ -5,7 +5,6 @@ import (
 	"errors"
 	"log/slog"
 	"net/http"
-	"sort"
 	"strconv"
 	"strings"
 
@@ -13,9 +12,6 @@ import (
 	"github.com/sqlwarden/internal/access"
 	"github.com/sqlwarden/internal/catalog"
 	"github.com/sqlwarden/internal/credentials"
-	"github.com/sqlwarden/internal/database"
-	"github.com/sqlwarden/internal/engine"
-	metadata "github.com/sqlwarden/internal/engine/metadata"
 	"github.com/sqlwarden/internal/execution"
 	queryapp "github.com/sqlwarden/internal/query"
 	"github.com/sqlwarden/internal/request"
@@ -24,26 +20,7 @@ import (
 	"github.com/sqlwarden/pkg/result"
 )
 
-func (app *application) validateConnectionEnvironment(r *http.Request, workspaceID int64, envID *int64) (*int64, bool, error) {
-	if envID == nil {
-		return nil, true, nil
-	}
-
-	env, found, err := app.db.GetEnvironment(r.Context(), *envID)
-	if err != nil {
-		return nil, false, err
-	}
-	if !found || env.WorkspaceID != workspaceID {
-		return nil, false, nil
-	}
-	return &env.ID, true, nil
-}
-
 func (app *application) listConnections(w http.ResponseWriter, r *http.Request) {
-	org := contextGetOrg(r)
-	ws := contextGetWorkspace(r)
-	env := contextGetEnvironment(r)
-
 	q, errs := readListQuery(r.URL.Query(), map[string]string{
 		"name":       "name",
 		"created_at": "created_at",
@@ -54,151 +31,63 @@ func (app *application) listConnections(w http.ResponseWriter, r *http.Request) 
 		return
 	}
 
-	params := database.ListConnectionsParams{
-		WorkspaceID: ws.ID,
-		Search:      q.Search,
-		Driver:      strings.TrimSpace(r.URL.Query().Get("driver")),
-		AccessMode:  strings.TrimSpace(r.URL.Query().Get("access_mode")),
-		Sort:        q.Sort,
-		Order:       q.Order,
-		Page:        q.Page,
-		PageSize:    q.PageSize,
+	ids := contextGetPathIDs(r)
+	in := catalog.ListConnectionsInput{
+		OrgID:              ids.OrgID,
+		WorkspaceID:        ids.WorkspaceID,
+		RouteEnvironmentID: routeEnvironmentID(r),
+		Search:             q.Search,
+		Driver:             strings.TrimSpace(r.URL.Query().Get("driver")),
+		AccessMode:         strings.TrimSpace(r.URL.Query().Get("access_mode")),
+		Sort:               q.Sort,
+		Order:              q.Order,
+		Page:               q.Page,
+		PageSize:           q.PageSize,
 	}
-	if params.AccessMode != "" && params.AccessMode != "open" && params.AccessMode != "restricted" {
+	if in.AccessMode != "" && in.AccessMode != "open" && in.AccessMode != "restricted" {
 		app.failedValidation(w, r, fieldErrors(map[string]string{"access_mode": "Access mode must be open or restricted."}))
 		return
 	}
-	if env.ID != 0 {
-		params.EnvironmentID = &env.ID
-	} else if rawEnvID := strings.TrimSpace(r.URL.Query().Get("environment_id")); rawEnvID != "" {
-		envID, err := strconv.ParseInt(rawEnvID, 10, 64)
-		if err != nil || envID < 1 {
-			app.failedValidation(w, r, fieldErrors(map[string]string{"environment_id": "Environment must be a positive integer."}))
-			return
+	if in.RouteEnvironmentID == nil {
+		if rawEnvID := strings.TrimSpace(r.URL.Query().Get("environment_id")); rawEnvID != "" {
+			envID, err := strconv.ParseInt(rawEnvID, 10, 64)
+			if err != nil || envID < 1 {
+				app.failedValidation(w, r, fieldErrors(map[string]string{"environment_id": "Environment must be a positive integer."}))
+				return
+			}
+			in.EnvironmentID = &envID
 		}
-		params.EnvironmentID = &envID
 	}
-	account := contextGetAccount(r)
-	conns, err := app.db.ListAccessibleConnections(r.Context(), account.ID, org.ID, ws.ID)
-	if err != nil {
-		app.serverError(w, r, err)
+	principal, ok := app.requestPrincipal(w, r)
+	if !ok {
 		return
 	}
-	result := filterAccessibleConnections(conns, params)
-
-	err = response.JSON(w, http.StatusOK, result)
+	page, err := app.services.Catalog.ListConnections(r.Context(), principal, in)
 	if err != nil {
+		app.catalogError(w, r, err)
+		return
+	}
+	if err := response.JSON(w, http.StatusOK, page); err != nil {
 		app.serverError(w, r, err)
 	}
-}
-
-func filterAccessibleConnections(conns []database.Connection, params database.ListConnectionsParams) response.Paginated[database.Connection] {
-	filtered := make([]database.Connection, 0, len(conns))
-	search := strings.ToLower(strings.TrimSpace(params.Search))
-
-	for _, conn := range conns {
-		if search != "" && !strings.Contains(strings.ToLower(conn.Name), search) {
-			continue
-		}
-		if params.EnvironmentID != nil {
-			if conn.EnvironmentID != *params.EnvironmentID {
-				continue
-			}
-		}
-		if params.Driver != "" && conn.Driver != params.Driver {
-			continue
-		}
-		if params.AccessMode != "" && conn.AccessMode != params.AccessMode {
-			continue
-		}
-		filtered = append(filtered, conn)
-	}
-
-	sort.Slice(filtered, func(i, j int) bool {
-		cmp := compareConnection(filtered[i], filtered[j], params.Sort)
-		if params.Order == "asc" {
-			return cmp < 0
-		}
-		return cmp > 0
-	})
-
-	total := len(filtered)
-	start := (params.Page - 1) * params.PageSize
-	if start > total {
-		start = total
-	}
-	end := start + params.PageSize
-	if end > total {
-		end = total
-	}
-
-	return response.Paginated[database.Connection]{
-		Items:    filtered[start:end],
-		Page:     params.Page,
-		PageSize: params.PageSize,
-		Total:    total,
-	}
-}
-
-func compareConnection(left, right database.Connection, sortBy string) int {
-	switch sortBy {
-	case "name":
-		if left.Name != right.Name {
-			return strings.Compare(left.Name, right.Name)
-		}
-	case "driver":
-		if left.Driver != right.Driver {
-			return strings.Compare(left.Driver, right.Driver)
-		}
-	default:
-		if !left.CreatedAt.Equal(right.CreatedAt) {
-			if left.CreatedAt.Before(right.CreatedAt) {
-				return -1
-			}
-			return 1
-		}
-	}
-	if left.ID < right.ID {
-		return -1
-	}
-	if left.ID > right.ID {
-		return 1
-	}
-	return 0
-}
-
-func (app *application) hasAnyConnectionRuntimePermission(r *http.Request, orgID int64, ownerType string, connectionID int64, permissions ...string) bool {
-	for _, permission := range permissions {
-		if app.hasConnectionPermission(r, orgID, ownerType, connectionID, permission) {
-			return true
-		}
-	}
-	return false
-}
-
-func (app *application) hasConnectionPermission(r *http.Request, orgID int64, ownerType string, connectionID int64, permission string) bool {
-	account := contextGetAccount(r)
-	return app.policy.Can(r.Context(), account.ID, orgID, ownerType, "connection", connectionID, permission)
 }
 
 type tlsConfigInput = catalog.TLSConfig
 type sshConfigInput = catalog.SSHConfig
 
 func connectionRef(r *http.Request) catalog.ConnRef {
-	ref := catalog.ConnRef{
-		OrgID:        contextGetOrg(r).ID,
-		WorkspaceID:  contextGetWorkspace(r).ID,
-		ConnectionID: contextGetConnection(r).ID,
+	ids := contextGetPathIDs(r)
+	return catalog.ConnRef{
+		OrgID:         ids.OrgID,
+		WorkspaceID:   ids.WorkspaceID,
+		EnvironmentID: routeEnvironmentID(r),
+		ConnectionID:  ids.ConnectionID,
 	}
-	if env := contextGetEnvironment(r); env.ID != 0 {
-		ref.EnvironmentID = &env.ID
-	}
-	return ref
 }
 
 func routeEnvironmentID(r *http.Request) *int64 {
-	if env := contextGetEnvironment(r); env.ID != 0 {
-		return &env.ID
+	if id := contextGetPathIDs(r).EnvironmentID; id != 0 {
+		return &id
 	}
 	return nil
 }
@@ -228,6 +117,8 @@ func (app *application) catalogError(w http.ResponseWriter, r *http.Request, err
 		app.notFound(w, r)
 	case errors.Is(err, catalog.ErrForbidden):
 		app.notPermitted(w, r)
+	case errors.Is(err, catalog.ErrEnvironmentHasConnections):
+		app.errorMessage(w, r, http.StatusUnprocessableEntity, "Environment has connections.", nil)
 	case errors.Is(err, catalog.ErrActiveSessions):
 		app.errorMessage(w, r, http.StatusConflict, "Connection has active sessions. Retry with force=true to apply this change and drop them.", nil)
 	case errors.As(err, &reveal):
@@ -259,12 +150,12 @@ func (app *application) createConnection(w http.ResponseWriter, r *http.Request)
 		Name              string                             `json:"name"`
 		Driver            string                             `json:"driver"`
 		EnvironmentID     *int64                             `json:"environment_id"`
-		Params            engine.Params                      `json:"params"`
+		Params            catalog.Params                     `json:"params"`
 		TLSConfig         *tlsConfigInput                    `json:"tls_config"`
 		SSHConfig         *sshConfigInput                    `json:"ssh_config"`
 		Secrets           map[credentials.SecretName]*string `json:"secrets"`
 		AccessMode        string                             `json:"access_mode"`
-		DefaultScope      metadata.ScopePath                 `json:"default_scope,omitempty"`
+		DefaultScope      catalog.ScopePath                  `json:"default_scope,omitempty"`
 		ShowSystemSchemas bool                               `json:"show_system_schemas"`
 		ShowAllDatabases  bool                               `json:"show_all_databases"`
 	}
@@ -282,8 +173,8 @@ func (app *application) createConnection(w http.ResponseWriter, r *http.Request)
 		targetEnv = routeEnv
 	}
 	view, err := app.catalogService().Create(r.Context(), principal, catalog.CreateInput{
-		OrgID:                      contextGetOrg(r).ID,
-		WorkspaceID:                contextGetWorkspace(r).ID,
+		OrgID:                      contextGetPathIDs(r).OrgID,
+		WorkspaceID:                contextGetPathIDs(r).WorkspaceID,
 		EnvironmentID:              targetEnv,
 		AuthorizationEnvironmentID: routeEnv,
 		Name:                       input.Name,
@@ -330,13 +221,13 @@ func (app *application) updateConnection(w http.ResponseWriter, r *http.Request)
 	var input struct {
 		Name                 *string                            `json:"name"`
 		Driver               *string                            `json:"driver"`
-		Params               engine.Params                      `json:"params"`
+		Params               catalog.Params                     `json:"params"`
 		TLSConfig            *tlsConfigInput                    `json:"tls_config"`
 		SSHConfig            *sshConfigInput                    `json:"ssh_config"`
 		Secrets              map[credentials.SecretName]*string `json:"secrets"`
 		AccessMode           *string                            `json:"access_mode"`
 		SchemaSnapshotPolicy *string                            `json:"schema_snapshot_policy"`
-		DefaultScope         *metadata.ScopePath                `json:"default_scope"`
+		DefaultScope         *catalog.ScopePath                 `json:"default_scope"`
 		ShowSystemSchemas    *bool                              `json:"show_system_schemas"`
 		ShowAllDatabases     *bool                              `json:"show_all_databases"`
 		Force                bool                               `json:"force"`
@@ -393,11 +284,11 @@ func (app *application) testConnection(w http.ResponseWriter, r *http.Request) {
 	var input struct {
 		ConnectionID *int64                             `json:"connection_id"`
 		Driver       string                             `json:"driver"`
-		Params       engine.Params                      `json:"params"`
+		Params       catalog.Params                     `json:"params"`
 		TLSConfig    *tlsConfigInput                    `json:"tls_config"`
 		SSHConfig    *sshConfigInput                    `json:"ssh_config"`
 		Secrets      map[credentials.SecretName]*string `json:"secrets"`
-		ParentScope  metadata.ScopePath                 `json:"parent_scope,omitempty"`
+		ParentScope  catalog.ScopePath                  `json:"parent_scope,omitempty"`
 	}
 	if err := request.DecodeJSON(w, r, &input); err != nil {
 		app.badRequest(w, r, err)
@@ -407,15 +298,15 @@ func (app *application) testConnection(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
-	settings, err := app.runtimeSettingsService().effectiveForOrg(r.Context(), nil)
+	settings, err := app.services.Settings.EffectiveForOrg(r.Context(), nil)
 	if err != nil {
 		app.serverError(w, r, err)
 		return
 	}
 	routeEnv := routeEnvironmentID(r)
 	result, err := app.catalogService().Test(r.Context(), principal, catalog.TestInput{
-		OrgID:                      contextGetOrg(r).ID,
-		WorkspaceID:                contextGetWorkspace(r).ID,
+		OrgID:                      contextGetPathIDs(r).OrgID,
+		WorkspaceID:                contextGetPathIDs(r).WorkspaceID,
 		EnvironmentID:              routeEnv,
 		AuthorizationEnvironmentID: routeEnv,
 		ConnectionID:               input.ConnectionID,
@@ -483,9 +374,7 @@ func (app *application) revealConnectionSecret(w http.ResponseWriter, r *http.Re
 }
 
 func (app *application) connectToDatabase(w http.ResponseWriter, r *http.Request) {
-	org := contextGetOrg(r)
-	conn := contextGetConnection(r)
-	ws := contextGetWorkspace(r)
+	ids := contextGetPathIDs(r)
 
 	principal, ok := app.requestPrincipal(w, r)
 	if !ok {
@@ -499,7 +388,7 @@ func (app *application) connectToDatabase(w http.ResponseWriter, r *http.Request
 		}
 		if isTargetPolicyDenial(err) {
 			if isSQLiteTargetDisabled(err) {
-				app.logWarn(r, "sqlite target connection blocked", slog.String("operation", "connect"), slog.Int64("connection_id", conn.ID), slog.String("driver", conn.Driver))
+				app.logWarn(r, "sqlite target connection blocked", slog.String("operation", "connect"), slog.Int64("connection_id", ids.ConnectionID))
 			}
 			app.errorMessage(w, r, http.StatusUnprocessableEntity, targetConnectionFieldError(err), nil)
 			return
@@ -509,12 +398,12 @@ func (app *application) connectToDatabase(w http.ResponseWriter, r *http.Request
 			connectErr *execution.ConnectError
 		)
 		if errors.As(err, &tunnelErr) || errors.As(err, &connectErr) {
-			app.logWarn(r, "database session open failed", slog.Int64("connection_id", conn.ID), slog.String("driver", conn.Driver), slog.String("error_category", connectionTestErrorCategory(err)))
+			app.logWarn(r, "database session open failed", slog.Int64("connection_id", ids.ConnectionID), slog.String("error_category", connectionTestErrorCategory(err)))
 			message := "Connection failed."
-			resolved, resolveErr := app.credentialPorts.provider.Resolve(r.Context(), credentials.ConnectionRef{
-				OrgID:        strconv.FormatInt(org.ID, 10),
-				WorkspaceID:  strconv.FormatInt(ws.ID, 10),
-				ConnectionID: strconv.FormatInt(conn.ID, 10),
+			resolved, resolveErr := app.credentials.Resolve(r.Context(), credentials.ConnectionRef{
+				OrgID:        strconv.FormatInt(ids.OrgID, 10),
+				WorkspaceID:  strconv.FormatInt(ids.WorkspaceID, 10),
+				ConnectionID: strconv.FormatInt(ids.ConnectionID, 10),
 			})
 			if resolveErr == nil {
 				message = catalog.RedactConnectionError(err.Error(), resolved)
@@ -526,7 +415,7 @@ func (app *application) connectToDatabase(w http.ResponseWriter, r *http.Request
 		return
 	}
 
-	app.logInfo(r, "database session opened", slog.Int64("connection_id", conn.ID), slog.String("session_id", string(session.ID)), slog.Bool("reused", session.Reused))
+	app.logInfo(r, "database session opened", slog.Int64("connection_id", ids.ConnectionID), slog.String("session_id", string(session.ID)), slog.Bool("reused", session.Reused))
 	err = response.JSON(w, http.StatusOK, map[string]any{
 		"session_id": session.ID,
 		"reused":     session.Reused,
@@ -556,7 +445,7 @@ func (app *application) listActiveSessions(w http.ResponseWriter, r *http.Reques
 	if !ok {
 		return
 	}
-	sessions, err := app.queryService().ListWorkspaceSessions(r.Context(), principal, contextGetOrg(r).ID, contextGetWorkspace(r).ID)
+	sessions, err := app.queryService().ListWorkspaceSessions(r.Context(), principal, contextGetPathIDs(r).OrgID, contextGetPathIDs(r).WorkspaceID)
 	if err != nil {
 		app.queryError(w, r, err)
 		return
@@ -595,8 +484,6 @@ func (app *application) listActiveSessions(w http.ResponseWriter, r *http.Reques
 // disconnectFromDatabase is idempotent: a session that is already gone or
 // belongs to another scope answers 204 without being touched.
 func (app *application) disconnectFromDatabase(w http.ResponseWriter, r *http.Request) {
-	conn := contextGetConnection(r)
-
 	sessionID := requestSessionID(r)
 	if sessionID == "" {
 		app.badRequest(w, r, errors.New("X-Warden-Session header is required"))
@@ -611,13 +498,12 @@ func (app *application) disconnectFromDatabase(w http.ResponseWriter, r *http.Re
 		app.queryError(w, r, err)
 		return
 	}
-	app.logInfo(r, "database session disconnected", slog.Int64("connection_id", conn.ID), slog.String("session_id", string(sessionID)))
+	app.logInfo(r, "database session disconnected", slog.Int64("connection_id", contextGetPathIDs(r).ConnectionID), slog.String("session_id", string(sessionID)))
 	w.WriteHeader(http.StatusNoContent)
 }
 
 func (app *application) revokeWorkspaceDatabaseSession(w http.ResponseWriter, r *http.Request) {
-	org := contextGetOrg(r)
-	ws := contextGetWorkspace(r)
+	ids := contextGetPathIDs(r)
 	sessionID := strings.TrimSpace(chi.URLParam(r, "session_id"))
 	if sessionID == "" {
 		app.notFound(w, r)
@@ -627,7 +513,7 @@ func (app *application) revokeWorkspaceDatabaseSession(w http.ResponseWriter, r 
 	if !ok {
 		return
 	}
-	session, err := app.queryService().RevokeSession(r.Context(), principal, org.ID, ws.ID, sessionID)
+	session, err := app.queryService().RevokeSession(r.Context(), principal, ids.OrgID, ids.WorkspaceID, sessionID)
 	if err != nil {
 		app.queryError(w, r, err)
 		return
@@ -636,7 +522,7 @@ func (app *application) revokeWorkspaceDatabaseSession(w http.ResponseWriter, r 
 		w.WriteHeader(http.StatusNoContent)
 		return
 	}
-	app.logInfo(r, "database session revoked", slog.Int64("workspace_id", ws.ID), slog.String("session_id", sessionID), slog.String("session_account_id", session.Scope.AccountID))
+	app.logInfo(r, "database session revoked", slog.Int64("workspace_id", ids.WorkspaceID), slog.String("session_id", sessionID), slog.String("session_account_id", session.Scope.AccountID))
 	w.WriteHeader(http.StatusNoContent)
 }
 

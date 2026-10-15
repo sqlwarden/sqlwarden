@@ -172,11 +172,11 @@ func schemaScopeParam(scope metadata.ScopePath) string {
 func openSchemaSession(t *testing.T, app *application, accountID, connectionID int64, drv engine.Driver) *connection.Session {
 	t.Helper()
 	disableSchemaSnapshots(t, app, connectionID)
-	conn, found, err := app.db.GetConnection(context.Background(), connectionID)
+	conn, found, err := testDB(app).GetConnection(context.Background(), connectionID)
 	if err != nil || !found {
 		t.Fatalf("get schema test connection: found=%v err=%v", found, err)
 	}
-	ws, found, err := app.db.GetWorkspace(context.Background(), conn.WorkspaceID)
+	ws, found, err := testDB(app).GetWorkspace(context.Background(), conn.WorkspaceID)
 	if err != nil || !found || ws.OrgID == nil {
 		t.Fatalf("get schema test workspace: found=%v err=%v", found, err)
 	}
@@ -194,11 +194,11 @@ func openSchemaSession(t *testing.T, app *application, accountID, connectionID i
 
 func disableSchemaSnapshots(t *testing.T, app *application, connectionID int64) {
 	t.Helper()
-	conn, found, err := app.db.GetConnection(context.Background(), connectionID)
+	conn, found, err := testDB(app).GetConnection(context.Background(), connectionID)
 	if err != nil || !found {
 		t.Fatalf("get schema test connection: found=%v err=%v", found, err)
 	}
-	if err := app.db.UpdateConnectionWithScopeAndPolicy(context.Background(), conn.ID, conn.Name, conn.AccessMode, database.SchemaSnapshotPolicyDisabled, conn.DefaultScope, conn.ShowSystemSchemas, conn.ShowAllDatabases); err != nil {
+	if err := testDB(app).UpdateConnectionWithScopeAndPolicy(context.Background(), conn.ID, conn.Name, conn.AccessMode, database.SchemaSnapshotPolicyDisabled, conn.DefaultScope, conn.ShowSystemSchemas, conn.ShowAllDatabases); err != nil {
 		t.Fatalf("disable snapshots for ephemeral schema test: %v", err)
 	}
 }

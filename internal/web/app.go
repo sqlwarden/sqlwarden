@@ -8,30 +8,22 @@ import (
 	"log/slog"
 	"net/http"
 	"net/netip"
-	"strconv"
 	"sync"
 	"sync/atomic"
 	"time"
 
 	"github.com/sqlwarden/internal/access"
 	"github.com/sqlwarden/internal/audit"
-	"github.com/sqlwarden/internal/catalog"
-	completionapp "github.com/sqlwarden/internal/completion"
 	"github.com/sqlwarden/internal/config"
 	"github.com/sqlwarden/internal/credentials"
-	"github.com/sqlwarden/internal/database"
-	"github.com/sqlwarden/internal/encrypt"
 	"github.com/sqlwarden/internal/execution"
-	"github.com/sqlwarden/internal/exportjob"
 	"github.com/sqlwarden/internal/filestore"
 	"github.com/sqlwarden/internal/identity"
 	"github.com/sqlwarden/internal/jobs"
 	"github.com/sqlwarden/internal/orgs"
 	"github.com/sqlwarden/internal/platform/clientip"
-	queryapp "github.com/sqlwarden/internal/query"
-	schemaapp "github.com/sqlwarden/internal/schema"
+	"github.com/sqlwarden/internal/services"
 	"github.com/sqlwarden/internal/settings"
-	"github.com/sqlwarden/internal/smtp"
 )
 
 const (
@@ -51,22 +43,15 @@ type FileStores interface {
 // uses. The caller owns their lifecycle: closing the App never closes them.
 type Dependencies struct {
 	Config     config.Config
-	DB         *database.DB
 	Logger     *slog.Logger
-	Keyring    *encrypt.Keyring
 	Enforcer   *access.Enforcer
-	Policy     access.PolicyEvaluator
 	FileStores FileStores
-	Runtime    execution.Runtime
-	// TargetPolicy vets target drivers and DSNs before they are stored or
-	// probed. It defaults to the instance settings policy over DB.
-	TargetPolicy execution.TargetPolicy
-	// Credentials reads connection secret metadata and reveals values; it is
-	// the edition-composed provider. CredentialWriter stores secret changes.
-	// RevealPolicy is the product profile's reveal decision.
+	// Services is the built service graph. Its policy evaluator and runtime
+	// are the ones handlers authorize and execute through.
+	Services *services.Services
+	// Credentials is the edition-composed provider; connect failures use it
+	// to redact resolved secrets from driver errors.
 	Credentials           credentials.Provider
-	CredentialWriter      credentials.Writer
-	RevealPolicy          credentials.RevealPolicy
 	Audit                 audit.Writer
 	Edition               EditionCapabilities
 	EditionHandler        http.Handler
@@ -78,54 +63,32 @@ type Dependencies struct {
 
 	TrustedProxies []netip.Prefix
 
-	Setup       identity.SetupStrategy
 	Invitations orgs.InvitationPolicy
-	SignIn      identity.SignInStrategy
 }
 
 type application struct {
 	config                config.Config
-	db                    *database.DB
 	logger                *slog.Logger
-	mailer                *smtp.Mailer
-	mailerMu              sync.RWMutex
 	wg                    sync.WaitGroup
 	runtime               execution.Runtime
 	revoker               execution.Revoker
-	targetPolicy          execution.TargetPolicy
-	schemaNavigator       *schemaapp.Navigator
-	completionService     *completionapp.Service
-	keyring               *encrypt.Keyring
 	enforcer              *access.Enforcer
 	policy                access.PolicyEvaluator
-	requirerOnce          sync.Once
-	accessRequirer        *access.Requirer
+	services              *services.Services
 	fileStores            FileStores
-	fileLocks             sync.Map
 	fileReaperCancel      context.CancelFunc
 	jobStore              *jobs.DatabaseStore
-	jobServiceOnce        sync.Once
-	jobSvc                *jobs.Service
 	jobRegistry           *jobs.Registry
 	runtimeCancel         context.CancelFunc
 	runtimeStarted        atomic.Bool
-	runtimeUpdates        chan database.InstanceSettings
-	runtimeSettings       *runtimeSettingsService
-	initialSettings       database.InstanceSettings
+	runtimeUpdates        chan settings.Instance
+	initialSettings       settings.Instance
 	accessLogsEnabled     atomic.Bool
-	setupStrategy         identity.SetupStrategy
 	invitationPolicy      orgs.InvitationPolicy
-	signIn                identity.SignInStrategy
 	clientIPs             clientip.Resolver
 	authChain             identity.Chain
 	audit                 audit.Writer
-	catalogOnce           sync.Once
-	queryOnce             sync.Once
-	querySvc              *queryapp.Service
-	exportOnce            sync.Once
-	exportSvc             *exportjob.Service
-	catalog               *catalog.Service
-	credentialPorts       credentialPorts
+	credentials           credentials.Provider
 	edition               EditionCapabilities
 	editionHandler        http.Handler
 	editionJobs           []jobs.Definition
@@ -143,37 +106,33 @@ func NewApplication(deps Dependencies) (*App, error) {
 	if logger == nil {
 		logger = slog.New(slog.NewTextHandler(io.Discard, nil))
 	}
-	if deps.Setup == nil || deps.Invitations == nil || deps.SignIn == nil {
-		return nil, errors.New("web: setup strategy, invitation policy, and sign-in strategy are required")
+	if deps.Invitations == nil {
+		return nil, errors.New("web: invitation policy is required")
 	}
-	if deps.Credentials == nil || deps.CredentialWriter == nil || deps.RevealPolicy == nil {
-		return nil, errors.New("web: credential provider, credential writer, and reveal policy are required")
+	if deps.Services == nil {
+		return nil, errors.New("web: services are required")
+	}
+	if deps.Credentials == nil {
+		return nil, errors.New("web: credential provider is required")
 	}
 	auditWriter := deps.Audit
 	if auditWriter == nil {
 		auditWriter = audit.Discard
 	}
 	app := &application{
-		setupStrategy:         deps.Setup,
 		invitationPolicy:      deps.Invitations,
-		signIn:                deps.SignIn,
 		config:                deps.Config,
-		db:                    deps.DB,
 		logger:                logger,
-		mailer:                smtp.NewDisabledMailer(""),
-		runtime:               deps.Runtime,
-		revoker:               deps.Runtime,
-		targetPolicy:          deps.TargetPolicy,
-		schemaNavigator:       schemaapp.NewNavigator(deps.DB, logger),
-		completionService:     completionapp.NewService(),
-		keyring:               deps.Keyring,
+		runtime:               deps.Services.Runtime,
+		revoker:               deps.Services.Runtime,
 		enforcer:              deps.Enforcer,
-		policy:                deps.Policy,
+		policy:                deps.Services.Policy,
+		services:              deps.Services,
 		fileStores:            deps.FileStores,
-		jobStore:              jobs.NewStore(deps.DB),
-		runtimeSettings:       newRuntimeSettingsService(deps.DB),
-		runtimeUpdates:        make(chan database.InstanceSettings, 1),
+		jobStore:              deps.Services.JobStore,
+		runtimeUpdates:        make(chan settings.Instance, 1),
 		audit:                 auditWriter,
+		credentials:           deps.Credentials,
 		edition:               deps.Edition,
 		editionHandler:        deps.EditionHandler,
 		editionJobs:           deps.EditionJobs,
@@ -182,16 +141,9 @@ func NewApplication(deps Dependencies) (*App, error) {
 		requestPolicies:       deps.RequestPolicies,
 		postureProviders:      deps.PostureProviders,
 	}
-	if app.policy == nil {
-		app.policy = app.enforcer
-	}
-	if app.targetPolicy == nil {
-		app.targetPolicy = settings.NewTargetPolicy(deps.DB)
-	}
 	app.clientIPs = clientip.New(deps.TrustedProxies)
-	app.credentialPorts = credentialPorts{provider: deps.Credentials, writer: deps.CredentialWriter, reveal: deps.RevealPolicy}
 	app.authChain = app.newAuthChain()
-	initialSettings, err := app.instanceSettings(context.Background())
+	initialSettings, err := deps.Services.Settings.Instance(context.Background())
 	if err != nil {
 		return nil, err
 	}
@@ -199,7 +151,7 @@ func NewApplication(deps Dependencies) (*App, error) {
 		return nil, err
 	}
 	app.initialSettings = initialSettings
-	app.configureConnectionCacheInvalidation()
+	deps.Services.Settings.Subscribe(app.queueRuntimeOperations)
 	app.jobRegistry = app.defaultJobRegistry()
 	for _, definition := range app.editionJobs {
 		if _, exists := app.jobRegistry.Definition(definition.Type); exists {
@@ -245,26 +197,6 @@ func (app *application) Close() {
 	app.logger.Info("background workers stopped", "duration_ms", time.Since(startedAt).Milliseconds())
 }
 
-// connectionEmptyNotifier is implemented by runtimes that can report when the
-// last live session of a connection closes.
-type connectionEmptyNotifier interface {
-	OnConnectionEmpty(func(connectionID string))
-}
-
-func (app *application) configureConnectionCacheInvalidation() {
-	notifier, ok := app.runtime.(connectionEmptyNotifier)
-	if !ok {
-		return
-	}
-	notifier.OnConnectionEmpty(func(connectionID string) {
-		if app.schemaNavigator != nil {
-			if id, err := strconv.ParseInt(connectionID, 10, 64); err == nil {
-				app.schemaNavigator.ForgetConnection(id)
-			}
-		}
-	})
-}
-
 func (app *application) Handler() http.Handler {
 	return app.routes()
 }
@@ -306,7 +238,7 @@ func (app *application) defaultJobRegistry() *jobs.Registry {
 	})
 	registry.Register(jobs.Definition{
 		Type:        jobs.TypeSessionRevoke,
-		MaxAttempts: sessionRevokeMaxAttempts,
+		MaxAttempts: jobs.SessionRevokeMaxAttempts,
 		Backoff: func(attempt int) time.Duration {
 			return time.Duration(attempt) * 15 * time.Second
 		},
@@ -339,9 +271,6 @@ func (app *application) startFileContentDeletionReaper() {
 }
 
 func (app *application) enqueueFileContentReapJob(ctx context.Context) error {
-	if app.jobStore == nil {
-		app.jobStore = jobs.NewStore(app.db)
-	}
 	active, err := app.jobStore.HasActiveJobType(ctx, jobs.VisibilityInternal, jobs.TypeFileContentReap)
 	if err != nil {
 		return err

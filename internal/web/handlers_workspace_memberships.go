@@ -6,34 +6,37 @@ import (
 	"strconv"
 
 	"github.com/go-chi/chi/v5"
-	"github.com/sqlwarden/internal/database"
+	"github.com/sqlwarden/internal/catalog"
 	"github.com/sqlwarden/internal/request"
 	"github.com/sqlwarden/internal/response"
-	"github.com/sqlwarden/internal/validator"
 )
 
+var workspaceMemberSorts = map[string]string{
+	"name":       "name",
+	"email":      "email",
+	"created_at": "created_at",
+}
+
 func (app *application) listWorkspaceMembers(w http.ResponseWriter, r *http.Request) {
-	ws := contextGetWorkspace(r)
-	q, errs := readListQuery(r.URL.Query(), map[string]string{
-		"name":       "name",
-		"email":      "email",
-		"created_at": "created_at",
-	})
+	principal, ok := app.requestPrincipal(w, r)
+	if !ok {
+		return
+	}
+	q, errs := readListQuery(r.URL.Query(), workspaceMemberSorts)
 	if len(errs) != 0 {
 		app.failedValidation(w, r, fieldErrors(errs))
 		return
 	}
 
-	members, err := app.db.ListWorkspaceMembersPage(r.Context(), database.ListWorkspaceMembersParams{
-		WorkspaceID: ws.ID,
-		Search:      q.Search,
-		Sort:        q.Sort,
-		Order:       q.Order,
-		Page:        q.Page,
-		PageSize:    q.PageSize,
+	members, err := app.services.Catalog.ListWorkspaceMembers(r.Context(), principal, contextGetPathIDs(r).OrgID, contextGetPathIDs(r).WorkspaceID, catalog.ListWorkspaceMembersParams{
+		Search:   q.Search,
+		Sort:     q.Sort,
+		Order:    q.Order,
+		Page:     q.Page,
+		PageSize: q.PageSize,
 	})
 	if err != nil {
-		app.serverError(w, r, err)
+		app.catalogError(w, r, err)
 		return
 	}
 	if err = response.JSON(w, http.StatusOK, members); err != nil {
@@ -42,28 +45,25 @@ func (app *application) listWorkspaceMembers(w http.ResponseWriter, r *http.Requ
 }
 
 func (app *application) listWorkspaceEffectiveMembers(w http.ResponseWriter, r *http.Request) {
-	org := contextGetOrg(r)
-	ws := contextGetWorkspace(r)
-	q, errs := readListQuery(r.URL.Query(), map[string]string{
-		"name":       "name",
-		"email":      "email",
-		"created_at": "created_at",
-	})
+	principal, ok := app.requestPrincipal(w, r)
+	if !ok {
+		return
+	}
+	q, errs := readListQuery(r.URL.Query(), workspaceMemberSorts)
 	if len(errs) != 0 {
 		app.failedValidation(w, r, fieldErrors(errs))
 		return
 	}
 
-	members, err := app.db.ListWorkspaceEffectiveMembersPage(r.Context(), org.ID, database.ListWorkspaceMembersParams{
-		WorkspaceID: ws.ID,
-		Search:      q.Search,
-		Sort:        q.Sort,
-		Order:       q.Order,
-		Page:        q.Page,
-		PageSize:    q.PageSize,
+	members, err := app.services.Catalog.ListWorkspaceEffectiveMembers(r.Context(), principal, contextGetPathIDs(r).OrgID, contextGetPathIDs(r).WorkspaceID, catalog.ListWorkspaceMembersParams{
+		Search:   q.Search,
+		Sort:     q.Sort,
+		Order:    q.Order,
+		Page:     q.Page,
+		PageSize: q.PageSize,
 	})
 	if err != nil {
-		app.serverError(w, r, err)
+		app.catalogError(w, r, err)
 		return
 	}
 	if err = response.JSON(w, http.StatusOK, members); err != nil {
@@ -72,67 +72,54 @@ func (app *application) listWorkspaceEffectiveMembers(w http.ResponseWriter, r *
 }
 
 func (app *application) addWorkspaceMember(w http.ResponseWriter, r *http.Request) {
+	principal, ok := app.requestPrincipal(w, r)
+	if !ok {
+		return
+	}
 	var input struct {
-		AccountID int64               `json:"account_id"`
-		V         validator.Validator `json:"-"`
+		AccountID int64 `json:"account_id"`
 	}
 	if err := request.DecodeJSON(w, r, &input); err != nil {
 		app.badRequest(w, r, err)
 		return
 	}
 
-	input.V.CheckField(input.AccountID > 0, "account_id", "Account is required.")
-	if input.V.HasErrors() {
-		app.failedValidation(w, r, input.V)
+	ids := contextGetPathIDs(r)
+	if err := app.services.Catalog.AddWorkspaceMember(r.Context(), principal, ids.OrgID, ids.WorkspaceID, input.AccountID); err != nil {
+		app.catalogError(w, r, err)
 		return
 	}
 
-	org := contextGetOrg(r)
-	ws := contextGetWorkspace(r)
-	actor := contextGetAccount(r)
-
-	isMember, err := app.db.IsOrgMember(r.Context(), org.ID, input.AccountID)
-	if err != nil {
-		app.serverError(w, r, err)
-		return
-	}
-	if !isMember {
-		app.notFound(w, r)
-		return
-	}
-
-	if err = app.db.AddWorkspaceMember(r.Context(), ws.ID, input.AccountID, &actor.ID); err != nil {
-		app.serverError(w, r, err)
-		return
-	}
-
-	app.enforcer.InvalidatePrincipals(org.ID, input.AccountID)
-	app.logInfo(r, "workspace member added", slog.Int64("workspace_id", ws.ID), slog.Int64("target_account_id", input.AccountID))
+	app.logInfo(r, "workspace member added", slog.Int64("workspace_id", ids.WorkspaceID), slog.Int64("target_account_id", input.AccountID))
 	w.WriteHeader(http.StatusNoContent)
 }
 
 func (app *application) removeWorkspaceMember(w http.ResponseWriter, r *http.Request) {
+	principal, ok := app.requestPrincipal(w, r)
+	if !ok {
+		return
+	}
 	accountID, err := strconv.ParseInt(chi.URLParam(r, "account_id"), 10, 64)
 	if err != nil {
 		app.notFound(w, r)
 		return
 	}
 
-	org := contextGetOrg(r)
-	ws := contextGetWorkspace(r)
-	if err = app.db.RemoveWorkspaceMember(r.Context(), ws.ID, accountID); err != nil {
-		app.serverError(w, r, err)
+	ids := contextGetPathIDs(r)
+	if err := app.services.Catalog.RemoveWorkspaceMember(r.Context(), principal, ids.OrgID, ids.WorkspaceID, accountID); err != nil {
+		app.catalogError(w, r, err)
 		return
 	}
-	app.revokeSessions(r, sessionRevokeInput{Kind: sessionRevokeWorkspaceAccount, WorkspaceID: strconv.FormatInt(ws.ID, 10), AccountID: strconv.FormatInt(accountID, 10)})
 
-	app.enforcer.InvalidatePrincipals(org.ID, accountID)
-	app.logInfo(r, "workspace member removed", slog.Int64("workspace_id", ws.ID), slog.Int64("target_account_id", accountID))
+	app.logInfo(r, "workspace member removed", slog.Int64("workspace_id", ids.WorkspaceID), slog.Int64("target_account_id", accountID))
 	w.WriteHeader(http.StatusNoContent)
 }
 
 func (app *application) listWorkspaceTeams(w http.ResponseWriter, r *http.Request) {
-	ws := contextGetWorkspace(r)
+	principal, ok := app.requestPrincipal(w, r)
+	if !ok {
+		return
+	}
 	q, errs := readListQuery(r.URL.Query(), map[string]string{
 		"name":       "name",
 		"slug":       "slug",
@@ -143,16 +130,15 @@ func (app *application) listWorkspaceTeams(w http.ResponseWriter, r *http.Reques
 		return
 	}
 
-	teams, err := app.db.ListWorkspaceTeamsPage(r.Context(), database.ListWorkspaceTeamsParams{
-		WorkspaceID: ws.ID,
-		Search:      q.Search,
-		Sort:        q.Sort,
-		Order:       q.Order,
-		Page:        q.Page,
-		PageSize:    q.PageSize,
+	teams, err := app.services.Catalog.ListWorkspaceTeams(r.Context(), principal, contextGetPathIDs(r).OrgID, contextGetPathIDs(r).WorkspaceID, catalog.ListWorkspaceTeamsParams{
+		Search:   q.Search,
+		Sort:     q.Sort,
+		Order:    q.Order,
+		Page:     q.Page,
+		PageSize: q.PageSize,
 	})
 	if err != nil {
-		app.serverError(w, r, err)
+		app.catalogError(w, r, err)
 		return
 	}
 	if err = response.JSON(w, http.StatusOK, teams); err != nil {
@@ -161,75 +147,47 @@ func (app *application) listWorkspaceTeams(w http.ResponseWriter, r *http.Reques
 }
 
 func (app *application) addWorkspaceTeam(w http.ResponseWriter, r *http.Request) {
+	principal, ok := app.requestPrincipal(w, r)
+	if !ok {
+		return
+	}
 	var input struct {
-		TeamID int64               `json:"team_id"`
-		V      validator.Validator `json:"-"`
+		TeamID int64 `json:"team_id"`
 	}
 	if err := request.DecodeJSON(w, r, &input); err != nil {
 		app.badRequest(w, r, err)
 		return
 	}
 
-	input.V.CheckField(input.TeamID > 0, "team_id", "Team is required.")
-	if input.V.HasErrors() {
-		app.failedValidation(w, r, input.V)
-		return
-	}
-
-	org := contextGetOrg(r)
-	ws := contextGetWorkspace(r)
-	actor := contextGetAccount(r)
-
-	team, found, err := app.db.GetTeamByID(r.Context(), input.TeamID)
+	ids := contextGetPathIDs(r)
+	affected, err := app.services.Catalog.AddWorkspaceTeam(r.Context(), principal, ids.OrgID, ids.WorkspaceID, input.TeamID)
 	if err != nil {
-		app.serverError(w, r, err)
-		return
-	}
-	if !found || team.OrgID != org.ID {
-		app.notFound(w, r)
+		app.catalogError(w, r, err)
 		return
 	}
 
-	if err = app.db.AddWorkspaceTeam(r.Context(), ws.ID, input.TeamID, &actor.ID); err != nil {
-		app.serverError(w, r, err)
-		return
-	}
-
-	accountIDs, err := app.db.ListWorkspaceTeamMemberAccountIDs(r.Context(), ws.ID, input.TeamID)
-	if err != nil {
-		app.serverError(w, r, err)
-		return
-	}
-	for _, accountID := range accountIDs {
-		app.revokeSessions(r, sessionRevokeInput{Kind: sessionRevokeWorkspaceAccount, WorkspaceID: strconv.FormatInt(ws.ID, 10), AccountID: strconv.FormatInt(accountID, 10)})
-		app.enforcer.InvalidatePrincipals(org.ID, accountID)
-	}
-	app.logInfo(r, "workspace team added", slog.Int64("workspace_id", ws.ID), slog.Int64("team_id", input.TeamID), slog.Int("affected_accounts", len(accountIDs)))
+	app.logInfo(r, "workspace team added", slog.Int64("workspace_id", ids.WorkspaceID), slog.Int64("team_id", input.TeamID), slog.Int("affected_accounts", affected))
 	w.WriteHeader(http.StatusNoContent)
 }
 
 func (app *application) removeWorkspaceTeam(w http.ResponseWriter, r *http.Request) {
+	principal, ok := app.requestPrincipal(w, r)
+	if !ok {
+		return
+	}
 	teamID, err := strconv.ParseInt(chi.URLParam(r, "team_id"), 10, 64)
 	if err != nil {
 		app.notFound(w, r)
 		return
 	}
 
-	org := contextGetOrg(r)
-	ws := contextGetWorkspace(r)
-	accountIDs, err := app.db.ListWorkspaceTeamMemberAccountIDs(r.Context(), ws.ID, teamID)
+	ids := contextGetPathIDs(r)
+	affected, err := app.services.Catalog.RemoveWorkspaceTeam(r.Context(), principal, ids.OrgID, ids.WorkspaceID, teamID)
 	if err != nil {
-		app.serverError(w, r, err)
+		app.catalogError(w, r, err)
 		return
 	}
-	if err = app.db.RemoveWorkspaceTeam(r.Context(), ws.ID, teamID); err != nil {
-		app.serverError(w, r, err)
-		return
-	}
-	for _, accountID := range accountIDs {
-		app.revokeSessions(r, sessionRevokeInput{Kind: sessionRevokeWorkspaceAccount, WorkspaceID: strconv.FormatInt(ws.ID, 10), AccountID: strconv.FormatInt(accountID, 10)})
-		app.enforcer.InvalidatePrincipals(org.ID, accountID)
-	}
-	app.logInfo(r, "workspace team removed", slog.Int64("workspace_id", ws.ID), slog.Int64("team_id", teamID), slog.Int("affected_accounts", len(accountIDs)))
+
+	app.logInfo(r, "workspace team removed", slog.Int64("workspace_id", ids.WorkspaceID), slog.Int64("team_id", teamID), slog.Int("affected_accounts", affected))
 	w.WriteHeader(http.StatusNoContent)
 }

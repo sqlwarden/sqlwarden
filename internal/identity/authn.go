@@ -14,11 +14,23 @@ type Presented struct {
 	Request       access.RequestAttributes
 }
 
+// Account is a stored user account.
+type Account = database.Account
+
+// AuthSession is a stored sign-in session.
+type AuthSession = database.AuthSession
+
+// SessionAuth records how a session was authenticated.
+type SessionAuth = database.SessionAuth
+
+// Organization is an organization an account belongs to.
+type Organization = database.Organization
+
 // Authenticated is a verified principal plus the records loaded to verify it.
 type Authenticated struct {
 	Principal   access.Principal
-	Account     database.Account
-	AuthSession *database.AuthSession
+	Account     Account
+	AuthSession *AuthSession
 }
 
 // Authenticator returns ok=false when the credential is not in its format,
@@ -52,10 +64,18 @@ func (e *CredentialError) Error() string { return "credential rejected: " + e.Re
 // ErrNoAuthenticator indicates that no authenticator recognized a credential.
 var ErrNoAuthenticator = &CredentialError{Reason: "credential_unrecognized"}
 
-// Chain authenticates with the first matching authenticator, then collects
-// posture and evaluates request policies.
+// InstanceAdminLookup reports whether an account administers the instance.
+type InstanceAdminLookup interface {
+	IsInstanceAdmin(ctx context.Context, accountID int64) (bool, error)
+}
+
+// Chain authenticates with the first matching authenticator, then resolves
+// the instance admin flag, collects posture and evaluates request policies.
 type Chain struct {
 	Authenticators []Authenticator
+	// InstanceAdmins is the only source of Principal.InstanceAdmin. A nil
+	// lookup leaves every principal without instance admin rights.
+	InstanceAdmins InstanceAdminLookup
 	Posture        []PostureProvider
 	Policies       []RequestPolicy
 }
@@ -71,6 +91,16 @@ func (c Chain) Authenticate(ctx context.Context, p Presented) (Authenticated, er
 			return Authenticated{}, err
 		}
 		result.Principal.Request = p.Request
+		// Authenticators never decide instance admin rights; the flag is
+		// looked up per request so a grant or removal applies immediately.
+		result.Principal.InstanceAdmin = false
+		if c.InstanceAdmins != nil && result.Principal.Subject.Kind == access.SubjectAccount && result.Principal.Subject.ID != 0 {
+			admin, err := c.InstanceAdmins.IsInstanceAdmin(ctx, result.Principal.Subject.ID)
+			if err != nil {
+				return Authenticated{}, err
+			}
+			result.Principal.InstanceAdmin = admin
+		}
 		for _, provider := range c.Posture {
 			if err := provider.Collect(ctx, p, &result.Principal.Request.Signals); err != nil {
 				return Authenticated{}, err

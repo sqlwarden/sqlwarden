@@ -139,7 +139,7 @@ func TestReadTeamsRequiresOrgRead(t *testing.T) {
 
 	_, ownerTok, org := seedOrgOwner(t, app, uniqueEmail(t, "team-read-owner"), "Team Owner", "Team Read Org")
 	member, memberTok := seedAccountWithToken(t, app, uniqueEmail(t, "team-read-member"), "Team Member")
-	if err := app.db.AddOrgMember(context.Background(), org.ID, member.ID); err != nil {
+	if err := testDB(app).AddOrgMember(context.Background(), org.ID, member.ID); err != nil {
 		t.Fatal(err)
 	}
 
@@ -150,7 +150,7 @@ func TestReadTeamsRequiresOrgRead(t *testing.T) {
 	var defaultMemberBinding struct {
 		ID int64
 	}
-	if err := app.db.NewSelect().
+	if err := testDB(app).NewSelect().
 		TableExpr("role_bindings").
 		ColumnExpr("id").
 		Where("org_id = ? AND subject_type = ? AND subject_id = ? AND resource_type = 'org' AND resource_id = ?",

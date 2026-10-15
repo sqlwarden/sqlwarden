@@ -18,11 +18,11 @@ func TestLegacyPersonalSpaceIsolatedFromOrgRoutes(t *testing.T) {
 	addOrgMemberDirect(t, app, org.Slug, spaceOwner.Email)
 
 	ctx := context.Background()
-	ws, err := app.db.InsertWorkspace(ctx, nil, "space", spaceOwner.ID, "Legacy Space", "")
+	ws, err := testDB(app).InsertWorkspace(ctx, nil, "space", spaceOwner.ID, "Legacy Space", "")
 	if err != nil {
 		t.Fatal(err)
 	}
-	env, err := app.db.InsertEnvironment(ctx, ws.ID, "legacy-env", "")
+	env, err := testDB(app).InsertEnvironment(ctx, ws.ID, "legacy-env", "")
 	if err != nil {
 		t.Fatal(err)
 	}

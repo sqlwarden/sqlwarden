@@ -172,8 +172,15 @@ func (a *fakeAncestry) InvalidateAncestry(_ string, id int64) {
 }
 
 type fakeRevoker struct {
-	active  int
-	revoked int
+	active           int
+	revoked          int
+	workspaceRevokes [][2]string
+	workspaceErr     error
+}
+
+func (r *fakeRevoker) RevokeWorkspaceAccount(_ context.Context, workspaceID, accountID string) (int, error) {
+	r.workspaceRevokes = append(r.workspaceRevokes, [2]string{workspaceID, accountID})
+	return 0, r.workspaceErr
 }
 
 func (r *fakeRevoker) CountForConnection(context.Context, string) (int, error) {
@@ -225,6 +232,34 @@ func TestGetForeignAndUnknownConnectionAreNotFound(t *testing.T) {
 		if _, err := service.Get(context.Background(), principal, ref); !errors.Is(err, ErrNotFound) {
 			t.Fatalf("Get(%+v) error = %v, want ErrNotFound", ref, err)
 		}
+	}
+}
+
+type movedConnectionStore struct {
+	*fakeStore
+	reads int
+}
+
+func (s *movedConnectionStore) GetConnection(ctx context.Context, id int64) (database.Connection, bool, error) {
+	conn, found, err := s.fakeStore.GetConnection(ctx, id)
+	s.reads++
+	if s.reads > 1 {
+		conn.WorkspaceID = 11
+	}
+	return conn, found, err
+}
+
+func TestLoadConnectionRechecksWorkspaceAfterAuthorization(t *testing.T) {
+	_, store, provider, principal := catalogFixture()
+	moved := &movedConnectionStore{fakeStore: store}
+	service := New(Deps{
+		Store: moved, Policy: fakePolicy{permissions: map[string]bool{access.PermConnRead: true}},
+		Credentials: provider, Writer: provider, RevealPolicy: fakeRevealPolicy{allowed: true},
+		SpecLookup: func(string) (engine.ConnectionSpec, bool) { return fakeSpec{}, true },
+	})
+	_, err := service.Get(context.Background(), principal, ConnRef{OrgID: 1, WorkspaceID: 10, ConnectionID: 30})
+	if !errors.Is(err, ErrNotFound) {
+		t.Fatalf("Get error = %v, want ErrNotFound when the stored connection no longer belongs to the authorized workspace", err)
 	}
 }
 

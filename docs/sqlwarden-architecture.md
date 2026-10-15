@@ -81,7 +81,7 @@ sqlwarden/
 │       └── lib/
 ├── internal/
 │   ├── access/                       # custom RBAC enforcer and permissions catalog
-│   ├── catalog/                      # connection service: authorization, validation, secret writes and reveal
+│   ├── catalog/                      # connection, workspace, environment, and workspace member services
 │   ├── connection/                   # live target DB sessions (internal to execution)
 │   ├── credentials/                  # connection secret ports and the encrypted-column provider
 │   ├── database/                     # Bun models and query helpers
@@ -91,11 +91,17 @@ sqlwarden/
 │   ├── exportjob/                    # synchronous and background query export service
 │   ├── files/                        # workspace file service
 │   ├── filestore/                    # filesystem object storage
+│   ├── identity/                     # identity chain, principals, auth/session, setup, instance administration
 │   ├── jobs/                         # background job runtime and user-facing job service
+│   ├── keyrotation/                  # key rotation service shared by the endpoint and the rotate-keys command
+│   ├── orgs/                         # organizations, members, teams, invitations
 │   ├── password/                     # bcrypt hashing
-│   ├── query/                        # authorized query, session, history, and favorites service
+│   ├── query/                        # authorized query, session, schema, DDL, statements, completion, history, favorites
+│   ├── rbac/                         # roles, policy bindings, permission catalog
 │   ├── request/                      # JSON decoding helpers
 │   ├── response/                     # JSON, pagination, API error envelopes
+│   ├── services/                     # service graph composition (Build, Deps)
+│   ├── settings/                     # instance/org/workspace settings, SMTP, live mailer, target policy
 │   ├── smtp/                         # SMTP mailer
 │   ├── token/                        # JWT helpers
 │   ├── validator/                    # validation helpers
@@ -145,24 +151,18 @@ HTTP request
   -> chi route
   -> authenticateV1 (identity chain -> principal on the request context)
   -> requireAccount
-  -> orgCtx
-  -> workspace/environment/connection context middleware as needed
-  -> concrete permission middleware
-  -> handler
-  -> internal/database or service layer
+  -> orgScope (org slug -> org id; the org membership gate)
+  -> workspacePath / environmentPath / connectionPath as needed (integer id parsing only)
+  -> handler (decode input, call service)
+  -> service method (authorizes the access.Principal, then validates and acts)
   -> response.JSON / centralized API error helpers
 ```
 
-Concrete permission middleware variants are preferred:
+`internal/web` is transport only. Route middleware does authentication, `orgScope` org entry, and path id parsing into the request's `pathIDs`; a malformed or non-positive path id is 404. No middleware reads a store or checks a permission. Every service method authorizes its `access.Principal` before validation, storage, or runtime work, so the service is the only authorization boundary. The service graph is built once by `services.Build(services.Deps)` in `internal/services` and held on `application.services`.
 
-- `requireOrgPermission`
-- `requireWorkspacePermission`
-- `requireEnvironmentPermission`
-- `requireConnectionPermission`
+`internal/web` never imports `internal/database`, `internal/encrypt`, `internal/connection`, `internal/engine` (and subpackages), `internal/schema`, or `internal/completion`; `internal/architecture` enforces this (see Testing). Service packages expose type aliases for the types handlers encode.
 
-The old generic permission middleware was removed to keep route authorization readable.
-
-For query, file, export, job, history, and favorite routes, handlers are transport adapters only: they decode input, call the domain service, map service errors, and encode the response. Each service method authorizes its `access.Principal` before validation, storage, or runtime work; route middleware is not the authorization boundary for these areas.
+Handlers decode and validate the request shape before calling the service. A malformed body, query, or path id therefore yields 400, 422, or 404 for any caller whose request reached the handler, including callers the service would deny. Organization membership is still checked first by `orgScope`, so non-members learn nothing across organizations.
 
 ## API Contract
 
@@ -248,13 +248,23 @@ Implemented auth flow:
 - Login runs the profile's `identity.SignInStrategy`: the method verifies the primary credential (`Begin`), the factor policy and sign-in policy can deny, and `Complete` returns the credential info recorded on the auth session. The desktop strategy is disabled and login returns 404.
 - Password sign-in returns the same `invalid_credentials` reason for an unknown email, a missing password hash, an inactive account, and a wrong password. It compares against a dummy hash when no account hash exists so timing does not reveal account existence.
 - Login creates a refresh token, JWT access token, and auth session. Each auth session stores `auth_method` and `assurance` (for example `password`/`aal1`, or `local` for desktop setup).
-- Refresh-token rotation issues new access tokens.
+- Refresh-token rotation issues new access tokens. The rotated token keeps its family, and presenting an expired token revokes the whole family.
 - Auth sessions and org access sessions are database-backed and revocable when session revocation is enabled.
 - Account/session APIs support listing and revoking active sessions.
+- A password change revokes every other auth session and refresh token of the account in the same transaction. The session that made the change stays valid.
+
+`identity.Service` in `internal/identity` owns registration, sign-in, refresh, logout, the account profile and password, and auth and org access session administration. Handlers keep only cookie and header concerns. Register, Login, Refresh, Logout, SignInEnabled, and StartSession are unauthenticated entry points. Every other method takes the request principal: own-session methods act only on the calling account and report another account's session as not found, instance session administration requires the principal's instance-admin flag, and org member access sessions require `org:write` on the organization. Registration opens only after setup has created an instance admin. Login emits exactly one sign-in audit event per attempt that passes input validation.
+
+Instance administration and first-run setup also live in `identity.Service`:
+
+- `Setup` and `SetupStatus` are unauthenticated entry points. `Setup` runs the profile's `identity.SetupStrategy` (`FormSetup` on the server profile, `LocalSetup` on desktop) to plan the first account and organization, then writes the account, the instance-admin row, the owned organization with its builtin roles and `Owner` binding, and the auth session in one transaction. The transaction first takes the first-run setup lock (`database.SetupLock`: a transaction-scoped advisory lock on PostgreSQL, a no-op on single-connection SQLite) and then re-checks that no instance admin exists, so concurrent setups serialize and setup seals itself; a second or concurrent run returns 409.
+- Instance account, instance admin, and organization listing methods, plus `CreateInstanceAccount`, `AddInstanceAdmin`, and `RemoveInstanceAdmin`, take the principal and require `Principal.InstanceAdmin`. Removing the last instance admin is refused with a validation error. Adding and removing instance admins and creating instance accounts emit audit events.
+- There are no route-level instance-admin or org-role gates. `/api/v1/instance` routes only require an account, and each handler or service authorizes the call.
 
 Request authentication:
 
 - `authenticateV1` runs the `identity.Chain`. The session authenticator verifies the JWT and, when session revocation is on, loads the auth session row. It produces an `access.Principal` with the subject, credential kind, method, assurance, and session ID, and stores it on the request context.
+- The chain sets `Principal.InstanceAdmin` from a stored instance-admin lookup for account subjects, overwriting whatever an authenticator claimed. A lookup failure fails authentication. Services trust this flag and do not query instance-admin state again.
 - With session revocation off, no session row is loaded and the credential method and assurance default to `password`/`aal1`.
 - A rejected credential returns 401 with a `reason` code in the error envelope. Account and session IDs on a `CredentialError` are for logs only and never reach the response.
 
@@ -478,11 +488,13 @@ Evaluation flow:
 - Ignore bindings whose `expires_at` is at or before the current time.
 - Allow if any matching role contains the requested permission and the permission is valid for that role/resource relationship.
 
-Handlers call the composed `access.PolicyEvaluator`, not the enforcer directly. An edition may wrap the enforcer with policy decorators. A decorator can deny a grant, but it cannot grant a permission the enforcer denied.
+Services call the composed `access.PolicyEvaluator`, not the enforcer directly. An edition may wrap the enforcer with policy decorators. A decorator can deny a grant, but it cannot grant a permission the enforcer denied.
 
 Inheritance is additive. Parent bindings can grant access to children. There are no deny rules, so revocation means removing the granting binding or membership source.
 
 `access.Requirer` is the shared authorization boundary used by services that operate on org-owned resources. Its `Org`, `Workspace`, `WorkspaceMember`, `Connection`, `ConnectionMember`, and `ResolveConnection` methods resolve hierarchy facts, enforce organization and workspace membership, and apply permissions where required (`Connection` takes any-of permissions; `ResolveConnection` checks no permission and is for operations whose authorization the execution runtime owns). `Can` only reports whether a principal holds a permission on an already-resolved resource; it does not resolve the resource or check membership. These methods return the shared `access.ErrForbidden` and `access.ErrNotFound` sentinels so services and HTTP error mapping use one denial contract. Background work uses an `access.Principal` with `access.CredentialJob` and is authorized again when the job runs.
+
+`rbac.Service` in `internal/rbac` owns organization roles, organization policy bindings, and the permission catalog. Listing and reading roles and policies require `policy:read`; creating, updating, and deleting roles and granting and revoking policies require `policy:modify`; the catalog requires only organization membership. It enforces the role and policy invariants: builtin roles are immutable, role scope is validated before creation and update, bindings are idempotent, the subject must belong to the organization, a role still bound cannot be deleted, granting or revoking a role carrying `org:delete` or `org:transfer_ownership` requires the actor to hold each of them, updating a custom role (organization or workspace) to add or remove either permission requires the actor to hold that permission (permissions the role keeps are not re-checked; refusal is the same 403 as the grant path), and the last organization owner binding cannot be revoked. It emits `role.created`, `role.updated`, `role.deleted`, `policy.granted`, and `policy.revoked` audit events carrying ids and permission names only.
 
 ### Effective Permissions
 
@@ -493,7 +505,7 @@ Parameters:
 - `resource_type`: defaults to `org`; accepts `org`, `workspace`, `environment`, and `connection`.
 - `resource_id`: required for workspace, environment, and connection.
 
-The API reuses the same enforcer data path as authorization middleware and returns deduplicated, sorted permission strings. It is an advisory UI helper only; handlers and middleware still enforce authorization server-side.
+The API reuses the same enforcer data path as service authorization and returns deduplicated, sorted permission strings. It is an advisory UI helper only; services still enforce authorization server-side.
 
 Typical UI usage:
 
@@ -503,25 +515,35 @@ Typical UI usage:
 
 The effective-permissions endpoint validates resource ownership. Missing or cross-org resources should behave as not found.
 
-### Middleware Mapping
+### Route Middleware And Service Authorization
 
-Org-scoped routes typically use:
+Org-scoped routes use:
 
 ```text
-authenticateV1 -> requireAccount -> orgCtx -> concrete resource ctx -> require*Permission -> handler
+authenticateV1 -> requireAccount -> orgScope -> workspacePath/environmentPath/connectionPath -> handler -> service
 ```
 
-Concrete permission middleware keeps checks readable and prevents accidental parent/child mismatches:
+There are no permission or role middleware. Each service method resolves its target through `access.Requirer` (which enforces org and workspace membership and the hierarchy relationship between the ids) and applies the concrete permission for the resource. Role-like checks map to permissions rather than role names: owner-level actions require `org:transfer_ownership` or `org:delete`, administrator-level actions require `org:write`.
 
-- `requireOrgPermission`: owner type `org`, resource `org`, current org ID.
-- `requireWorkspacePermission`: workspace owner type, resource `workspace`, current workspace ID.
-- `requireEnvironmentPermission`: workspace owner type, resource `environment`, current environment ID.
-- `requireConnectionPermission`: workspace owner type, resource `connection`, current connection ID.
+Workspace resolution requires the workspace to have `owner_type = "org"` and to belong to the path organization; other rows resolve as not found.
 
-Role-like route guards map to permissions rather than special-case role names:
+### Authorization Service Contract
 
-- Owner-level guard: `org:transfer_ownership`.
-- Administrator-level guard: `org:write`.
+Every exported method on the `Service` type of `query`, `catalog`, `files`, `exportjob`, `jobs`, `settings`, `orgs`, `rbac`, `identity`, and `keyrotation` takes `context.Context` and `access.Principal` as its first two parameters. The exemptions are listed with reasons in `authzExemptMethods` (`internal/architecture/authz_contract_test.go`):
+
+- `files`: `ReapContentDeletionsOnce`, `RunContentDeletionReaper` (background reapers).
+- `exportjob`: `RunJob` (derives the owner principal from the stored job input).
+- `settings`: `Subscribe`, `Instance`, `EffectiveForOrg`, `EffectiveForWorkspace`, `RotateSMTPPassword` (startup wiring, settings read before a caller is known, limits on the caller's own requests, and a key-rotation stage that `keyrotation.Service` authorizes).
+- `identity`: `Register`, `Login`, `Refresh`, `Logout`, `SignInEnabled`, `StartSession`, `Setup`, `SetupStatus` (the caller has no account or the submitted credential authenticates it).
+- `orgs`: `OnSchemaCachePurged` (startup wiring), `GetInvitation`, `AcceptInvitation` (the invitation token is the credential).
+
+Authorization service packages may not import `internal/web`, `internal/app`, or `internal/profile`; `internal/services` may not import them either.
+
+`Principal.InstanceAdmin` is set by the identity chain on every authenticated request from a stored lookup. Services that require instance-admin status read the flag and do not query it.
+
+### Key Rotation
+
+`keyrotation.Service.Rotate(ctx, principal, Options)` re-encrypts connection secrets (including the legacy split), file content, and the SMTP password, and returns a counts-only `Report`. The `POST /api/v1/instance/encryption/rotate` endpoint passes the request principal; instance admins are allowed. The `rotate-keys` command calls the same method with `keyrotation.OperatorPrincipal()`, a `CredentialLocal` principal with a zero subject that has no HTTP path to construction. Any other principal gets `access.ErrForbidden`. Rotation stages run through ports (`ConnectionRotator`, `FileRotator`, `SMTPRotator`) wired in `services.Build`.
 
 ### Scope And Discovery Rules
 
@@ -652,7 +674,9 @@ metadata storage or the editor protocol.
 and the schema navigator reach target databases only through its interfaces and
 never import `internal/connection`. `internal/architecture` enforces that
 `internal/connection` is imported in production code only by `internal/execution`
-and `internal/credentials` (which aliases the connection package's SSH types).
+and `internal/credentials` (which aliases the connection package's SSH types),
+and that `internal/web` imports neither it nor the engine, schema, completion,
+database, or encrypt packages.
 
 The contract is a set of narrow interfaces composed into `Runtime`:
 
@@ -684,10 +708,11 @@ state.
 
 `internal/query.Service` is the authorization boundary for interactive query behavior. It connects and disconnects live sessions; classifies SQL and checks the per-class `conn:dql`, `conn:dml`, `conn:ddl`, or `conn:execute` permission before execution; starts, fetches, and closes cursors; reports and changes transaction state; lists and revokes workspace sessions; and owns query history and favorites. Every exported request-facing method takes a context and `access.Principal` and authorizes within the method before reaching settings, storage, classifiers, or the execution runtime.
 
-Session revocation runs through `app.revokeSessions` in `internal/web`. It is
-called only after the access change (membership removal, connection deletion,
-and similar) has committed in the database. If revocation fails, the HTTP
-outcome is unchanged and a `session_revoke` job is enqueued with
+Session revocation runs through the services (`orgs`, `catalog`) using the
+`queuedRevoker` built in `internal/services`. It is called only after the access
+change (membership removal, connection deletion, and similar) has committed in
+the database. If revocation fails, the outcome is unchanged and a
+`session_revoke` job is enqueued with
 `EnqueueSingleton` (keyed by the revoke kind and ids) and up to 5 attempts.
 Retries only help when the jobs worker shares the API process, because sessions
 are process-local; a split API/jobs deployment needs a cross-process runtime
@@ -761,6 +786,8 @@ PostgreSQL and its wire-compatible variants use host, port, database, username, 
 `EncryptedColumnProvider` is the only built-in provider. It implements `Provider` and `Writer` over the metadata store and a `Sealer`. A provider that sources a secret elsewhere reports it with `source: reference`, which makes it non-revealable. `internal/credentials/credentialstest` holds the contract suite every provider must pass.
 
 `catalog.Service` in `internal/catalog` owns connection create, read, update, delete, test, and secret reveal. It authorizes against the policy evaluator, validates params against the engine spec, and drives the `Writer`. Handlers translate its results and errors to HTTP and do not read or write secrets themselves. `GET` connection responses carry `params`, `tls_config`, `ssh_config`, and a `secrets` map of `{set, source, revealable}` per name. They never carry a secret value.
+
+`catalog.Service` also owns workspace and environment CRUD and workspace member and team management. Each method authorizes through the `Requirer` with the permission its route enforces. Workspace creation inserts the hierarchy rows and seeds the builtin roles in one transaction. Workspace and environment deletes invalidate cached ancestry. Added workspace members must already be org members. Member and team removals revoke the affected live sessions through the revoker, which queues a retry when revocation fails. `workspace.created` and `workspace.deleted` audit events carry ids only, and an audit failure does not fail the change.
 
 ### Reveal
 
@@ -1031,8 +1058,9 @@ Backend tests are substantial and should be extended with every behavior change:
 - `internal/access/*_test.go`: enforcer, permissions, inheritance, policy behavior.
 - `internal/database/*_test.go`: query helpers and persistence behavior.
 - `internal/files/*_test.go` and `internal/filestore/*_test.go`: file service/storage behavior.
-- `internal/architecture/authz_contract_test.go`: exported request-facing service methods in query, files, exportjob, and jobs must take `context.Context` and `access.Principal`; explicit system-runner exemptions are checked for continued existence.
-- `internal/architecture/webdb_test.go`: direct `app.db` use in `internal/web` is ratcheted at an exact ceiling of 187 so domain work continues moving behind services.
+- `internal/architecture/authz_contract_test.go`: exported methods on the `Service` type of every authorization service package (query, files, exportjob, jobs, settings, orgs, catalog, rbac, identity, keyrotation; the list is `authzServicePackages`) must take `context.Context` and `access.Principal`. Principal-free exemptions each carry a reason and are checked for continued existence.
+- `internal/architecture/imports_test.go`: production `internal/web` code imports none of `internal/database`, `internal/encrypt`, `internal/connection`, `internal/engine` (and subpackages), `internal/schema`, or `internal/completion`. Service packages own type aliases for the metadata and engine types handlers encode (for example `identity.Account`, `orgs.ListMembersParams`, `files.File`, `catalog.ScopePath`, `query.Tree`), and the instance mailer is built through `services.Services.NewMailer`, so the web layer never holds the keyring. Web tests are exempt and reach the metadata database and keyring through the `testDB`/`testKeyring` fixture accessors.
+- `internal/architecture/webdb_test.go`: any `.db` selector, on any receiver, in production `internal/web` code is ratcheted at an exact ceiling of 0: handlers reach metadata only through services.
 
 Database tests use testcontainers where needed; Docker must be available locally.
 
@@ -1073,17 +1101,18 @@ Current implemented controls:
 - Server-side target driver validation/gating.
 - SQLite target connection allowed-source controls.
 - Org membership gate before org-scoped RBAC.
-- Concrete resource context middleware for cross-resource checks.
+- Service-level authorization on every request-facing method, enforced by an architecture contract test.
+- Web layer cannot reach the metadata database, keyring, or engines directly (import rule and `.db` ratchet at 0).
 - Policy grant guard for owner-level org permissions.
 - Auth/session revocation.
 - Query cancellation.
 - Workspace private/shared file scoping.
-- Audit events for setup and sign-in.
+- Audit events for setup, sign-in, organization, member, invitation, workspace, role, policy, and instance-admin changes, and secret reveal.
 - Trusted-proxy client IP resolution.
 
 Important open gaps:
 
-- Audit trail for policy and data access events (only setup and sign-in are audited today).
+- Audit trail for data access events and for changes not yet audited (for example role updates, environment changes, and workspace membership changes).
 - SSO/SCIM identity lifecycle.
 - SSRF-safe cloud deployment model.
 - Distributed cache invalidation.
@@ -1133,6 +1162,24 @@ Likely future enterprise-only features:
 - Air-gapped enterprise packaging.
 
 The core RBAC engine, local auth, SQL editor, database engine layer, and self-hosted server should remain usable in the community distribution.
+
+## Behavior Changes In This Slice
+
+Authorization moved from route middleware into services. Valid requests behave as before, except:
+
+- Password change revokes the account's other auth sessions and refresh tokens. With `SessionsRevocationEnabled` off, other sessions' access tokens stay valid until their TTL.
+- Granting the `Owner` role through member role update requires `org:delete` in addition to `org:transfer_ownership`.
+- `DeleteTeam` clears the cached org policy.
+- Validate-before-authorize is general: a malformed body, query, or path id returns 400, 422, or 404 instead of 403 for an unauthorized caller, and a bad body naming a foreign or nonexistent workspace, environment, or connection id returns 400 or 422 instead of 404. Org membership still gates first, so nothing leaks across organizations. Examples: instance admin, account, and org list queries 422; `POST` admins and accounts with malformed JSON 400; schema mutation, statement, object, refresh, node, relationship, definition, and completion requests with malformed input 400.
+- `RevokeSession` requires workspace membership first, matching `ListWorkspaceSessions`.
+- Job list and job events no longer validate `sort`/`order` (unknown values return 200), and events ignore a malformed page.
+- `setTransactionMode` returns 410 for a foreign or unknown session and 422 for an invalid mode on the caller's own session; malformed JSON is 400.
+- Workspace resolution requires `owner_type = "org"`.
+- New audit events: `org.created`, `org.updated`, `org.deleted`, `org.member_removed`, `org.member_role_changed`, `invitation.created`, `invitation.accepted`, `workspace.created`, `workspace.deleted`, `role.created`, `role.updated`, `role.deleted`, `policy.granted`, `policy.revoked`, `instance_admin.added`, `instance_admin.removed`, and `instance_account.created`.
+
+### Known Open Items
+
+- The `internal/web` import ban is a deny-list, not an allow-list; a new risky import is not caught until it is added to `webForbiddenImports`.
 
 ## Implementation Invariants
 

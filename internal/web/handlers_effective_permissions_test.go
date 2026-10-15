@@ -84,7 +84,7 @@ func TestEffectivePermissionsOrgMemberGetsDefaultBaseline(t *testing.T) {
 	app := newTestApp(t)
 	_, _, org := seedOrgOwner(t, app, uniqueEmail(t, "eff-empty-owner"), "Owner", "Effective Empty")
 	member, memberTok := seedAccountWithToken(t, app, uniqueEmail(t, "eff-empty-member"), "Member")
-	if err := app.db.AddOrgMember(context.Background(), org.ID, member.ID); err != nil {
+	if err := testDB(app).AddOrgMember(context.Background(), org.ID, member.ID); err != nil {
 		t.Fatal(err)
 	}
 
@@ -99,7 +99,7 @@ func TestEffectivePermissionsWorkspaceFiltersToWorkspaceApplicablePermissions(t 
 	app := newTestApp(t)
 	owner, ownerTok, org := seedOrgOwner(t, app, uniqueEmail(t, "eff-ws-owner"), "Owner", "Effective Workspace")
 	member, memberTok := seedAccountWithToken(t, app, uniqueEmail(t, "eff-ws-member"), "Member")
-	if err := app.db.AddOrgMember(context.Background(), org.ID, member.ID); err != nil {
+	if err := testDB(app).AddOrgMember(context.Background(), org.ID, member.ID); err != nil {
 		t.Fatal(err)
 	}
 	ws := seedWorkspaceForAccount(t, app, org, owner, "Workspace", "")
@@ -131,7 +131,7 @@ func TestEffectivePermissionsEnvironmentIncludesInheritedOrgAndWorkspacePermissi
 	app := newTestApp(t)
 	owner, ownerTok, org := seedOrgOwner(t, app, uniqueEmail(t, "eff-env-owner"), "Owner", "Effective Env")
 	member, memberTok := seedAccountWithToken(t, app, uniqueEmail(t, "eff-env-member"), "Member")
-	if err := app.db.AddOrgMember(context.Background(), org.ID, member.ID); err != nil {
+	if err := testDB(app).AddOrgMember(context.Background(), org.ID, member.ID); err != nil {
 		t.Fatal(err)
 	}
 	ws := seedWorkspaceForAccount(t, app, org, owner, "Workspace", "")
@@ -153,7 +153,7 @@ func TestEffectivePermissionsConnectionFiltersToConnectionPermissionsOnly(t *tes
 	app := newTestApp(t)
 	owner, ownerTok, org := seedOrgOwner(t, app, uniqueEmail(t, "eff-conn-owner"), "Owner", "Effective Conn")
 	member, memberTok := seedAccountWithToken(t, app, uniqueEmail(t, "eff-conn-member"), "Member")
-	if err := app.db.AddOrgMember(context.Background(), org.ID, member.ID); err != nil {
+	if err := testDB(app).AddOrgMember(context.Background(), org.ID, member.ID); err != nil {
 		t.Fatal(err)
 	}
 	ws := seedWorkspaceForAccount(t, app, org, owner, "Workspace", "")
@@ -179,15 +179,15 @@ func TestEffectivePermissionsIncludesTeamBindings(t *testing.T) {
 	app := newTestApp(t)
 	owner, ownerTok, org := seedOrgOwner(t, app, uniqueEmail(t, "eff-team-owner"), "Owner", "Effective Team")
 	member, memberTok := seedAccountWithToken(t, app, uniqueEmail(t, "eff-team-member"), "Member")
-	if err := app.db.AddOrgMember(context.Background(), org.ID, member.ID); err != nil {
+	if err := testDB(app).AddOrgMember(context.Background(), org.ID, member.ID); err != nil {
 		t.Fatal(err)
 	}
 	ws := seedWorkspaceForAccount(t, app, org, owner, "Workspace", "")
-	team, err := app.db.InsertTeam(context.Background(), org.ID, "effective-team", "Effective Team")
+	team, err := testDB(app).InsertTeam(context.Background(), org.ID, "effective-team", "Effective Team")
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err = app.db.AddTeamMember(context.Background(), team.ID, member.ID); err != nil {
+	if err = testDB(app).AddTeamMember(context.Background(), team.ID, member.ID); err != nil {
 		t.Fatal(err)
 	}
 	app.enforcer.InvalidatePrincipals(org.ID, member.ID)

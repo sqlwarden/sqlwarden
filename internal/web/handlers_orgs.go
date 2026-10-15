@@ -1,208 +1,141 @@
 package web
 
 import (
-	"context"
+	"errors"
 	"log/slog"
 	"net/http"
 	"strconv"
 	"strings"
-	"time"
 
 	"github.com/go-chi/chi/v5"
-	"github.com/sqlwarden/internal/access"
-	"github.com/sqlwarden/internal/database"
 	"github.com/sqlwarden/internal/orgs"
 	"github.com/sqlwarden/internal/request"
 	"github.com/sqlwarden/internal/response"
 	"github.com/sqlwarden/internal/validator"
-	"github.com/uptrace/bun"
 )
 
-func (app *application) createOwnedOrganization(ctx context.Context, slug, name string, ownerAccountID int64) (database.Organization, error) {
-	var org database.Organization
-	err := app.db.RunInTx(ctx, nil, func(ctx context.Context, tx bun.Tx) error {
-		var err error
-		org, err = app.createOwnedOrganizationWithExecutor(ctx, tx, slug, name, ownerAccountID)
-		return err
-	})
-	if err != nil {
-		return database.Organization{}, err
+// orgError translates orgs service failures to the standard error envelope.
+// lastOwnerMessage is the validation message for ErrLastOwner.
+func (app *application) orgError(w http.ResponseWriter, r *http.Request, err error, lastOwnerMessage string) {
+	var validation *orgs.ValidationError
+	switch {
+	case errors.As(err, &validation):
+		app.failedValidation(w, r, fieldErrors(validation.Fields))
+	case errors.Is(err, orgs.ErrLastOwner) && lastOwnerMessage != "":
+		v := validator.Validator{}
+		v.AddError(lastOwnerMessage)
+		app.failedValidation(w, r, v)
+	default:
+		app.serviceError(w, r, err)
 	}
-
-	app.enforcer.InvalidateOrgPolicy(org.ID)
-	return org, nil
-}
-
-func (app *application) createOwnedOrganizationWithExecutor(ctx context.Context, tx bun.Tx, slug, name string, ownerAccountID int64) (database.Organization, error) {
-	org, err := app.db.InsertOrgWithExecutor(ctx, tx, slug, name)
-	if err != nil {
-		return database.Organization{}, err
-	}
-	if err = app.db.AddOrgMemberWithExecutor(ctx, tx, org.ID, ownerAccountID); err != nil {
-		return database.Organization{}, err
-	}
-	if err = app.enforcer.SeedOrgWithExecutor(ctx, tx, org.ID, ownerAccountID); err != nil {
-		return database.Organization{}, err
-	}
-	return org, nil
 }
 
 func (app *application) getOrg(w http.ResponseWriter, r *http.Request) {
-	org := contextGetOrg(r)
-	err := response.JSON(w, http.StatusOK, org)
+	principal, ok := app.requestPrincipal(w, r)
+	if !ok {
+		return
+	}
+	org, err := app.services.Orgs.Get(r.Context(), principal, contextGetPathIDs(r).OrgID)
 	if err != nil {
+		app.orgError(w, r, err, "")
+		return
+	}
+	if err := response.JSON(w, http.StatusOK, org); err != nil {
 		app.serverError(w, r, err)
 	}
 }
 
 func (app *application) updateOrg(w http.ResponseWriter, r *http.Request) {
-	org := contextGetOrg(r)
+	ids := contextGetPathIDs(r)
 
 	var input struct {
-		Name                        *string             `json:"name"`
-		SchemaSnapshotsEnabled      *bool               `json:"schema_snapshots_enabled"`
-		AllowConnectionSecretReveal *bool               `json:"allow_connection_secret_reveal"`
-		V                           validator.Validator `json:"-"`
+		Name                        *string `json:"name"`
+		SchemaSnapshotsEnabled      *bool   `json:"schema_snapshots_enabled"`
+		AllowConnectionSecretReveal *bool   `json:"allow_connection_secret_reveal"`
 	}
-
-	err := request.DecodeJSON(w, r, &input)
-	if err != nil {
+	if err := request.DecodeJSON(w, r, &input); err != nil {
 		app.badRequest(w, r, err)
 		return
 	}
-
-	if input.Name != nil {
-		name := strings.TrimSpace(*input.Name)
-		input.Name = &name
-		input.V.CheckField(name != "", "name", "Name must not be empty.")
-	}
-	input.V.CheckField(
-		input.Name != nil || input.SchemaSnapshotsEnabled != nil || input.AllowConnectionSecretReveal != nil,
-		"request", "At least one setting is required.")
-
-	if input.V.HasErrors() {
-		app.failedValidation(w, r, input.V)
+	principal, ok := app.requestPrincipal(w, r)
+	if !ok {
 		return
 	}
 
-	wasEnabled := org.SchemaSnapshotsEnabled
-	err = app.db.UpdateOrgSettings(r.Context(), org.ID, input.Name, input.SchemaSnapshotsEnabled, input.AllowConnectionSecretReveal)
+	updated, err := app.services.Orgs.Update(r.Context(), principal, contextGetPathIDs(r).OrgID, orgs.UpdateOrgInput{
+		Name:                        input.Name,
+		SchemaSnapshotsEnabled:      input.SchemaSnapshotsEnabled,
+		AllowConnectionSecretReveal: input.AllowConnectionSecretReveal,
+	})
 	if err != nil {
-		app.serverError(w, r, err)
+		app.orgError(w, r, err, "")
 		return
 	}
-	if wasEnabled && input.SchemaSnapshotsEnabled != nil && !*input.SchemaSnapshotsEnabled {
-		if err := app.disableOrganizationSnapshots(r.Context(), org.ID); err != nil {
-			app.serverError(w, r, err)
-			return
-		}
-	}
-	app.logInfo(r, "organization updated", slog.Int64("org_id", org.ID), slog.String("org_slug", org.Slug))
-
-	updated, found, err := app.db.GetOrg(r.Context(), org.ID)
-	if err != nil {
-		app.serverError(w, r, err)
-		return
-	}
-	if !found {
-		app.notFound(w, r)
-		return
-	}
-
-	err = response.JSON(w, http.StatusOK, updated)
-	if err != nil {
+	app.logInfo(r, "organization updated", slog.Int64("org_id", ids.OrgID), slog.String("org_slug", ids.OrgSlug))
+	if err := response.JSON(w, http.StatusOK, updated); err != nil {
 		app.serverError(w, r, err)
 	}
 }
 
 func (app *application) deleteOrg(w http.ResponseWriter, r *http.Request) {
-	org := contextGetOrg(r)
-
-	err := app.db.DeleteOrg(r.Context(), org.ID)
-	if err != nil {
-		app.serverError(w, r, err)
+	ids := contextGetPathIDs(r)
+	principal, ok := app.requestPrincipal(w, r)
+	if !ok {
 		return
 	}
-
-	app.enforcer.InvalidateOrgPolicy(org.ID)
-	app.logInfo(r, "organization deleted", slog.Int64("org_id", org.ID), slog.String("org_slug", org.Slug))
+	if err := app.services.Orgs.Delete(r.Context(), principal, contextGetPathIDs(r).OrgID); err != nil {
+		app.orgError(w, r, err, "")
+		return
+	}
+	app.logInfo(r, "organization deleted", slog.Int64("org_id", ids.OrgID), slog.String("org_slug", ids.OrgSlug))
 	w.WriteHeader(http.StatusNoContent)
 }
 
 func (app *application) createOrg(w http.ResponseWriter, r *http.Request) {
 	var input struct {
-		Name string              `json:"name"`
-		Slug string              `json:"slug"`
-		V    validator.Validator `json:"-"`
+		Name string `json:"name"`
+		Slug string `json:"slug"`
 	}
-
-	err := request.DecodeJSON(w, r, &input)
-	if err != nil {
+	if err := request.DecodeJSON(w, r, &input); err != nil {
 		app.badRequest(w, r, err)
 		return
 	}
-
-	input.Name = strings.TrimSpace(input.Name)
-	input.Slug = strings.TrimSpace(input.Slug)
-
-	input.V.CheckField(input.Name != "", "name", "Name is required.")
-
-	slug := input.Slug
-	if slug == "" {
-		slug = orgs.Slugify(input.Name)
-	}
-
-	input.V.CheckField(slug != "", "slug", "Slug is required.")
-	if slug != "" {
-		input.V.CheckField(orgs.ValidSlug(slug), "slug", "Slug may only contain lowercase letters, numbers, and hyphens.")
-		input.V.CheckField(len(slug) <= orgs.MaxSlugLength, "slug", "Slug must be 64 characters or fewer.")
-	}
-
-	if input.V.HasErrors() {
-		app.failedValidation(w, r, input.V)
+	principal, ok := app.requestPrincipal(w, r)
+	if !ok {
 		return
 	}
 
-	account := contextGetAccount(r)
-	org, err := app.createOwnedOrganization(r.Context(), slug, input.Name, account.ID)
+	org, err := app.services.Orgs.Create(r.Context(), principal, orgs.CreateOrgInput{Name: input.Name, Slug: input.Slug})
 	if err != nil {
-		if isUniqueViolation(err) {
-			if input.Slug != "" {
-				app.failedDuplicateField(w, r, "slug", "An organization with this slug already exists.")
-				return
-			}
-			app.failedDuplicateField(w, r, "name", "An organization with this name already exists.")
-			return
-		}
-		app.serverError(w, r, err)
+		app.orgError(w, r, err, "")
 		return
 	}
-
-	app.logInfo(r, "organization created", slog.Int64("org_id", org.ID), slog.String("org_slug", org.Slug), slog.Int64("owner_account_id", account.ID))
-	err = response.JSON(w, http.StatusCreated, org)
-	if err != nil {
+	app.logInfo(r, "organization created", slog.Int64("org_id", org.ID), slog.String("org_slug", org.Slug), slog.Int64("owner_account_id", principal.Subject.ID))
+	if err := response.JSON(w, http.StatusCreated, org); err != nil {
 		app.serverError(w, r, err)
 	}
 }
 
 func (app *application) listOrgMembers(w http.ResponseWriter, r *http.Request) {
-	org := contextGetOrg(r)
 	q, errs := readListQuery(r.URL.Query(), map[string]string{
 		"name":       "name",
 		"email":      "email",
 		"created_at": "joined_at",
 	})
 	role := strings.TrimSpace(r.URL.Query().Get("role"))
-	if role != "" && role != access.BuiltinOrgOwnerRole && role != access.BuiltinOrgAdminRole && role != access.BuiltinOrgMemberRole {
+	if role != "" && !orgs.ValidMemberRole(role) {
 		errs["role"] = "Role must be Owner, Administrator, or Baseline Access."
 	}
 	if len(errs) != 0 {
 		app.failedValidation(w, r, fieldErrors(errs))
 		return
 	}
+	principal, ok := app.requestPrincipal(w, r)
+	if !ok {
+		return
+	}
 
-	members, err := app.db.ListOrgMembersPage(r.Context(), database.ListOrgMembersParams{
-		OrgID:    org.ID,
+	members, err := app.services.Orgs.ListMembers(r.Context(), principal, contextGetPathIDs(r).OrgID, orgs.ListMembersParams{
 		Search:   q.Search,
 		Role:     role,
 		Sort:     q.Sort,
@@ -211,265 +144,135 @@ func (app *application) listOrgMembers(w http.ResponseWriter, r *http.Request) {
 		PageSize: q.PageSize,
 	})
 	if err != nil {
-		app.serverError(w, r, err)
+		app.orgError(w, r, err, "")
 		return
 	}
-	err = response.JSON(w, http.StatusOK, members)
-	if err != nil {
+	if err := response.JSON(w, http.StatusOK, members); err != nil {
 		app.serverError(w, r, err)
 	}
 }
 
 func (app *application) getOrgMember(w http.ResponseWriter, r *http.Request) {
-	org := contextGetOrg(r)
 	accountID, err := strconv.ParseInt(chi.URLParam(r, "account_id"), 10, 64)
 	if err != nil {
 		app.notFound(w, r)
 		return
 	}
-
-	member, found, err := app.db.GetOrgMember(r.Context(), org.ID, accountID)
-	if err != nil {
-		app.serverError(w, r, err)
+	principal, ok := app.requestPrincipal(w, r)
+	if !ok {
 		return
 	}
-	if !found {
-		app.notFound(w, r)
+	member, err := app.services.Orgs.GetMember(r.Context(), principal, contextGetPathIDs(r).OrgID, accountID)
+	if err != nil {
+		app.orgError(w, r, err, "")
 		return
 	}
-	err = response.JSON(w, http.StatusOK, member)
-	if err != nil {
+	if err := response.JSON(w, http.StatusOK, member); err != nil {
 		app.serverError(w, r, err)
 	}
 }
 
 func (app *application) listOrgMemberTeams(w http.ResponseWriter, r *http.Request) {
-	org := contextGetOrg(r)
 	accountID, err := strconv.ParseInt(chi.URLParam(r, "account_id"), 10, 64)
 	if err != nil {
 		app.notFound(w, r)
 		return
 	}
-
-	isMember, err := app.db.IsOrgMember(r.Context(), org.ID, accountID)
-	if err != nil {
-		app.serverError(w, r, err)
-		return
-	}
-	if !isMember {
-		app.notFound(w, r)
-		return
-	}
-
 	q, errs := readListQuery(r.URL.Query(), map[string]string{
 		"name":       "name",
 		"created_at": "created_at",
 	})
-	slug := strings.TrimSpace(r.URL.Query().Get("slug"))
 	if len(errs) != 0 {
 		app.failedValidation(w, r, fieldErrors(errs))
 		return
 	}
+	principal, ok := app.requestPrincipal(w, r)
+	if !ok {
+		return
+	}
 
-	teams, err := app.db.ListAccountTeamsPage(r.Context(), database.ListTeamsParams{
-		OrgID:    org.ID,
+	teams, err := app.services.Orgs.ListMemberTeams(r.Context(), principal, contextGetPathIDs(r).OrgID, accountID, orgs.ListTeamsParams{
 		Search:   q.Search,
-		Slug:     slug,
+		Slug:     strings.TrimSpace(r.URL.Query().Get("slug")),
 		Sort:     q.Sort,
 		Order:    q.Order,
 		Page:     q.Page,
 		PageSize: q.PageSize,
-	}, accountID)
+	})
 	if err != nil {
-		app.serverError(w, r, err)
+		app.orgError(w, r, err, "")
 		return
 	}
-	err = response.JSON(w, http.StatusOK, teams)
-	if err != nil {
+	if err := response.JSON(w, http.StatusOK, teams); err != nil {
 		app.serverError(w, r, err)
 	}
 }
 
 func (app *application) removeOrgMember(w http.ResponseWriter, r *http.Request) {
-	org := contextGetOrg(r)
-	accountIDStr := chi.URLParam(r, "account_id")
-	accountID, err := strconv.ParseInt(accountIDStr, 10, 64)
+	ids := contextGetPathIDs(r)
+	accountID, err := strconv.ParseInt(chi.URLParam(r, "account_id"), 10, 64)
 	if err != nil {
 		app.notFound(w, r)
 		return
 	}
-
-	// Prevent removing the last owner.
-	if isLastOwner, checkErr := app.isLastOrgOwner(r, org.ID, accountID); checkErr != nil {
-		app.serverError(w, r, checkErr)
-		return
-	} else if isLastOwner {
-		app.logWarn(r, "last organization owner removal blocked", slog.Int64("target_account_id", accountID), slog.Int64("org_id", org.ID), slog.String("org_slug", org.Slug))
-		v := validator.Validator{}
-		v.AddError("Cannot remove the last owner of an organization.")
-		app.failedValidation(w, r, v)
+	principal, ok := app.requestPrincipal(w, r)
+	if !ok {
 		return
 	}
 
-	admin := contextGetAccount(r)
-	err = app.db.RemoveOrgMemberAccess(r.Context(), org.ID, accountID, &admin.ID, "org_membership_removed")
+	err = app.services.Orgs.RemoveMember(r.Context(), principal, contextGetPathIDs(r).OrgID, accountID)
+	if errors.Is(err, orgs.ErrLastOwner) {
+		app.logWarn(r, "last organization owner removal blocked", slog.Int64("target_account_id", accountID), slog.Int64("org_id", ids.OrgID), slog.String("org_slug", ids.OrgSlug))
+	}
 	if err != nil {
-		app.serverError(w, r, err)
+		app.orgError(w, r, err, "Cannot remove the last owner of an organization.")
 		return
 	}
-	app.revokeSessions(r, sessionRevokeInput{Kind: sessionRevokeOrgAccount, OrgID: strconv.FormatInt(org.ID, 10), AccountID: strconv.FormatInt(accountID, 10)})
-
-	app.enforcer.InvalidatePrincipals(org.ID, accountID)
-	app.logInfo(r, "organization member removed", slog.Int64("target_account_id", accountID), slog.Int64("org_id", org.ID), slog.String("org_slug", org.Slug))
+	app.logInfo(r, "organization member removed", slog.Int64("target_account_id", accountID), slog.Int64("org_id", ids.OrgID), slog.String("org_slug", ids.OrgSlug))
 	w.WriteHeader(http.StatusNoContent)
 }
 
 func (app *application) updateOrgMemberRole(w http.ResponseWriter, r *http.Request) {
 	var input struct {
-		Role string              `json:"role"`
-		V    validator.Validator `json:"-"`
+		Role string `json:"role"`
 	}
-
-	err := request.DecodeJSON(w, r, &input)
-	if err != nil {
+	if err := request.DecodeJSON(w, r, &input); err != nil {
 		app.badRequest(w, r, err)
 		return
 	}
-
-	input.V.CheckField(input.Role != "", "role", "Role is required.")
-	input.V.CheckField(input.Role == access.BuiltinOrgOwnerRole || input.Role == access.BuiltinOrgAdminRole || input.Role == access.BuiltinOrgMemberRole, "role", "Role must be Owner, Administrator, or Baseline Access.")
-	if input.V.HasErrors() {
-		app.failedValidation(w, r, input.V)
-		return
-	}
-
-	org := contextGetOrg(r)
-	accountIDStr := chi.URLParam(r, "account_id")
-	accountID, err := strconv.ParseInt(accountIDStr, 10, 64)
+	ids := contextGetPathIDs(r)
+	accountID, err := strconv.ParseInt(chi.URLParam(r, "account_id"), 10, 64)
 	if err != nil {
-		app.notFound(w, r)
-		return
-	}
-
-	// Prevent demoting the last owner.
-	if input.Role != access.BuiltinOrgOwnerRole {
-		if isLastOwner, checkErr := app.isLastOrgOwner(r, org.ID, accountID); checkErr != nil {
-			app.serverError(w, r, checkErr)
-			return
-		} else if isLastOwner {
-			app.logWarn(r, "last organization owner demotion blocked", slog.Int64("target_account_id", accountID), slog.Int64("org_id", org.ID), slog.String("org_slug", org.Slug), slog.String("requested_role", input.Role))
-			v := validator.Validator{}
-			v.AddError("Cannot demote the last owner of an organization.")
-			app.failedValidation(w, r, v)
+		if !orgs.ValidMemberRole(input.Role) {
+			app.orgError(w, r, memberRoleValidation(input.Role), "")
 			return
 		}
-	}
-
-	roles, err := app.db.ListOrgRoles(r.Context(), org.ID)
-	if err != nil {
-		app.serverError(w, r, err)
-		return
-	}
-	var roleID int64
-	for _, role := range roles {
-		if role.Name == input.Role && role.IsBuiltin {
-			roleID = role.ID
-			break
-		}
-	}
-	if roleID == 0 {
 		app.notFound(w, r)
 		return
 	}
+	principal, ok := app.requestPrincipal(w, r)
+	if !ok {
+		return
+	}
 
-	isMember, err := app.db.IsOrgMember(r.Context(), org.ID, accountID)
+	err = app.services.Orgs.UpdateMemberRole(r.Context(), principal, contextGetPathIDs(r).OrgID, accountID, input.Role)
+	if errors.Is(err, orgs.ErrLastOwner) {
+		app.logWarn(r, "last organization owner demotion blocked", slog.Int64("target_account_id", accountID), slog.Int64("org_id", ids.OrgID), slog.String("org_slug", ids.OrgSlug), slog.String("requested_role", input.Role))
+	}
 	if err != nil {
-		app.serverError(w, r, err)
+		app.orgError(w, r, err, "Cannot demote the last owner of an organization.")
 		return
 	}
-	if !isMember {
-		app.notFound(w, r)
-		return
-	}
-
-	var builtinRoleIDs []int64
-	for _, role := range roles {
-		if role.IsBuiltin && (role.Name == access.BuiltinOrgOwnerRole || role.Name == access.BuiltinOrgAdminRole || role.Name == access.BuiltinOrgMemberRole) {
-			builtinRoleIDs = append(builtinRoleIDs, role.ID)
-		}
-	}
-
-	grantor := contextGetAccount(r)
-	err = app.replaceOrgMemberBuiltinRole(r.Context(), org.ID, accountID, roleID, builtinRoleIDs, grantor.ID)
-	if err != nil {
-		app.serverError(w, r, err)
-		return
-	}
-
-	app.enforcer.InvalidatePrincipals(org.ID, accountID)
-	app.logInfo(r, "organization member builtin role updated", slog.Int64("target_account_id", accountID), slog.Int64("role_id", roleID), slog.String("role", input.Role))
+	app.logInfo(r, "organization member builtin role updated", slog.Int64("target_account_id", accountID), slog.String("role", input.Role))
 	w.WriteHeader(http.StatusNoContent)
 }
 
-func (app *application) replaceOrgMemberBuiltinRole(ctx context.Context, orgID, accountID, roleID int64, replacedRoleIDs []int64, grantorID int64) error {
-	err := app.db.RunInTx(ctx, nil, func(ctx context.Context, tx bun.Tx) error {
-		if len(replacedRoleIDs) > 0 {
-			if _, err := tx.NewDelete().
-				Model((*database.RoleBinding)(nil)).
-				Where("org_id = ? AND subject_type = ? AND subject_id = ? AND resource_type = ? AND resource_id = ? AND role_id IN (?)",
-					orgID, "account", accountID, "org", orgID, bun.List(replacedRoleIDs)).
-				Exec(ctx); err != nil {
-				return err
-			}
-		}
-		binding := database.RoleBinding{
-			OrgID:        orgID,
-			RoleID:       roleID,
-			SubjectType:  "account",
-			SubjectID:    accountID,
-			ResourceType: "org",
-			ResourceID:   orgID,
-			CreatedBy:    &grantorID,
-			CreatedAt:    time.Now(),
-		}
-		_, err := tx.NewInsert().Model(&binding).Ignore().Exec(ctx)
-		return err
-	})
-	if err != nil {
-		return err
+// memberRoleValidation reports an invalid role with the messages the service
+// uses, for a request rejected before it reaches the service.
+func memberRoleValidation(role string) error {
+	message := "Role must be Owner, Administrator, or Baseline Access."
+	if role == "" {
+		message = "Role is required."
 	}
-
-	app.enforcer.InvalidateOrgPolicy(orgID)
-	return nil
-}
-
-// isLastOrgOwner returns true if accountID is the only owner of the org.
-func (app *application) isLastOrgOwner(r *http.Request, orgID, accountID int64) (bool, error) {
-	roles, err := app.db.ListOrgRoles(r.Context(), orgID)
-	if err != nil {
-		return false, err
-	}
-	var ownerRoleID int64
-	for _, role := range roles {
-		if role.Name == access.BuiltinOrgOwnerRole && role.IsBuiltin {
-			ownerRoleID = role.ID
-			break
-		}
-	}
-	if ownerRoleID == 0 {
-		return false, nil
-	}
-	n, err := app.db.CountRoleBinding(r.Context(), orgID, ownerRoleID, "org", orgID)
-	if err != nil {
-		return false, err
-	}
-	if n <= 1 {
-		// Check that the target account actually holds the owner role.
-		holds, err := app.db.AccountHasRoleBinding(r.Context(), orgID, ownerRoleID, accountID, "org", orgID)
-		if err != nil {
-			return false, err
-		}
-		return holds, nil
-	}
-	return false, nil
+	return &orgs.ValidationError{Fields: map[string]string{"role": message}}
 }

@@ -16,11 +16,11 @@ func TestWorkspaceJobsListShowsOnlyCurrentUsersVisibleJobs(t *testing.T) {
 	app := newTestApp(t)
 	owner, token, org := seedOrgOwner(t, app, uniqueEmail(t, "jobs-owner"), "Jobs Owner", "Jobs Org")
 	ws := seedWorkspaceForAccount(t, app, org, owner, "Jobs Workspace", "")
-	if err := app.db.AddWorkspaceMember(context.Background(), ws.ID, owner.ID, nil); err != nil {
+	if err := testDB(app).AddWorkspaceMember(context.Background(), ws.ID, owner.ID, nil); err != nil {
 		t.Fatal(err)
 	}
 	other := seedAccount(t, app, uniqueEmail(t, "jobs-other"), "Jobs Other")
-	store := jobs.NewStore(app.db)
+	store := jobs.NewStore(testDB(app))
 	ctx := context.Background()
 	userJob, err := store.Enqueue(ctx, jobs.EnqueueInput{
 		Type:           "noop",
@@ -68,13 +68,13 @@ func TestWorkspaceJobGetAndCancelAreScopedToOwnerAndWorkspace(t *testing.T) {
 	owner, token, org := seedOrgOwner(t, app, uniqueEmail(t, "jobs-scope-owner"), "Jobs Scope Owner", "Jobs Scope Org")
 	ws := seedWorkspaceForAccount(t, app, org, owner, "Jobs Scope Workspace", "")
 	otherWS := seedWorkspaceForAccount(t, app, org, owner, "Other Jobs Scope Workspace", "")
-	if err := app.db.AddWorkspaceMember(context.Background(), ws.ID, owner.ID, nil); err != nil {
+	if err := testDB(app).AddWorkspaceMember(context.Background(), ws.ID, owner.ID, nil); err != nil {
 		t.Fatal(err)
 	}
-	if err := app.db.AddWorkspaceMember(context.Background(), otherWS.ID, owner.ID, nil); err != nil {
+	if err := testDB(app).AddWorkspaceMember(context.Background(), otherWS.ID, owner.ID, nil); err != nil {
 		t.Fatal(err)
 	}
-	store := jobs.NewStore(app.db)
+	store := jobs.NewStore(testDB(app))
 	ctx := context.Background()
 	job, err := store.Enqueue(ctx, jobs.EnqueueInput{
 		Type:           "noop",
@@ -115,13 +115,13 @@ func TestWorkspaceJobEventsAreScopedAndIncremental(t *testing.T) {
 	owner, token, org := seedOrgOwner(t, app, uniqueEmail(t, "jobs-events-owner"), "Jobs Events Owner", "Jobs Events Org")
 	ws := seedWorkspaceForAccount(t, app, org, owner, "Jobs Events Workspace", "")
 	otherWS := seedWorkspaceForAccount(t, app, org, owner, "Other Jobs Events Workspace", "")
-	if err := app.db.AddWorkspaceMember(context.Background(), ws.ID, owner.ID, nil); err != nil {
+	if err := testDB(app).AddWorkspaceMember(context.Background(), ws.ID, owner.ID, nil); err != nil {
 		t.Fatal(err)
 	}
-	if err := app.db.AddWorkspaceMember(context.Background(), otherWS.ID, owner.ID, nil); err != nil {
+	if err := testDB(app).AddWorkspaceMember(context.Background(), otherWS.ID, owner.ID, nil); err != nil {
 		t.Fatal(err)
 	}
-	store := jobs.NewStore(app.db)
+	store := jobs.NewStore(testDB(app))
 	ctx := context.Background()
 	job, err := store.Enqueue(ctx, jobs.EnqueueInput{
 		Type:           "export",
@@ -176,7 +176,7 @@ func TestFileContentReaperEnqueueUsesSingletonJob(t *testing.T) {
 	}
 
 	var count int
-	err := app.db.NewSelect().Model((*jobs.Record)(nil)).
+	err := testDB(app).NewSelect().Model((*jobs.Record)(nil)).
 		ColumnExpr("COUNT(*)").
 		Where("type = ?", jobs.TypeFileContentReap).
 		Where("visibility = ?", jobs.VisibilityInternal).

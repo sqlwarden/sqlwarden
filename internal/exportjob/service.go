@@ -244,11 +244,17 @@ func (s *Service) Download(ctx context.Context, p access.Principal, ref access.C
 	if onStart != nil {
 		onStart(filename)
 	}
-	return s.deps.Runtime.Stream(ctx, scope, id, execution.StreamRequest{
+	result, err := s.deps.Runtime.Stream(ctx, scope, id, execution.StreamRequest{
 		Format: in.Format,
 		SQL:    in.SQL,
 		Limits: execution.Limits{MaxBytes: policy.SyncMaxBytes},
 	}, w)
+	if errors.Is(err, exports.ErrByteLimitExceeded) {
+		s.deps.Logger.DebugContext(ctx, "export download aborted at byte limit",
+			slog.Int64("connection_id", conn.ID), slog.Int64("max_bytes", policy.SyncMaxBytes),
+			slog.Int64("rows", result.Rows), slog.Int64("bytes", result.Bytes))
+	}
+	return result, err
 }
 
 func execScope(orgID, workspaceID, accountID, connectionID int64) execution.Scope {

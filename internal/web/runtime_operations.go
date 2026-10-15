@@ -6,10 +6,9 @@ import (
 	"fmt"
 	"time"
 
-	"github.com/sqlwarden/internal/database"
 	"github.com/sqlwarden/internal/jobs"
 	"github.com/sqlwarden/internal/platform/observability"
-	"github.com/sqlwarden/internal/smtp"
+	"github.com/sqlwarden/internal/settings"
 )
 
 const runtimeSettingsRefreshInterval = 2 * time.Second
@@ -30,14 +29,14 @@ type runtimeOperations struct {
 	SMTPFrom                      string
 }
 
-func operationsFromSettings(settings database.InstanceSettings) runtimeOperations {
+func operationsFromSettings(in settings.Instance) runtimeOperations {
 	return runtimeOperations{
-		LogLevel: settings.LogLevel, DatabaseQueryTracingEnabled: settings.DatabaseQueryTracingEnabled,
-		AccessLogsEnabled: settings.AccessLogsEnabled,
-		JobsWorkerCount:   settings.JobsWorkerCount, JobsPollIntervalSeconds: settings.JobsPollIntervalSeconds,
-		JobsClaimLeaseSeconds: settings.JobsClaimLeaseSeconds, JobsCompletedRetentionSeconds: settings.JobsCompletedRetentionSeconds,
-		SMTPEnabled: settings.SMTPEnabled, SMTPHost: settings.SMTPHost, SMTPPort: settings.SMTPPort,
-		SMTPUsername: settings.SMTPUsername, SMTPPasswordEncrypted: settings.SMTPPasswordEncrypted, SMTPFrom: settings.SMTPFrom,
+		LogLevel: in.LogLevel, DatabaseQueryTracingEnabled: in.DatabaseQueryTracingEnabled,
+		AccessLogsEnabled: in.AccessLogsEnabled,
+		JobsWorkerCount:   in.JobsWorkerCount, JobsPollIntervalSeconds: in.JobsPollIntervalSeconds,
+		JobsClaimLeaseSeconds: in.JobsClaimLeaseSeconds, JobsCompletedRetentionSeconds: in.JobsCompletedRetentionSeconds,
+		SMTPEnabled: in.SMTPEnabled, SMTPHost: in.SMTPHost, SMTPPort: in.SMTPPort,
+		SMTPUsername: in.SMTPUsername, SMTPPasswordEncrypted: in.SMTPPasswordEncrypted, SMTPFrom: in.SMTPFrom,
 	}
 }
 
@@ -50,62 +49,36 @@ func (o runtimeOperations) workerConfig() jobs.WorkerConfig {
 	}
 }
 
-func (app *application) applyRuntimeOperations(settings database.InstanceSettings) error {
-	mailer := smtp.NewDisabledMailer(settings.SMTPFrom)
-	if settings.SMTPEnabled {
-		password := ""
-		if settings.SMTPPasswordEncrypted != "" {
-			var err error
-			password, err = app.keyring.Decrypt(settings.SMTPPasswordEncrypted)
-			if err != nil {
-				return fmt.Errorf("decrypt SMTP password: %w", err)
-			}
-		}
-		var err error
-		mailer, err = smtp.NewMailer(settings.SMTPHost, settings.SMTPPort, settings.SMTPUsername, password, settings.SMTPFrom)
-		if err != nil {
-			return fmt.Errorf("configure SMTP: %w", err)
-		}
+func (app *application) applyRuntimeOperations(in settings.Instance) error {
+	mailer, err := app.services.NewMailer(in)
+	if err != nil {
+		return err
 	}
-	if err := observability.SetLevel(app.logger, settings.LogLevel); err != nil {
+	if err := observability.SetLevel(app.logger, in.LogLevel); err != nil {
 		return fmt.Errorf("apply runtime log level: %w", err)
 	}
-	app.db.SetQueryTracing(settings.DatabaseQueryTracingEnabled)
-	app.accessLogsEnabled.Store(settings.AccessLogsEnabled)
-	app.mailerMu.Lock()
-	app.mailer = mailer
-	app.mailerMu.Unlock()
+	app.services.SetQueryTracing(in.DatabaseQueryTracingEnabled)
+	app.accessLogsEnabled.Store(in.AccessLogsEnabled)
+	app.services.Mailer.Set(mailer)
 	return nil
 }
 
-func (app *application) sendEmail(once bool, recipient string, data any, patterns ...string) error {
-	app.mailerMu.RLock()
-	defer app.mailerMu.RUnlock()
-	if app.mailer == nil {
-		return smtp.ErrDisabled
-	}
-	if once {
-		return app.mailer.SendOnce(recipient, data, patterns...)
-	}
-	return app.mailer.Send(recipient, data, patterns...)
-}
-
-func (app *application) queueRuntimeOperations(settings database.InstanceSettings) {
+func (app *application) queueRuntimeOperations(in settings.Instance) {
 	if app.runtimeUpdates == nil {
 		return
 	}
 	select {
-	case app.runtimeUpdates <- settings:
+	case app.runtimeUpdates <- in:
 	default:
 		select {
 		case <-app.runtimeUpdates:
 		default:
 		}
-		app.runtimeUpdates <- settings
+		app.runtimeUpdates <- in
 	}
 }
 
-func (app *application) startRuntimeSupervisor(initial database.InstanceSettings, runJobs bool) {
+func (app *application) startRuntimeSupervisor(initial settings.Instance, runJobs bool) {
 	if app.runtimeCancel != nil {
 		return
 	}
@@ -121,7 +94,7 @@ func (app *application) startRuntimeSupervisor(initial database.InstanceSettings
 // runRuntimeSupervisor applies instance settings changes until ctx ends. The
 // job runner is restarted on worker setting changes, and runs only when
 // runJobs is set.
-func (app *application) runRuntimeSupervisor(ctx context.Context, initial database.InstanceSettings, runJobs bool) {
+func (app *application) runRuntimeSupervisor(ctx context.Context, initial settings.Instance, runJobs bool) {
 	current := operationsFromSettings(initial)
 	var runnerStop chan struct{}
 	var runnerDone chan struct{}
@@ -148,12 +121,12 @@ func (app *application) runRuntimeSupervisor(ctx context.Context, initial databa
 	startRunner(current.workerConfig())
 	defer stopRunner()
 
-	apply := func(settings database.InstanceSettings) {
-		next := operationsFromSettings(settings)
+	apply := func(in settings.Instance) {
+		next := operationsFromSettings(in)
 		if next == current {
 			return
 		}
-		if err := app.applyRuntimeOperations(settings); err != nil {
+		if err := app.applyRuntimeOperations(in); err != nil {
 			app.logger.ErrorContext(ctx, "runtime operations update rejected", "error", err)
 			return
 		}
@@ -171,17 +144,17 @@ func (app *application) runRuntimeSupervisor(ctx context.Context, initial databa
 		select {
 		case <-ctx.Done():
 			return
-		case settings := <-app.runtimeUpdates:
-			apply(settings)
+		case in := <-app.runtimeUpdates:
+			apply(in)
 		case <-ticker.C:
-			settings, err := app.instanceSettings(ctx)
+			in, err := app.services.Settings.Instance(ctx)
 			if err != nil {
 				if !errors.Is(err, context.Canceled) {
 					app.logger.ErrorContext(ctx, "runtime operations refresh failed", "error", err)
 				}
 				continue
 			}
-			apply(settings)
+			apply(in)
 		}
 	}
 }

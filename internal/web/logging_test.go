@@ -11,6 +11,7 @@ import (
 	"testing"
 
 	"github.com/go-chi/chi/v5"
+	"github.com/sqlwarden/internal/services"
 )
 
 var errTestServerFailure = errors.New("test server failure")
@@ -151,7 +152,8 @@ func TestRequestLoggingContextReplacesInvalidIncomingRequestID(t *testing.T) {
 func TestReportServerErrorLogsRequestIDAndSafeRequestPath(t *testing.T) {
 	var buf bytes.Buffer
 	app := &application{
-		logger: slog.New(slog.NewJSONHandler(&buf, &slog.HandlerOptions{Level: slog.LevelDebug})),
+		logger:   slog.New(slog.NewJSONHandler(&buf, &slog.HandlerOptions{Level: slog.LevelDebug})),
+		services: &services.Services{},
 	}
 
 	router := chi.NewRouter()

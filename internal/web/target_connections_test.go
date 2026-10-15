@@ -113,7 +113,7 @@ func TestTargetPolicySQLiteFilePolicy(t *testing.T) {
 				tt.configure(t, app)
 			}
 
-			err := app.targetPolicy.Check(context.Background(), tt.driverName, tt.dsn)
+			err := settings.NewTargetPolicy(testDB(app)).Check(context.Background(), tt.driverName, tt.dsn)
 			if !tt.wantErr {
 				if err != nil {
 					t.Fatalf("target policy returned error: %v", err)

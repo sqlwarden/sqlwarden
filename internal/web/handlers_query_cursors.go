@@ -11,6 +11,7 @@ import (
 	queryapp "github.com/sqlwarden/internal/query"
 	"github.com/sqlwarden/internal/request"
 	"github.com/sqlwarden/internal/response"
+	"github.com/sqlwarden/internal/settings"
 	"github.com/sqlwarden/pkg/result"
 )
 
@@ -38,8 +39,8 @@ type queryCursorPageResponse struct {
 	PageSize         int             `json:"page_size"`
 }
 
-func queryLimits(settings effectiveRuntimeSettings) execution.Limits {
-	return execution.Limits{MaxRows: settings.QueryMaxResultRows, MaxBytes: settings.QueryMaxResultBytes}
+func queryLimits(effective settings.Effective) execution.Limits {
+	return execution.Limits{MaxRows: effective.QueryMaxResultRows, MaxBytes: effective.QueryMaxResultBytes}
 }
 
 func (app *application) startQueryCursor(w http.ResponseWriter, r *http.Request) {

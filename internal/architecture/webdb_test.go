@@ -10,10 +10,11 @@ import (
 	"testing"
 )
 
-// webDatabaseUseCeiling is the number of app.db selector expressions in
-// production web code. Lower it whenever a change removes uses. It must never
-// rise, and it reaches 0 when every handler goes through a service.
-const webDatabaseUseCeiling = 187
+// webDatabaseUseCeiling is the number of .db selector expressions in
+// production web code, on any receiver. Every handler goes through a service,
+// so it must stay 0. Counting every receiver keeps a renamed or aliased
+// application value from hiding direct metadata access.
+const webDatabaseUseCeiling = 0
 
 func TestWebDatabaseUseOnlyDecreases(t *testing.T) {
 	dir := filepath.Join(repoRoot(t), "internal", "web")
@@ -22,7 +23,7 @@ func TestWebDatabaseUseOnlyDecreases(t *testing.T) {
 		t.Fatal(err)
 	}
 	fset := token.NewFileSet()
-	count := 0
+	var uses []string
 	for _, entry := range entries {
 		name := entry.Name()
 		if !strings.HasSuffix(name, ".go") || strings.HasSuffix(name, "_test.go") {
@@ -34,19 +35,16 @@ func TestWebDatabaseUseOnlyDecreases(t *testing.T) {
 		}
 		ast.Inspect(file, func(n ast.Node) bool {
 			sel, ok := n.(*ast.SelectorExpr)
-			if !ok || sel.Sel.Name != "db" {
-				return true
-			}
-			if ident, ok := sel.X.(*ast.Ident); ok && ident.Name == "app" {
-				count++
+			if ok && sel.Sel.Name == "db" {
+				uses = append(uses, fset.Position(sel.Sel.Pos()).String())
 			}
 			return true
 		})
 	}
-	if count > webDatabaseUseCeiling {
-		t.Fatalf("internal/web has %d app.db uses, ceiling is %d; route new data access through a service", count, webDatabaseUseCeiling)
+	if len(uses) > webDatabaseUseCeiling {
+		t.Fatalf("internal/web has %d .db uses, ceiling is %d; route data access through a service:\n%s", len(uses), webDatabaseUseCeiling, strings.Join(uses, "\n"))
 	}
-	if count < webDatabaseUseCeiling {
-		t.Fatalf("internal/web has %d app.db uses, ceiling is %d; lower webDatabaseUseCeiling to %d", count, webDatabaseUseCeiling, count)
+	if len(uses) < webDatabaseUseCeiling {
+		t.Fatalf("internal/web has %d .db uses, ceiling is %d; lower webDatabaseUseCeiling to %d", len(uses), webDatabaseUseCeiling, len(uses))
 	}
 }

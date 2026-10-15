@@ -1,114 +1,28 @@
 package web
 
 import (
-	"context"
 	"errors"
 	"net/http"
 
 	"github.com/sqlwarden/internal/access"
-	"github.com/sqlwarden/internal/database"
+	"github.com/sqlwarden/internal/catalog"
 	"github.com/sqlwarden/internal/exportjob"
+	"github.com/sqlwarden/internal/files"
 	"github.com/sqlwarden/internal/jobs"
 	queryapp "github.com/sqlwarden/internal/query"
 	"github.com/sqlwarden/internal/response"
 	"github.com/sqlwarden/internal/validator"
 )
 
-var errDirectoryStoreNotConfigured = errors.New("web: directory store is not configured")
+func (app *application) catalogService() *catalog.Service { return app.services.Catalog }
 
-type directoryStore interface {
-	GetOrg(ctx context.Context, id int64) (database.Organization, bool, error)
-	IsOrgMember(ctx context.Context, orgID, accountID int64) (bool, error)
-	IsEffectiveWorkspaceMember(ctx context.Context, orgID, workspaceID, accountID int64) (bool, error)
-	GetWorkspace(ctx context.Context, id int64) (database.Workspace, bool, error)
-	GetConnection(ctx context.Context, id int64) (database.Connection, bool, error)
-}
+func (app *application) queryService() *queryapp.Service { return app.services.Query }
 
-type directoryAdapter struct {
-	store directoryStore
-}
+func (app *application) exportService() *exportjob.Service { return app.services.Exports }
 
-var _ access.Directory = directoryAdapter{}
+func (app *application) jobService() *jobs.Service { return app.services.Jobs }
 
-func (d directoryAdapter) GetOrg(ctx context.Context, id int64) (access.Org, bool, error) {
-	if d.store == nil {
-		return access.Org{}, false, errDirectoryStoreNotConfigured
-	}
-	org, found, err := d.store.GetOrg(ctx, id)
-	if err != nil || !found {
-		return access.Org{}, found, err
-	}
-	return access.Org{ID: org.ID, Slug: org.Slug, Name: org.Name}, true, nil
-}
-
-func (d directoryAdapter) IsOrgMember(ctx context.Context, orgID, accountID int64) (bool, error) {
-	if d.store == nil {
-		return false, errDirectoryStoreNotConfigured
-	}
-	return d.store.IsOrgMember(ctx, orgID, accountID)
-}
-
-func (d directoryAdapter) IsEffectiveWorkspaceMember(ctx context.Context, orgID, workspaceID, accountID int64) (bool, error) {
-	if d.store == nil {
-		return false, errDirectoryStoreNotConfigured
-	}
-	return d.store.IsEffectiveWorkspaceMember(ctx, orgID, workspaceID, accountID)
-}
-
-func (d directoryAdapter) GetWorkspace(ctx context.Context, id int64) (access.Workspace, bool, error) {
-	if d.store == nil {
-		return access.Workspace{}, false, errDirectoryStoreNotConfigured
-	}
-	workspace, found, err := d.store.GetWorkspace(ctx, id)
-	if err != nil || !found {
-		return access.Workspace{}, found, err
-	}
-	return access.Workspace{
-		ID:        workspace.ID,
-		OrgID:     workspace.OrgID,
-		OwnerType: workspace.OwnerType,
-		OwnerID:   workspace.OwnerID,
-		Name:      workspace.Name,
-	}, true, nil
-}
-
-func (d directoryAdapter) GetConnection(ctx context.Context, id int64) (access.Connection, bool, error) {
-	if d.store == nil {
-		return access.Connection{}, false, errDirectoryStoreNotConfigured
-	}
-	connection, found, err := d.store.GetConnection(ctx, id)
-	if err != nil || !found {
-		return access.Connection{}, found, err
-	}
-	return access.Connection{
-		ID:            connection.ID,
-		WorkspaceID:   connection.WorkspaceID,
-		EnvironmentID: connection.EnvironmentID,
-		Name:          connection.Name,
-		Driver:        connection.Driver,
-	}, true, nil
-}
-
-func (app *application) requirer() *access.Requirer {
-	app.requirerOnce.Do(func() {
-		app.accessRequirer = access.NewRequirer(directoryAdapter{store: app.db}, app.policy)
-	})
-	return app.accessRequirer
-}
-
-func (app *application) jobService() *jobs.Service {
-	app.jobServiceOnce.Do(func() {
-		app.jobSvc = jobs.NewService(app.workspaceJobStore(), app.requirer())
-	})
-	return app.jobSvc
-}
-
-func (app *application) workspaceJobStore() *jobs.DatabaseStore {
-	if app.jobStore == nil {
-		app.jobStore = jobs.NewStore(app.db)
-	}
-	return app.jobStore
-}
+func (app *application) workspaceFileService() *files.Service { return app.services.Files }
 
 func (app *application) serviceError(w http.ResponseWriter, r *http.Request, err error) {
 	switch {
@@ -119,81 +33,6 @@ func (app *application) serviceError(w http.ResponseWriter, r *http.Request, err
 	default:
 		app.serverError(w, r, err)
 	}
-}
-
-// queryService builds the query service on first use.
-func (app *application) queryService() *queryapp.Service {
-	app.queryOnce.Do(func() {
-		app.querySvc = queryapp.New(queryapp.Deps{
-			Store:    app.db,
-			Settings: querySettings{app: app},
-			Requirer: app.requirer(),
-			Runtime:  app.runtime,
-			Audit:    app.audit,
-			Logger:   app.logger,
-		})
-	})
-	return app.querySvc
-}
-
-type querySettings struct{ app *application }
-
-func (s querySettings) ForWorkspace(ctx context.Context, ws access.Workspace) (queryapp.Policy, error) {
-	effective, err := s.app.effectiveRuntimeSettingsForWorkspace(ctx, databaseWorkspace(ws))
-	if err != nil {
-		return queryapp.Policy{}, err
-	}
-	return queryapp.Policy{
-		HistoryMode:      effective.QueryHistoryMode,
-		HistoryRetention: effective.QueryHistoryRetentionCount,
-		FavoritesMode:    effective.QueryFavoritesMode,
-		MaxRows:          effective.QueryMaxResultRows,
-		MaxBytes:         effective.QueryMaxResultBytes,
-		CursorPageSize:   effective.QueryCursorPageSize,
-	}, nil
-}
-
-// exportService builds the export service on first use.
-func (app *application) exportService() *exportjob.Service {
-	app.exportOnce.Do(func() {
-		app.exportSvc = exportjob.New(exportjob.Deps{
-			Requirer: app.requirer(),
-			Queue:    app.workspaceJobStore(),
-			Runtime:  app.runtime,
-			Settings: exportSettings{app: app},
-			Files:    exportFiles{app: app},
-			Audit:    app.audit,
-			Logger:   app.logger,
-		})
-	})
-	return app.exportSvc
-}
-
-func databaseWorkspace(ws access.Workspace) database.Workspace {
-	return database.Workspace{ID: ws.ID, OrgID: ws.OrgID, OwnerType: ws.OwnerType, OwnerID: ws.OwnerID, Name: ws.Name}
-}
-
-type exportSettings struct{ app *application }
-
-func (s exportSettings) ForWorkspace(ctx context.Context, ws access.Workspace) (exportjob.Policy, error) {
-	effective, err := s.app.effectiveRuntimeSettingsForWorkspace(ctx, databaseWorkspace(ws))
-	if err != nil {
-		return exportjob.Policy{}, err
-	}
-	return exportjob.Policy{
-		SyncMaxBytes:       effective.ExportsSyncMaxBytes,
-		BackgroundMaxBytes: effective.ExportsBackgroundMaxBytes,
-	}, nil
-}
-
-type exportFiles struct{ app *application }
-
-func (f exportFiles) ForWorkspace(ctx context.Context, ws access.Workspace) (exportjob.FileWriter, error) {
-	effective, err := f.app.effectiveRuntimeSettingsForWorkspace(ctx, databaseWorkspace(ws))
-	if err != nil {
-		return nil, err
-	}
-	return f.app.workspaceFileServiceWithSettings(effective), nil
 }
 
 // queryError maps query service failures to the standard error envelope.

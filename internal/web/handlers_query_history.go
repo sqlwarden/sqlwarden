@@ -89,7 +89,7 @@ func (app *application) listWorkspaceQueryHistory(w http.ResponseWriter, r *http
 		return
 	}
 
-	result, err := app.queryService().ListWorkspaceHistory(r.Context(), principal, contextGetOrg(r).ID, contextGetWorkspace(r).ID, connectionID, query.ListQuery{Search: q.Search, Page: q.Page, PageSize: q.PageSize})
+	result, err := app.queryService().ListWorkspaceHistory(r.Context(), principal, contextGetPathIDs(r).OrgID, contextGetPathIDs(r).WorkspaceID, connectionID, query.ListQuery{Search: q.Search, Page: q.Page, PageSize: q.PageSize})
 	if err != nil {
 		app.queryError(w, r, err)
 		return

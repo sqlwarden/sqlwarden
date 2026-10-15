@@ -5,8 +5,12 @@ import (
 	"encoding/json"
 	"fmt"
 	"net/http"
+	"net/http/httptest"
+	"slices"
 	"strings"
+	"sync"
 	"testing"
+	"time"
 
 	"github.com/sqlwarden/internal/access"
 	"github.com/sqlwarden/internal/assert"
@@ -14,18 +18,18 @@ import (
 	"github.com/sqlwarden/internal/database"
 	"github.com/sqlwarden/internal/identity"
 	"github.com/sqlwarden/internal/orgs"
+	"github.com/uptrace/bun/dialect"
 )
 
-// setupInstance calls POST /api/setup and returns the access token.
+// setupInstance calls POST /api/setup and returns the access token. Setup
+// strategies that need no input ignore the body.
 func setupInstance(t *testing.T, app *application, email, name, password string) string {
 	t.Helper()
 	body := map[string]any{
-		"email":    email,
-		"name":     name,
-		"password": password,
-	}
-	if app.setupStrategy.RequiresInput() {
-		body["organization_name"] = "Default Organization"
+		"email":             email,
+		"name":              name,
+		"password":          password,
+		"organization_name": "Default Organization",
 	}
 	res := send(t, newTestRequest(t, http.MethodPost, "/api/setup", body), app.routes())
 	if res.StatusCode != http.StatusCreated {
@@ -60,19 +64,93 @@ func TestSetupCreatesFirstInstanceAdmin(t *testing.T) {
 	assert.Equal(t, org["name"], "Acme Cloud")
 }
 
-func TestSetupWritesAuditEvent(t *testing.T) {
+func TestConcurrentSetupConfiguresInstanceOnce(t *testing.T) {
+	t.Parallel()
 	app := newTestApp(t)
+	db := testDB(app)
+	if db.Dialect().Name() != dialect.PG {
+		t.Skip("concurrent setup serialization is exercised against PostgreSQL")
+	}
+	db.SetMaxOpenConns(6)
+	ctx := context.Background()
+
+	// Holding the setup lock parks both setups after their pre-transaction
+	// checks, so both reach the in-transaction check before either commits.
+	holder, err := db.BeginTx(ctx, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _ = holder.Rollback() }()
+	if err := db.LockFirstRunSetup(ctx, holder); err != nil {
+		t.Fatal(err)
+	}
+
+	handler := app.routes()
+	requests := []*http.Request{
+		newTestRequest(t, http.MethodPost, "/api/setup", map[string]any{
+			"email": "race-one@example.com", "name": "One", "password": "securepass99",
+			"organization_name": "Race One", "organization_slug": "race-one",
+		}),
+		newTestRequest(t, http.MethodPost, "/api/setup", map[string]any{
+			"email": "race-two@example.com", "name": "Two", "password": "securepass99",
+			"organization_name": "Race Two", "organization_slug": "race-two",
+		}),
+	}
+	statuses := make([]int, len(requests))
+	var wg sync.WaitGroup
+	for i, req := range requests {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			rec := httptest.NewRecorder()
+			handler.ServeHTTP(rec, req)
+			statuses[i] = rec.Code
+		}()
+	}
+
+	deadline := time.Now().Add(10 * time.Second)
+	for {
+		var waiting int
+		err := db.NewSelect().TableExpr("pg_locks").ColumnExpr("COUNT(*)").
+			Where("locktype = 'advisory'").Where("NOT granted").
+			Where("database = (SELECT oid FROM pg_database WHERE datname = current_database())").
+			Scan(ctx, &waiting)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if waiting == len(requests) {
+			break
+		}
+		if time.Now().After(deadline) {
+			t.Fatalf("setups waiting on the lock = %d, want %d", waiting, len(requests))
+		}
+		time.Sleep(20 * time.Millisecond)
+	}
+	if err := holder.Commit(); err != nil {
+		t.Fatal(err)
+	}
+	wg.Wait()
+
+	slices.Sort(statuses)
+	assert.Equal(t, statuses[0], http.StatusCreated)
+	assert.Equal(t, statuses[1], http.StatusConflict)
+	admins, err := db.CountInstanceAdmins(ctx)
+	assert.Nil(t, err)
+	assert.Equal(t, admins, 1)
+}
+
+func TestSetupWritesAuditEvent(t *testing.T) {
 	var events []audit.Event
-	app.audit = audit.WriterFunc(func(_ context.Context, event audit.Event) error {
+	app := newTestAppWith(t, testAppOptions{audit: audit.WriterFunc(func(_ context.Context, event audit.Event) error {
 		events = append(events, event)
 		return nil
-	})
+	})})
 
 	input := identity.SetupInput{
 		Email: "admin@example.com", Name: "Admin", Password: "securepass99",
 		OrganizationName: "Acme Cloud",
 	}
-	plan, fieldErrors := app.setupStrategy.Plan(input)
+	plan, fieldErrors := identity.FormSetup.Plan(input)
 	if len(fieldErrors) != 0 {
 		t.Fatalf("setup plan errors: %v", fieldErrors)
 	}
@@ -110,11 +188,11 @@ func TestSetupInMultiUserModeSeedsFirstOrganizationAndOwnerPolicy(t *testing.T) 
 	}), app.routes())
 	assert.Equal(t, res.StatusCode, http.StatusCreated)
 
-	account, found, err := app.db.GetAccountByEmail(t.Context(), "admin@example.com")
+	account, found, err := testDB(app).GetAccountByEmail(t.Context(), "admin@example.com")
 	assert.Nil(t, err)
 	assert.True(t, found)
 
-	orgs, err := app.db.ListAccountOrgsPage(t.Context(), database.ListAccountOrgsParams{
+	orgs, err := testDB(app).ListAccountOrgsPage(t.Context(), database.ListAccountOrgsParams{
 		AccountID: account.ID,
 		Page:      1,
 		PageSize:  10,
@@ -175,7 +253,7 @@ func TestSetupInMultiUserModeRejectsDuplicateOrganizationSlug(t *testing.T) {
 	t.Parallel()
 	app := newTestApp(t)
 
-	_, err := app.db.InsertOrg(t.Context(), "first-org", "Existing Organization")
+	_, err := testDB(app).InsertOrg(t.Context(), "first-org", "Existing Organization")
 	assert.Nil(t, err)
 
 	res := send(t, newTestRequest(t, http.MethodPost, "/api/setup", map[string]any{
@@ -188,51 +266,23 @@ func TestSetupInMultiUserModeRejectsDuplicateOrganizationSlug(t *testing.T) {
 
 	assert.Equal(t, res.StatusCode, http.StatusUnprocessableEntity)
 
-	_, found, err := app.db.GetAccountByEmail(t.Context(), "admin@example.com")
+	_, found, err := testDB(app).GetAccountByEmail(t.Context(), "admin@example.com")
 	assert.Nil(t, err)
 	assert.Equal(t, found, false)
 }
 
-func TestCreateFirstRunSetup_RollsBackAccountAdminAndSessionOnOrgFailure(t *testing.T) {
-	t.Parallel()
-	app := newTestApp(t)
-
-	_, err := app.db.InsertOrg(t.Context(), "first-org", "Existing Organization")
-	assert.Nil(t, err)
-
-	hashedPassword := testUsers["alice"].hashedPassword
-	_, _, _, err = app.createFirstRunSetup(t.Context(), "rollback-admin@example.com", "Rollback Admin", &hashedPassword, "first-org", "First Organization", "agent", "127.0.0.1", identity.MethodPassword)
-	if err == nil {
-		t.Fatal("expected duplicate organization failure")
-	}
-
-	_, found, err := app.db.GetAccountByEmail(t.Context(), "rollback-admin@example.com")
-	assert.Nil(t, err)
-	assert.False(t, found)
-
-	adminCount, err := app.db.CountInstanceAdmins(t.Context())
-	assert.Nil(t, err)
-	assert.Equal(t, adminCount, 0)
-
-	var sessionCount int
-	err = app.db.NewSelect().TableExpr("auth_sessions").ColumnExpr("COUNT(*)").Scan(t.Context(), &sessionCount)
-	assert.Nil(t, err)
-	assert.Equal(t, sessionCount, 0)
-}
-
 func TestSetupInSingleUserModeSeedsLocalOrganizationAndOwnerPolicy(t *testing.T) {
 	t.Parallel()
-	app := newTestApp(t)
-	app.setupStrategy = identity.LocalSetup
+	app := newTestAppWith(t, testAppOptions{setup: identity.LocalSetup})
 	app.invitationPolicy = orgs.InvitationsDisabled
 
 	token := setupInstance(t, app, "admin@example.com", "Admin", "securepass99")
 
-	account, found, err := app.db.GetAccountByEmail(t.Context(), identity.LocalAccountEmail)
+	account, found, err := testDB(app).GetAccountByEmail(t.Context(), identity.LocalAccountEmail)
 	assert.Nil(t, err)
 	assert.True(t, found)
 
-	orgs, err := app.db.ListAccountOrgsPage(t.Context(), database.ListAccountOrgsParams{
+	orgs, err := testDB(app).ListAccountOrgsPage(t.Context(), database.ListAccountOrgsParams{
 		AccountID: account.ID,
 		Page:      1,
 		PageSize:  10,
@@ -729,10 +779,10 @@ func TestCreateInstanceAccount(t *testing.T) {
 	loginRes := loginTestUser(t, app, "created@example.com", "securepass99")
 	assert.Equal(t, loginRes.StatusCode, http.StatusOK)
 
-	account, found, err := app.db.GetAccountByEmail(t.Context(), "created@example.com")
+	account, found, err := testDB(app).GetAccountByEmail(t.Context(), "created@example.com")
 	assert.Nil(t, err)
 	assert.True(t, found)
-	orgs, err := app.db.ListAccountOrgsPage(t.Context(), database.ListAccountOrgsParams{AccountID: account.ID, Page: 1, PageSize: 10})
+	orgs, err := testDB(app).ListAccountOrgsPage(t.Context(), database.ListAccountOrgsParams{AccountID: account.ID, Page: 1, PageSize: 10})
 	assert.Nil(t, err)
 	assert.Equal(t, orgs.Total, 0)
 }
@@ -954,8 +1004,7 @@ func TestInstanceSettingsOmitSchemaLazyThreshold(t *testing.T) {
 
 func TestSetupDesktopIsSelfSealing(t *testing.T) {
 	t.Parallel()
-	app := newTestApp(t)
-	app.setupStrategy = identity.LocalSetup
+	app := newTestAppWith(t, testAppOptions{setup: identity.LocalSetup})
 	app.invitationPolicy = orgs.InvitationsDisabled
 
 	res := send(t, newTestRequest(t, http.MethodPost, "/api/setup", map[string]any{}), app.routes())
@@ -963,21 +1012,20 @@ func TestSetupDesktopIsSelfSealing(t *testing.T) {
 	assert.NotEqual(t, res.BodyFields["access_token"].(string), "")
 	org := res.BodyFields["organization"].(map[string]any)
 	assert.Equal(t, org["slug"].(string), identity.LocalOrganizationSlug)
-	before, err := app.db.NewSelect().TableExpr("accounts").Count(t.Context())
+	before, err := testDB(app).NewSelect().TableExpr("accounts").Count(t.Context())
 	assert.Nil(t, err)
 
 	again := send(t, newTestRequest(t, http.MethodPost, "/api/setup", map[string]any{}), app.routes())
 	assert.Equal(t, again.StatusCode, http.StatusConflict)
 
-	after, err := app.db.NewSelect().TableExpr("accounts").Count(t.Context())
+	after, err := testDB(app).NewSelect().TableExpr("accounts").Count(t.Context())
 	assert.Nil(t, err)
 	assert.Equal(t, after, before)
 }
 
 func TestSetupStatusReportsCapabilities(t *testing.T) {
 	t.Parallel()
-	app := newTestApp(t)
-	app.setupStrategy = identity.LocalSetup
+	app := newTestAppWith(t, testAppOptions{setup: identity.LocalSetup})
 	app.invitationPolicy = orgs.InvitationsDisabled
 
 	res := send(t, newTestRequest(t, http.MethodGet, "/api/setup/status", nil), app.routes())
@@ -1002,7 +1050,7 @@ func TestSetupStoresResolvedClientIPOnAuthSession(t *testing.T) {
 	assert.Equal(t, res.StatusCode, http.StatusCreated)
 
 	var ip string
-	err := app.db.NewSelect().TableExpr("auth_sessions").ColumnExpr("ip_address").Limit(1).Scan(t.Context(), &ip)
+	err := testDB(app).NewSelect().TableExpr("auth_sessions").ColumnExpr("ip_address").Limit(1).Scan(t.Context(), &ip)
 	assert.Nil(t, err)
 	assert.Equal(t, ip, "203.0.113.9")
 }

@@ -87,7 +87,7 @@ func TestWorkspaceMembersAPI_AddListRemoveAndVisibility(t *testing.T) {
 	owner, ownerTok, org := seedOrgOwner(t, app, uniqueEmail(t, "ws-members-owner"), "Workspace Owner", "Workspace Members Org")
 	ws := seedWorkspaceForAccount(t, app, org, owner, "Primary", "")
 	member, memberTok := seedAccountWithToken(t, app, uniqueEmail(t, "ws-members-member"), "Workspace Member")
-	if err := app.db.AddOrgMember(context.Background(), org.ID, member.ID); err != nil {
+	if err := testDB(app).AddOrgMember(context.Background(), org.ID, member.ID); err != nil {
 		t.Fatal(err)
 	}
 
@@ -156,7 +156,7 @@ func TestWorkspaceMembersAPI_CrossWorkspaceIsolation(t *testing.T) {
 	wsA := seedWorkspaceForAccount(t, app, org, owner, "A", "")
 	wsB := seedWorkspaceForAccount(t, app, org, owner, "B", "")
 	member, memberTok := seedAccountWithToken(t, app, uniqueEmail(t, "ws-members-isolation-member"), "Member")
-	if err := app.db.AddOrgMember(context.Background(), org.ID, member.ID); err != nil {
+	if err := testDB(app).AddOrgMember(context.Background(), org.ID, member.ID); err != nil {
 		t.Fatal(err)
 	}
 
@@ -193,14 +193,14 @@ func TestWorkspaceTeamsAPI_AddListRemoveAndDerivedVisibility(t *testing.T) {
 	owner, ownerTok, org := seedOrgOwner(t, app, uniqueEmail(t, "ws-teams-owner"), "Workspace Owner", "Workspace Teams Org")
 	ws := seedWorkspaceForAccount(t, app, org, owner, "Primary", "")
 	member, memberTok := seedAccountWithToken(t, app, uniqueEmail(t, "ws-teams-member"), "Team Member")
-	if err := app.db.AddOrgMember(context.Background(), org.ID, member.ID); err != nil {
+	if err := testDB(app).AddOrgMember(context.Background(), org.ID, member.ID); err != nil {
 		t.Fatal(err)
 	}
-	team, err := app.db.InsertTeam(context.Background(), org.ID, "engineering", "Engineering")
+	team, err := testDB(app).InsertTeam(context.Background(), org.ID, "engineering", "Engineering")
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err = app.db.AddTeamMember(context.Background(), team.ID, member.ID); err != nil {
+	if err = testDB(app).AddTeamMember(context.Background(), team.ID, member.ID); err != nil {
 		t.Fatal(err)
 	}
 
@@ -251,15 +251,15 @@ func TestWorkspaceEffectiveMembersAPI_ReturnsDirectAndTeamInheritedSources(t *te
 	inherited, _ := seedAccountWithToken(t, app, uniqueEmail(t, "ws-effective-inherited"), "Inherited User")
 	both, _ := seedAccountWithToken(t, app, uniqueEmail(t, "ws-effective-both"), "Both User")
 	for _, accountID := range []int64{direct.ID, inherited.ID, both.ID} {
-		if err := app.db.AddOrgMember(context.Background(), org.ID, accountID); err != nil {
+		if err := testDB(app).AddOrgMember(context.Background(), org.ID, accountID); err != nil {
 			t.Fatal(err)
 		}
 	}
-	teamA, err := app.db.InsertTeam(context.Background(), org.ID, "team-a", "Team A")
+	teamA, err := testDB(app).InsertTeam(context.Background(), org.ID, "team-a", "Team A")
 	if err != nil {
 		t.Fatal(err)
 	}
-	teamB, err := app.db.InsertTeam(context.Background(), org.ID, "team-b", "Team B")
+	teamB, err := testDB(app).InsertTeam(context.Background(), org.ID, "team-b", "Team B")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -271,7 +271,7 @@ func TestWorkspaceEffectiveMembersAPI_ReturnsDirectAndTeamInheritedSources(t *te
 		{teamA.ID, both.ID},
 		{teamB.ID, both.ID},
 	} {
-		if err = app.db.AddTeamMember(context.Background(), membership.teamID, membership.accountID); err != nil {
+		if err = testDB(app).AddTeamMember(context.Background(), membership.teamID, membership.accountID); err != nil {
 			t.Fatal(err)
 		}
 	}
@@ -346,7 +346,7 @@ func TestWorkspaceEffectiveMembersAPI_SearchPaginationAndCrossWorkspaceIsolation
 	alice, _ := seedAccountWithToken(t, app, uniqueEmail(t, "ws-effective-alice"), "Alice Effective")
 	bob, _ := seedAccountWithToken(t, app, uniqueEmail(t, "ws-effective-bob"), "Bob Effective")
 	for _, accountID := range []int64{alice.ID, bob.ID} {
-		if err := app.db.AddOrgMember(context.Background(), org.ID, accountID); err != nil {
+		if err := testDB(app).AddOrgMember(context.Background(), org.ID, accountID); err != nil {
 			t.Fatal(err)
 		}
 	}
@@ -380,7 +380,7 @@ func TestWorkspaceTeamsAPI_RejectsCrossOrgTeam(t *testing.T) {
 	owner, ownerTok, org := seedOrgOwner(t, app, uniqueEmail(t, "ws-teams-cross-owner"), "Workspace Owner", "Workspace Teams Cross Org")
 	ws := seedWorkspaceForAccount(t, app, org, owner, "Primary", "")
 	_, _, otherOrg := seedOrgOwner(t, app, uniqueEmail(t, "ws-teams-other-owner"), "Other Owner", "Other Workspace Teams Org")
-	otherTeam, err := app.db.InsertTeam(context.Background(), otherOrg.ID, "other", "Other Team")
+	otherTeam, err := testDB(app).InsertTeam(context.Background(), otherOrg.ID, "other", "Other Team")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -400,7 +400,7 @@ func TestWorkspaceMembershipAPIPermissions(t *testing.T) {
 	writer, writerTok := seedAccountWithToken(t, app, uniqueEmail(t, "ws-members-writer"), "Writer")
 	target, _ := seedAccountWithToken(t, app, uniqueEmail(t, "ws-members-target"), "Target")
 	for _, account := range []int64{reader.ID, writer.ID, target.ID} {
-		if err := app.db.AddOrgMember(context.Background(), org.ID, account); err != nil {
+		if err := testDB(app).AddOrgMember(context.Background(), org.ID, account); err != nil {
 			t.Fatal(err)
 		}
 	}
@@ -434,7 +434,7 @@ func TestWorkspaceMembersDefaultPolicyCanBeRevoked(t *testing.T) {
 	owner, ownerTok, org := seedOrgOwner(t, app, uniqueEmail(t, "ws-members-revoke-owner"), "Workspace Owner", "Workspace Revoke Org")
 	ws := seedWorkspaceForAccount(t, app, org, owner, "Primary", "")
 	member, memberTok := seedAccountWithToken(t, app, uniqueEmail(t, "ws-members-revoke-member"), "Workspace Member")
-	if err := app.db.AddOrgMember(context.Background(), org.ID, member.ID); err != nil {
+	if err := testDB(app).AddOrgMember(context.Background(), org.ID, member.ID); err != nil {
 		t.Fatal(err)
 	}
 
@@ -502,11 +502,11 @@ func TestWorkspaceMembersSubjectCanBindConnectionOnlyInsideCurrentWorkspace(t *t
 	owner, ownerTok, org := seedOrgOwner(t, app, uniqueEmail(t, "ws-members-conn-subject-owner"), "Workspace Owner", "Workspace Conn Subject Org")
 	wsA := seedWorkspaceForAccount(t, app, org, owner, "A", "")
 	wsB := seedWorkspaceForAccount(t, app, org, owner, "B", "")
-	connA, err := app.db.InsertConnection(context.Background(), wsA.ID, nil, "Conn A", "postgres", "enc-a", "open")
+	connA, err := testDB(app).InsertConnection(context.Background(), wsA.ID, nil, "Conn A", "postgres", "enc-a", "open")
 	if err != nil {
 		t.Fatal(err)
 	}
-	connB, err := app.db.InsertConnection(context.Background(), wsB.ID, nil, "Conn B", "postgres", "enc-b", "open")
+	connB, err := testDB(app).InsertConnection(context.Background(), wsB.ID, nil, "Conn B", "postgres", "enc-b", "open")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -530,14 +530,14 @@ func TestRemovingOrgMemberClearsWorkspaceAndTeamDerivedMembership(t *testing.T) 
 	wsDirect := seedWorkspaceForAccount(t, app, org, owner, "Direct", "")
 	wsTeam := seedWorkspaceForAccount(t, app, org, owner, "Team", "")
 	member, memberTok := seedAccountWithToken(t, app, uniqueEmail(t, "ws-members-org-remove-member"), "Member")
-	if err := app.db.AddOrgMember(context.Background(), org.ID, member.ID); err != nil {
+	if err := testDB(app).AddOrgMember(context.Background(), org.ID, member.ID); err != nil {
 		t.Fatal(err)
 	}
-	team, err := app.db.InsertTeam(context.Background(), org.ID, "cleanup", "Cleanup")
+	team, err := testDB(app).InsertTeam(context.Background(), org.ID, "cleanup", "Cleanup")
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err = app.db.AddTeamMember(context.Background(), team.ID, member.ID); err != nil {
+	if err = testDB(app).AddTeamMember(context.Background(), team.ID, member.ID); err != nil {
 		t.Fatal(err)
 	}
 

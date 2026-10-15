@@ -5,52 +5,14 @@ import (
 	"errors"
 	"log/slog"
 	"net/http"
-	"strconv"
 
 	"github.com/sqlwarden/internal/execution"
 )
 
 const sessionHeader = "X-Warden-Session"
 
-// runtimeScope is the execution scope of the request's account on the routed
-// connection. Every runtime call re-checks it against the session it names.
-func runtimeScope(r *http.Request) execution.Scope {
-	return execution.Scope{
-		OrgID:        strconv.FormatInt(contextGetOrg(r).ID, 10),
-		WorkspaceID:  strconv.FormatInt(contextGetWorkspace(r).ID, 10),
-		AccountID:    strconv.FormatInt(contextGetAccount(r).ID, 10),
-		ConnectionID: strconv.FormatInt(contextGetConnection(r).ID, 10),
-	}
-}
-
 func requestSessionID(r *http.Request) execution.SessionID {
 	return execution.SessionID(r.Header.Get(sessionHeader))
-}
-
-// requireSessionID reads the session header, answering 400 when it is absent.
-func (app *application) requireSessionID(w http.ResponseWriter, r *http.Request) (execution.SessionID, bool) {
-	id := requestSessionID(r)
-	if id == "" {
-		app.errorMessage(w, r, http.StatusBadRequest, "X-Warden-Session header is required.", nil)
-		return "", false
-	}
-	return id, true
-}
-
-// resolveRuntimeSession requires the session header and confirms the session
-// is live and owned by the request scope. An unknown session and one owned by
-// another scope both answer 410 so neither can be told apart.
-func (app *application) resolveRuntimeSession(w http.ResponseWriter, r *http.Request) (execution.SessionInfo, bool) {
-	id, ok := app.requireSessionID(w, r)
-	if !ok {
-		return execution.SessionInfo{}, false
-	}
-	info, err := app.runtime.Get(r.Context(), runtimeScope(r), id)
-	if err != nil {
-		app.executionError(w, r, err)
-		return execution.SessionInfo{}, false
-	}
-	return info, true
 }
 
 func isRequestCanceled(r *http.Request, err error) bool {
