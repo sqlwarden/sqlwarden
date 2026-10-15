@@ -12,14 +12,16 @@ import (
 
 	"github.com/sqlwarden/internal/access"
 	"github.com/sqlwarden/internal/config"
-	"github.com/sqlwarden/internal/connection"
+	"github.com/sqlwarden/internal/credentials"
 	"github.com/sqlwarden/internal/database"
 	"github.com/sqlwarden/internal/encrypt"
+	"github.com/sqlwarden/internal/execution"
 	"github.com/sqlwarden/internal/files"
 	"github.com/sqlwarden/internal/filestore"
 	"github.com/sqlwarden/internal/identity"
 	"github.com/sqlwarden/internal/jobs"
 	"github.com/sqlwarden/internal/orgs"
+	"github.com/sqlwarden/internal/settings"
 )
 
 func newTestDependencies(t *testing.T) Dependencies {
@@ -44,21 +46,22 @@ func newTestDependencies(t *testing.T) Dependencies {
 	if err != nil {
 		t.Fatal(err)
 	}
-	sessions := connection.New(30 * time.Minute)
-	cursors := connection.NewQueryCursorManager(30 * time.Minute)
-	t.Cleanup(func() {
-		cursors.Close()
-		sessions.Close()
+	policy := settings.NewTargetPolicy(db)
+	rt := execution.NewLocal(execution.LocalConfig{
+		Credentials: credentials.NewLegacyDSNProvider(db, keyring),
+		Policy:      policy,
+		IdleTimeout: 30 * time.Minute,
 	})
+	t.Cleanup(rt.Shutdown)
 	return Dependencies{
-		Config:     cfg,
-		DB:         db,
-		Logger:     slog.New(slog.NewTextHandler(io.Discard, nil)),
-		Keyring:    keyring,
-		Enforcer:   enforcer,
-		FileStores: stores,
-		Sessions:   sessions,
-		Cursors:    cursors,
+		Config:       cfg,
+		DB:           db,
+		Logger:       slog.New(slog.NewTextHandler(io.Discard, nil)),
+		Keyring:      keyring,
+		Enforcer:     enforcer,
+		FileStores:   stores,
+		Runtime:      rt,
+		TargetPolicy: policy,
 
 		Setup:       identity.FormSetup,
 		Invitations: orgs.InvitationsEnabled,

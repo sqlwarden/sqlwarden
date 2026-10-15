@@ -15,15 +15,17 @@ import (
 	"github.com/sqlwarden/internal/access"
 	"github.com/sqlwarden/internal/audit"
 	"github.com/sqlwarden/internal/config"
-	"github.com/sqlwarden/internal/connection"
+	"github.com/sqlwarden/internal/credentials"
 	"github.com/sqlwarden/internal/database"
 	"github.com/sqlwarden/internal/edition"
 	"github.com/sqlwarden/internal/encrypt"
+	"github.com/sqlwarden/internal/execution"
+	"github.com/sqlwarden/internal/settings"
 	"github.com/sqlwarden/internal/web"
 )
 
-// sessionIdleTimeout bounds how long an idle target session or query cursor
-// survives before its reaper closes it.
+// sessionIdleTimeout bounds how long an idle target session survives before
+// its reaper closes it.
 const sessionIdleTimeout = 30 * time.Minute
 
 // Options configures Build. Config and Edition are required.
@@ -160,10 +162,14 @@ func Build(ctx context.Context, opts Options) (*Application, error) {
 		return fail(fmt.Errorf("encryption keyring init: %w", err))
 	}
 
-	sessions := connection.New(sessionIdleTimeout)
-	application.resources.push("sessions", func(context.Context) error { sessions.Close(); return nil })
-	cursors := connection.NewQueryCursorManager(sessionIdleTimeout)
-	application.resources.push("cursors", func(context.Context) error { cursors.Close(); return nil })
+	targetPolicy := settings.NewTargetPolicy(db)
+	runtime := execution.NewLocal(execution.LocalConfig{
+		Credentials: credentials.NewLegacyDSNProvider(db, keyring),
+		Policy:      targetPolicy,
+		IdleTimeout: sessionIdleTimeout,
+		Logger:      logger,
+	})
+	application.resources.push("execution", func(context.Context) error { runtime.Shutdown(); return nil })
 
 	if failWebConstruction != nil {
 		return fail(failWebConstruction)
@@ -190,8 +196,8 @@ func Build(ctx context.Context, opts Options) (*Application, error) {
 		Enforcer:              enforcer,
 		Policy:                policy,
 		FileStores:            stores,
-		Sessions:              sessions,
-		Cursors:               cursors,
+		Runtime:               runtime,
+		TargetPolicy:          targetPolicy,
 		Audit:                 auditWriter,
 		Edition:               web.EditionCapabilities{Name: capabilities.Edition, Features: webFeatures},
 		EditionHandler:        composition.Handler(),

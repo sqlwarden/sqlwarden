@@ -3,7 +3,6 @@ package web
 import (
 	"context"
 	"errors"
-	"fmt"
 	"log/slog"
 	"net/http"
 	"sort"
@@ -13,13 +12,14 @@ import (
 
 	"github.com/go-chi/chi/v5"
 	"github.com/sqlwarden/internal/access"
-	"github.com/sqlwarden/internal/connection"
+	"github.com/sqlwarden/internal/credentials"
 	"github.com/sqlwarden/internal/database"
 	"github.com/sqlwarden/internal/engine"
 	"github.com/sqlwarden/internal/engine/classifier"
 	"github.com/sqlwarden/internal/engine/explain"
 	metadata "github.com/sqlwarden/internal/engine/metadata"
 	"github.com/sqlwarden/internal/engine/safety"
+	"github.com/sqlwarden/internal/execution"
 	"github.com/sqlwarden/internal/request"
 	"github.com/sqlwarden/internal/response"
 	schemaapp "github.com/sqlwarden/internal/schema"
@@ -317,8 +317,8 @@ func (app *application) createConnection(w http.ResponseWriter, r *http.Request)
 		app.validateSSHDocument(input.Driver, sshDoc, &input.V)
 	}
 	if input.Driver != "" {
-		if err := app.validateTargetConnection(r.Context(), input.Driver, input.DSN); err != nil {
-			if errors.Is(err, errSQLiteTargetDisabled) {
+		if err := app.targetPolicy.Check(r.Context(), input.Driver, input.DSN); err != nil {
+			if isSQLiteTargetDisabled(err) {
 				app.logWarn(r, "sqlite target connection blocked", slog.String("operation", "create_connection"), slog.String("driver", input.Driver))
 			}
 			input.V.CheckField(false, "driver", targetConnectionFieldError(err))
@@ -614,8 +614,8 @@ func (app *application) updateConnection(w http.ResponseWriter, r *http.Request)
 	if input.DSN != nil {
 		nextDSN = *input.DSN
 	}
-	if err := app.validateTargetConnection(r.Context(), conn.Driver, nextDSN); err != nil {
-		if errors.Is(err, errSQLiteTargetDisabled) {
+	if err := app.targetPolicy.Check(r.Context(), conn.Driver, nextDSN); err != nil {
+		if isSQLiteTargetDisabled(err) {
 			app.logWarn(r, "sqlite target connection blocked", slog.String("operation", "update_connection"), slog.Int64("connection_id", conn.ID), slog.String("driver", conn.Driver))
 		}
 		v := validator.Validator{}
@@ -634,14 +634,19 @@ func (app *application) updateConnection(w http.ResponseWriter, r *http.Request)
 	}
 
 	dsnChanged := currentDSN != nextDSN
+	dropSessions := false
 	if dsnChanged {
-		activeSessions := app.connManager.CountForConnection(strconv.FormatInt(conn.ID, 10))
+		activeSessions, err := app.revoker.CountForConnection(r.Context(), strconv.FormatInt(conn.ID, 10))
+		if err != nil {
+			app.serverError(w, r, err)
+			return
+		}
 		if activeSessions > 0 && !input.Force {
 			app.errorMessage(w, r, http.StatusConflict, "Connection has active sessions. Retry with force=true to rotate the DSN and drop them.", nil)
 			return
 		}
 		if input.Force && activeSessions > 0 {
-			app.connManager.RemoveForConnection(strconv.FormatInt(conn.ID, 10))
+			dropSessions = true
 			app.logInfo(r, "connection sessions dropped for dsn rotation", slog.Int64("connection_id", conn.ID), slog.Int("dropped_sessions", activeSessions))
 		}
 	}
@@ -677,13 +682,17 @@ func (app *application) updateConnection(w http.ResponseWriter, r *http.Request)
 	nextShowAllDatabases = resolveShowAllDatabases(set.Tree, nextDefaultScope, nextShowAllDatabases)
 	scopeChanged := nextDefaultScope != conn.DefaultScope
 	if scopeChanged && !dsnChanged {
-		activeSessions := app.connManager.CountForConnection(strconv.FormatInt(conn.ID, 10))
+		activeSessions, err := app.revoker.CountForConnection(r.Context(), strconv.FormatInt(conn.ID, 10))
+		if err != nil {
+			app.serverError(w, r, err)
+			return
+		}
 		if activeSessions > 0 && !input.Force {
 			app.errorMessage(w, r, http.StatusConflict, "Connection has active sessions. Retry with force=true to change its default scope and drop them.", nil)
 			return
 		}
 		if input.Force && activeSessions > 0 {
-			app.connManager.RemoveForConnection(strconv.FormatInt(conn.ID, 10))
+			dropSessions = true
 		}
 	}
 	// Purge before persisting so a failed purge leaves the DSN unchanged and
@@ -720,6 +729,9 @@ func (app *application) updateConnection(w http.ResponseWriter, r *http.Request)
 			return
 		}
 		app.logInfo(r, "connection ssh updated", slog.Int64("connection_id", conn.ID))
+	}
+	if dropSessions {
+		app.revokeSessions(r, sessionRevokeInput{Kind: sessionRevokeConnection, ConnectionID: strconv.FormatInt(conn.ID, 10)})
 	}
 
 	app.logInfo(r, "connection updated", slog.Int64("connection_id", conn.ID), slog.Bool("dsn_rotated", dsnChanged), slog.Bool("scope_changed", scopeChanged), slog.String("access_mode", nextAccessMode), slog.String("schema_snapshot_policy", nextSnapshotPolicy), slog.Bool("show_all_databases", nextShowAllDatabases))
@@ -759,19 +771,23 @@ func (app *application) testConnection(w http.ResponseWriter, r *http.Request) {
 	var tlsCfg *engine.TLSConfig
 	if input.TLS != nil {
 		app.validateTLSDocument(input.Driver, *input.TLS, &input.V)
-		tlsCfg = input.TLS.toEngine()
+		tlsCfg = input.TLS.ToEngine()
 	}
-	var sshCfg *connection.SSHConfig
+	var sshCfg *credentials.SSHConfig
 	if input.SSH != nil {
 		app.validateSSHDocument(input.Driver, *input.SSH, &input.V)
-		sshCfg = input.SSH.toConnection()
+		sshCfg = input.SSH.ToConfig()
 	}
 	if input.V.HasErrors() {
 		app.failedValidation(w, r, input.V)
 		return
 	}
-	if err := app.validateTargetConnection(r.Context(), input.Driver, input.DSN); err != nil {
-		if errors.Is(err, errSQLiteTargetDisabled) {
+	if err := app.targetPolicy.Check(r.Context(), input.Driver, input.DSN); err != nil {
+		if !isTargetPolicyDenial(err) {
+			app.serverError(w, r, err)
+			return
+		}
+		if isSQLiteTargetDisabled(err) {
 			app.logWarn(r, "sqlite target connection blocked", slog.String("operation", "test_connection"), slog.String("driver", input.Driver))
 		}
 		v := validator.Validator{}
@@ -785,8 +801,7 @@ func (app *application) testConnection(w http.ResponseWriter, r *http.Request) {
 
 	start := time.Now()
 
-	d, err := engine.New(input.Driver)
-	if err != nil {
+	if _, err := engine.New(input.Driver); err != nil {
 		app.logWarn(r, "connection test failed", slog.String("driver", input.Driver), slog.Int64("latency_ms", time.Since(start).Milliseconds()), slog.String("stage", "driver_init"), slog.String("error_category", connectionTestErrorCategory(err)))
 		err = response.JSON(w, http.StatusUnprocessableEntity, map[string]any{
 			"ok":    false,
@@ -803,24 +818,39 @@ func (app *application) testConnection(w http.ResponseWriter, r *http.Request) {
 		app.serverError(w, r, err)
 		return
 	}
-	var tunnel *connection.Tunnel
-	if sshCfg != nil {
-		tunnel, err = connection.OpenTunnel(ctx, *sshCfg)
-		if err != nil {
-			latency := time.Since(start).Milliseconds()
-			app.logWarn(r, "connection test failed", slog.String("driver", input.Driver), slog.Int64("latency_ms", latency), slog.String("stage", "ssh_tunnel"), slog.String("error_category", connectionTestErrorCategory(err)))
-			app.errorMessage(w, r, http.StatusUnprocessableEntity, "SSH tunnel: "+err.Error(), nil)
+	scope := runtimeScope(r)
+	scope.ConnectionID = ""
+	creds := credentials.Credentials{Driver: input.Driver, DSN: input.DSN, TLS: tlsCfg, SSH: sshCfg}
+
+	var latency int64
+	payload := map[string]any{"ok": true}
+	err = app.runtime.Probe(ctx, scope, creds, queryLimits(settings), func(inspector metadata.SchemaInspector) error {
+		latency = time.Since(start).Milliseconds()
+		discovery, discoveryErr := schemaapp.DiscoverScopes(ctx, inspector.Tree(), schemaapp.LiveFromInspector(inspector), input.ParentScope)
+		if discoveryErr == nil {
+			payload["scope_discovery"] = discovery
+		} else {
+			payload["scope_discovery_error"] = discoveryErr.Error()
+		}
+		return nil
+	})
+	if errors.Is(err, execution.ErrSchemaUnsupported) {
+		latency = time.Since(start).Milliseconds()
+		err = nil
+	}
+	if err != nil {
+		latency = time.Since(start).Milliseconds()
+		var tunnelErr *execution.TunnelError
+		if errors.As(err, &tunnelErr) {
+			app.logWarn(r, "connection test failed", slog.String("driver", input.Driver), slog.Int64("latency_ms", latency), slog.String("stage", "ssh_tunnel"), slog.String("error_category", connectionTestErrorCategory(tunnelErr.Err)))
+			app.errorMessage(w, r, http.StatusUnprocessableEntity, "SSH tunnel: "+tunnelErr.Err.Error(), nil)
 			return
 		}
-		defer tunnel.Close()
-	}
-	cc := app.driverConnectionConfig(input.Driver, input.DSN, settings, tlsCfg)
-	if tunnel != nil {
-		cc.SSHDialer = tunnel.DialContext
-	}
-	err = d.Connect(ctx, cc)
-	if err != nil {
-		latency := time.Since(start).Milliseconds()
+		var connectErr *execution.ConnectError
+		if !errors.As(err, &connectErr) {
+			app.serverError(w, r, err)
+			return
+		}
 		app.logWarn(r, "connection test failed", slog.String("driver", input.Driver), slog.Int64("latency_ms", latency), slog.String("stage", "connect"), slog.String("error_category", connectionTestErrorCategory(err)))
 		err = response.JSON(w, http.StatusOK, map[string]any{
 			"ok":         false,
@@ -832,35 +862,7 @@ func (app *application) testConnection(w http.ResponseWriter, r *http.Request) {
 		}
 		return
 	}
-	defer d.Close()
-
-	err = d.Ping(ctx)
-	latency := time.Since(start).Milliseconds()
-	if err != nil {
-		app.logWarn(r, "connection test failed", slog.String("driver", input.Driver), slog.Int64("latency_ms", latency), slog.String("stage", "ping"), slog.String("error_category", connectionTestErrorCategory(err)))
-		err = response.JSON(w, http.StatusOK, map[string]any{
-			"ok":         false,
-			"latency_ms": latency,
-			"error":      err.Error(),
-		})
-		if err != nil {
-			app.serverError(w, r, err)
-		}
-		return
-	}
-
-	payload := map[string]any{
-		"ok":         true,
-		"latency_ms": latency,
-	}
-	if inspector, ok := d.(metadata.SchemaInspector); ok {
-		discovery, discoveryErr := schemaapp.DiscoverScopes(ctx, inspector, input.ParentScope)
-		if discoveryErr == nil {
-			payload["scope_discovery"] = discovery
-		} else {
-			payload["scope_discovery_error"] = discoveryErr.Error()
-		}
-	}
+	payload["latency_ms"] = latency
 	app.logInfo(r, "connection test completed", slog.String("driver", input.Driver), slog.Int64("latency_ms", latency), slog.Bool("ok", true))
 	err = response.JSON(w, http.StatusOK, payload)
 	if err != nil {
@@ -869,7 +871,6 @@ func (app *application) testConnection(w http.ResponseWriter, r *http.Request) {
 }
 
 func (app *application) connectToDatabase(w http.ResponseWriter, r *http.Request) {
-	account := contextGetAccount(r)
 	org := contextGetOrg(r)
 	conn := contextGetConnection(r)
 	ws := contextGetWorkspace(r)
@@ -885,81 +886,38 @@ func (app *application) connectToDatabase(w http.ResponseWriter, r *http.Request
 		return
 	}
 
-	plainDSN, err := app.keyring.Decrypt(conn.DSNEncrypted)
-	if err != nil {
-		app.serverError(w, r, err)
-		return
-	}
-	if err := app.validateTargetConnection(r.Context(), conn.Driver, plainDSN); err != nil {
-		app.errorMessage(w, r, http.StatusUnprocessableEntity, targetConnectionFieldError(err), nil)
-		return
-	}
-
-	connID := strconv.FormatInt(conn.ID, 10)
-	accountID := strconv.FormatInt(account.ID, 10)
 	settings, err := app.effectiveRuntimeSettingsForWorkspace(r.Context(), ws)
 	if err != nil {
 		app.serverError(w, r, err)
 		return
 	}
 
-	var tunnel *connection.Tunnel
-	session, created, err := app.connManager.GetOrCreateWithMetadata(accountID, connID, connection.SessionMetadata{
-		OrgID:       strconv.FormatInt(org.ID, 10),
-		WorkspaceID: strconv.FormatInt(ws.ID, 10),
-	}, func() (engine.Driver, func(), error) {
-		ctx, cancel := context.WithTimeout(r.Context(), 10*time.Second)
-		defer cancel()
-
-		tlsCfg, err := app.openTLSConfig(conn)
-		if err != nil {
-			return nil, nil, err
-		}
-		sshCfg, err := app.openSSHConfig(conn)
-		if err != nil {
-			return nil, nil, err
-		}
-
-		if sshCfg != nil {
-			tunnel, err = connection.OpenTunnel(ctx, *sshCfg)
-			if err != nil {
-				return nil, nil, fmt.Errorf("ssh tunnel: %w", err)
-			}
-		}
-		teardown := func() {}
-		if tunnel != nil {
-			teardown = func() { _ = tunnel.Close() }
-		}
-
-		d, err := engine.New(conn.Driver)
-		if err != nil {
-			teardown()
-			return nil, nil, err
-		}
-		cc := app.driverConnectionConfig(conn.Driver, plainDSN, settings, tlsCfg, conn.DefaultScope)
-		if tunnel != nil {
-			cc.SSHDialer = tunnel.DialContext
-		}
-		if err := d.Connect(ctx, cc); err != nil {
-			teardown()
-			return nil, nil, err
-		}
-		return d, teardown, nil
-	})
+	session, err := app.runtime.Open(r.Context(), execution.OpenRequest{Scope: runtimeScope(r), Limits: queryLimits(settings)})
 	if err != nil {
-		app.errorMessage(w, r, http.StatusUnprocessableEntity, err.Error(), nil)
+		if isTargetPolicyDenial(err) {
+			if isSQLiteTargetDisabled(err) {
+				app.logWarn(r, "sqlite target connection blocked", slog.String("operation", "connect"), slog.Int64("connection_id", conn.ID), slog.String("driver", conn.Driver))
+			}
+			app.errorMessage(w, r, http.StatusUnprocessableEntity, targetConnectionFieldError(err), nil)
+			return
+		}
+		var (
+			tunnelErr  *execution.TunnelError
+			connectErr *execution.ConnectError
+		)
+		if errors.As(err, &tunnelErr) || errors.As(err, &connectErr) {
+			app.logWarn(r, "database session open failed", slog.Int64("connection_id", conn.ID), slog.String("driver", conn.Driver), slog.String("error_category", connectionTestErrorCategory(err)))
+			app.errorMessage(w, r, http.StatusUnprocessableEntity, err.Error(), nil)
+			return
+		}
+		app.serverError(w, r, err)
 		return
 	}
 
-	if created && tunnel != nil {
-		t := tunnel
-		session.SetTunnelHealth(func() *bool { h := t.Healthy(); return &h })
-	}
-
-	app.logInfo(r, "database session opened", slog.Int64("connection_id", conn.ID), slog.String("session_id", session.ID), slog.Bool("reused", !created))
+	app.logInfo(r, "database session opened", slog.Int64("connection_id", conn.ID), slog.String("session_id", string(session.ID)), slog.Bool("reused", session.Reused))
 	err = response.JSON(w, http.StatusOK, map[string]any{
 		"session_id": session.ID,
-		"reused":     !created,
+		"reused":     session.Reused,
 	})
 	if err != nil {
 		app.serverError(w, r, err)
@@ -972,7 +930,7 @@ func connectionTestErrorCategory(err error) string {
 		return "timeout"
 	case errors.Is(err, context.Canceled):
 		return "cancelled"
-	case errors.Is(err, errSQLiteTargetDisabled):
+	case isTargetPolicyDenial(err):
 		return "policy_denied"
 	case strings.Contains(err.Error(), "unknown driver"):
 		return "unsupported_driver"
@@ -997,68 +955,58 @@ func (app *application) listActiveSessions(w http.ResponseWriter, r *http.Reques
 	}
 	result := make([]sessionInfo, 0)
 
-	refs := app.connManager.AllForAccount(accountID)
+	filter := execution.SessionFilter{AccountID: accountID, WorkspaceID: workspaceID}
 	if org.ID != 0 && app.policy.Can(r.Context(), account.ID, org.ID, ws.OwnerType, "workspace", ws.ID, access.PermPolicyRead) {
-		refs = app.connManager.AllForWorkspace(workspaceID)
+		filter.AccountID = ""
+	}
+	sessions, err := app.runtime.List(r.Context(), filter)
+	if err != nil {
+		app.serverError(w, r, err)
+		return
 	}
 
-	for _, ref := range refs {
-		if ref.WorkspaceID != "" && ref.WorkspaceID != workspaceID {
+	for _, session := range sessions {
+		if session.Scope.WorkspaceID != workspaceID {
 			continue
 		}
-		connIDInt, parseErr := strconv.ParseInt(ref.ConnectionID, 10, 64)
+		connIDInt, parseErr := strconv.ParseInt(session.Scope.ConnectionID, 10, 64)
 		if parseErr != nil {
 			continue
 		}
-		accountIDInt, parseErr := strconv.ParseInt(ref.AccountID, 10, 64)
+		accountIDInt, parseErr := strconv.ParseInt(session.Scope.AccountID, 10, 64)
 		if parseErr != nil {
 			continue
 		}
 		result = append(result, sessionInfo{
 			ConnectionID:  connIDInt,
 			AccountID:     accountIDInt,
-			SessionID:     ref.SessionID,
-			TunnelHealthy: ref.TunnelHealthy,
+			SessionID:     string(session.ID),
+			TunnelHealthy: session.TunnelHealthy,
 		})
 	}
 
-	err := response.JSON(w, http.StatusOK, map[string]any{"sessions": result})
+	err = response.JSON(w, http.StatusOK, map[string]any{"sessions": result})
 	if err != nil {
 		app.serverError(w, r, err)
 	}
 }
 
+// disconnectFromDatabase is idempotent: a session that is already gone or
+// belongs to another scope answers 204 without being touched.
 func (app *application) disconnectFromDatabase(w http.ResponseWriter, r *http.Request) {
-	account := contextGetAccount(r)
 	conn := contextGetConnection(r)
 
-	sessionID := r.Header.Get("X-Warden-Session")
+	sessionID := requestSessionID(r)
 	if sessionID == "" {
 		app.badRequest(w, r, errors.New("X-Warden-Session header is required"))
 		return
 	}
 
-	session, ok := app.connManager.Get(sessionID)
-	if !ok {
-		// Session already gone (expired or never existed) — idempotent.
-		w.WriteHeader(http.StatusNoContent)
+	if err := app.runtime.Close(r.Context(), runtimeScope(r), sessionID); err != nil {
+		app.serverError(w, r, err)
 		return
 	}
-
-	accountID := strconv.FormatInt(account.ID, 10)
-	if session.AccountID != accountID {
-		app.notPermitted(w, r)
-		return
-	}
-
-	connID := strconv.FormatInt(conn.ID, 10)
-	if session.ConnectionID != connID {
-		app.badRequest(w, r, errors.New("session does not belong to this connection"))
-		return
-	}
-
-	app.connManager.Remove(sessionID)
-	app.logInfo(r, "database session disconnected", slog.Int64("connection_id", conn.ID), slog.String("session_id", sessionID))
+	app.logInfo(r, "database session disconnected", slog.Int64("connection_id", conn.ID), slog.String("session_id", string(sessionID)))
 	w.WriteHeader(http.StatusNoContent)
 }
 
@@ -1072,43 +1020,40 @@ func (app *application) revokeWorkspaceDatabaseSession(w http.ResponseWriter, r 
 		return
 	}
 
-	session, ok := app.connManager.Get(sessionID)
-	if !ok {
+	workspaceID := strconv.FormatInt(ws.ID, 10)
+	sessions, err := app.runtime.List(r.Context(), execution.SessionFilter{WorkspaceID: workspaceID})
+	if err != nil {
+		app.serverError(w, r, err)
+		return
+	}
+	var session *execution.SessionInfo
+	for i := range sessions {
+		if string(sessions[i].ID) == sessionID {
+			session = &sessions[i]
+			break
+		}
+	}
+	// A session outside this workspace is indistinguishable from one that has
+	// already ended.
+	if session == nil {
 		w.WriteHeader(http.StatusNoContent)
 		return
 	}
 
-	workspaceID := strconv.FormatInt(ws.ID, 10)
-	if session.WorkspaceID != workspaceID {
-		app.notFound(w, r)
-		return
-	}
-
 	accountID := strconv.FormatInt(account.ID, 10)
-	if session.AccountID != accountID {
+	if session.Scope.AccountID != accountID {
 		if org.ID == 0 || !app.policy.Can(r.Context(), account.ID, org.ID, ws.OwnerType, "workspace", ws.ID, access.PermPolicyModify) {
 			app.notPermitted(w, r)
 			return
 		}
 	}
 
-	app.connManager.Remove(sessionID)
-	app.logInfo(r, "database session revoked", slog.Int64("workspace_id", ws.ID), slog.String("session_id", sessionID), slog.String("session_account_id", session.AccountID))
+	if err := app.runtime.Close(r.Context(), session.Scope, session.ID); err != nil {
+		app.serverError(w, r, err)
+		return
+	}
+	app.logInfo(r, "database session revoked", slog.Int64("workspace_id", ws.ID), slog.String("session_id", sessionID), slog.String("session_account_id", session.Scope.AccountID))
 	w.WriteHeader(http.StatusNoContent)
-}
-
-func (app *application) driverConnectionConfig(driverName, dsn string, settings effectiveRuntimeSettings, tls *engine.TLSConfig, defaultScopes ...metadata.ScopePath) engine.ConnectionConfig {
-	config := engine.ConnectionConfig{
-		DSN:            dsn,
-		Driver:         driverName,
-		MaxResultRows:  settings.QueryMaxResultRows,
-		MaxResultBytes: settings.QueryMaxResultBytes,
-		TLS:            tls,
-	}
-	if len(defaultScopes) > 0 {
-		config.DefaultScope = defaultScopes[0]
-	}
-	return config
 }
 
 func (app *application) executeQuery(w http.ResponseWriter, r *http.Request) {
@@ -1150,26 +1095,11 @@ func (app *application) executeQuery(w http.ResponseWriter, r *http.Request) {
 	conn := contextGetConnection(r)
 	ws := contextGetWorkspace(r)
 
-	sessionID := r.Header.Get("X-Warden-Session")
-	if sessionID == "" {
-		app.errorMessage(w, r, http.StatusBadRequest, "X-Warden-Session header is required.", nil)
-		return
-	}
-
-	session, ok := app.connManager.Get(sessionID)
+	session, ok := app.resolveRuntimeSession(w, r)
 	if !ok {
-		app.errorMessage(w, r, http.StatusGone, "Session has expired or does not exist.", nil)
 		return
 	}
-
-	if session.AccountID != strconv.FormatInt(account.ID, 10) {
-		app.notPermitted(w, r)
-		return
-	}
-	if session.ConnectionID != strconv.FormatInt(conn.ID, 10) {
-		app.notPermitted(w, r)
-		return
-	}
+	scope := runtimeScope(r)
 
 	hasBroadExecute := app.hasConnectionPermission(r, org.ID, ws.OwnerType, conn.ID, access.PermConnExecute)
 	classification, err := app.classifyConnectionSQL(r, conn, input.SQL)
@@ -1221,8 +1151,10 @@ func (app *application) executeQuery(w http.ResponseWriter, r *http.Request) {
 	}
 
 	var rs *result.ResultSet
+	var tx execution.TxStatus
 	var execErr error
 	start := time.Now()
+	limits := queryLimits(runtimeSettings)
 
 	// For an EXPLAIN request, explainPlan.Statement is always a query whose
 	// result set is the plan output, no matter how the underlying statement
@@ -1230,18 +1162,28 @@ func (app *application) executeQuery(w http.ResponseWriter, r *http.Request) {
 	// ALTER SESSION pair for ANALYZE) run first for their side effects and
 	// their result sets are discarded. Setup runs after the per-class
 	// permission check below so planning a statement still requires permission
-	// to run that class of statement.
+	// to run that class of statement. The plan runs as an execution because
+	// ANALYZE carries out the statement it plans.
 	executeExplainPlan := func() (*result.ResultSet, error) {
-		rs, err := session.ExecuteExplainPlan(r.Context(), explainPlan,
-			queryCursorScanOptions(runtimeSettings.QueryMaxResultRows, runtimeSettings))
-		if err != nil {
-			return nil, err
-		}
-		rs.DurationMs = time.Since(start).Milliseconds()
-		return rs, nil
+		out, err := app.runtime.Execute(r.Context(), scope, execution.ExecuteRequest{SessionID: session.ID, Limits: limits, Explain: &explainPlan})
+		tx = out.Transaction
+		return out.Result, err
 	}
 	execStatement := func() (*result.ResultSet, error) {
-		return session.ExecuteWithOptions(r.Context(), execSQL, queryCursorScanOptions(runtimeSettings.QueryMaxResultRows, runtimeSettings))
+		out, err := app.runtime.Execute(r.Context(), scope, execution.ExecuteRequest{SessionID: session.ID, SQL: execSQL, Limits: limits})
+		tx = out.Transaction
+		return out.Result, err
+	}
+	queryStatement := func() (*result.ResultSet, error) {
+		out, err := app.runtime.Query(r.Context(), scope, execution.QueryRequest{
+			SessionID: session.ID,
+			SQL:       execSQL,
+			Limits:    limits,
+			UseCursor: input.UseCursor == nil || *input.UseCursor,
+			PageSize:  queryCursorPageSize(input.PageSize, runtimeSettings),
+		})
+		tx = out.Transaction
+		return out.Result, err
 	}
 
 	switch classification.Kind {
@@ -1258,7 +1200,7 @@ func (app *application) executeQuery(w http.ResponseWriter, r *http.Request) {
 		if input.Explain != "" {
 			rs, execErr = executeExplainPlan()
 		} else {
-			rs, execErr = app.executeDQLQuery(r, session, execSQL, input.UseCursor, input.PageSize, start, runtimeSettings)
+			rs, execErr = queryStatement()
 		}
 	case classifier.KindDML:
 		if !hasBroadExecute && !app.policy.Can(r.Context(),
@@ -1323,21 +1265,15 @@ func (app *application) executeQuery(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	for _, stmt := range explainPlan.Teardown {
-		if _, tdErr := session.Execute(context.WithoutCancel(r.Context()), stmt); tdErr != nil {
-			app.logger.Warn("explain teardown failed", append(logAttrs, "error", tdErr.Error())...)
-		}
-	}
-
 	if execErr != nil {
-		if errors.Is(execErr, context.Canceled) || errors.Is(execErr, context.DeadlineExceeded) || r.Context().Err() != nil {
-			app.connManager.Remove(sessionID)
+		var failure *execution.Failure
+		switch {
+		case errors.As(execErr, &failure) && failure.Code == execution.FailureExecutionOutcomeUnknown, isRequestCanceled(r, execErr):
 			app.logger.Warn("query cancelled", append(logAttrs, "duration_ms", time.Since(start).Milliseconds())...)
-			app.errorMessage(w, r, statusClientClosedRequest, "Query was cancelled.", nil)
-			return
+		default:
+			app.logger.Warn("query execution failed", append(logAttrs, "duration_ms", time.Since(start).Milliseconds(), "error", execErr.Error())...)
 		}
-		app.logger.Warn("query execution failed", append(logAttrs, "duration_ms", time.Since(start).Milliseconds(), "error", execErr.Error())...)
-		app.errorMessage(w, r, http.StatusUnprocessableEntity, execErr.Error(), nil)
+		app.executionError(w, r, execErr)
 		return
 	}
 	if classification.Kind != classifier.KindDML {
@@ -1353,72 +1289,8 @@ func (app *application) executeQuery(w http.ResponseWriter, r *http.Request) {
 	err = response.JSON(w, http.StatusOK, struct {
 		*result.ResultSet
 		Transaction transactionStatusView `json:"transaction"`
-	}{ResultSet: rs, Transaction: newTransactionStatusView(session.TransactionStatus())})
+	}{ResultSet: rs, Transaction: newTransactionStatusView(tx)})
 	if err != nil {
 		app.serverError(w, r, err)
 	}
-}
-
-func (app *application) executeDQLQuery(r *http.Request, session *connection.Session, sql string, useCursor *bool, pageSize *int, start time.Time, runtimeSettings effectiveRuntimeSettings) (*result.ResultSet, error) {
-	if useCursor == nil || *useCursor {
-		rs, err := app.executeQueryWithCursor(r, session, sql, queryCursorPageSize(pageSize, runtimeSettings), start, runtimeSettings)
-		if err == nil && rs != nil {
-			return rs, nil
-		}
-		if err != nil && !errors.Is(err, connection.ErrQueryCursorsUnsupported) {
-			return nil, err
-		}
-		if errors.Is(err, connection.ErrQueryCursorsUnsupported) {
-			app.logInfo(r, "query cursor unsupported; falling back to buffered query",
-				slog.String("session_id", session.ID),
-			)
-		}
-	}
-	return session.QueryWithOptions(r.Context(), sql, queryCursorScanOptions(runtimeSettings.QueryMaxResultRows, runtimeSettings))
-}
-
-func (app *application) executeQueryWithCursor(r *http.Request, session *connection.Session, sql string, pageSize int, start time.Time, runtimeSettings effectiveRuntimeSettings) (*result.ResultSet, error) {
-	app.logInfo(r, "query cursor opening",
-		slog.String("session_id", session.ID),
-		slog.Int("page_size", pageSize),
-	)
-
-	cursorHandle, err := session.StartQueryCursor(queryCursorLifetimeContext(r.Context()), sql)
-	if err != nil {
-		return nil, err
-	}
-
-	qc := app.queryCursorManager().Create(connection.QueryCursorCreateParams{
-		ParentSession: session,
-		Cursor:        cursorHandle,
-	})
-
-	rs, state, err := cursorHandle.Fetch(r.Context(), queryCursorScanOptions(pageSize, runtimeSettings))
-	if err != nil {
-		app.queryCursorManager().Remove(qc.ID)
-		return nil, err
-	}
-	rs.DurationMs = time.Since(start).Milliseconds()
-	rs.PageSize = pageSize
-	if state.Exhausted {
-		exhausted := true
-		rs.Exhausted = &exhausted
-		qc.MarkExhausted()
-		app.queryCursorManager().Remove(qc.ID)
-	} else {
-		exhausted := false
-		rs.QueryCursorID = qc.ID
-		rs.Exhausted = &exhausted
-	}
-	app.logInfo(r, "query cursor initial page returned",
-		queryCursorRecordAttrs(qc,
-			slog.Int("page_size", pageSize),
-			slog.Int("rows_returned", state.RowsReturned),
-			slog.Int64("bytes_returned", state.BytesReturned),
-			slog.Bool("exhausted", state.Exhausted),
-			slog.Bool("truncated", rs.Truncated),
-			slog.Int64("duration_ms", rs.DurationMs),
-		)...,
-	)
-	return rs, nil
 }

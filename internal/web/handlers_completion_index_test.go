@@ -67,7 +67,7 @@ func hasString(values any, want string) bool {
 	return false
 }
 
-func TestCompletionIndexRejectsForeignSession(t *testing.T) {
+func TestCompletionIndexIgnoresForeignSession(t *testing.T) {
 	t.Parallel()
 	app := newTestApp(t)
 	owner, token, org := seedOrgOwner(t, app, uniqueEmail(t, "completion-index-scope"), "Index", "Index Org")
@@ -82,7 +82,10 @@ func TestCompletionIndexRejectsForeignSession(t *testing.T) {
 	req.Header.Set("X-Warden-Session", session.ID)
 	res := send(t, req, app.routes())
 
-	assert.Equal(t, res.StatusCode, http.StatusForbidden)
+	assert.Equal(t, res.StatusCode, http.StatusOK)
+	if objects, _ := res.BodyFields["objects"].([]any); len(objects) != 0 {
+		t.Fatalf("foreign session served live objects: %v", objects)
+	}
 }
 
 func TestProjectCompletionIndexFromView(t *testing.T) {

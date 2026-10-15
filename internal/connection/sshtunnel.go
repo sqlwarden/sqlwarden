@@ -5,6 +5,7 @@ import (
 	"crypto/subtle"
 	"errors"
 	"fmt"
+	"log/slog"
 	"net"
 	"strconv"
 	"sync"
@@ -41,6 +42,20 @@ type SSHConfig struct {
 	Fingerprint         string // "SHA256:..." pin, alternative to KnownHostsEntry
 	InsecureSkipHostKey bool   // explicit opt-out only
 }
+
+// MarshalJSON refuses to serialize: the config carries decoded secrets.
+func (SSHConfig) MarshalJSON() ([]byte, error) {
+	return nil, errors.New("connection: refusing to serialize ssh config")
+}
+
+// String redacts SSH secrets from fmt verbs such as %v and %+v.
+func (SSHConfig) String() string { return "connection.SSHConfig{[redacted]}" }
+
+// GoString redacts SSH secrets from the %#v verb.
+func (c SSHConfig) GoString() string { return c.String() }
+
+// LogValue redacts SSH secrets from structured logs.
+func (c SSHConfig) LogValue() slog.Value { return slog.StringValue(c.String()) }
 
 // Tunnel is an open SSH client to a bastion plus a keepalive goroutine. It
 // serves DialContext so a driver can route its TCP transport through the

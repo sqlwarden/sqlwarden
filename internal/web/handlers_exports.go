@@ -15,9 +15,10 @@ import (
 	"time"
 
 	"github.com/sqlwarden/internal/access"
+	"github.com/sqlwarden/internal/credentials"
 	"github.com/sqlwarden/internal/database"
-	"github.com/sqlwarden/internal/engine"
 	"github.com/sqlwarden/internal/engine/classifier"
+	"github.com/sqlwarden/internal/execution"
 	"github.com/sqlwarden/internal/exports"
 	"github.com/sqlwarden/internal/files"
 	"github.com/sqlwarden/internal/jobs"
@@ -102,7 +103,6 @@ func (app *application) downloadConnectionExport(w http.ResponseWriter, r *http.
 	if !ok {
 		return
 	}
-	account := contextGetAccount(r)
 	org := contextGetOrg(r)
 	ws := contextGetWorkspace(r)
 	conn := contextGetConnection(r)
@@ -113,18 +113,8 @@ func (app *application) downloadConnectionExport(w http.ResponseWriter, r *http.
 		app.notPermitted(w, r)
 		return
 	}
-	sessionID := r.Header.Get("X-Warden-Session")
-	if sessionID == "" {
-		app.errorMessage(w, r, http.StatusBadRequest, "X-Warden-Session header is required.", nil)
-		return
-	}
-	session, found := app.connManager.Get(sessionID)
-	if !found {
-		app.errorMessage(w, r, http.StatusGone, "Session has expired or does not exist.", nil)
-		return
-	}
-	if session.AccountID != strconv.FormatInt(account.ID, 10) || session.ConnectionID != strconv.FormatInt(conn.ID, 10) {
-		app.notPermitted(w, r)
+	session, ok := app.resolveRuntimeSession(w, r)
+	if !ok {
 		return
 	}
 	runtimeSettings, err := app.effectiveRuntimeSettingsForWorkspace(r.Context(), ws)
@@ -137,19 +127,19 @@ func (app *application) downloadConnectionExport(w http.ResponseWriter, r *http.
 	w.Header().Set("Content-Type", "text/csv; charset=utf-8")
 	w.Header().Set("Content-Disposition", mime.FormatMediaType("attachment", map[string]string{"filename": filename}))
 	w.WriteHeader(http.StatusOK)
-	result, err := exports.NewService().Stream(r.Context(), session.Conn, w, exports.StreamOptions{
-		Format:   normalizedExportFormat(input.Format),
-		SQL:      input.SQL,
-		MaxBytes: runtimeSettings.ExportsSyncMaxBytes,
-	})
+	result, err := app.runtime.Stream(r.Context(), runtimeScope(r), session.ID, execution.StreamRequest{
+		Format: normalizedExportFormat(input.Format),
+		SQL:    input.SQL,
+		Limits: execution.Limits{MaxBytes: runtimeSettings.ExportsSyncMaxBytes},
+	}, w)
 	if err != nil {
-		app.logWarn(r, "synchronous export failed", slog.Int64("connection_id", conn.ID), slog.String("session_id", sessionID), slog.String("error", exportErrorCategory(err)))
+		app.logWarn(r, "synchronous export failed", slog.Int64("connection_id", conn.ID), slog.String("session_id", string(session.ID)), slog.String("error", exportErrorCategory(err)))
 		if errors.Is(err, exports.ErrByteLimitExceeded) {
 			panic(http.ErrAbortHandler)
 		}
 		return
 	}
-	app.logInfo(r, "synchronous export completed", slog.Int64("connection_id", conn.ID), slog.String("session_id", sessionID), slog.Int64("rows", result.Rows), slog.Int64("bytes", result.Bytes))
+	app.logInfo(r, "synchronous export completed", slog.Int64("connection_id", conn.ID), slog.String("session_id", string(session.ID)), slog.Int64("rows", result.Rows), slog.Int64("bytes", result.Bytes))
 }
 
 func (app *application) decodeExportRequest(w http.ResponseWriter, r *http.Request) (exportRequest, bool) {
@@ -253,21 +243,26 @@ func (app *application) handleExportJob(ctx context.Context, runtime jobs.Runtim
 		return nil, jobs.Permanent("export_multi_statement", "Only a single query can be exported. Multi-query export isn't supported yet.")
 	}
 
-	plainDSN, err := app.keyring.Decrypt(conn.DSNEncrypted)
+	execScope := execution.Scope{
+		OrgID:        strconv.FormatInt(org.ID, 10),
+		WorkspaceID:  strconv.FormatInt(ws.ID, 10),
+		AccountID:    strconv.FormatInt(input.AccountID, 10),
+		ConnectionID: strconv.FormatInt(conn.ID, 10),
+	}
+	session, err := app.runtime.Open(ctx, execution.OpenRequest{Scope: execScope, Ephemeral: true})
 	if err != nil {
-		return nil, err
+		return nil, exportOpenError(err)
 	}
-	if err := app.validateTargetConnection(ctx, conn.Driver, plainDSN); err != nil {
-		return nil, jobs.Permanent("export_target_blocked", targetConnectionFieldError(err))
-	}
-	driver, err := engine.New(conn.Driver)
-	if err != nil {
-		return nil, err
-	}
-	if err := driver.Connect(ctx, engine.ConnectionConfig{DSN: plainDSN, Driver: conn.Driver, DefaultScope: conn.DefaultScope}); err != nil {
-		return nil, jobs.Retryable("export_connect_failed", "Could not connect to the target database.")
-	}
-	defer driver.Close()
+	defer func() {
+		if app.logger == nil {
+			_ = app.runtime.Close(context.WithoutCancel(ctx), execScope, session.ID)
+			return
+		}
+		if err := app.runtime.Close(context.WithoutCancel(ctx), execScope, session.ID); err != nil {
+			app.logger.WarnContext(ctx, "export session close failed",
+				slog.Int64("connection_id", conn.ID), slog.String("session_id", string(session.ID)), slog.Any("error", err))
+		}
+	}()
 	runtime.Events.Info(ctx, "target_connected", "Connected to database.", nil)
 	runtimeSettings, err := app.effectiveRuntimeSettingsForWorkspace(ctx, ws)
 	if err != nil {
@@ -287,17 +282,18 @@ func (app *application) handleExportJob(ctx context.Context, runtime jobs.Runtim
 	go func() {
 		defer writer.Close()
 		var lastProgress int64
-		streamResult, err = exports.NewService().Stream(ctx, driver, writer, exports.StreamOptions{
-			Format:   input.Format,
-			SQL:      input.SQL,
-			MaxBytes: runtimeSettings.ExportsBackgroundMaxBytes,
+		var err error
+		streamResult, err = app.runtime.Stream(ctx, execScope, session.ID, execution.StreamRequest{
+			Format: input.Format,
+			SQL:    input.SQL,
+			Limits: execution.Limits{MaxBytes: runtimeSettings.ExportsBackgroundMaxBytes},
 			OnProgress: func(rows int64, bytes int64) {
 				if rows-lastProgress >= exportProgressEveryRows {
 					lastProgress = rows
 					runtime.Events.Info(ctx, "rows_streamed", "Rows exported.", map[string]any{"rows": rows, "bytes": bytes})
 				}
 			},
-		})
+		}, writer)
 		if err != nil {
 			_ = writer.CloseWithError(err)
 		}
@@ -306,7 +302,9 @@ func (app *application) handleExportJob(ctx context.Context, runtime jobs.Runtim
 	_, writeErr := app.workspaceFileServiceWithSettings(runtimeSettings).WriteContent(ctx, scope, file.ID, "", reader)
 	if writeErr != nil {
 		_ = reader.Close()
-		if err := <-streamErr; err != nil {
+		// The stream fails with a closed-pipe error only because the write
+		// side was abandoned; the write failure is the root cause.
+		if err := <-streamErr; err != nil && !errors.Is(err, io.ErrClosedPipe) {
 			return nil, exportJobError(err)
 		}
 		return nil, writeErr
@@ -417,6 +415,25 @@ func uniqueExportName(name string, attempt int) string {
 	ext := filepath.Ext(name)
 	base := strings.TrimSuffix(name, ext)
 	return fmt.Sprintf("%s-%d%s", base, attempt+1, ext)
+}
+
+// exportOpenError classifies a failure to open the export session. Credential
+// and unexpected errors are returned as-is so the job fails without echoing them.
+func exportOpenError(err error) error {
+	var tunnelErr *execution.TunnelError
+	var connectErr *execution.ConnectError
+	switch {
+	case errors.Is(err, context.Canceled), errors.Is(err, context.DeadlineExceeded):
+		return err
+	case isTargetPolicyDenial(err):
+		return jobs.Permanent("export_target_blocked", targetConnectionFieldError(err))
+	case errors.Is(err, credentials.ErrNotFound):
+		return jobs.Permanent("connection_not_found", "Connection was not found.")
+	case errors.As(err, &tunnelErr), errors.As(err, &connectErr):
+		return jobs.Retryable("export_connect_failed", "Could not connect to the target database.")
+	default:
+		return err
+	}
 }
 
 func exportJobError(err error) error {

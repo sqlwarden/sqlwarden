@@ -18,7 +18,6 @@ import (
 	"github.com/sqlwarden/internal/assert"
 	"github.com/sqlwarden/internal/audit"
 	completionapp "github.com/sqlwarden/internal/completion"
-	"github.com/sqlwarden/internal/connection"
 	"github.com/sqlwarden/internal/database"
 	"github.com/sqlwarden/internal/identity"
 	"github.com/sqlwarden/internal/orgs"
@@ -35,11 +34,9 @@ func newTestApp(t *testing.T) *application {
 	}
 	app.enforcer = enforcer
 	app.policy = enforcer
-	app.connManager = connection.New(30 * time.Minute)
 	app.schemaNavigator = schemaapp.NewNavigator(app.db, app.logger)
 	app.completionService = completionapp.NewService()
 	app.configureConnectionCacheInvalidation()
-	t.Cleanup(func() { app.connManager.Close() })
 	return app
 }
 

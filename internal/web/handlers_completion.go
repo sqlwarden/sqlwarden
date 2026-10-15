@@ -99,7 +99,7 @@ func (app *application) completeConnectionSQL(w http.ResponseWriter, r *http.Req
 	if tree, ok := app.optionalNavigatorTree(conn); ok {
 		loader = navigatorCompletionLoader{
 			app: app, request: r, navigator: app.schemaNavigator, conn: navConn,
-			driver: conn.Driver, tree: tree, live: navigatorLive(session),
+			driver: conn.Driver, tree: tree, live: app.navigatorLive(r, session),
 		}
 	}
 	result, outcome, err := app.completionService.CompleteWithMetadata(r.Context(), conn.Driver, req, loader)

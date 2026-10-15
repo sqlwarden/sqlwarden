@@ -20,7 +20,7 @@ type navigatorCompletionLoader struct {
 	conn      schemaapp.Connection
 	driver    string
 	tree      metadata.Tree
-	live      metadata.SchemaInspector
+	live      schemaapp.Live
 }
 
 func (l navigatorCompletionLoader) View(ctx context.Context) (*metadata.CompletionView, error) {

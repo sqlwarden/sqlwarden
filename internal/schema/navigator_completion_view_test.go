@@ -317,7 +317,7 @@ func TestCompletionViewMemoizesSessionScope(t *testing.T) {
 		t.Fatalf("without session: default scope = %q", view.DefaultScope())
 	}
 	if view, _ := n.CompletionView(ctx, other, tree, cat); view.DefaultScope() != "" {
-		t.Fatalf("inspector without SessionScoper: default scope = %q", view.DefaultScope())
+		t.Fatalf("live without a current scope: default scope = %q", view.DefaultScope())
 	}
 }
 

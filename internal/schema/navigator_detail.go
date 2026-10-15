@@ -8,7 +8,7 @@ import (
 	metadata "github.com/sqlwarden/internal/engine/metadata"
 )
 
-func (n *Navigator) Objects(ctx context.Context, conn Connection, live metadata.ObjectInspector, refs []metadata.ObjectRef) ([]metadata.Object, error) {
+func (n *Navigator) Objects(ctx context.Context, conn Connection, live Live, refs []metadata.ObjectRef) ([]metadata.Object, error) {
 	found := make(map[metadata.ObjectRef]metadata.Object, len(refs))
 	var misses []metadata.ObjectRef
 	n.mu.Lock()
@@ -69,7 +69,7 @@ func (n *Navigator) Objects(ctx context.Context, conn Connection, live metadata.
 	return out, nil
 }
 
-func (n *Navigator) Relationships(ctx context.Context, conn Connection, live metadata.RelationshipInspector, scope metadata.ScopePath) (*metadata.RelationshipGraph, error) {
+func (n *Navigator) Relationships(ctx context.Context, conn Connection, live Live, scope metadata.ScopePath) (*metadata.RelationshipGraph, error) {
 	n.mu.Lock()
 	graph, ok := n.memoryFor(conn.ID).relationships[scope]
 	n.mu.Unlock()
@@ -93,7 +93,7 @@ func (n *Navigator) Relationships(ctx context.Context, conn Connection, live met
 	if live == nil {
 		return nil, ErrSessionRequired
 	}
-	graph, err := live.InspectRelationshipsInScope(ctx, scope)
+	graph, err := live.InspectRelationships(ctx, scope)
 	if err != nil {
 		return nil, err
 	}

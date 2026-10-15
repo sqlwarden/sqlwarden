@@ -18,7 +18,7 @@ func TestDiscoverScopesFromRootDescendsIntoCurrentScopes(t *testing.T) {
 		metadata.Child{Kind: "schema", Name: "public", Current: true},
 		metadata.Child{Kind: "schema", Name: "sales"})
 
-	got, err := DiscoverScopes(context.Background(), cat, "")
+	got, err := DiscoverScopes(context.Background(), cat.Tree(), cat, "")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -41,7 +41,7 @@ func TestDiscoverScopesUnderParentListsOnlyItsScopeChildren(t *testing.T) {
 	cat := newFakeCatalog()
 	cat.set(dbPath("reports"), "schemas", metadata.Child{Kind: "schema", Name: "monthly"})
 
-	got, err := DiscoverScopes(context.Background(), cat, dbPath("reports"))
+	got, err := DiscoverScopes(context.Background(), cat.Tree(), cat, dbPath("reports"))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -60,7 +60,7 @@ func TestDiscoverScopesWithoutCurrentStopsAtFirstLevel(t *testing.T) {
 	cat := newFakeCatalog()
 	cat.set("", "databases", metadata.Child{Kind: "database", Name: "app"})
 
-	got, err := DiscoverScopes(context.Background(), cat, "")
+	got, err := DiscoverScopes(context.Background(), cat.Tree(), cat, "")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -74,7 +74,7 @@ func TestDiscoverScopesWithoutCurrentStopsAtFirstLevel(t *testing.T) {
 
 func TestDiscoverScopesUnknownParentKind(t *testing.T) {
 	cat := newFakeCatalog()
-	_, err := DiscoverScopes(context.Background(), cat, metadata.NewScopePath(seg("warehouse", "x")))
+	_, err := DiscoverScopes(context.Background(), cat.Tree(), cat, metadata.NewScopePath(seg("warehouse", "x")))
 	if err == nil {
 		t.Fatal("want error for a parent kind outside the grammar")
 	}

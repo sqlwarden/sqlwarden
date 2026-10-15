@@ -74,7 +74,7 @@ func TestCompleteConnectionSQLRejectsInvalidOffsetsAndSupportsSQLite(t *testing.
 	}
 }
 
-func TestCompleteConnectionSQLRejectsSessionFromAnotherConnection(t *testing.T) {
+func TestCompleteConnectionSQLIgnoresSessionFromAnotherConnection(t *testing.T) {
 	t.Parallel()
 	app := newTestApp(t)
 	owner, token, org := seedOrgOwner(t, app, uniqueEmail(t, "completion-scope"), "Completion", "Completion Org")
@@ -90,7 +90,8 @@ func TestCompleteConnectionSQLRejectsSessionFromAnotherConnection(t *testing.T) 
 		map[string]any{"sql": "SEL", "cursor_offset": 3}, token)
 	req.Header.Set("X-Warden-Session", session.ID)
 	res := send(t, req, app.routes())
-	assert.Equal(t, res.StatusCode, http.StatusForbidden)
+	assert.Equal(t, res.StatusCode, http.StatusOK)
+	assert.Equal(t, res.BodyFields["metadata_loaded"], false)
 }
 
 func responseHasCompletionLabel(body map[string]any, label string) bool {

@@ -5,15 +5,14 @@ import (
 	"errors"
 	"log/slog"
 	"net/http"
-	"strconv"
 	"time"
 
-	"github.com/sqlwarden/internal/connection"
 	"github.com/sqlwarden/internal/database"
 	"github.com/sqlwarden/internal/engine"
 	"github.com/sqlwarden/internal/engine/ddl"
 	"github.com/sqlwarden/internal/engine/metadata"
 	"github.com/sqlwarden/internal/engine/statement"
+	"github.com/sqlwarden/internal/execution"
 	"github.com/sqlwarden/internal/request"
 	"github.com/sqlwarden/internal/response"
 	schemaapp "github.com/sqlwarden/internal/schema"
@@ -90,44 +89,63 @@ func (app *application) navigatorConnection(r *http.Request) (schemaapp.Connecti
 	}, nil
 }
 
-// optionalSchemaSession resolves X-Warden-Session when present. A missing or
-// expired session is not an error: cached reads still succeed and uncached
-// reads return session_required.
-func (app *application) optionalSchemaSession(w http.ResponseWriter, r *http.Request) (*connection.Session, bool) {
-	sessionID := r.Header.Get("X-Warden-Session")
+// optionalSchemaSession resolves X-Warden-Session when present. A missing,
+// expired, or foreign session is not an error: cached reads still succeed and
+// uncached reads return session_required or 410.
+func (app *application) optionalSchemaSession(w http.ResponseWriter, r *http.Request) (*schemaSession, bool) {
+	sessionID := requestSessionID(r)
 	if sessionID == "" {
 		return nil, true
 	}
-	session, ok := app.connManager.Get(sessionID)
-	if !ok {
-		return nil, true
-	}
-	account := contextGetAccount(r)
-	conn := contextGetConnection(r)
-	if session.AccountID != strconv.FormatInt(account.ID, 10) || session.ConnectionID != strconv.FormatInt(conn.ID, 10) {
-		app.logWarn(r, "schema session scope mismatch", slog.Int64("connection_id", conn.ID))
-		app.notPermitted(w, r)
+	caps, err := app.runtime.Capabilities(r.Context(), runtimeScope(r), sessionID)
+	if err != nil {
+		var failure *execution.Failure
+		if errors.As(err, &failure) {
+			return nil, true
+		}
+		app.serverError(w, r, err)
 		return nil, false
 	}
-	return session, true
+	return &schemaSession{id: sessionID, caps: caps}, true
 }
 
-func navigatorLive(session *connection.Session) metadata.SchemaInspector {
+// sessionLive binds the session to the navigator through the runtime. A driver
+// without a navigator tree still serves object and relationship reads.
+func (app *application) sessionLive(r *http.Request, session *schemaSession) schemaapp.Live {
 	if session == nil {
 		return nil
 	}
-	inspector, ok := session.Conn.(metadata.SchemaInspector)
-	if !ok {
-		return nil
+	var tree metadata.Tree
+	if session.caps.Schema != nil {
+		tree = *session.caps.Schema
 	}
-	return inspector
+	return execution.NewLive(app.runtime, runtimeScope(r), session.id, tree)
 }
 
-// sessionRequired answers 410 when the request named a session that no longer
-// exists, so clients drop the dead session instead of reporting it connected.
+func (app *application) navigatorLive(r *http.Request, session *schemaSession) schemaapp.Live {
+	if session == nil || session.caps.Schema == nil {
+		return nil
+	}
+	return app.sessionLive(r, session)
+}
+
+// sessionInspectsSchema answers 501 when a live session's driver cannot inspect
+// schema objects. Without a session the request falls back to cached metadata.
+func (app *application) sessionInspectsSchema(w http.ResponseWriter, r *http.Request, session *schemaSession) bool {
+	if session == nil || session.caps.Objects {
+		return true
+	}
+	app.logInfo(r, "schema inspection unsupported", slog.Int64("connection_id", contextGetConnection(r).ID))
+	app.errorMessage(w, r, http.StatusNotImplemented, "This driver does not support schema inspection.", nil)
+	return false
+}
+
+// sessionRequired answers 410 when the request named a session that is not
+// live in the request scope, so clients drop the dead session instead of
+// reporting it connected.
 func (app *application) sessionRequired(w http.ResponseWriter, r *http.Request) {
-	if sessionID := r.Header.Get("X-Warden-Session"); sessionID != "" {
-		if _, ok := app.connManager.Get(sessionID); !ok {
+	if sessionID := requestSessionID(r); sessionID != "" {
+		if _, err := app.runtime.Get(r.Context(), runtimeScope(r), sessionID); err != nil {
 			app.logInfo(r, "schema read with expired session", slog.Int64("connection_id", contextGetConnection(r).ID))
 			app.errorMessage(w, r, http.StatusGone, "Session has expired or does not exist.", nil)
 			return
@@ -138,11 +156,21 @@ func (app *application) sessionRequired(w http.ResponseWriter, r *http.Request) 
 }
 
 func (app *application) navigatorError(w http.ResponseWriter, r *http.Request, err error) {
+	var failure *execution.Failure
 	switch {
 	case errors.Is(err, schemaapp.ErrSessionRequired):
 		app.sessionRequired(w, r)
-	case errors.Is(err, schemaapp.ErrUnknownFolder):
+	case errors.Is(err, schemaapp.ErrUnknownFolder), errors.Is(err, execution.ErrUnknownFolder):
 		app.errorMessage(w, r, http.StatusBadRequest, "Unknown folder for this node.", nil)
+	case errors.Is(err, execution.ErrSchemaUnsupported):
+		app.logInfo(r, "schema inspection unsupported", slog.Int64("connection_id", contextGetConnection(r).ID))
+		app.errorMessage(w, r, http.StatusNotImplemented, "This driver does not support schema inspection.", nil)
+	case errors.Is(err, execution.ErrRelationshipsUnsupported):
+		app.errorMessage(w, r, http.StatusNotImplemented, "This driver does not support schema relationships.", nil)
+	case errors.Is(err, execution.ErrDefinitionUnsupported):
+		app.errorMessage(w, r, http.StatusNotImplemented, "This driver does not support on-demand object definitions.", nil)
+	case errors.As(err, &failure) && (failure.Code == execution.FailureSessionNotFound || failure.Code == execution.FailureSessionLost):
+		app.executionError(w, r, err)
 	default:
 		app.logWarn(r, "schema navigator load failed", slog.Int64("connection_id", contextGetConnection(r).ID), slog.Any("error", err))
 		app.errorMessage(w, r, http.StatusUnprocessableEntity, "Schema metadata could not be loaded from the database.", nil)
@@ -158,15 +186,9 @@ func (app *application) getConnectionSchemaTree(w http.ResponseWriter, r *http.R
 		return
 	}
 	out := schemaTreeResponse{Tree: tree}
-	if driver, err := engine.New(contextGetConnection(r).Driver); err == nil {
-		if executor, ok := driver.(ddl.Executor); ok {
-			spec := executor.DDLSpec()
-			out.Editor = &spec
-		}
-		if generator, ok := driver.(statement.Generator); ok {
-			spec := generator.StatementSpec()
-			out.Statements = &spec
-		}
+	if set, ok := engine.Describe(contextGetConnection(r).Driver); ok {
+		out.Editor = set.DDL
+		out.Statements = set.Statements
 	}
 	if err := response.JSON(w, http.StatusOK, out); err != nil {
 		app.serverError(w, r, err)
@@ -203,7 +225,7 @@ func (app *application) getConnectionSchemaNodes(w http.ResponseWriter, r *http.
 		return
 	}
 	start := time.Now()
-	listing, err := app.schemaNavigator.Children(r.Context(), conn, tree, navigatorLive(session), parent, folder)
+	listing, err := app.schemaNavigator.Children(r.Context(), conn, tree, app.navigatorLive(r, session), parent, folder)
 	if err != nil {
 		app.navigatorError(w, r, err)
 		return
@@ -238,7 +260,7 @@ func (app *application) refreshConnectionSchemaNodes(w http.ResponseWriter, r *h
 	if !ok {
 		return
 	}
-	live := navigatorLive(session)
+	live := app.navigatorLive(r, session)
 	if live == nil {
 		app.sessionRequired(w, r)
 		return

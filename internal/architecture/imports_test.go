@@ -56,6 +56,11 @@ func TestForbiddenProductionImports(t *testing.T) {
 					}
 				}
 			}
+			// credentials adapts stored TLS/SSH documents into the connection
+			// package's input types, so it is the only other legitimate importer.
+			if importPath == "github.com/sqlwarden/internal/connection" && owner != "execution" && owner != "credentials" && owner != "connection" {
+				t.Errorf("%s imports internal/connection; only internal/execution and internal/credentials may", rel)
+			}
 			if processKindLayer && (strings.HasPrefix(importPath, "k8s.io/") || strings.HasPrefix(importPath, "sigs.k8s.io/")) {
 				t.Errorf("%s imports Kubernetes API %q; process topology belongs in deployment manifests", rel, importPath)
 			}

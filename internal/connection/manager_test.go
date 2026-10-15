@@ -589,3 +589,37 @@ func (c *mockQueryCursor) Close() error {
 	c.closed = true
 	return nil
 }
+
+func TestPrivateSessionsAreNotListedOrCountedButStayRemovable(t *testing.T) {
+	m := New(5 * time.Minute)
+	meta := SessionMetadata{WorkspaceID: "w1"}
+	open := func() (engine.Driver, func(), error) { return &mockDriver{}, func() {}, nil }
+
+	if _, _, err := m.GetOrCreateWithMetadata("acct", "conn", meta, open); err != nil {
+		t.Fatal(err)
+	}
+	priv, err := m.CreatePrivate("acct", "conn", meta, open)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	if got := m.CountForConnection("conn"); got != 1 {
+		t.Fatalf("CountForConnection = %d, want 1", got)
+	}
+	if got := m.AllForAccount("acct"); len(got) != 1 || got[0].SessionID == priv.ID {
+		t.Fatalf("AllForAccount = %+v", got)
+	}
+	if got := m.AllForWorkspace("w1"); len(got) != 1 || got[0].SessionID == priv.ID {
+		t.Fatalf("AllForWorkspace = %+v", got)
+	}
+	if _, ok := m.Get(priv.ID); !ok {
+		t.Fatal("private session must remain reachable by ID")
+	}
+
+	if removed := m.RemoveForConnection("conn"); removed != 2 {
+		t.Fatalf("RemoveForConnection removed %d, want 2", removed)
+	}
+	if _, ok := m.Get(priv.ID); ok {
+		t.Fatal("private session must be removed with its connection")
+	}
+}
