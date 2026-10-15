@@ -8,7 +8,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/sqlwarden/internal/observability"
+	"github.com/sqlwarden/internal/platform/observability"
 	"github.com/sqlwarden/internal/response"
 )
 

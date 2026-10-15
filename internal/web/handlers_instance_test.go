@@ -9,6 +9,7 @@ import (
 
 	"github.com/sqlwarden/internal/access"
 	"github.com/sqlwarden/internal/assert"
+	"github.com/sqlwarden/internal/config"
 	"github.com/sqlwarden/internal/database"
 )
 
@@ -20,7 +21,7 @@ func setupInstance(t *testing.T, app *application, email, name, password string)
 		"name":     name,
 		"password": password,
 	}
-	if app.config.AccessMode != AccessModeSingleUser {
+	if app.config.AccessMode != config.AccessModeSingleUser {
 		body["organization_name"] = "Default Organization"
 	}
 	res := send(t, newTestRequest(t, http.MethodPost, "/api/setup", body), app.routes())
@@ -59,7 +60,7 @@ func TestSetupCreatesFirstInstanceAdmin(t *testing.T) {
 func TestSetupInMultiUserModeSeedsFirstOrganizationAndOwnerPolicy(t *testing.T) {
 	t.Parallel()
 	app := newTestApp(t)
-	app.config.AccessMode = AccessModeMultiUser
+	app.config.AccessMode = config.AccessModeMultiUser
 
 	res := send(t, newTestRequest(t, http.MethodPost, "/api/setup", map[string]any{
 		"email":             "admin@example.com",
@@ -89,7 +90,7 @@ func TestSetupInMultiUserModeSeedsFirstOrganizationAndOwnerPolicy(t *testing.T) 
 func TestSetupInMultiUserModeRequiresOrganization(t *testing.T) {
 	t.Parallel()
 	app := newTestApp(t)
-	app.config.AccessMode = AccessModeMultiUser
+	app.config.AccessMode = config.AccessModeMultiUser
 
 	res := send(t, newTestRequest(t, http.MethodPost, "/api/setup", map[string]any{
 		"email":    "admin@example.com",
@@ -104,7 +105,7 @@ func TestSetupInMultiUserModeRequiresOrganization(t *testing.T) {
 func TestSetupInMultiUserModeRejectsInvalidOrganizationSlug(t *testing.T) {
 	t.Parallel()
 	app := newTestApp(t)
-	app.config.AccessMode = AccessModeMultiUser
+	app.config.AccessMode = config.AccessModeMultiUser
 
 	res := send(t, newTestRequest(t, http.MethodPost, "/api/setup", map[string]any{
 		"email":             "admin@example.com",
@@ -120,7 +121,7 @@ func TestSetupInMultiUserModeRejectsInvalidOrganizationSlug(t *testing.T) {
 func TestSetupInMultiUserModeRejectsOverlongOrganizationSlug(t *testing.T) {
 	t.Parallel()
 	app := newTestApp(t)
-	app.config.AccessMode = AccessModeMultiUser
+	app.config.AccessMode = config.AccessModeMultiUser
 
 	res := send(t, newTestRequest(t, http.MethodPost, "/api/setup", map[string]any{
 		"email":             "admin@example.com",
@@ -137,7 +138,7 @@ func TestSetupInMultiUserModeRejectsOverlongOrganizationSlug(t *testing.T) {
 func TestSetupInMultiUserModeRejectsDuplicateOrganizationSlug(t *testing.T) {
 	t.Parallel()
 	app := newTestApp(t)
-	app.config.AccessMode = AccessModeMultiUser
+	app.config.AccessMode = config.AccessModeMultiUser
 
 	_, err := app.db.InsertOrg(t.Context(), "first-org", "Existing Organization")
 	assert.Nil(t, err)
@@ -160,7 +161,7 @@ func TestSetupInMultiUserModeRejectsDuplicateOrganizationSlug(t *testing.T) {
 func TestCreateFirstRunSetup_RollsBackAccountAdminAndSessionOnOrgFailure(t *testing.T) {
 	t.Parallel()
 	app := newTestApp(t)
-	app.config.AccessMode = AccessModeMultiUser
+	app.config.AccessMode = config.AccessModeMultiUser
 
 	_, err := app.db.InsertOrg(t.Context(), "first-org", "Existing Organization")
 	assert.Nil(t, err)
@@ -188,7 +189,7 @@ func TestCreateFirstRunSetup_RollsBackAccountAdminAndSessionOnOrgFailure(t *test
 func TestSetupInSingleUserModeSeedsLocalOrganizationAndOwnerPolicy(t *testing.T) {
 	t.Parallel()
 	app := newTestApp(t)
-	app.config.AccessMode = AccessModeSingleUser
+	app.config.AccessMode = config.AccessModeSingleUser
 
 	token := setupInstance(t, app, "admin@example.com", "Admin", "securepass99")
 
@@ -254,7 +255,7 @@ func TestSetupStatus_ReturnsStableShape(t *testing.T) {
 	res := send(t, newTestRequest(t, http.MethodGet, "/api/setup/status", nil), app.routes())
 	assert.Equal(t, res.StatusCode, http.StatusOK)
 	assertBodyContainsJSONKeys(t, res.BodyBytes, "configured")
-	assert.Equal(t, res.BodyFields["access_mode"].(string), string(AccessModeMultiUser))
+	assert.Equal(t, res.BodyFields["access_mode"].(string), string(config.AccessModeMultiUser))
 }
 
 func TestSetupBlockedAfterFirstAdmin(t *testing.T) {

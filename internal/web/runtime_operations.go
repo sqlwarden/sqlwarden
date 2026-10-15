@@ -8,6 +8,7 @@ import (
 
 	"github.com/sqlwarden/internal/database"
 	"github.com/sqlwarden/internal/jobs"
+	"github.com/sqlwarden/internal/platform/observability"
 	"github.com/sqlwarden/internal/smtp"
 )
 
@@ -66,7 +67,7 @@ func (app *application) applyRuntimeOperations(settings database.InstanceSetting
 			return fmt.Errorf("configure SMTP: %w", err)
 		}
 	}
-	if err := setLoggerLevel(app.logger, settings.LogLevel); err != nil {
+	if err := observability.SetLevel(app.logger, settings.LogLevel); err != nil {
 		return fmt.Errorf("apply runtime log level: %w", err)
 	}
 	app.db.SetQueryTracing(settings.DatabaseQueryTracingEnabled)
@@ -104,7 +105,7 @@ func (app *application) queueRuntimeOperations(settings database.InstanceSetting
 	}
 }
 
-func (app *application) startRuntimeSupervisor(initial database.InstanceSettings) {
+func (app *application) startRuntimeSupervisor(initial database.InstanceSettings, runJobs bool) {
 	if app.runtimeCancel != nil {
 		return
 	}
@@ -113,16 +114,22 @@ func (app *application) startRuntimeSupervisor(initial database.InstanceSettings
 	app.wg.Add(1)
 	go func() {
 		defer app.wg.Done()
-		app.runRuntimeSupervisor(ctx, initial)
+		app.runRuntimeSupervisor(ctx, initial, runJobs)
 	}()
 }
 
-func (app *application) runRuntimeSupervisor(ctx context.Context, initial database.InstanceSettings) {
+// runRuntimeSupervisor applies instance settings changes until ctx ends. The
+// job runner is restarted on worker setting changes, and runs only when
+// runJobs is set.
+func (app *application) runRuntimeSupervisor(ctx context.Context, initial database.InstanceSettings, runJobs bool) {
 	current := operationsFromSettings(initial)
 	var runnerStop chan struct{}
 	var runnerDone chan struct{}
 
 	startRunner := func(cfg jobs.WorkerConfig) {
+		if !runJobs {
+			return
+		}
 		runnerStop = make(chan struct{})
 		runnerDone = make(chan struct{})
 		runner := jobs.NewRunner(app.jobStore, app.jobRegistry, app.logger, cfg)

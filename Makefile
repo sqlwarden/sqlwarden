@@ -95,12 +95,12 @@ frontend/dev:
 frontend/dev-expose:
 	cd frontend && bun run dev-expose
 
-## build: build the cmd/api application (builds frontend first)
+## build: build the cmd/sqlwarden application (builds frontend first)
 .PHONY: build
 build: frontend/build
 	@echo "Building sqlwarden..."
 	@mkdir -p dist
-	go build -ldflags="-s -w -X github.com/sqlwarden/internal/version.version=dev -X github.com/sqlwarden/internal/version.commit=$$(git rev-parse --short HEAD 2>/dev/null || echo unknown) -X github.com/sqlwarden/internal/version.date=$$(date -u +%Y-%m-%dT%H:%M:%SZ)" -o=dist/sqlwarden ./cmd/api
+	go build -ldflags="-s -w -X github.com/sqlwarden/internal/version.version=dev -X github.com/sqlwarden/internal/version.commit=$$(git rev-parse --short HEAD 2>/dev/null || echo unknown) -X github.com/sqlwarden/internal/version.date=$$(date -u +%Y-%m-%dT%H:%M:%SZ)" -o=dist/sqlwarden ./cmd/sqlwarden
 
 ## build/release: build the application for release (requires goreleaser)
 .PHONY: build/release
@@ -111,7 +111,7 @@ build/release:
 	fi
 	goreleaser build --snapshot --clean
 	
-## run: run the cmd/api application
+## run: run the cmd/sqlwarden application
 .PHONY: run
 run: build
 	LOG_FORMAT=text ./dist/sqlwarden

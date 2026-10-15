@@ -33,7 +33,7 @@ RUN CGO_ENABLED=0 GOOS=$TARGETOS GOARCH=$TARGETARCH go build \
       -X github.com/sqlwarden/internal/version.commit=${COMMIT} \
       -X github.com/sqlwarden/internal/version.date=${DATE}" \
     -o sqlwarden \
-    ./cmd/api
+    ./cmd/sqlwarden
 
 FROM alpine:3.19
 

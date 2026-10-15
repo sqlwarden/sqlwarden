@@ -9,6 +9,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/sqlwarden/internal/config"
 	"github.com/sqlwarden/internal/database"
 	"github.com/sqlwarden/internal/validator"
 )
@@ -42,7 +43,10 @@ func newRuntimeSettingsService(db *database.DB) *runtimeSettingsService {
 	return &runtimeSettingsService{db: db}
 }
 
-func initializeInstanceBaseURL(ctx context.Context, db *database.DB, bootstrapBaseURL string) error {
+// InitializeInstanceBaseURL seeds the stored instance base URL from
+// bootstrapBaseURL until an instance admin exists or a base URL is stored.
+// After that the database value is authoritative and only validated.
+func InitializeInstanceBaseURL(ctx context.Context, db *database.DB, bootstrapBaseURL string) error {
 	current, found, err := db.GetInstanceSettings(ctx)
 	if err != nil {
 		return fmt.Errorf("initialize instance base URL: %w", err)
@@ -68,7 +72,9 @@ func initializeInstanceBaseURL(ctx context.Context, db *database.DB, bootstrapBa
 	return validateInstanceSettings(settings)
 }
 
-func validateRuntimeSettingsInvariant(ctx context.Context, db *database.DB) error {
+// ValidateRuntimeSettingsInvariant fails startup when the stored instance
+// settings row is missing or invalid.
+func ValidateRuntimeSettingsInvariant(ctx context.Context, db *database.DB) error {
 	settings, found, err := db.GetInstanceSettings(ctx)
 	if err != nil {
 		return fmt.Errorf("validate runtime settings: %w", err)
@@ -113,7 +119,7 @@ func validateInstanceSettings(settings database.InstanceSettings) error {
 	if settings.FileRevisionsKeepLatest < 0 {
 		return fmt.Errorf("validate runtime settings: file_revisions_keep_latest must be 0 or greater")
 	}
-	if !isSupportedLogLevel(settings.LogLevel) {
+	if !config.IsSupportedLogLevel(settings.LogLevel) {
 		return fmt.Errorf("validate runtime settings: log_level is unsupported")
 	}
 	if settings.JobsWorkerCount <= 0 || settings.JobsWorkerCount > 256 {
