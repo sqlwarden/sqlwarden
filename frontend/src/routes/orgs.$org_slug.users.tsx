@@ -94,7 +94,7 @@ function OrganizationUsersPage({ orgSlug }: { orgSlug: string }) {
   const effectivePermissions = useQuery(orgEffectivePermissionsQueryOptions(orgSlug, 'org'))
   const canReadUsers = hasPermission(effectivePermissions.data?.permissions, permission.orgRead)
   const canAddUser =
-    setupStatus.data?.access_mode === 'multi_user' &&
+    setupStatus.data?.invitations_enabled === true &&
     canReadUsers &&
     hasPermission(effectivePermissions.data?.permissions, permission.orgInvite)
   const members = useQuery({

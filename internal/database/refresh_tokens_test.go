@@ -109,7 +109,7 @@ func TestCreateAuthSessionWithRefreshTokenRollsBackSessionWhenTokenInsertFails(t
 			_, err = db.InsertRefreshToken(context.Background(), account.ID, existingSession.ID, "duplicate-session-token-hash", "family-a", expires, "", "")
 			assert.Nil(t, err)
 
-			_, _, err = db.CreateAuthSessionWithRefreshToken(context.Background(), account.ID, expires, "agent", "127.0.0.1", "duplicate-session-token-hash", "family-b")
+			_, _, err = db.CreateAuthSessionWithRefreshToken(context.Background(), account.ID, expires, "agent", "127.0.0.1", "duplicate-session-token-hash", "family-b", SessionAuth{Method: "password", Assurance: "aal1"})
 			if err == nil {
 				t.Fatal("expected duplicate refresh token hash failure")
 			}
@@ -194,7 +194,7 @@ func TestDeleteExpiredRefreshTokens(t *testing.T) {
 
 func insertRefreshTokenAuthSession(t *testing.T, db *DB, accountID int64, expiresAt time.Time) AuthSession {
 	t.Helper()
-	session, err := db.InsertAuthSession(context.Background(), accountID, expiresAt, "test-agent", "127.0.0.1")
+	session, err := db.InsertAuthSession(context.Background(), accountID, expiresAt, "test-agent", "127.0.0.1", SessionAuth{Method: "password", Assurance: "aal1"})
 	assert.Nil(t, err)
 	return session
 }

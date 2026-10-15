@@ -113,7 +113,6 @@ const emptyForm: InstanceSettingsForm = {
   instance_description: '',
   support_email: '',
   base_url: '',
-  personal_spaces_enabled: true,
   jwt_access_token_ttl_seconds: 3_600,
   sessions_revocation_enabled: false,
   query_max_result_rows: 1_000,
@@ -402,23 +401,6 @@ function SettingsInstancePage() {
                       onChange={(event) => updateField('instance_description', event.target.value)}
                     />
                   </Field>
-
-                  <label className="flex cursor-pointer items-start gap-3 py-2">
-                    <Checkbox
-                      checked={form.personal_spaces_enabled}
-                      disabled={disabled}
-                      onCheckedChange={(checked) =>
-                        updateField('personal_spaces_enabled', checked === true)
-                      }
-                    />
-                    <span className="flex flex-col gap-1">
-                      <span className="font-medium text-foreground">Enable personal spaces</span>
-                      <span className="text-muted-foreground">
-                        Allow users to create personal workspaces outside organization RBAC.
-                        Disabling this drops active personal connection sessions.
-                      </span>
-                    </span>
-                  </label>
                 </div>
               </CardContent>
             </Card>
@@ -1128,7 +1110,7 @@ function DeploymentConfiguration({
                 label="TLS enabled"
                 value={configuration.tls_enabled ? 'Yes' : 'No'}
               />
-              <ConfigurationRow label="Deployment mode" value={configuration.deployment_mode} />
+              <ConfigurationRow label="Profile" value={configuration.profile} />
             </dl>
           </CardContent>
         </Card>
@@ -1140,7 +1122,6 @@ function DeploymentConfiguration({
           </CardHeader>
           <CardContent>
             <dl className="flex flex-col">
-              <ConfigurationRow label="Access mode" value={configuration.access_mode} />
               <ConfigurationRow label="Log format" value={configuration.log_format} />
             </dl>
           </CardContent>

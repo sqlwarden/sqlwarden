@@ -9,15 +9,19 @@ import (
 	"log/slog"
 	"net/http"
 	"net/http/httptest"
+	"strconv"
 	"strings"
 	"testing"
 	"time"
 
 	"github.com/sqlwarden/internal/access"
 	"github.com/sqlwarden/internal/assert"
+	"github.com/sqlwarden/internal/audit"
 	completionapp "github.com/sqlwarden/internal/completion"
 	"github.com/sqlwarden/internal/connection"
 	"github.com/sqlwarden/internal/database"
+	"github.com/sqlwarden/internal/identity"
+	"github.com/sqlwarden/internal/orgs"
 	schemaapp "github.com/sqlwarden/internal/schema"
 	"github.com/sqlwarden/internal/token"
 )
@@ -414,8 +418,9 @@ func TestRevokedAuthSessionRejectsExistingAccessToken(t *testing.T) {
 	app.logger = slog.New(slog.NewJSONHandler(&logs, &slog.HandlerOptions{Level: slog.LevelDebug}))
 	res := send(t, newAuthRequest(t, http.MethodGet, "/api/v1/account", nil, tok), app.routes())
 	assert.Equal(t, res.StatusCode, http.StatusUnauthorized)
-	assert.True(t, strings.Contains(logs.String(), "authentication session rejected"))
+	assert.True(t, strings.Contains(logs.String(), "authentication rejected"))
 	assert.True(t, strings.Contains(logs.String(), "auth_session_revoked"))
+	assert.Equal(t, res.ErrorReason(), "auth_session_revoked")
 	assert.True(t, strings.Contains(logs.String(), claims.AuthSessionID))
 	assert.False(t, strings.Contains(logs.String(), tok))
 }
@@ -706,7 +711,6 @@ func TestGetSession_ReturnsStableBootstrapPayload(t *testing.T) {
 	t.Parallel()
 
 	app := newTestApp(t)
-	updateInstanceSettingsForTest(t, app, func(settings *database.InstanceSettings) { settings.PersonalSpacesEnabled = false })
 	account, token := seedAccountWithToken(t, app, uniqueEmail(t, "session"), "Session User")
 	org := seedOrganizationForAccount(t, app, account, "Acme")
 
@@ -716,14 +720,13 @@ func TestGetSession_ReturnsStableBootstrapPayload(t *testing.T) {
 	res := send(t, req, app.routes())
 	assert.Equal(t, res.StatusCode, http.StatusOK)
 
-	assertBodyContainsJSONKeys(t, res.BodyBytes, "account", "organizations", "is_instance_admin", "personal_spaces_enabled", "feature_flags")
+	assertBodyContainsJSONKeys(t, res.BodyBytes, "account", "organizations", "is_instance_admin", "feature_flags")
 
 	var payload struct {
-		Account               map[string]any   `json:"account"`
-		Organizations         []map[string]any `json:"organizations"`
-		IsInstanceAdmin       bool             `json:"is_instance_admin"`
-		PersonalSpacesEnabled bool             `json:"personal_spaces_enabled"`
-		FeatureFlags          []string         `json:"feature_flags"`
+		Account         map[string]any   `json:"account"`
+		Organizations   []map[string]any `json:"organizations"`
+		IsInstanceAdmin bool             `json:"is_instance_admin"`
+		FeatureFlags    []string         `json:"feature_flags"`
 	}
 	decodeJSONResponse(t, res.BodyBytes, &payload)
 
@@ -735,7 +738,6 @@ func TestGetSession_ReturnsStableBootstrapPayload(t *testing.T) {
 		t.Fatalf("expected first organization name %q, got %v", org.Name, payload.Organizations[0]["name"])
 	}
 	assert.Equal(t, payload.IsInstanceAdmin, false)
-	assert.Equal(t, payload.PersonalSpacesEnabled, false)
 	assert.Equal(t, len(payload.FeatureFlags), 0)
 }
 
@@ -764,7 +766,6 @@ func TestGetSession(t *testing.T) {
 	res := send(t, newAuthRequest(t, http.MethodGet, "/api/v1/session", nil, tok), app.routes())
 	assert.Equal(t, res.StatusCode, http.StatusOK)
 	assert.Equal(t, res.BodyFields["is_instance_admin"], true)
-	assert.Equal(t, res.BodyFields["personal_spaces_enabled"], true)
 
 	accountBody, ok := res.BodyFields["account"].(map[string]any)
 	if !ok {
@@ -799,7 +800,6 @@ func TestGetSessionWithoutOrgOrAdmin(t *testing.T) {
 	res := send(t, newAuthRequest(t, http.MethodGet, "/api/v1/session", nil, tok), app.routes())
 	assert.Equal(t, res.StatusCode, http.StatusOK)
 	assert.Equal(t, res.BodyFields["is_instance_admin"], false)
-	assert.Equal(t, res.BodyFields["personal_spaces_enabled"], true)
 
 	var body struct {
 		Organizations []map[string]any `json:"organizations"`
@@ -812,15 +812,97 @@ func TestGetSessionWithoutOrgOrAdmin(t *testing.T) {
 	}
 }
 
-func TestGetSessionIncludesPersistedPersonalSpaceFlag(t *testing.T) {
-	t.Parallel()
-	app := newTestApp(t)
-	_, token := seedAccountWithToken(t, app, uniqueEmail(t, "session-flag"), "Session Flag")
-	updateInstanceSettingsForTest(t, app, func(settings *database.InstanceSettings) { settings.PersonalSpacesEnabled = false })
+func captureAudit(app *application) *[]audit.Event {
+	var events []audit.Event
+	app.audit = audit.WriterFunc(func(_ context.Context, event audit.Event) error {
+		events = append(events, event)
+		return nil
+	})
+	return &events
+}
 
-	req := httptest.NewRequest(http.MethodGet, "/api/v1/session", nil)
-	req.Header.Set("Authorization", "Bearer "+token)
-	res := send(t, req, app.routes())
+func TestLoginFailureAuditsWithoutSubject(t *testing.T) {
+	app := newTestApp(t)
+	events := captureAudit(app)
+
+	res := loginTestUser(t, app, "ghost@example.com", "whatever-pass")
+	assert.Equal(t, res.StatusCode, http.StatusUnauthorized)
+	assert.Equal(t, res.ErrorReason(), "invalid_credentials")
+
+	if len(*events) != 1 {
+		t.Fatalf("audit events = %d, want 1", len(*events))
+	}
+	event := (*events)[0]
+	if event.Outcome != audit.OutcomeFailure || event.Action != audit.ActionSignIn {
+		t.Fatalf("audit action/outcome = %q/%q", event.Action, event.Outcome)
+	}
+	if event.Actor.SubjectID != nil {
+		t.Fatalf("failure actor has subject: %+v", event.Actor)
+	}
+	assert.Equal(t, event.DecisionReason, "invalid_credentials")
+	for key, value := range event.Metadata {
+		if strings.Contains(value, "ghost@example.com") {
+			t.Fatalf("metadata %q leaks email", key)
+		}
+	}
+}
+
+func TestLoginWrongPasswordSameReason(t *testing.T) {
+	app := newTestApp(t)
+
+	unknown := loginTestUser(t, app, "ghost@example.com", "whatever-pass")
+	wrong := loginTestUser(t, app, testUsers["alice"].email, "not-the-password")
+	assert.Equal(t, wrong.StatusCode, unknown.StatusCode)
+	assert.Equal(t, wrong.ErrorReason(), unknown.ErrorReason())
+	assert.Equal(t, wrong.ErrorReason(), "invalid_credentials")
+}
+
+func TestLoginSuccessAuditsSubject(t *testing.T) {
+	app := newTestApp(t)
+	events := captureAudit(app)
+
+	res := loginTestUser(t, app, testUsers["alice"].email, testUsers["alice"].password)
 	assert.Equal(t, res.StatusCode, http.StatusOK)
-	assert.Equal(t, res.BodyFields["personal_spaces_enabled"], false)
+
+	if len(*events) != 1 {
+		t.Fatalf("audit events = %d, want 1", len(*events))
+	}
+	event := (*events)[0]
+	if event.Outcome != audit.OutcomeSuccess || event.Actor.SubjectID == nil || *event.Actor.SubjectID != testUsers["alice"].id {
+		t.Fatalf("audit event = %+v", event)
+	}
+	claims, err := token.Verify(extractAccessToken(t, res), app.config.JWT.SecretKey)
+	assert.Nil(t, err)
+	assert.Equal(t, event.Actor.CredentialID, claims.AuthSessionID)
+	assert.Equal(t, event.Actor.AuthMethod, "password")
+
+	session, found, err := app.db.GetAuthSession(context.Background(), claims.AuthSessionID, testUsers["alice"].id)
+	assert.Nil(t, err)
+	assert.True(t, found)
+	assert.Equal(t, session.AuthMethod, "password")
+	assert.Equal(t, session.Assurance, "aal1")
+}
+
+func TestLoginUnavailableOnDesktop(t *testing.T) {
+	app := newTestApp(t)
+	app.signIn = identity.SignInUnavailable
+
+	res := loginTestUser(t, app, testUsers["alice"].email, testUsers["alice"].password)
+	assert.Equal(t, res.StatusCode, http.StatusNotFound)
+}
+
+func TestSetupRecordsSessionMethod(t *testing.T) {
+	app := newTestApp(t)
+	app.setupStrategy = identity.LocalSetup
+	app.invitationPolicy = orgs.InvitationsDisabled
+
+	tok := setupInstance(t, app, "admin@example.com", "Admin", "securepass99")
+	claims, err := token.Verify(tok, app.config.JWT.SecretKey)
+	assert.Nil(t, err)
+	accountID, err := strconv.ParseInt(claims.AccountID, 10, 64)
+	assert.Nil(t, err)
+	session, found, err := app.db.GetAuthSession(context.Background(), claims.AuthSessionID, accountID)
+	assert.Nil(t, err)
+	assert.True(t, found)
+	assert.Equal(t, session.AuthMethod, "local")
 }

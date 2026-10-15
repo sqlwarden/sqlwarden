@@ -4,8 +4,6 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"net/http"
-	"strconv"
 	"strings"
 	"time"
 
@@ -281,14 +279,6 @@ func (app *application) effectiveRuntimeSettingsForWorkspace(ctx context.Context
 	return app.runtimeSettingsService().effectiveForOrg(ctx, nil)
 }
 
-func (app *application) personalSpacesEnabled(ctx context.Context) (bool, error) {
-	settings, err := app.instanceSettings(ctx)
-	if err != nil {
-		return false, err
-	}
-	return settings.PersonalSpacesEnabled, nil
-}
-
 func (app *application) instanceSettings(ctx context.Context) (database.InstanceSettings, error) {
 	return app.runtimeSettingsService().instance(ctx)
 }
@@ -299,7 +289,6 @@ func (app *application) instanceSettingsResponse(settings database.InstanceSetti
 		"instance_description":              settings.InstanceDescription,
 		"support_email":                     settings.SupportEmail,
 		"base_url":                          settings.BaseURL,
-		"personal_spaces_enabled":           settings.PersonalSpacesEnabled,
 		"jwt_access_token_ttl_seconds":      settings.JWTAccessTokenTTLSeconds,
 		"sessions_revocation_enabled":       settings.SessionsRevocationEnabled,
 		"query_max_result_rows":             settings.QueryMaxResultRows,
@@ -330,30 +319,4 @@ func (app *application) instanceSettingsResponse(settings database.InstanceSetti
 		"sqlite_local_targets_enabled":      settings.SQLiteLocalTargetsEnabled,
 		"sqlite_memory_targets_enabled":     settings.SQLiteInMemoryTargetsEnabled,
 	}
-}
-
-func (app *application) dropPersonalSpaceSessions(ctx context.Context) error {
-	connIDs, err := app.db.ListPersonalConnectionIDs(ctx)
-	if err != nil {
-		return err
-	}
-	for _, connID := range connIDs {
-		app.connManager.RemoveForConnection(strconv.FormatInt(connID, 10))
-	}
-	return nil
-}
-
-func (app *application) requirePersonalSpacesEnabled(next http.Handler) http.Handler {
-	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		enabled, err := app.personalSpacesEnabled(r.Context())
-		if err != nil {
-			app.serverError(w, r, err)
-			return
-		}
-		if !enabled {
-			app.notFound(w, r)
-			return
-		}
-		next.ServeHTTP(w, r)
-	})
 }

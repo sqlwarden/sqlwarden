@@ -92,7 +92,7 @@ func (db *DB) RevokeRefreshTokenWithExecutor(ctx context.Context, exec bun.IDB, 
 }
 
 // CreateAuthSessionWithRefreshToken atomically creates an auth session and its initial refresh token.
-func (db *DB) CreateAuthSessionWithRefreshToken(ctx context.Context, accountID int64, expiresAt time.Time, userAgent, ipAddress, refreshTokenHash, refreshTokenFamily string) (AuthSession, RefreshToken, error) {
+func (db *DB) CreateAuthSessionWithRefreshToken(ctx context.Context, accountID int64, expiresAt time.Time, userAgent, ipAddress, refreshTokenHash, refreshTokenFamily string, auth SessionAuth) (AuthSession, RefreshToken, error) {
 	ctx, cancel := context.WithTimeout(ctx, defaultTimeout)
 	defer cancel()
 
@@ -100,7 +100,7 @@ func (db *DB) CreateAuthSessionWithRefreshToken(ctx context.Context, accountID i
 	var refreshToken RefreshToken
 	err := db.RunInTx(ctx, nil, func(ctx context.Context, tx bun.Tx) error {
 		var err error
-		authSession, err = db.InsertAuthSessionWithExecutor(ctx, tx, accountID, expiresAt, userAgent, ipAddress)
+		authSession, err = db.InsertAuthSessionWithExecutor(ctx, tx, accountID, expiresAt, userAgent, ipAddress, auth)
 		if err != nil {
 			return err
 		}

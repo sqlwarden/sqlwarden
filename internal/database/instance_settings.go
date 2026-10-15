@@ -32,7 +32,6 @@ type InstanceSettings struct {
 	InstanceDescription           string    `json:"instance_description"`
 	SupportEmail                  string    `json:"support_email"`
 	BaseURL                       string    `json:"base_url"`
-	PersonalSpacesEnabled         bool      `bun:",notnull" json:"personal_spaces_enabled"`
 	JWTAccessTokenTTLSeconds      int64     `bun:",notnull" json:"jwt_access_token_ttl_seconds"`
 	SessionsRevocationEnabled     bool      `bun:",notnull" json:"sessions_revocation_enabled"`
 	QueryMaxResultRows            int       `bun:",notnull" json:"query_max_result_rows"`
@@ -85,11 +84,8 @@ type OrganizationRuntimeSettings struct {
 
 func DefaultInstanceSettings() InstanceSettings {
 	return InstanceSettings{
-		ID:           1,
-		InstanceName: "SQLWarden",
-		// Personal spaces has backend support but no finished frontend
-		// surface yet; default new instances to off until that lands.
-		PersonalSpacesEnabled:         false,
+		ID:                            1,
+		InstanceName:                  "SQLWarden",
 		JWTAccessTokenTTLSeconds:      DefaultJWTAccessTokenTTLSeconds,
 		SessionsRevocationEnabled:     true,
 		QueryMaxResultRows:            DefaultQueryMaxResultRows,
@@ -144,7 +140,6 @@ func (db *DB) UpsertInstanceSettings(ctx context.Context, settings InstanceSetti
 		Set("instance_description = EXCLUDED.instance_description").
 		Set("support_email = EXCLUDED.support_email").
 		Set("base_url = EXCLUDED.base_url").
-		Set("personal_spaces_enabled = EXCLUDED.personal_spaces_enabled").
 		Set("jwt_access_token_ttl_seconds = EXCLUDED.jwt_access_token_ttl_seconds").
 		Set("sessions_revocation_enabled = EXCLUDED.sessions_revocation_enabled").
 		Set("query_max_result_rows = EXCLUDED.query_max_result_rows").
@@ -254,21 +249,4 @@ func (db *DB) UpsertOrganizationRuntimeSettings(ctx context.Context, settings Or
 	}
 	current, _, err := db.GetOrganizationRuntimeSettings(ctx, settings.OrgID)
 	return current, err
-}
-
-func (db *DB) ListPersonalConnectionIDs(ctx context.Context) ([]int64, error) {
-	ctx, cancel := context.WithTimeout(ctx, defaultTimeout)
-	defer cancel()
-
-	var ids []int64
-	err := db.NewSelect().
-		TableExpr("connections c").
-		ColumnExpr("c.id").
-		Join("JOIN workspaces w ON w.id = c.workspace_id").
-		Where("w.owner_type = 'space'").
-		Scan(ctx, &ids)
-	if err != nil {
-		return nil, err
-	}
-	return ids, nil
 }

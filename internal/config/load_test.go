@@ -23,11 +23,8 @@ func TestLoadDefaults(t *testing.T) {
 	if cfg.HTTPPort != defaultHTTPPort {
 		t.Fatalf("httpPort = %d, want %d", cfg.HTTPPort, defaultHTTPPort)
 	}
-	if cfg.DeploymentMode != DeploymentModeServer {
-		t.Fatalf("deploymentMode = %q, want %q", cfg.DeploymentMode, DeploymentModeServer)
-	}
-	if cfg.AccessMode != AccessModeMultiUser {
-		t.Fatalf("accessMode = %q, want %q", cfg.AccessMode, AccessModeMultiUser)
+	if cfg.Profile != ProfileServer {
+		t.Fatalf("profile = %q, want %q", cfg.Profile, ProfileServer)
 	}
 	if len(cfg.ProcessKinds) != 1 || cfg.ProcessKinds[0] != ProcessKindAll {
 		t.Fatalf("processKinds = %v, want [%s]", cfg.ProcessKinds, ProcessKindAll)
@@ -259,8 +256,8 @@ db:
 func TestLoadRejectsInternalRuntimeFlags(t *testing.T) {
 	for _, args := range [][]string{
 		{"--desktop-mode"},
-		{"--deployment-mode", DeploymentModeDesktop},
-		{"--access-mode", AccessModeSingleUser},
+		{"--deployment-mode", ProfileDesktop},
+		{"--access-mode", "single_user"},
 		{"--files-storage-backends-local-type", FilesStorageBackendFilesystem},
 		{"--files-storage-backends-local-root-dir", "/tmp/sqlwarden-files"},
 		{"--log-level", "debug"},
@@ -402,5 +399,37 @@ func TestLoadExposesPositionalArguments(t *testing.T) {
 	}
 	if len(loaded.Args) != 1 || loaded.Args[0] != "migrate" {
 		t.Fatalf("Args = %v, want [migrate]", loaded.Args)
+	}
+}
+
+func TestLoadProfileAndTrustedProxiesFromEnv(t *testing.T) {
+	t.Setenv("PROFILE", "desktop")
+	t.Setenv("SERVER_TRUSTED_PROXIES", "10.0.0.0/8,127.0.0.1")
+
+	loaded, err := Load(nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	cfg := loaded.Config
+	if cfg.Profile != "desktop" {
+		t.Fatalf("profile = %q", cfg.Profile)
+	}
+	want := []string{"10.0.0.0/8", "127.0.0.1"}
+	if len(cfg.Server.TrustedProxies) != 2 || cfg.Server.TrustedProxies[0] != want[0] || cfg.Server.TrustedProxies[1] != want[1] {
+		t.Fatalf("trusted proxies = %v", cfg.Server.TrustedProxies)
+	}
+}
+
+func TestLoadIgnoresRemovedModeKeysInFile(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "config.yaml")
+	if err := os.WriteFile(path, []byte("access_mode: single_user\ndeployment_mode: desktop\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	loaded, err := Load([]string{"--config", path})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if loaded.Config.Profile != ProfileServer {
+		t.Fatalf("profile = %q, want %q", loaded.Config.Profile, ProfileServer)
 	}
 }

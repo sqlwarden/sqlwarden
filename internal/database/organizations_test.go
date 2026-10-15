@@ -141,7 +141,7 @@ func TestOrgMembership(t *testing.T) {
 
 	role := insertTestRole(t, db, org.ID, nil, "member-direct-role", "org", false, access.PermOrgRead)
 	insertTestRoleBinding(t, db, org.ID, role.ID, "account", acc.ID, "org", org.ID)
-	authSession, err := db.InsertAuthSession(context.Background(), acc.ID, time.Now().Add(24*time.Hour), "agent", "127.0.0.1")
+	authSession, err := db.InsertAuthSession(context.Background(), acc.ID, time.Now().Add(24*time.Hour), "agent", "127.0.0.1", SessionAuth{Method: "password", Assurance: "aal1"})
 	if err != nil {
 		t.Fatal(err)
 	}

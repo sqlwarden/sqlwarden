@@ -4,13 +4,16 @@ import (
 	"context"
 	"net/http"
 	"net/http/httptest"
+	"net/netip"
 	"strconv"
 	"testing"
 	"time"
 
 	"github.com/go-chi/chi/v5"
 	"github.com/sqlwarden/internal/access"
+	"github.com/sqlwarden/internal/assert"
 	"github.com/sqlwarden/internal/database"
+	"github.com/sqlwarden/internal/platform/clientip"
 	"github.com/sqlwarden/internal/token"
 )
 
@@ -37,7 +40,7 @@ func testWithParams(r *http.Request, params map[string]string) *http.Request {
 // issueTestToken creates a valid JWT for the given account using the test app's secret.
 func issueTestToken(t *testing.T, app *application, accountID int64, email, name string) string {
 	t.Helper()
-	authSession, err := app.db.InsertAuthSession(context.Background(), accountID, time.Now().Add(7*24*time.Hour), "test-agent", "127.0.0.1")
+	authSession, err := app.db.InsertAuthSession(context.Background(), accountID, time.Now().Add(7*24*time.Hour), "test-agent", "127.0.0.1", database.SessionAuth{Method: "password", Assurance: "aal1"})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -290,7 +293,7 @@ func TestOrgCtx_NonMember(t *testing.T) {
 	}
 
 	req := httptest.NewRequest(http.MethodGet, "/api/v1/orgs/"+org.Slug, nil)
-	authSession, err := app.db.InsertAuthSession(context.Background(), account.ID, time.Now().Add(7*24*time.Hour), "test-agent", "127.0.0.1")
+	authSession, err := app.db.InsertAuthSession(context.Background(), account.ID, time.Now().Add(7*24*time.Hour), "test-agent", "127.0.0.1", database.SessionAuth{Method: "password", Assurance: "aal1"})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -337,7 +340,7 @@ func TestOrgCtx_Member(t *testing.T) {
 	})
 
 	req := httptest.NewRequest(http.MethodGet, "/api/v1/orgs/"+org.Slug, nil)
-	authSession, err := app.db.InsertAuthSession(context.Background(), account.ID, time.Now().Add(7*24*time.Hour), "test-agent", "127.0.0.1")
+	authSession, err := app.db.InsertAuthSession(context.Background(), account.ID, time.Now().Add(7*24*time.Hour), "test-agent", "127.0.0.1", database.SessionAuth{Method: "password", Assurance: "aal1"})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -691,47 +694,66 @@ func TestRequireConcreteResourcePermissionMissingContext(t *testing.T) {
 	}
 }
 
-func TestSpaceEnvCtxBranches(t *testing.T) {
-	app := newTestApplicationWithEnforcer(t)
+func sendWithAuthorization(t *testing.T, app *application, path, header string) testResponse {
+	t.Helper()
+	req := newTestRequest(t, http.MethodGet, path, nil)
+	req.Header.Set("Authorization", header)
+	return send(t, req, app.routes())
+}
 
-	account, err := app.db.InsertAccount(context.Background(), "spaceenv@example.com", "SpaceEnv", nil)
-	if err != nil {
-		t.Fatal(err)
-	}
-	ws, err := app.db.InsertWorkspace(context.Background(), nil, "space", account.ID, "Personal", "")
-	if err != nil {
-		t.Fatal(err)
-	}
-	otherWS, err := app.db.InsertWorkspace(context.Background(), nil, "space", account.ID, "Other", "")
-	if err != nil {
-		t.Fatal(err)
-	}
-	env, err := app.db.InsertEnvironment(context.Background(), otherWS.ID, "prod", "")
-	if err != nil {
-		t.Fatal(err)
-	}
+func newTestSessionToken(t *testing.T, app *application) (string, string) {
+	t.Helper()
+	account := seedAccount(t, app, uniqueEmail(t, "session"), "Session Account")
+	tok := issueTestToken(t, app, account.ID, account.Email, account.Name)
+	claims, err := token.Verify(tok, app.config.JWT.SecretKey)
+	assert.Nil(t, err)
+	return tok, claims.AuthSessionID
+}
 
-	finalHandler := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		w.WriteHeader(http.StatusOK)
-	})
+func revokeTestSession(t *testing.T, app *application, sessionID string) {
+	t.Helper()
+	assert.Nil(t, app.db.RevokeAuthSession(context.Background(), sessionID, nil, "test"))
+}
 
-	invalidReq := httptest.NewRequest(http.MethodGet, "/api/v1/me/workspaces/1/environments/not-a-number", nil)
-	invalidReq = contextSetAccount(invalidReq, account)
-	invalidReq = contextSetWorkspace(invalidReq, ws)
-	invalidReq = testWithParams(invalidReq, map[string]string{"env_id": "not-a-number"})
-	invalidRec := httptest.NewRecorder()
-	app.spaceEnvCtx(finalHandler).ServeHTTP(invalidRec, invalidReq)
-	if invalidRec.Code != http.StatusNotFound {
-		t.Fatalf("expected 404 for invalid personal env ID, got %d", invalidRec.Code)
+func TestAuthenticateRejectsUnclaimedCredential(t *testing.T) {
+	app := newTestApplication(t)
+	for _, header := range []string{"Basic abc", "Bearer", "Bearer a b"} {
+		res := sendWithAuthorization(t, app, "/api/v1/me", header)
+		assert.Equal(t, res.StatusCode, http.StatusUnauthorized)
+		assert.Equal(t, res.ErrorCode(), "invalid_authentication_token")
 	}
+}
 
-	crossReq := httptest.NewRequest(http.MethodGet, "/api/v1/me/workspaces/1/environments/"+strconv.FormatInt(env.ID, 10), nil)
-	crossReq = contextSetAccount(crossReq, account)
-	crossReq = contextSetWorkspace(crossReq, ws)
-	crossReq = testWithParams(crossReq, map[string]string{"env_id": strconv.FormatInt(env.ID, 10)})
-	crossRec := httptest.NewRecorder()
-	app.spaceEnvCtx(finalHandler).ServeHTTP(crossRec, crossReq)
-	if crossRec.Code != http.StatusNotFound {
-		t.Fatalf("expected 404 for env in different personal workspace, got %d", crossRec.Code)
-	}
+func TestAuthenticateRevokedSessionReturnsReason(t *testing.T) {
+	app := newTestApplication(t)
+	token, sessionID := newTestSessionToken(t, app)
+	revokeTestSession(t, app, sessionID)
+	res := sendWithAuthorization(t, app, "/api/v1/me", "Bearer "+token)
+	assert.Equal(t, res.StatusCode, http.StatusUnauthorized)
+	assert.Equal(t, res.ErrorReason(), "auth_session_revoked")
+}
+
+func TestAuthenticatePutsPrincipalOnContext(t *testing.T) {
+	app := newTestApplication(t)
+	token, sessionID := newTestSessionToken(t, app)
+	var got access.Principal
+	handler := app.authenticateV1(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		got, _ = contextGetPrincipal(r)
+	}))
+	req := httptest.NewRequest(http.MethodGet, "/", nil)
+	req.Header.Set("Authorization", "Bearer "+token)
+	req.RemoteAddr = "203.0.113.9:1234"
+	handler.ServeHTTP(httptest.NewRecorder(), req)
+	assert.Equal(t, got.Subject.Kind, access.SubjectAccount)
+	assert.Equal(t, got.Credential.ID, sessionID)
+	assert.Equal(t, got.Request.ClientIP.String(), "203.0.113.9")
+}
+
+func TestClientIPHonorsTrustedProxy(t *testing.T) {
+	app := newTestApplication(t)
+	app.clientIPs = clientip.New([]netip.Prefix{netip.MustParsePrefix("10.0.0.0/8")})
+	req := httptest.NewRequest(http.MethodGet, "/", nil)
+	req.RemoteAddr = "10.0.0.2:1234"
+	req.Header.Set("X-Forwarded-For", "198.51.100.7")
+	assert.Equal(t, app.clientIP(req), "198.51.100.7")
 }

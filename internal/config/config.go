@@ -5,8 +5,7 @@ import "time"
 const (
 	defaultBaseURL              = "http://localhost:6020"
 	defaultHTTPPort             = 6020
-	defaultDeploymentMode       = DeploymentModeServer
-	defaultAccessMode           = AccessModeMultiUser
+	defaultProfile              = ProfileServer
 	defaultLogFormat            = LogFormatJSON
 	defaultCookieSecretKey      = "cpcgzjcote6h5hakeglpbzixhbuog2zc"
 	defaultDBDriver             = "sqlite"
@@ -32,16 +31,10 @@ const (
 // single-root file mode or no active backend is configured.
 const DefaultFilesActiveBackend = defaultFilesActiveBackend
 
-// Deployment modes describe how the binary is packaged and run.
+// Profiles select the product composition a process runs as.
 const (
-	DeploymentModeServer  = "server"
-	DeploymentModeDesktop = "desktop"
-)
-
-// Access modes describe account and authorization behavior for the instance.
-const (
-	AccessModeMultiUser  = "multi_user"
-	AccessModeSingleUser = "single_user"
+	ProfileServer  = "server"
+	ProfileDesktop = "desktop"
 )
 
 // Desktop backend kinds distinguish an embedded local runtime from a remote
@@ -96,8 +89,14 @@ type Config struct {
 	// start. After bootstrap the database value is authoritative.
 	BootstrapBaseURL string
 	HTTPPort         int
-	DeploymentMode   string
-	AccessMode       string
+	// Profile selects the product composition: setup, sign-in and
+	// invitation behavior. It is fixed for the life of a process.
+	Profile string
+	Server  struct {
+		// TrustedProxies lists CIDRs or IPs whose X-Forwarded-For header is
+		// believed when resolving the client IP.
+		TrustedProxies []string
+	}
 	// ProcessKinds selects the runtime responsibilities this process takes on.
 	ProcessKinds []string
 	Log          struct {
@@ -164,7 +163,6 @@ type DesktopBackend struct {
 	Kind        string `mapstructure:"kind"`
 	URL         string `mapstructure:"url"`
 	Environment string `mapstructure:"environment"`
-	AccessMode  string `mapstructure:"access_mode"`
 	Locked      bool   `mapstructure:"locked"`
 }
 
@@ -173,8 +171,7 @@ func Default() Config {
 	cfg := Config{}
 	cfg.BootstrapBaseURL = defaultBaseURL
 	cfg.HTTPPort = defaultHTTPPort
-	cfg.DeploymentMode = defaultDeploymentMode
-	cfg.AccessMode = defaultAccessMode
+	cfg.Profile = defaultProfile
 	cfg.ProcessKinds = []string{ProcessKindAll}
 	cfg.Log.Format = defaultLogFormat
 	cfg.Cookie.SecretKey = defaultCookieSecretKey
@@ -213,10 +210,9 @@ func DefaultFileStorageBackends() map[string]FileStorageBackend {
 func defaultDesktopBackends() []DesktopBackend {
 	return []DesktopBackend{
 		{
-			ID:         "local",
-			Name:       "Local",
-			Kind:       DesktopBackendKindLocal,
-			AccessMode: AccessModeSingleUser,
+			ID:   "local",
+			Name: "Local",
+			Kind: DesktopBackendKindLocal,
 		},
 	}
 }

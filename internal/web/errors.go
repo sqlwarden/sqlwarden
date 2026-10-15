@@ -127,10 +127,14 @@ func (app *application) failedDuplicateField(w http.ResponseWriter, r *http.Requ
 }
 
 func (app *application) invalidAuthenticationToken(w http.ResponseWriter, r *http.Request) {
+	app.rejectCredential(w, r, "")
+}
+
+func (app *application) rejectCredential(w http.ResponseWriter, r *http.Request, reason string) {
 	headers := make(http.Header)
 	headers.Set("WWW-Authenticate", "Bearer")
 
-	app.apiError(w, r, http.StatusUnauthorized, apiErrorInvalidAuthenticationToken, "Invalid authentication token.", response.APIError{}, headers)
+	app.apiError(w, r, http.StatusUnauthorized, apiErrorInvalidAuthenticationToken, "Invalid authentication token.", response.APIError{Reason: reason}, headers)
 }
 
 func (app *application) notPermitted(w http.ResponseWriter, r *http.Request) {

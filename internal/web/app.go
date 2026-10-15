@@ -6,19 +6,24 @@ import (
 	"io"
 	"log/slog"
 	"net/http"
+	"net/netip"
 	"strconv"
 	"sync"
 	"sync/atomic"
 	"time"
 
 	"github.com/sqlwarden/internal/access"
+	"github.com/sqlwarden/internal/audit"
 	completionapp "github.com/sqlwarden/internal/completion"
 	"github.com/sqlwarden/internal/config"
 	"github.com/sqlwarden/internal/connection"
 	"github.com/sqlwarden/internal/database"
 	"github.com/sqlwarden/internal/encrypt"
 	"github.com/sqlwarden/internal/filestore"
+	"github.com/sqlwarden/internal/identity"
 	"github.com/sqlwarden/internal/jobs"
+	"github.com/sqlwarden/internal/orgs"
+	"github.com/sqlwarden/internal/platform/clientip"
 	schemaapp "github.com/sqlwarden/internal/schema"
 	"github.com/sqlwarden/internal/smtp"
 )
@@ -47,6 +52,13 @@ type Dependencies struct {
 	FileStores FileStores
 	Sessions   *connection.Manager
 	Cursors    *connection.QueryCursorManager
+	Audit      audit.Writer
+
+	TrustedProxies []netip.Prefix
+
+	Setup       identity.SetupStrategy
+	Invitations orgs.InvitationPolicy
+	SignIn      identity.SignInStrategy
 }
 
 type application struct {
@@ -73,6 +85,12 @@ type application struct {
 	runtimeSettings   *runtimeSettingsService
 	initialSettings   database.InstanceSettings
 	accessLogsEnabled atomic.Bool
+	setupStrategy     identity.SetupStrategy
+	invitationPolicy  orgs.InvitationPolicy
+	signIn            identity.SignInStrategy
+	clientIPs         clientip.Resolver
+	authChain         identity.Chain
+	audit             audit.Writer
 }
 
 // NewApplication wires the web application from its dependencies. It applies
@@ -83,7 +101,17 @@ func NewApplication(deps Dependencies) (*App, error) {
 	if logger == nil {
 		logger = slog.New(slog.NewTextHandler(io.Discard, nil))
 	}
+	if deps.Setup == nil || deps.Invitations == nil || deps.SignIn == nil {
+		return nil, errors.New("web: setup strategy, invitation policy, and sign-in strategy are required")
+	}
+	auditWriter := deps.Audit
+	if auditWriter == nil {
+		auditWriter = audit.Discard
+	}
 	app := &application{
+		setupStrategy:     deps.Setup,
+		invitationPolicy:  deps.Invitations,
+		signIn:            deps.SignIn,
 		config:            deps.Config,
 		db:                deps.DB,
 		logger:            logger,
@@ -98,7 +126,10 @@ func NewApplication(deps Dependencies) (*App, error) {
 		jobStore:          jobs.NewStore(deps.DB),
 		runtimeSettings:   newRuntimeSettingsService(deps.DB),
 		runtimeUpdates:    make(chan database.InstanceSettings, 1),
+		audit:             auditWriter,
 	}
+	app.clientIPs = clientip.New(deps.TrustedProxies)
+	app.authChain = app.newAuthChain()
 	initialSettings, err := app.instanceSettings(context.Background())
 	if err != nil {
 		return nil, err

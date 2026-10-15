@@ -161,25 +161,12 @@ export const queryKeys = {
     [...queryKeys.orgWorkspaceSharedFileSearchScope(slug, workspaceId), query] as const,
   fileContent: (slug: string, workspaceId: string | number, fileId: string | number | undefined) =>
     ['file-content', slug, workspaceId, fileId] as const,
-  myWorkspaces: (query?: ListQuery) => ['my-workspaces', query ?? {}] as const,
-  myWorkspacePrivateFiles: (workspaceId: string | number, parentId?: string | number | null) =>
-    ['my-workspace-private-files', workspaceId, parentId ?? null] as const,
-  myWorkspacePrivateFileBrowserScope: (workspaceId: string | number) =>
-    ['my-workspace-private-file-browser', workspaceId] as const,
-  myWorkspacePrivateFileBrowser: (workspaceId: string | number, fileId?: string | number | null) =>
-    [...queryKeys.myWorkspacePrivateFileBrowserScope(workspaceId), fileId ?? null] as const,
-  myWorkspacePrivateRecentFilesScope: (workspaceId: string | number) =>
-    ['my-workspace-private-recent-files', workspaceId] as const,
-  myWorkspacePrivateRecentFiles: (workspaceId: string | number, limit?: number) =>
-    [...queryKeys.myWorkspacePrivateRecentFilesScope(workspaceId), limit ?? null] as const,
   orgEnvironmentsScope: (slug: string, workspaceId?: string | number) =>
     workspaceId === undefined
       ? (['org-environments', slug] as const)
       : (['org-environments', slug, workspaceId] as const),
   orgEnvironments: (slug: string, workspaceId: string | number, query?: ListQuery) =>
     [...queryKeys.orgEnvironmentsScope(slug, workspaceId), query ?? {}] as const,
-  myEnvironments: (workspaceId: string | number, query?: ListQuery) =>
-    ['my-environments', workspaceId, query ?? {}] as const,
   orgConnections: (
     slug: string,
     workspaceId: string | number,
@@ -190,11 +177,6 @@ export const queryKeys = {
     ['org-workspace-connections', slug, workspaceId] as const,
   orgWorkspaceConnections: (slug: string, workspaceId: string | number, query?: ListQuery) =>
     [...queryKeys.orgWorkspaceConnectionsScope(slug, workspaceId), query ?? {}] as const,
-  myConnections: (
-    workspaceId: string | number,
-    environmentId: string | number,
-    query?: ListQuery,
-  ) => ['my-connections', workspaceId, environmentId, query ?? {}] as const,
   orgWorkspaceJobsScope: (slug: string, workspaceId: string | number) =>
     ['org-workspace-jobs', slug, workspaceId] as const,
   orgWorkspaceJobs: (slug: string, workspaceId: string | number, query?: ListQuery) =>

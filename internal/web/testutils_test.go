@@ -16,10 +16,14 @@ import (
 	"testing"
 	"time"
 
+	"github.com/sqlwarden/internal/audit"
 	"github.com/sqlwarden/internal/config"
 	"github.com/sqlwarden/internal/connection"
 	"github.com/sqlwarden/internal/database"
 	"github.com/sqlwarden/internal/encrypt"
+	"github.com/sqlwarden/internal/identity"
+	"github.com/sqlwarden/internal/orgs"
+	"github.com/sqlwarden/internal/platform/clientip"
 	"github.com/sqlwarden/internal/smtp"
 	"github.com/sqlwarden/internal/token"
 
@@ -52,11 +56,11 @@ func newTestClaims() jwt.Claims {
 func newTestApplication(t *testing.T) *application {
 	app := new(application)
 	app.config = config.Default()
+	app.setupStrategy = identity.FormSetup
+	app.invitationPolicy = orgs.InvitationsEnabled
 
 	app.config.JWT.SecretKey = "k7mp29rf4qxhwn8vbtaj6pgucmve53y9"
 	app.config.BootstrapBaseURL = "https://www.example.com"
-	app.config.DeploymentMode = config.DeploymentModeServer
-	app.config.AccessMode = config.AccessModeMultiUser
 	app.config.Files.StorageMode = config.FilesStorageModeObject
 	app.config.Files.ActiveStorageBackend = config.DefaultFilesActiveBackend
 	app.config.Files.StorageBackends = map[string]config.FileStorageBackend{
@@ -67,6 +71,10 @@ func newTestApplication(t *testing.T) *application {
 	}
 	app.logger = slog.New(slog.NewTextHandler(io.Discard, nil))
 	app.db = newTestDB(t)
+	app.signIn = identity.PasswordSignIn(app.db)
+	app.audit = audit.NewCoreWriter(audit.NewSQLStore(app.db.DB), time.Now)
+	app.clientIPs = clientip.New(nil)
+	app.authChain = app.newAuthChain()
 	settings, found, err := app.db.GetInstanceSettings(context.Background())
 	if err != nil || !found {
 		t.Fatalf("get instance settings: found=%v err=%v", found, err)
@@ -74,10 +82,6 @@ func newTestApplication(t *testing.T) *application {
 	settings.BaseURL = app.config.BootstrapBaseURL
 	settings.FileRevisionsEnabled = false
 	settings.SQLiteInMemoryTargetsEnabled = true
-	// Personal spaces default off in production; most /me tests exercise
-	// that surface directly, so enable it here and let the handful of
-	// gating tests opt back out via updateInstanceSettingsForTest.
-	settings.PersonalSpacesEnabled = true
 	settings, err = app.db.UpsertInstanceSettings(context.Background(), settings)
 	if err != nil {
 		t.Fatal(err)
@@ -159,7 +163,7 @@ func seedAccountWithToken(t *testing.T, app *application, email, name string) (d
 	t.Helper()
 
 	account := seedAccount(t, app, email, name)
-	authSession, err := app.db.InsertAuthSession(context.Background(), account.ID, time.Now().Add(7*24*time.Hour), "test-agent", "127.0.0.1")
+	authSession, err := app.db.InsertAuthSession(context.Background(), account.ID, time.Now().Add(7*24*time.Hour), "test-agent", "127.0.0.1", database.SessionAuth{Method: "password", Assurance: "aal1"})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -194,7 +198,7 @@ func seedInstanceAdminAccount(t *testing.T, app *application, email, name string
 func seedOrganizationForAccount(t *testing.T, app *application, account database.Account, orgName string) database.Organization {
 	t.Helper()
 
-	org, err := app.db.InsertOrg(context.Background(), slugify(orgName), orgName)
+	org, err := app.db.InsertOrg(context.Background(), orgs.Slugify(orgName), orgName)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -368,6 +372,16 @@ type testResponse struct {
 	BodyBytes  []byte
 }
 
+func (r testResponse) errorField(name string) string {
+	errorValue, _ := r.BodyFields["error"].(map[string]any)
+	value, _ := errorValue[name].(string)
+	return value
+}
+
+func (r testResponse) ErrorCode() string { return r.errorField("code") }
+
+func (r testResponse) ErrorReason() string { return r.errorField("reason") }
+
 func send(t *testing.T, req *http.Request, h http.Handler) testResponse {
 	if len(req.PostForm) > 0 {
 		body := req.PostForm.Encode()
@@ -518,10 +532,6 @@ func orgEnvConnectionsURL(orgSlug string, workspaceID, environmentID int64) stri
 
 func orgConnectionURL(orgSlug string, workspaceID, environmentID int64, connectionID string) string {
 	return fmt.Sprintf("/api/v1/orgs/%s/workspaces/%d/environments/%d/connections/%s", orgSlug, workspaceID, environmentID, connectionID)
-}
-
-func meEnvConnectionsURL(workspaceID, environmentID string) string {
-	return fmt.Sprintf("/api/v1/me/workspaces/%s/environments/%s/connections", workspaceID, environmentID)
 }
 
 func newOrgJSONRequest(t *testing.T, method, path, body, token string) *http.Request {

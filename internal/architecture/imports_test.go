@@ -17,8 +17,8 @@ func TestForbiddenProductionImports(t *testing.T) {
 	repositoryRoot := repoRoot(t)
 	fset := token.NewFileSet()
 	applicationModules := map[string]bool{
-		"access": true, "completion": true, "config": true, "files": true,
-		"jobs": true, "schema": true, "platform": true, "database": true,
+		"access": true, "audit": true, "completion": true, "config": true, "files": true,
+		"identity": true, "jobs": true, "schema": true, "platform": true, "database": true, "orgs": true, "profile": true,
 	}
 
 	err := walkProductionFiles(repositoryRoot, func(path string) error {
@@ -42,6 +42,9 @@ func TestForbiddenProductionImports(t *testing.T) {
 			importPath, err := strconv.Unquote(imported.Path.Value)
 			if err != nil {
 				return err
+			}
+			if strings.HasPrefix(rel, "internal/platform/clientip/") && strings.Contains(strings.Split(importPath, "/")[0], ".") {
+				t.Errorf("%s imports %q; platform/clientip may import only the standard library", rel, importPath)
 			}
 			if parts[0] != "ee" && (importPath == "github.com/sqlwarden/ee" || strings.HasPrefix(importPath, "github.com/sqlwarden/ee/")) {
 				t.Errorf("%s imports enterprise implementation %q", rel, importPath)

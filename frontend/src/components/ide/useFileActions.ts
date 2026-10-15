@@ -2,10 +2,8 @@ import { useMutation, useQueryClient } from '@tanstack/react-query'
 import { toast } from 'sonner'
 import {
   deletePrivateWorkspaceFile,
-  duplicateMyPrivateWorkspaceFile,
   duplicatePrivateWorkspaceFile,
   getPrivateWorkspaceFileContent,
-  renameMyPrivateWorkspaceFile,
   renamePrivateWorkspaceFile,
   renameSharedWorkspaceFile,
 } from '#/lib/api/files'
@@ -30,19 +28,14 @@ export function useFileActions(
     return tab?.kind === 'file' ? tab.fileId : undefined
   })
   const queryClient = useQueryClient()
-  const isPersonal = workspace.owner_type === 'space'
 
   const browserScope =
     visibility === 'private'
-      ? isPersonal
-        ? queryKeys.myWorkspacePrivateFileBrowserScope(workspace.id)
-        : queryKeys.orgWorkspacePrivateFileBrowserScope(orgSlug, workspace.id)
+      ? queryKeys.orgWorkspacePrivateFileBrowserScope(orgSlug, workspace.id)
       : queryKeys.orgWorkspaceSharedFileBrowserScope(orgSlug, workspace.id)
   const recentScope =
     visibility === 'private'
-      ? isPersonal
-        ? queryKeys.myWorkspacePrivateRecentFilesScope(workspace.id)
-        : queryKeys.orgWorkspacePrivateRecentFilesScope(orgSlug, workspace.id)
+      ? queryKeys.orgWorkspacePrivateRecentFilesScope(orgSlug, workspace.id)
       : queryKeys.orgWorkspaceSharedRecentFilesScope(orgSlug, workspace.id)
 
   function invalidateFileLists() {
@@ -64,9 +57,7 @@ export function useFileActions(
   const renameFile = useMutation({
     mutationFn: ({ nodeId, name }: { nodeId: number; name: string }) =>
       visibility === 'private'
-        ? isPersonal
-          ? renameMyPrivateWorkspaceFile(workspace.id, nodeId, name)
-          : renamePrivateWorkspaceFile(orgSlug, workspace.id, nodeId, name)
+        ? renamePrivateWorkspaceFile(orgSlug, workspace.id, nodeId, name)
         : renameSharedWorkspaceFile(orgSlug, workspace.id, nodeId, name),
     onSuccess: (file) => {
       invalidateFileLists()
@@ -81,9 +72,7 @@ export function useFileActions(
 
   const duplicateFile = useMutation({
     mutationFn: ({ nodeId, name }: { nodeId: number; name: string }) =>
-      isPersonal
-        ? duplicateMyPrivateWorkspaceFile(workspace.id, nodeId, name)
-        : duplicatePrivateWorkspaceFile(orgSlug, workspace.id, nodeId, name),
+      duplicatePrivateWorkspaceFile(orgSlug, workspace.id, nodeId, name),
     onSuccess: () => {
       invalidateFileLists()
     },

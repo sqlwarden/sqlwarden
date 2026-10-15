@@ -392,7 +392,6 @@ export interface InstanceSettings {
   instance_description: string
   support_email: string
   base_url: string
-  personal_spaces_enabled: boolean
   jwt_access_token_ttl_seconds: number
   sessions_revocation_enabled: boolean
   query_max_result_rows: number
@@ -438,8 +437,7 @@ export interface InstanceConfiguration {
   deployment_managed: boolean
   restart_required: boolean
   http_port: number
-  deployment_mode: 'server' | 'desktop'
-  access_mode: 'multi_user' | 'single_user'
+  profile: string
   log_format: 'json' | 'text'
   database_driver: string
   database_automigrate: boolean
@@ -505,12 +503,12 @@ export interface SessionResponse {
   account: Account
   organizations: Organization[]
   is_instance_admin: boolean
-  personal_spaces_enabled: boolean
 }
 
 export interface SetupStatusResponse {
   configured: boolean
-  access_mode: 'multi_user' | 'single_user'
+  setup_requires_input: boolean
+  invitations_enabled: boolean
 }
 
 export interface SetupResponse {

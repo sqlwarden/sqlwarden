@@ -23,6 +23,14 @@ type AuthSession struct {
 	RevokedAt          *time.Time `bun:",nullzero" json:"revoked_at,omitempty"`
 	RevokedByAccountID *int64     `bun:",nullzero" json:"revoked_by_account_id,omitempty"`
 	RevocationReason   string     `bun:",nullzero" json:"revocation_reason,omitempty"`
+	AuthMethod         string     `bun:",notnull" json:"auth_method"`
+	Assurance          string     `bun:",notnull"  json:"assurance"`
+}
+
+// SessionAuth records how the session's primary credential was established.
+type SessionAuth struct {
+	Method    string
+	Assurance string
 }
 
 type OrgAccessSession struct {
@@ -44,15 +52,18 @@ type ListAuthSessionsParams struct {
 	PageSize  int
 }
 
-func (db *DB) InsertAuthSession(ctx context.Context, accountID int64, expiresAt time.Time, userAgent, ipAddress string) (AuthSession, error) {
+func (db *DB) InsertAuthSession(ctx context.Context, accountID int64, expiresAt time.Time, userAgent, ipAddress string, auth SessionAuth) (AuthSession, error) {
 	ctx, cancel := context.WithTimeout(ctx, defaultTimeout)
 	defer cancel()
 
-	return db.InsertAuthSessionWithExecutor(ctx, db.DB, accountID, expiresAt, userAgent, ipAddress)
+	return db.InsertAuthSessionWithExecutor(ctx, db.DB, accountID, expiresAt, userAgent, ipAddress, auth)
 }
 
 // InsertAuthSessionWithExecutor inserts an auth session using exec for transaction composition.
-func (db *DB) InsertAuthSessionWithExecutor(ctx context.Context, exec bun.IDB, accountID int64, expiresAt time.Time, userAgent, ipAddress string) (AuthSession, error) {
+func (db *DB) InsertAuthSessionWithExecutor(ctx context.Context, exec bun.IDB, accountID int64, expiresAt time.Time, userAgent, ipAddress string, auth SessionAuth) (AuthSession, error) {
+	if auth.Method == "" {
+		return AuthSession{}, errors.New("database: auth session method is required")
+	}
 	now := time.Now()
 	session := AuthSession{
 		ID:         newID(),
@@ -62,6 +73,8 @@ func (db *DB) InsertAuthSessionWithExecutor(ctx context.Context, exec bun.IDB, a
 		CreatedAt:  now,
 		LastSeenAt: now,
 		ExpiresAt:  expiresAt,
+		AuthMethod: auth.Method,
+		Assurance:  auth.Assurance,
 	}
 	_, err := exec.NewInsert().Model(&session).Exec(ctx)
 	if err != nil {

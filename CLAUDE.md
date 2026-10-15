@@ -89,9 +89,10 @@ Configuration uses spf13/viper through `internal/config`.
 - Supports config file, environment variables, and CLI flags.
 - Default SQLite app DB path is `~/.sqlwarden/sqlwarden.db`.
 - Default file storage path is `~/.sqlwarden/files`.
-- `deployment_mode` is runtime packaging/context.
-- `access_mode` is account/authorization behavior.
-- Single-user mode seeds a local org and normal RBAC policies; it is not an authz bypass.
+- `profile` (`server` or `desktop`) selects product behavior through `internal/profile`. Shared code reads profile capabilities and never branches on the profile name.
+- The desktop profile requires SQLite and derives the default DB path from `desktop.app_dir`.
+- `server.trusted_proxies` lists the proxy networks whose `X-Forwarded-For` hops are trusted when the client IP is resolved.
+- Desktop setup seeds a local org and normal RBAC policies. It is not an authz bypass.
 
 ## Backend Conventions
 
@@ -126,7 +127,6 @@ Configuration uses spf13/viper through `internal/config`.
 
 - Org membership is the first access gate for org-owned resources.
 - RBAC cannot grant org access to accounts outside `org_members`.
-- Personal-space routes under `/api/v1/me` are owner-scoped and outside org RBAC.
 - Builtin roles are immutable.
 - Role bindings are idempotent.
 - Role scope validation must happen before custom role creation.
@@ -147,7 +147,7 @@ Configuration uses spf13/viper through `internal/config`.
 
 - `POST /api/setup` is self-sealing.
 - Multi-user setup creates the first account, instance admin, and first organization.
-- Single-user setup seeds a local organization and normal owner policy.
+- Desktop setup seeds a local organization and normal owner policy.
 - Auth sessions and org access sessions are database-backed when session revocation is enabled.
 - Refresh tokens are stored in DB and rotated.
 

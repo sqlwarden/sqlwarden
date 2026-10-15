@@ -4,6 +4,7 @@ import (
 	"context"
 	"net/http"
 
+	"github.com/sqlwarden/internal/access"
 	"github.com/sqlwarden/internal/database"
 )
 
@@ -18,6 +19,7 @@ const (
 	connectionKey           contextKey = "connection"
 	requestLogContextKey    contextKey = "requestLogContext"
 	runtimeSettingsKey      contextKey = "runtimeSettings"
+	principalKey            contextKey = "principal"
 )
 
 func contextSetRuntimeSettings(r *http.Request, settings effectiveRuntimeSettings) *http.Request {
@@ -41,6 +43,16 @@ func contextSetAccount(r *http.Request, account database.Account) *http.Request 
 func contextGetAccount(r *http.Request) database.Account {
 	account, _ := r.Context().Value(authenticatedAccountKey).(database.Account)
 	return account
+}
+
+// Principal context helpers.
+func contextSetPrincipal(r *http.Request, p access.Principal) *http.Request {
+	return r.WithContext(context.WithValue(r.Context(), principalKey, p))
+}
+
+func contextGetPrincipal(r *http.Request) (access.Principal, bool) {
+	p, ok := r.Context().Value(principalKey).(access.Principal)
+	return p, ok
 }
 
 // Auth session context helpers.

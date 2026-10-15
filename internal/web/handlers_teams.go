@@ -9,6 +9,7 @@ import (
 
 	"github.com/go-chi/chi/v5"
 	"github.com/sqlwarden/internal/database"
+	"github.com/sqlwarden/internal/orgs"
 	"github.com/sqlwarden/internal/request"
 	"github.com/sqlwarden/internal/response"
 	"github.com/sqlwarden/internal/validator"
@@ -61,7 +62,7 @@ func (app *application) createTeam(w http.ResponseWriter, r *http.Request) {
 	input.V.CheckField(input.Name != "", "name", "Name is required.")
 	input.V.CheckField(input.Slug != "", "slug", "Slug is required.")
 	if input.Slug != "" {
-		input.V.CheckField(isValidSlug(input.Slug), "slug", "Slug may only contain lowercase letters, numbers, and hyphens.")
+		input.V.CheckField(orgs.ValidSlug(input.Slug), "slug", "Slug may only contain lowercase letters, numbers, and hyphens.")
 	}
 	if input.V.HasErrors() {
 		app.failedValidation(w, r, input.V)

@@ -7,7 +7,6 @@ function makeSession(overrides: Partial<SessionResponse> = {}): SessionResponse 
     account: { id: 1, email: 'user@example.com', name: 'User', is_active: true },
     organizations: [{ id: 1, slug: 'acme', name: 'Acme', created_at: '', updated_at: '' }],
     is_instance_admin: false,
-    personal_spaces_enabled: false,
     ...overrides,
   }
 }
@@ -22,16 +21,12 @@ function ids(items: ReturnType<typeof buildUserMenuItems>) {
 }
 
 describe('canReachLandingHub', () => {
-  it('is false for a single-org session without personal spaces', () => {
+  it('is false for a single-org session', () => {
     expect(canReachLandingHub(makeSession())).toBe(false)
   })
 
   it('is true with multiple organizations', () => {
     expect(canReachLandingHub(makeSession({ organizations: twoOrgs }))).toBe(true)
-  })
-
-  it('is true when personal spaces are enabled', () => {
-    expect(canReachLandingHub(makeSession({ personal_spaces_enabled: true }))).toBe(true)
   })
 })
 
@@ -42,7 +37,7 @@ describe('buildUserMenuItems', () => {
     expect(personal?.to).toBe('/settings/account')
   })
 
-  it('hides switch-organization for single-org sessions without personal spaces', () => {
+  it('hides switch-organization for single-org sessions', () => {
     expect(ids(buildUserMenuItems({ session: makeSession() }))).not.toContain('switch-organization')
   })
 
@@ -50,11 +45,6 @@ describe('buildUserMenuItems', () => {
     const items = buildUserMenuItems({ session: makeSession({ organizations: twoOrgs }) })
     const switcher = items.find((item) => item.id === 'switch-organization')
     expect(switcher?.to).toBe('/')
-  })
-
-  it('shows switch-organization when personal spaces are enabled', () => {
-    const items = buildUserMenuItems({ session: makeSession({ personal_spaces_enabled: true }) })
-    expect(ids(items)).toContain('switch-organization')
   })
 
   it('includes administration only for instance admins', () => {

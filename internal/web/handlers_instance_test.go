@@ -1,6 +1,7 @@
 package web
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"net/http"
@@ -9,8 +10,10 @@ import (
 
 	"github.com/sqlwarden/internal/access"
 	"github.com/sqlwarden/internal/assert"
-	"github.com/sqlwarden/internal/config"
+	"github.com/sqlwarden/internal/audit"
 	"github.com/sqlwarden/internal/database"
+	"github.com/sqlwarden/internal/identity"
+	"github.com/sqlwarden/internal/orgs"
 )
 
 // setupInstance calls POST /api/setup and returns the access token.
@@ -21,7 +24,7 @@ func setupInstance(t *testing.T, app *application, email, name, password string)
 		"name":     name,
 		"password": password,
 	}
-	if app.config.AccessMode != config.AccessModeSingleUser {
+	if app.setupStrategy.RequiresInput() {
 		body["organization_name"] = "Default Organization"
 	}
 	res := send(t, newTestRequest(t, http.MethodPost, "/api/setup", body), app.routes())
@@ -57,10 +60,46 @@ func TestSetupCreatesFirstInstanceAdmin(t *testing.T) {
 	assert.Equal(t, org["name"], "Acme Cloud")
 }
 
+func TestSetupWritesAuditEvent(t *testing.T) {
+	app := newTestApp(t)
+	var events []audit.Event
+	app.audit = audit.WriterFunc(func(_ context.Context, event audit.Event) error {
+		events = append(events, event)
+		return nil
+	})
+
+	input := identity.SetupInput{
+		Email: "admin@example.com", Name: "Admin", Password: "securepass99",
+		OrganizationName: "Acme Cloud",
+	}
+	plan, fieldErrors := app.setupStrategy.Plan(input)
+	if len(fieldErrors) != 0 {
+		t.Fatalf("setup plan errors: %v", fieldErrors)
+	}
+	res := send(t, newTestRequest(t, http.MethodPost, "/api/setup", map[string]any{
+		"email": input.Email, "name": input.Name, "password": input.Password,
+		"organization_name": input.OrganizationName,
+	}), app.routes())
+	assert.Equal(t, res.StatusCode, http.StatusCreated)
+
+	if len(events) != 1 {
+		t.Fatalf("audit events = %d, want 1", len(events))
+	}
+	event := events[0]
+	if event.Action != audit.ActionSetupCompleted || event.Outcome != audit.OutcomeSuccess {
+		t.Fatalf("audit action/outcome = %q/%q", event.Action, event.Outcome)
+	}
+	if event.Actor.SubjectKind != "account" || event.Actor.AuthMethod != plan.Method {
+		t.Fatalf("audit actor = %+v", event.Actor)
+	}
+	if event.OrgID == nil {
+		t.Fatal("audit org id is nil")
+	}
+}
+
 func TestSetupInMultiUserModeSeedsFirstOrganizationAndOwnerPolicy(t *testing.T) {
 	t.Parallel()
 	app := newTestApp(t)
-	app.config.AccessMode = config.AccessModeMultiUser
 
 	res := send(t, newTestRequest(t, http.MethodPost, "/api/setup", map[string]any{
 		"email":             "admin@example.com",
@@ -90,7 +129,6 @@ func TestSetupInMultiUserModeSeedsFirstOrganizationAndOwnerPolicy(t *testing.T) 
 func TestSetupInMultiUserModeRequiresOrganization(t *testing.T) {
 	t.Parallel()
 	app := newTestApp(t)
-	app.config.AccessMode = config.AccessModeMultiUser
 
 	res := send(t, newTestRequest(t, http.MethodPost, "/api/setup", map[string]any{
 		"email":    "admin@example.com",
@@ -105,7 +143,6 @@ func TestSetupInMultiUserModeRequiresOrganization(t *testing.T) {
 func TestSetupInMultiUserModeRejectsInvalidOrganizationSlug(t *testing.T) {
 	t.Parallel()
 	app := newTestApp(t)
-	app.config.AccessMode = config.AccessModeMultiUser
 
 	res := send(t, newTestRequest(t, http.MethodPost, "/api/setup", map[string]any{
 		"email":             "admin@example.com",
@@ -121,14 +158,13 @@ func TestSetupInMultiUserModeRejectsInvalidOrganizationSlug(t *testing.T) {
 func TestSetupInMultiUserModeRejectsOverlongOrganizationSlug(t *testing.T) {
 	t.Parallel()
 	app := newTestApp(t)
-	app.config.AccessMode = config.AccessModeMultiUser
 
 	res := send(t, newTestRequest(t, http.MethodPost, "/api/setup", map[string]any{
 		"email":             "admin@example.com",
 		"name":              "Admin",
 		"password":          "securepass99",
 		"organization_name": "First Organization",
-		"organization_slug": strings.Repeat("a", maxOrganizationSlugLength+1),
+		"organization_slug": strings.Repeat("a", orgs.MaxSlugLength+1),
 	}), app.routes())
 
 	assert.Equal(t, res.StatusCode, http.StatusUnprocessableEntity)
@@ -138,7 +174,6 @@ func TestSetupInMultiUserModeRejectsOverlongOrganizationSlug(t *testing.T) {
 func TestSetupInMultiUserModeRejectsDuplicateOrganizationSlug(t *testing.T) {
 	t.Parallel()
 	app := newTestApp(t)
-	app.config.AccessMode = config.AccessModeMultiUser
 
 	_, err := app.db.InsertOrg(t.Context(), "first-org", "Existing Organization")
 	assert.Nil(t, err)
@@ -161,13 +196,12 @@ func TestSetupInMultiUserModeRejectsDuplicateOrganizationSlug(t *testing.T) {
 func TestCreateFirstRunSetup_RollsBackAccountAdminAndSessionOnOrgFailure(t *testing.T) {
 	t.Parallel()
 	app := newTestApp(t)
-	app.config.AccessMode = config.AccessModeMultiUser
 
 	_, err := app.db.InsertOrg(t.Context(), "first-org", "Existing Organization")
 	assert.Nil(t, err)
 
 	hashedPassword := testUsers["alice"].hashedPassword
-	_, _, _, err = app.createFirstRunSetup(t.Context(), "rollback-admin@example.com", "Rollback Admin", &hashedPassword, "first-org", "First Organization", "agent", "127.0.0.1")
+	_, _, _, err = app.createFirstRunSetup(t.Context(), "rollback-admin@example.com", "Rollback Admin", &hashedPassword, "first-org", "First Organization", "agent", "127.0.0.1", identity.MethodPassword)
 	if err == nil {
 		t.Fatal("expected duplicate organization failure")
 	}
@@ -189,11 +223,12 @@ func TestCreateFirstRunSetup_RollsBackAccountAdminAndSessionOnOrgFailure(t *test
 func TestSetupInSingleUserModeSeedsLocalOrganizationAndOwnerPolicy(t *testing.T) {
 	t.Parallel()
 	app := newTestApp(t)
-	app.config.AccessMode = config.AccessModeSingleUser
+	app.setupStrategy = identity.LocalSetup
+	app.invitationPolicy = orgs.InvitationsDisabled
 
 	token := setupInstance(t, app, "admin@example.com", "Admin", "securepass99")
 
-	account, found, err := app.db.GetAccountByEmail(t.Context(), "admin@example.com")
+	account, found, err := app.db.GetAccountByEmail(t.Context(), identity.LocalAccountEmail)
 	assert.Nil(t, err)
 	assert.True(t, found)
 
@@ -204,8 +239,8 @@ func TestSetupInSingleUserModeSeedsLocalOrganizationAndOwnerPolicy(t *testing.T)
 	})
 	assert.Nil(t, err)
 	assert.Equal(t, orgs.Total, 1)
-	assert.Equal(t, orgs.Items[0].Slug, singleUserDefaultOrgSlug)
-	assert.Equal(t, orgs.Items[0].Name, singleUserDefaultOrgName)
+	assert.Equal(t, orgs.Items[0].Slug, identity.LocalOrganizationSlug)
+	assert.Equal(t, orgs.Items[0].Name, identity.LocalOrganizationName)
 	assert.Equal(t, orgs.Items[0].Role, access.BuiltinOrgOwnerRole)
 
 	createWorkspaceRes := send(t, newAuthRequest(t, http.MethodPost, "/api/v1/orgs/local/workspaces", map[string]any{
@@ -254,8 +289,11 @@ func TestSetupStatus_ReturnsStableShape(t *testing.T) {
 
 	res := send(t, newTestRequest(t, http.MethodGet, "/api/setup/status", nil), app.routes())
 	assert.Equal(t, res.StatusCode, http.StatusOK)
-	assertBodyContainsJSONKeys(t, res.BodyBytes, "configured")
-	assert.Equal(t, res.BodyFields["access_mode"].(string), string(config.AccessModeMultiUser))
+	assertBodyContainsJSONKeys(t, res.BodyBytes, "configured", "setup_requires_input", "invitations_enabled")
+	assert.Equal(t, res.BodyFields["setup_requires_input"].(bool), true)
+	assert.Equal(t, res.BodyFields["invitations_enabled"].(bool), true)
+	_, hasProfile := res.BodyFields["profile"]
+	assert.Equal(t, hasProfile, false)
 }
 
 func TestSetupBlockedAfterFirstAdmin(t *testing.T) {
@@ -453,7 +491,6 @@ func TestGetInstanceSettings(t *testing.T) {
 	assert.Equal(t, res.StatusCode, http.StatusOK)
 	assert.Equal(t, res.BodyFields["instance_name"], "SQLWarden")
 	assert.Equal(t, res.BodyFields["base_url"], any(app.config.BootstrapBaseURL))
-	assert.Equal(t, res.BodyFields["personal_spaces_enabled"], true)
 }
 
 func TestUpdateInstanceSettings(t *testing.T) {
@@ -462,18 +499,16 @@ func TestUpdateInstanceSettings(t *testing.T) {
 	adminTok := setupInstance(t, app, "admin@example.com", "Admin", "securepass99")
 
 	res := send(t, newAuthRequest(t, http.MethodPatch, "/api/v1/instance/settings", map[string]any{
-		"instance_name":           "Acme SQLWarden",
-		"instance_description":    "Shared database access for Acme.",
-		"support_email":           "support@example.com",
-		"base_url":                "https://sqlwarden.example.com",
-		"personal_spaces_enabled": false,
+		"instance_name":        "Acme SQLWarden",
+		"instance_description": "Shared database access for Acme.",
+		"support_email":        "support@example.com",
+		"base_url":             "https://sqlwarden.example.com",
 	}, adminTok), app.routes())
 	assert.Equal(t, res.StatusCode, http.StatusOK)
 	assert.Equal(t, res.BodyFields["instance_name"], "Acme SQLWarden")
 	assert.Equal(t, res.BodyFields["instance_description"], "Shared database access for Acme.")
 	assert.Equal(t, res.BodyFields["support_email"], "support@example.com")
 	assert.Equal(t, res.BodyFields["base_url"], "https://sqlwarden.example.com")
-	assert.Equal(t, res.BodyFields["personal_spaces_enabled"], false)
 
 	getRes := send(t, newAuthRequest(t, http.MethodGet, "/api/v1/instance/settings", nil, adminTok), app.routes())
 	assert.Equal(t, getRes.StatusCode, http.StatusOK)
@@ -481,7 +516,6 @@ func TestUpdateInstanceSettings(t *testing.T) {
 	assert.Equal(t, getRes.BodyFields["instance_description"], "Shared database access for Acme.")
 	assert.Equal(t, getRes.BodyFields["support_email"], "support@example.com")
 	assert.Equal(t, getRes.BodyFields["base_url"], "https://sqlwarden.example.com")
-	assert.Equal(t, getRes.BodyFields["personal_spaces_enabled"], false)
 }
 
 func TestUpdateInstanceSettingsSQLiteLocalTargets(t *testing.T) {
@@ -604,7 +638,7 @@ func TestUpdateInstanceSettingsRequiresInstanceAdmin(t *testing.T) {
 	tok := extractAccessToken(t, loginRes)
 
 	res := send(t, newAuthRequest(t, http.MethodPatch, "/api/v1/instance/settings",
-		map[string]any{"personal_spaces_enabled": false}, tok), app.routes())
+		map[string]any{"instance_name": "Denied"}, tok), app.routes())
 	assert.Equal(t, res.StatusCode, http.StatusForbidden)
 }
 
@@ -916,4 +950,59 @@ func TestInstanceSettingsOmitSchemaLazyThreshold(t *testing.T) {
 	}, adminTok), app.routes())
 	assert.Equal(t, res.StatusCode, unknownRes.StatusCode)
 	assert.NotEqual(t, res.StatusCode, http.StatusInternalServerError)
+}
+
+func TestSetupDesktopIsSelfSealing(t *testing.T) {
+	t.Parallel()
+	app := newTestApp(t)
+	app.setupStrategy = identity.LocalSetup
+	app.invitationPolicy = orgs.InvitationsDisabled
+
+	res := send(t, newTestRequest(t, http.MethodPost, "/api/setup", map[string]any{}), app.routes())
+	assert.Equal(t, res.StatusCode, http.StatusCreated)
+	assert.NotEqual(t, res.BodyFields["access_token"].(string), "")
+	org := res.BodyFields["organization"].(map[string]any)
+	assert.Equal(t, org["slug"].(string), identity.LocalOrganizationSlug)
+	before, err := app.db.NewSelect().TableExpr("accounts").Count(t.Context())
+	assert.Nil(t, err)
+
+	again := send(t, newTestRequest(t, http.MethodPost, "/api/setup", map[string]any{}), app.routes())
+	assert.Equal(t, again.StatusCode, http.StatusConflict)
+
+	after, err := app.db.NewSelect().TableExpr("accounts").Count(t.Context())
+	assert.Nil(t, err)
+	assert.Equal(t, after, before)
+}
+
+func TestSetupStatusReportsCapabilities(t *testing.T) {
+	t.Parallel()
+	app := newTestApp(t)
+	app.setupStrategy = identity.LocalSetup
+	app.invitationPolicy = orgs.InvitationsDisabled
+
+	res := send(t, newTestRequest(t, http.MethodGet, "/api/setup/status", nil), app.routes())
+	assert.Equal(t, res.StatusCode, http.StatusOK)
+	assert.Equal(t, res.BodyFields["configured"].(bool), false)
+	assert.Equal(t, res.BodyFields["setup_requires_input"].(bool), false)
+	assert.Equal(t, res.BodyFields["invitations_enabled"].(bool), false)
+}
+
+func TestSetupStoresResolvedClientIPOnAuthSession(t *testing.T) {
+	t.Parallel()
+	app := newTestApp(t)
+
+	req := newTestRequest(t, http.MethodPost, "/api/setup", map[string]any{
+		"email":             "ip-admin@example.com",
+		"name":              "Admin",
+		"password":          "securepass99",
+		"organization_name": "Default Organization",
+	})
+	req.RemoteAddr = "203.0.113.9:1234"
+	res := send(t, req, app.routes())
+	assert.Equal(t, res.StatusCode, http.StatusCreated)
+
+	var ip string
+	err := app.db.NewSelect().TableExpr("auth_sessions").ColumnExpr("ip_address").Limit(1).Scan(t.Context(), &ip)
+	assert.Nil(t, err)
+	assert.Equal(t, ip, "203.0.113.9")
 }

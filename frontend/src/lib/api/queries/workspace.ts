@@ -119,14 +119,6 @@ export function orgWorkspacePolicyQueryOptions(
   })
 }
 
-export function myWorkspacesQueryOptions(query?: ListQuery) {
-  return queryOptions({
-    queryKey: queryKeys.myWorkspaces(query),
-    queryFn: () => api.get<Paginated<Workspace>>('/api/v1/me/workspaces', { query }),
-    placeholderData: keepPreviousData,
-  })
-}
-
 export function orgEnvironmentsQueryOptions(
   slug: string,
   workspaceId: string | number,
@@ -139,17 +131,6 @@ export function orgEnvironmentsQueryOptions(
         `/api/v1/orgs/${slug}/workspaces/${workspaceId}/environments`,
         { query },
       ),
-    placeholderData: keepPreviousData,
-  })
-}
-
-export function myEnvironmentsQueryOptions(workspaceId: string | number, query?: ListQuery) {
-  return queryOptions({
-    queryKey: queryKeys.myEnvironments(workspaceId, query),
-    queryFn: () =>
-      api.get<Paginated<Environment>>(`/api/v1/me/workspaces/${workspaceId}/environments`, {
-        query,
-      }),
     placeholderData: keepPreviousData,
   })
 }
@@ -256,24 +237,6 @@ export function orgWorkspaceJobsQueryOptions(
       api.get<Paginated<JobRecord>>(`/api/v1/orgs/${slug}/workspaces/${workspaceId}/jobs`, {
         query,
       }),
-    placeholderData: keepPreviousData,
-  })
-}
-
-export function myConnectionsQueryOptions(
-  workspaceId: string | number,
-  environmentId: string | number,
-  query?: ListQuery,
-) {
-  return queryOptions({
-    queryKey: queryKeys.myConnections(workspaceId, environmentId, query),
-    queryFn: () =>
-      api.get<Paginated<Connection>>(
-        `/api/v1/me/workspaces/${workspaceId}/environments/${environmentId}/connections`,
-        {
-          query,
-        },
-      ),
     placeholderData: keepPreviousData,
   })
 }

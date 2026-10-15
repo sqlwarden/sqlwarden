@@ -12,6 +12,7 @@ import (
 	"time"
 
 	"github.com/sqlwarden/internal/access"
+	"github.com/sqlwarden/internal/audit"
 	"github.com/sqlwarden/internal/config"
 	"github.com/sqlwarden/internal/connection"
 	"github.com/sqlwarden/internal/database"
@@ -58,10 +59,20 @@ func Build(ctx context.Context, opts Options) (*Application, error) {
 		logger = discardLogger()
 	}
 	cfg := opts.Config
+	prof, err := selectProfile(cfg.Profile)
+	if err != nil {
+		return nil, err
+	}
+	// Profile defaults compare against the unexpanded config defaults, so
+	// they must run before Normalize expands home-relative paths.
+	prof.Defaults(&cfg)
 	if err := config.Normalize(&cfg); err != nil {
 		return nil, err
 	}
 	if err := config.Validate(cfg); err != nil {
+		return nil, err
+	}
+	if err := prof.Validate(cfg); err != nil {
 		return nil, err
 	}
 	if err := ensureSQLiteParentDir(cfg); err != nil {
@@ -136,6 +147,10 @@ func Build(ctx context.Context, opts Options) (*Application, error) {
 	if failWebConstruction != nil {
 		return fail(failWebConstruction)
 	}
+	trustedProxies, err := config.ParseTrustedProxies(cfg.Server.TrustedProxies)
+	if err != nil {
+		return fail(err)
+	}
 	webApp, err := web.NewApplication(web.Dependencies{
 		Config:     cfg,
 		DB:         db,
@@ -145,6 +160,13 @@ func Build(ctx context.Context, opts Options) (*Application, error) {
 		FileStores: stores,
 		Sessions:   sessions,
 		Cursors:    cursors,
+		Audit:      audit.NewCoreWriter(audit.NewSQLStore(db.DB), time.Now),
+
+		TrustedProxies: trustedProxies,
+
+		Setup:       prof.Setup(),
+		Invitations: prof.Invitations(),
+		SignIn:      prof.SignIn(db),
 	})
 	if err != nil {
 		return fail(err)
@@ -195,6 +217,7 @@ func (a *Application) httpHandler() http.Handler { return a.handler }
 func logConfiguration(logger *slog.Logger, cfg config.Config) {
 	logger.Info("application configuration loaded",
 		slog.Group("config",
+			"profile", cfg.Profile,
 			"log_format", cfg.Log.Format,
 			"bootstrap_base_url_configured", strings.TrimSpace(cfg.BootstrapBaseURL) != "",
 			"tls_enabled", cfg.TLS.Enabled,

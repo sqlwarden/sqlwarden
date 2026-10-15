@@ -95,28 +95,6 @@ export async function duplicatePrivateWorkspaceFile(
   )
 }
 
-export async function renameMyPrivateWorkspaceFile(
-  workspaceId: number,
-  fileId: number,
-  name: string,
-): Promise<WorkspaceFile> {
-  return apiRequest<WorkspaceFile>(`/api/v1/me/workspaces/${workspaceId}/files/private/${fileId}`, {
-    method: 'PATCH',
-    body: { name },
-  })
-}
-
-export async function duplicateMyPrivateWorkspaceFile(
-  workspaceId: number,
-  fileId: number,
-  name: string,
-): Promise<WorkspaceFile> {
-  return apiRequest<WorkspaceFile>(
-    `/api/v1/me/workspaces/${workspaceId}/files/private/${fileId}/duplicate`,
-    { method: 'POST', body: { name } },
-  )
-}
-
 export async function deletePrivateWorkspaceFile(
   orgSlug: string,
   workspaceId: number,
